@@ -1,9 +1,8 @@
-// TODO: This reader is currently entangled with JavaScript's notion
-// of string. It's probably good and fast for sequences of 16-bit
-// values, but it doesn't go out of its way to parse UTF-16 surrogate
-// pairs, and thus it's a few specificational kludges away from
-// Unicode. Figure out whether to make the spec simple, or to keep the
-// code and its performance simple.
+// era.js
+// Copyright 2013 Ross Angle. Released under the MIT License.
+
+
+// ===== Miscellaneous ===============================================
 
 // TODO: Decide whether to introduce a dependency on Lathe.js just for
 // these utilities.
@@ -22,11 +21,31 @@ function objPlus( var_args ) {
     }
     return result;
 }
+function isArray( x ) {
+    return {}.toString.call( x ) === "[object Array]";
+}
+function isPrimString( x ) {
+    return typeof x === "string";
+}
+
+function logJson( x ) {
+    console.log( JSON.stringify( x ) );
+}
+
+
+// ===== Reader ======================================================
+
+// TODO: This reader is currently entangled with JavaScript's notion
+// of string. It's probably good and fast for sequences of 16-bit
+// values, but it doesn't go out of its way to parse UTF-16 surrogate
+// pairs, and thus it's a few specificational kludges away from
+// Unicode. Figure out whether to make the spec simple, or to keep the
+// code and its performance simple.
 
 // $.stream.readc
 // $.stream.peekc
 // $.then
-// $.macros
+// $.readerMacros
 // $.list
 // $.end
 // $.unrecognized
@@ -34,7 +53,7 @@ function reader( $ ) {
     $.stream.peekc( function ( c ) {
         if ( c === "" )
             return void $.end( $ );
-        var readerMacro = $.macros[ c ];
+        var readerMacro = $.readerMacros[ c ];
         if ( !readerMacro )
             return void $.unrecognized( $ );
         readerMacro( $ );
@@ -45,12 +64,14 @@ function addReaderMacros( readerMacros, string, func ) {
         readerMacros[ string.charAt( i ) ] = func;
 }
 // NOTE: The readListUntilParen() function is only for use by the "("
-// and "/" macros to reduce duplication.
+// and "/" reader macros to reduce duplication.
 function readListUntilParen( $, consumeParen ) {
     function sub( $, list ) {
         return objPlus( $, {
             list: list,
-            macros: objPlus( $.macros, { ")": function ( $sub ) {
+            readerMacros: objPlus( $.readerMacros, { ")":
+                function ( $sub ) {
+                
                 if ( consumeParen )
                     $sub.stream.readc( function ( c ) {
                         next();
@@ -170,10 +191,11 @@ function stringStream( string ) {
     return stream;
 }
 
+// Unit test.
 reader( {
     stream: stringStream(
         " (woo;comment\n b (c( woo( ) string) / x//)/())" ),
-    macros: readerMacros,
+    readerMacros: readerMacros,
     end: function ( $ ) {
         $.then( { ok: false, msg: "Reached the end" } );
     },
@@ -181,6 +203,40 @@ reader( {
         $.then( { ok: false, msg: "Unrecognized char" } );
     },
     then: function ( result ) {
-        console.log( JSON.stringify( result ) );
+        logJson( result );
     }
 } );
+
+
+// ===== Macroexpander ===============================================
+
+function macroexpand( macros, expr ) {
+    if ( !(isArray( expr ) && 0 < expr.length) )
+        return { ok: false, msg:
+            "Can only macroexpand nonempty Arrays" };
+    var op = expr[ 0 ];
+    if ( !isPrimString( op ) )
+        return { ok: false, msg:
+            "Can only macroexpand Arrays with strings at the " +
+            "beginning" };
+    var macro = macros[ op ];
+    if ( macro === void 0 )
+        return { ok: false, msg: "Unknown macro " + op };
+    return macro( macroexpand, macros, expr.slice( 1 ) );
+}
+
+var macros = {};
+// TODO: This is just for getting started. Remove it.
+macros[ "log" ] = function ( expand, macros, subexprs ) {
+    if ( subexprs.length !== 1 )
+        return { ok: false, msg: "Incorrect number of args to log" };
+    var msg = subexprs[ 0 ];
+    if ( !isPrimString( msg ) )
+        return { ok: false, msg: "Incorrect args to log" };
+    logJson( msg );
+    return { ok: true, val: [ "noop" ] };
+};
+
+// Unit test.
+logJson( macroexpand( macros, [ "log", "hello" ] ) );
+
