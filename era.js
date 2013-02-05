@@ -1,3 +1,10 @@
+// TODO: This reader is currently entangled with JavaScript's notion
+// of string. It's probably good and fast for sequences of 16-bit
+// values, but it doesn't go out of its way to parse UTF-16 surrogate
+// pairs, and thus it's a few specificational kludges away from
+// Unicode. Figure out whether to make the spec simple, or to keep the
+// code and its performance simple.
+
 // TODO: Decide whether to introduce a dependency on Lathe.js just for
 // these utilities.
 function defer( body ) {
@@ -5,13 +12,14 @@ function defer( body ) {
         body();
     }, 0 );
 }
-function objPlus( a, b ) {
+function objPlus( var_args ) {
     var result = {};
-    [ a, b ].forEach( function ( obj ) {
+    for ( var i = 0, n = arguments.length; i < n; i++ ) {
+        var obj = arguments[ i ];
         for ( var k in obj )
             if ( {}.hasOwnProperty.call( obj, k ) )
                 result[ k ] = obj[ k ];
-    } );
+    }
     return result;
 }
 
@@ -99,6 +107,10 @@ addReaderMacros( readerMacros, whiteChars, function ( $ ) {
     } );
 } );
 addReaderMacros( readerMacros, symbolChars, function ( $ ) {
+    // TODO: See if this series of string concatenations is a
+    // painter's algorithm. Those in the know seem to say it's faster
+    // than keeping a big array and concatenating later, but maybe
+    // there's something even better than either option.
     function collectChops( stringSoFar, open, close, nesting ) {
         if ( nesting === 0 )
             return void collect( stringSoFar );
