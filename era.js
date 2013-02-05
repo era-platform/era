@@ -32,6 +32,8 @@ function logJson( x ) {
     console.log( JSON.stringify( x ) );
 }
 
+var unitTests = [];
+
 
 // ===== Reader ======================================================
 
@@ -191,21 +193,23 @@ function stringStream( string ) {
     return stream;
 }
 
-// Unit test.
-reader( {
-    stream: stringStream(
-        " (woo;comment\n b (c( woo( ) string) / x//)/())" ),
-    readerMacros: readerMacros,
-    end: function ( $ ) {
-        $.then( { ok: false, msg: "Reached the end" } );
-    },
-    unrecognized: function ( $ ) {
-        $.then( { ok: false, msg: "Unrecognized char" } );
-    },
-    then: function ( result ) {
-        logJson( result );
-    }
-} );
+unitTests.push( function ( then ) {
+    reader( {
+        stream: stringStream(
+            " (woo;comment\n b (c( woo( ) string) / x//)/())" ),
+        readerMacros: readerMacros,
+        end: function ( $ ) {
+            $.then( { ok: false, msg: "Reached the end" } );
+        },
+        unrecognized: function ( $ ) {
+            $.then( { ok: false, msg: "Unrecognized char" } );
+        },
+        then: function ( result ) {
+            logJson( result );
+            then();
+        }
+    } );
+} )
 
 
 // ===== Macroexpander ===============================================
@@ -237,6 +241,24 @@ macros[ "log" ] = function ( expand, macros, subexprs ) {
     return { ok: true, val: [ "noop" ] };
 };
 
-// Unit test.
-logJson( macroexpand( macros, [ "log", "hello" ] ) );
+unitTests.push( function ( then ) {
+    logJson( macroexpand( macros, [ "log", "hello" ] ) );
+    defer( function () {
+        then();
+    } );
+} );
 
+
+// ===== Unit test runner ============================================
+
+(function () {
+    function run( i ) {
+        if ( !(i < unitTests.length) )
+            return;
+        var unitTest = unitTests[ i ];
+        unitTest( function () {
+            run( i + 1 );
+        } )
+    }
+    run( 0 );
+})();
