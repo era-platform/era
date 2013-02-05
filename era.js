@@ -24,7 +24,7 @@ function objPlus( a, b ) {
 // $.unrecognized
 function reader( $ ) {
     $.stream.peekc( function ( c ) {
-        if ( !c )
+        if ( c === "" )
             return void $.end( $ );
         var readerMacro = $.macros[ c ];
         if ( !readerMacro )
@@ -36,10 +36,6 @@ function addReaderMacros( readerMacros, string, func ) {
     for ( var i = 0, n = string.length; i < n; i++ )
         readerMacros[ string.charAt( i ) ] = func;
 }
-var symbolChars = "abcdefghijklmnopqrstuvwxyz";
-symbolChars += symbolChars.toUpperCase() + "-*1234567890";
-var symbolChopsChars = { "(": ")", "[": "]" };
-var whiteChars = " \t\r\n";
 // NOTE: The readListUntilParen() function is only for use by the "("
 // and "/" macros to reduce duplication.
 function readListUntilParen( $, consumeParen ) {
@@ -79,11 +75,16 @@ function readListUntilParen( $, consumeParen ) {
     } );
 }
 
+var symbolChars = "abcdefghijklmnopqrstuvwxyz";
+symbolChars += symbolChars.toUpperCase() + "-*0123456789";
+var symbolChopsChars = { "(": ")", "[": "]" };
+var whiteChars = " \t\r\n";
+
 var readerMacros = {};
 readerMacros[ ";" ] = function ( $ ) {
     function loop() {
         $.stream.readc( function ( c ) {
-            if ( !c )
+            if ( c === "" )
                 return void $.end();
             if ( /^[\r\n]$/.test( c ) )
                 return void reader( $ );
