@@ -296,7 +296,7 @@ unitTests.push( function ( then ) {
 } );
 
 
-// ===== Alppha-equivalent pattern matching ==========================
+// ===== Alpha-equivalent pattern matching ===========================
 
 function makeAlphaGrammar( spec ) {
     var n = spec.length;
@@ -331,7 +331,10 @@ function makeAlphaGrammar( spec ) {
         }
     }
     
-    return function ( matcher, alphaGrammars, freeVars, termParams ) {
+    var result = {};
+    result.match = function (
+        matcher, alphaGrammars, freeVars, termParams ) {
+        
         if ( termParams.length !== n )
             return { ok: false, msg: "Mismatched length" };
         var bindings = new StrMap();
@@ -342,7 +345,9 @@ function makeAlphaGrammar( spec ) {
                 continue;
             if ( !isString( termPart ) )
                 return { ok: false, msg: "Expected a variable" };
-            bindings.set( specPart, termPart );
+            if ( bindings.has( termPart ) )
+                return { ok: false, msg: "Duplicate bound variable" };
+            bindings.set( termPart, specPart );
         }
         // TODO: Figure out what should really be part of a match.
         var fullMatch = {
@@ -357,7 +362,7 @@ function makeAlphaGrammar( spec ) {
             // TODO: Implement mask().
             // TODO: Decide if this is really going to be the format
             // of freeVars.
-            var submatch = matcher( alphaGrammars,
+            var submatch = matcher.match( alphaGrammars,
                 freeVars.plus( bindings.mask( depMaps[ i ] ) ),
                 termPart );
             if ( !submatch.ok )
@@ -366,6 +371,7 @@ function makeAlphaGrammar( spec ) {
         }
         return { ok: true, val: fullMatch };
     };
+    return result;
 }
 
 var alphaGrammars = new StrMap();
