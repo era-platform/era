@@ -11,14 +11,17 @@ function defer( body ) {
         body();
     }, 0 );
 }
+function objEachOwn( obj, body ) {
+    for ( var k in obj )
+        if ( {}.hasOwnProperty.call( obj, k ) )
+            body( k, obj[ k ] );
+}
 function objPlus( var_args ) {
     var result = {};
-    for ( var i = 0, n = arguments.length; i < n; i++ ) {
-        var obj = arguments[ i ];
-        for ( var k in obj )
-            if ( {}.hasOwnProperty.call( obj, k ) )
-                result[ k ] = obj[ k ];
-    }
+    for ( var i = 0, n = arguments.length; i < n; i++ )
+        objEachOwn( arguments[ i ], function ( k, v ) {
+            result[ k ] = v;
+        } );
     return result;
 }
 function isArray( x ) {
@@ -27,6 +30,48 @@ function isArray( x ) {
 function isPrimString( x ) {
     return typeof x === "string";
 }
+
+function StrMap() {
+    this.contents_ = {};
+};
+StrMap.prototype.mangle_ = function ( k ) {
+    return "|" + k;
+};
+StrMap.prototype.unmangle_ = function ( k ) {
+    return k.substring( 1 );
+};
+StrMap.prototype.has = function ( k ) {
+    return {}.hasOwnProperty.call(
+        this.contents_, this.mangle_( k ) );
+};
+StrMap.prototype.get = function ( k ) {
+    return this.contents_[ this.mangle_( k ) ];
+};
+StrMap.prototype.rem = function ( k ) {
+    delete this.contents_[ this.mangle_( k ) ];
+    return this;
+};
+StrMap.prototype.set = function ( k, v ) {
+    this.contents_[ this.mangle_( k ) ] = v;
+    return this;
+};
+StrMap.prototype.setObj = function ( obj ) {
+    var self = this;
+    objEachOwn( obj, function ( k, v ) {
+        self.set( k, v );
+    } );
+    return this;
+};
+StrMap.prototype.plus = function ( other ) {
+    if ( !(other instanceof StrMap) )
+        throw new Error();
+    var result = new StrMap();
+    result.contents_ = objPlus( this.contents_, other.contents_ );
+    return result;
+};
+StrMap.prototype.plusObj = function ( other ) {
+    return this.plus( new StrMap().setObj( other ) );
+};
 
 function logJson( x ) {
     console.log( JSON.stringify( x ) );
@@ -55,7 +100,7 @@ function reader( $ ) {
     $.stream.peekc( function ( c ) {
         if ( c === "" )
             return void $.end( $ );
-        var readerMacro = $.readerMacros[ c ];
+        var readerMacro = $.readerMacros.get( c );
         if ( readerMacro === void 0 )
             return void $.unrecognized( $ );
         readerMacro( $ );
@@ -63,7 +108,7 @@ function reader( $ ) {
 }
 function addReaderMacros( readerMacros, string, func ) {
     for ( var i = 0, n = string.length; i < n; i++ )
-        readerMacros[ string.charAt( i ) ] = func;
+        readerMacros.set( string.charAt( i ), func );
 }
 // NOTE: The readListUntilParen() function is only for use by the "("
 // and "/" reader macros to reduce duplication.
@@ -71,7 +116,7 @@ function readListUntilParen( $, consumeParen ) {
     function sub( $, list ) {
         return objPlus( $, {
             list: list,
-            readerMacros: objPlus( $.readerMacros, { ")":
+            readerMacros: $.readerMacros.plusObj( { ")":
                 function ( $sub ) {
                 
                 if ( consumeParen )
@@ -108,11 +153,11 @@ function readListUntilParen( $, consumeParen ) {
 
 var symbolChars = "abcdefghijklmnopqrstuvwxyz";
 symbolChars += symbolChars.toUpperCase() + "-*0123456789";
-var symbolChopsChars = { "(": ")", "[": "]" };
+var symbolChopsChars = new StrMap().setObj( { "(": ")", "[": "]" } );
 var whiteChars = " \t\r\n";
 
-var readerMacros = {};
-readerMacros[ ";" ] = function ( $ ) {
+var readerMacros = new StrMap();
+readerMacros.set( ";", function ( $ ) {
     function loop() {
         $.stream.readc( function ( c ) {
             if ( c === "" )
@@ -123,7 +168,7 @@ readerMacros[ ";" ] = function ( $ ) {
         } );
     }
     loop();
-};
+} );
 addReaderMacros( readerMacros, whiteChars, function ( $ ) {
     $.stream.readc( function ( c ) {
         reader( $ );
@@ -150,11 +195,11 @@ addReaderMacros( readerMacros, symbolChars, function ( $ ) {
         $.stream.peekc( function ( c ) {
             if ( c === ""
                 || (symbolChars.indexOf( c ) === -1
-                    && symbolChopsChars[ c ] === void 0) )
+                    && !symbolChopsChars.has( c )) )
                 return void $.then( { ok: true, val: stringSoFar } );
             $.stream.readc( function ( open ) {
                 var nextStringSoFar = stringSoFar + open;
-                var close = symbolChopsChars[ open ];
+                var close = symbolChopsChars.get( open );
                 if ( close !== void 0 )
                     collectChops( nextStringSoFar, open, close, 1 );
                 else
@@ -164,12 +209,12 @@ addReaderMacros( readerMacros, symbolChars, function ( $ ) {
     }
     collect( "" );
 } );
-readerMacros[ "(" ] = function ( $ ) {
+readerMacros.set( "(", function ( $ ) {
     readListUntilParen( $, !!"consumeParen" );
-};
-readerMacros[ "/" ] = function ( $ ) {
+} );
+readerMacros.set( "/", function ( $ ) {
     readListUntilParen( $, !"consumeParen" );
-};
+} );
 
 function stringStream( string ) {
     var i = 0, n = string.length;
@@ -209,10 +254,12 @@ unitTests.push( function ( then ) {
             then();
         }
     } );
-} )
+} );
 
 
 // ===== Macroexpander ===============================================
+
+// TODO: This section is extremely incomplete. Develop it further.
 
 function macroexpand( macros, expr ) {
     if ( !(isArray( expr ) && 0 < expr.length) )
@@ -223,15 +270,15 @@ function macroexpand( macros, expr ) {
         return { ok: false, msg:
             "Can only macroexpand Arrays with strings at the " +
             "beginning" };
-    var macro = macros[ op ];
+    var macro = macros.get( op );
     if ( macro === void 0 )
         return { ok: false, msg: "Unknown macro " + op };
     return macro( macroexpand, macros, expr.slice( 1 ) );
 }
 
-var macros = {};
+var macros = new StrMap();
 // TODO: This is just for getting started. Remove it.
-macros[ "log" ] = function ( expand, macros, subexprs ) {
+macros.set( "log", function ( expand, macros, subexprs ) {
     if ( subexprs.length !== 1 )
         return { ok: false, msg: "Incorrect number of args to log" };
     var msg = subexprs[ 0 ];
@@ -239,7 +286,7 @@ macros[ "log" ] = function ( expand, macros, subexprs ) {
         return { ok: false, msg: "Incorrect args to log" };
     logJson( msg );
     return { ok: true, val: [ "noop" ] };
-};
+} );
 
 unitTests.push( function ( then ) {
     logJson( macroexpand( macros, [ "log", "hello" ] ) );
@@ -247,6 +294,85 @@ unitTests.push( function ( then ) {
         then();
     } );
 } );
+
+
+// ===== Alppha-equivalent pattern matching ==========================
+
+function makeAlphaGrammar( spec ) {
+    var n = spec.length;
+    
+    // Validate.
+    var names = new StrMap();
+    for ( var i = 0; i < n; i++ ) {
+        var specPart = spec[ i ];
+        if ( !isPrimString( specPart ) )
+            continue;
+        if ( names.has( specPart ) )
+            throw new Error(
+                "Can't have duplicate names in a makeAlphaGrammar " +
+                "spec" );
+        names.set( specPart, true );
+    }
+    var depMaps = {};
+    for ( var i = 0; i < n; i++ ) {
+        var specPart = spec[ i ];
+        if ( !isArray( specPart ) )
+            continue;
+        var depMap = depMaps[ i ] = new StrMap();
+        for ( var j = 0, m = specPart.length; j < m; j++ ) {
+            var dep = specPart[ j ];
+            if ( !(isPrimString( dep ) && names.has( dep )) )
+                throw new Error(
+                    "Invalid term dependency in makeAlphaGrammar" );
+            if ( depMap.has( dep ) )
+                throw new Error(
+                    "Duplicate term dependency in makeAlphaGrammar" );
+            depMap.set( dep, true );
+        }
+    }
+    
+    return function ( matcher, alphaGrammars, freeVars, termParams ) {
+        if ( termParams.length !== n )
+            return { ok: false, msg: "Mismatched length" };
+        var bindings = new StrMap();
+        for ( var i = 0; i < n; i++ ) {
+            var specPart = spec[ i ];
+            var termPart = term[ i ];
+            if ( !isPrimString( specPart ) )
+                continue;
+            if ( !isString( termPart ) )
+                return { ok: false, msg: "Expected a variable" };
+            bindings.set( specPart, termPart );
+        }
+        // TODO: Figure out what should really be part of a match.
+        var fullMatch = {
+            boundTrees: new StrMap(),
+            boundVars: new StrMap()
+        };
+        for ( var i = 0; i < n; i++ ) {
+            var specPart = spec[ i ];
+            var termPart = term[ i ];
+            if ( !isArray( specPart ) )
+                continue;
+            // TODO: Implement mask().
+            // TODO: Decide if this is really going to be the format
+            // of freeVars.
+            var submatch = matcher( alphaGrammars,
+                freeVars.plus( bindings.mask( depMaps[ i ] ) ),
+                termPart );
+            if ( !submatch.ok )
+                return submatch;
+            // TODO: Handle a successful match.
+        }
+        return { ok: true, val: fullMatch };
+    };
+}
+
+var alphaGrammars = new StrMap();
+// TODO: This is just for getting started. Remove it.
+alphaGrammars.set( "fn", makeAlphaGrammar( [ "x", [ "x" ] ] ) );
+
+// TODO: Write a unit test.
 
 
 // ===== Unit test runner ============================================
