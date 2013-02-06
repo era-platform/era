@@ -56,7 +56,7 @@ function reader( $ ) {
         if ( c === "" )
             return void $.end( $ );
         var readerMacro = $.readerMacros[ c ];
-        if ( !readerMacro )
+        if ( readerMacro === void 0 )
             return void $.unrecognized( $ );
         readerMacro( $ );
     } );
