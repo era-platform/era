@@ -11,17 +11,46 @@ function defer( body ) {
         body();
     }, 0 );
 }
-function objEachOwn( obj, body ) {
+function arrMap( arr, func ) {
+    var result = [];
+    for ( var i = 0, n = arr.length; i < n; i++ )
+        result.push( func( arr[ i ], i ) );
+    return result;
+}
+function hasOwn( obj, k ) {
+    return {}.hasOwnProperty.call( obj, k );
+}
+// NOTE: This body takes its args as ( v, k ).
+function objOwnAny( obj, body ) {
     for ( var k in obj )
-        if ( {}.hasOwnProperty.call( obj, k ) )
-            body( k, obj[ k ] );
+        if ( hasOwn( obj, k ) ) {
+            var result = body( obj[ k ], k );
+            if ( result )
+                return result;
+        }
+    return false;
+}
+// NOTE: This body takes its args as ( k, v ).
+function objOwnEach( obj, body ) {
+    objOwnAny( obj, function ( v, k ) {
+        body( k, v );
+        return false;
+    } );
 }
 function objPlus( var_args ) {
     var result = {};
     for ( var i = 0, n = arguments.length; i < n; i++ )
-        objEachOwn( arguments[ i ], function ( k, v ) {
+        objOwnEach( arguments[ i ], function ( k, v ) {
             result[ k ] = v;
         } );
+    return result;
+}
+function objMinus( a, b ) {
+    var result = {};
+    objOwnEach( a, function ( k, v ) {
+        if ( !hasOwn( b, k ) )
+            result[ k ] = v;
+    } );
     return result;
 }
 function isArray( x ) {
@@ -47,7 +76,7 @@ StrMap.prototype.has = function ( k ) {
 StrMap.prototype.get = function ( k ) {
     return this.contents_[ this.mangle_( k ) ];
 };
-StrMap.prototype.rem = function ( k ) {
+StrMap.prototype.del = function ( k ) {
     delete this.contents_[ this.mangle_( k ) ];
     return this;
 };
@@ -57,20 +86,63 @@ StrMap.prototype.set = function ( k, v ) {
 };
 StrMap.prototype.setObj = function ( obj ) {
     var self = this;
-    objEachOwn( obj, function ( k, v ) {
+    objOwnEach( obj, function ( k, v ) {
         self.set( k, v );
     } );
     return this;
 };
+StrMap.prototype.setAll = function ( other ) {
+    if ( !(other instanceof StrMap) )
+        throw new Error();
+    var self = this;
+    other.each( function ( k, v ) {
+        self.set( k, v );
+    } );
+    return this;
+};
+StrMap.prototype.copy = function () {
+    return new StrMap().setAll( this );
+};
+StrMap.prototype.add = function ( k ) {
+    return this.set( k, true );
+};
 StrMap.prototype.plus = function ( other ) {
+    return this.copy().setAll( other );
+};
+StrMap.prototype.plusObj = function ( other ) {
+    return this.copy().setObj( other );
+};
+// TODO: Find a better name for this.
+StrMap.prototype.plusArrTruth = function ( arr ) {
+    var result = this.copy();
+    for ( var i = 0, n = arr.length; i < n; i++ )
+        result.add( arr[ i ] );
+    return result;
+};
+StrMap.prototype.minus = function ( other ) {
     if ( !(other instanceof StrMap) )
         throw new Error();
     var result = new StrMap();
-    result.contents_ = objPlus( this.contents_, other.contents_ );
+    result.contents_ = objMinus( this.contents_, other.contents_ );
     return result;
 };
-StrMap.prototype.plusObj = function ( other ) {
-    return this.plus( new StrMap().setObj( other ) );
+// TODO: Find a better name for this.
+StrMap.prototype.minusArrTruth = function ( arr ) {
+    return this.minus( new StrMap().plusArrTruth( arr ) );
+};
+// NOTE: This body takes its args as ( v, k ).
+StrMap.prototype.any = function ( body ) {
+    var self = this;
+    return objOwnAny( this.contents_, function ( v, k ) {
+        return body( v, self.unmangle_( k ) );
+    } );
+};
+// NOTE: This body takes its args as ( k, v ).
+StrMap.prototype.each = function ( body ) {
+    this.any( function ( v, k ) {
+        body( k, v );
+        return false;
+    } );
 };
 
 function logJson( x ) {
@@ -301,7 +373,7 @@ unitTests.push( function ( then ) {
 function makeAlphaGrammar( spec ) {
     var n = spec.length;
     
-    // Validate.
+    // Validate the spec.
     var names = new StrMap();
     for ( var i = 0; i < n; i++ ) {
         var specPart = spec[ i ];
@@ -311,67 +383,280 @@ function makeAlphaGrammar( spec ) {
             throw new Error(
                 "Can't have duplicate names in a makeAlphaGrammar " +
                 "spec" );
-        names.set( specPart, true );
+        names.set( specPart, i );
     }
-    var depMaps = {};
-    for ( var i = 0; i < n; i++ ) {
-        var specPart = spec[ i ];
-        if ( !isArray( specPart ) )
-            continue;
-        var depMap = depMaps[ i ] = new StrMap();
-        for ( var j = 0, m = specPart.length; j < m; j++ ) {
-            var dep = specPart[ j ];
-            if ( !(isPrimString( dep ) && names.has( dep )) )
-                throw new Error(
-                    "Invalid term dependency in makeAlphaGrammar" );
-            if ( depMap.has( dep ) )
-                throw new Error(
-                    "Duplicate term dependency in makeAlphaGrammar" );
-            depMap.set( dep, true );
+    var namelessSpec = arrMap( spec, function ( specPart ) {
+        if ( isPrimString( specPart ) ) {
+            return null;
+        } else if ( isArray( specPart ) ) {
+            var result = [];
+            var deps = new StrMap();
+            for ( var j = 0, m = specPart.length; j < m; j++ ) {
+                var dep = specPart[ j ];
+                if ( !(isPrimString( dep ) && names.has( dep )) )
+                    throw new Error(
+                        "Invalid term dependency in makeAlphaGrammar"
+                        );
+                if ( deps.has( dep ) )
+                    throw new Error(
+                        "Duplicate term dependency in " +
+                        "makeAlphaGrammar" );
+                deps.add( dep );
+                result.push( names.get( dep ) );
+            }
+            return result;
+        } else {
+            throw new Error( "Invalid entry in makeAlphaGrammar" );
         }
+    } );
+    function nameTerm( params ) {
+        if ( params.length !== n )
+            return { ok: false, msg: "Mismatched term length" };
+        
+        var bindings = new StrMap();
+        for ( var i = 0; i < n; i++ ) {
+            var param = params[ i ];
+            if ( namelessSpec[ i ] === null
+                && !isPrimString( param ) )
+                return { ok: false, msg: "Var expected" };
+            if ( bindings.has( param ) )
+                return { ok: false, msg: "Duplicate var" };
+            bindings.add( param );
+        }
+        return { ok: true, val: arrMap( spec, function ( specPart ) {
+            if ( specPart === null )
+                return null;
+            return { boundVars: arrMap( specPart, function ( i ) {
+                return params[ i ];
+            } ), term: specPart };
+        } ) };
     }
     
     var result = {};
-    result.match = function (
-        matcher, alphaGrammars, freeVars, termParams ) {
+    result.verifyNoInsbs = function (
+        matcher, alphaGrammars, patParams ) {
         
-        if ( termParams.length !== n )
-            return { ok: false, msg: "Mismatched length" };
-        var bindings = new StrMap();
+        var namedPat = nameTerm( patParams );
+        if ( !namedPat.ok )
+            return namedPat;
         for ( var i = 0; i < n; i++ ) {
-            var specPart = spec[ i ];
-            var termPart = term[ i ];
-            if ( !isPrimString( specPart ) )
+            var patPart = namedPat[ i ];
+            if ( patPart === null )
                 continue;
-            if ( !isString( termPart ) )
-                return { ok: false, msg: "Expected a variable" };
-            if ( bindings.has( termPart ) )
-                return { ok: false, msg: "Duplicate bound variable" };
-            bindings.set( termPart, specPart );
-        }
-        // TODO: Figure out what should really be part of a match.
-        var fullMatch = {
-            boundTrees: new StrMap(),
-            boundVars: new StrMap()
-        };
-        for ( var i = 0; i < n; i++ ) {
-            var specPart = spec[ i ];
-            var termPart = term[ i ];
-            if ( !isArray( specPart ) )
+            if ( isPrimString( patPart.term ) )
                 continue;
-            // TODO: Implement mask().
-            // TODO: Decide if this is really going to be the format
-            // of freeVars.
-            var submatch = matcher.match( alphaGrammars,
-                freeVars.plus( bindings.mask( depMaps[ i ] ) ),
-                termPart );
-            if ( !submatch.ok )
-                return submatch;
-            // TODO: Handle a successful match.
+            var partLen = patPart.term.length;
+            if ( partLen === 0 )
+                return { ok: false, msg: "Empty array" };
+            var specialFormName = patPart.term[ 0 ];
+            if ( !isPrimString( specialFormName ) )
+                return { ok: false, msg:
+                    "Array started with a non-string." };
+            if ( specialFormName === "insbs" )
+                return { ok: false, msg: "Found insbs" };
+            if ( specialFormName === "outsbs" ) {
+                if ( partLen < 2 )
+                    return { ok: false, msg:
+                        "Not enough args to outsbs" };
+                var treeName = patPart.term[ 1 ];
+                if ( !isPrimString( treeName ) )
+                    return { ok: false, msg:
+                        "First arg to outsbs must be a tree " +
+                        "name" };
+                var treeParams = patPart.term.slice( 2 );
+                for ( var j = 0, m = treeParams.length;
+                    j < m; j++ ) {
+                    // TODO: Implement matcher.verifyNoInsbs().
+                    var verified = matcher.verifyNoInsbs(
+                        alphaGrammars, treeParam );
+                    if ( !verified.ok )
+                        return verified;
+                }
+                continue;
+            }
+            var verified = matcher.verifyNoInsbs(
+                alphaGrammars, patPart.term );
+            if ( !verified.ok )
+                return verified;
         }
-        return { ok: true, val: fullMatch };
+        return { ok: true, val: null };
     };
-    return result;
+    result.makePattern = function (
+        matcher, alphaGrammars, boundVars, patParams ) {
+        
+        var namedPat = nameTerm( patParams );
+        if ( !namedPat.ok )
+            return namedPat;
+        var parsedPat = [];
+        var result = {};
+        result.freeVars = new StrMap();
+        result.treeNames = new StrMap();
+        function addTreeName( treeName ) {
+            if ( result.treeNames.has( treeName ) )
+                return { ok: false, msg: "Duplicate tree name" };
+            result.treeNames.add( treeName );
+        }
+        for ( var i = 0; i < n; i++ ) {
+            var patPart = namedPat[ i ];
+            if ( patPart === null ) {
+                parsedPat.push( { type: "var" } );
+                continue;
+            }
+            var theseBoundVars =
+                boundVars.plusArrTruth( patPart.boundVars );
+            var processSubpat = function () {
+                // TODO: Implement matcher.makePattern().
+                var subpat = matcher.makePattern(
+                    alphaGrammars, theseBoundVars, patPart.term );
+                if ( !subpat.ok )
+                    return subpat;
+                subpat.val.treeNames.each( function ( treeName ) {
+                    addTreeName( treeName );
+                } );
+                result.freeVars.setAll(
+                    subpat.val.freeVars.minusArrTruth(
+                        patPart.boundVars ) );
+                parsedPat.push( { type: "subpat",
+                    boundVars: patPart.boundVars,
+                    subpat: subpat.val.pat } );
+            };
+            if ( isPrimString( patPart.term ) ) {
+                var subpatResult = processSubpat();
+                if ( !subpatResult.ok )
+                    return subpatResult;
+                continue;
+            }
+            var partLen = patPart.term.length;
+            if ( partLen === 0 )
+                return { ok: false, msg: "Empty array" };
+            var specialFormName = patPart.term[ 0 ];
+            if ( !isPrimString( specialFormName ) )
+                return { ok: false, msg:
+                    "Array started with a non-string." };
+            if ( specialFormName === "insbs" ) {
+                if ( partLen < 2 )
+                    return { ok: false, msg:
+                        "Not enough args to insbs" };
+                var treeName = patPart.term[ 1 ];
+                if ( !isPrimString( treeName ) )
+                    return { ok: false, msg:
+                        "First arg to insbs must be a tree " +
+                        "name" };
+                var treeParams = patPart.term.slice( 2 );
+                if ( !arrAll( treeParams,
+                    function ( treeParam ) {
+                    
+                    return isPrimString( treeParam ) &&
+                        theseBoundVars.has( treeParam );
+                } ) )
+                    return { ok: false, msg:
+                        "Invalid tree param to insbs" };
+                var treeParamsMap = new StrMap();
+                for ( var j = 0, m = treeParams.length;
+                    j < m; j++ ) {
+                    if ( treeParamsMap.has( treeParam ) )
+                        return { ok: false, msg:
+                            "Tree params must be different" };
+                    treeParamsMap.add( treeParam );
+                }
+                addTreeName( treeName );
+                parsedPat.push( { type: "insbs",
+                    boundVars: patPart.boundVars,
+                    name: treeName, params: treeParams } );
+                continue;
+            }
+            if ( specialFormName === "outsbs" ) {
+                if ( partLen < 2 )
+                    return { ok: false, msg:
+                        "Not enough args to outsbs" };
+                var treeName = patPart.term[ 1 ];
+                if ( !isPrimString( treeName ) )
+                    return { ok: false, msg:
+                        "First arg to outsbs must be a tree " +
+                        "name" };
+                var treeParams = patPart.term.slice( 2 );
+                for ( var j = 0, m = treeParams.length;
+                    j < m; j++ ) {
+                    var verified = matcher.verifyNoInsbs(
+                        alphaGrammars, treeParam );
+                    if ( !verified.ok )
+                        return verified;
+                }
+                parsedPat.push( { type: "outsbs",
+                    boundVars: patPart.boundVars,
+                    name: treeName, params: treeParams } );
+                continue;
+            }
+            var subpatResult = processSubpat();
+            if ( !subpatResult.ok )
+                return subpatResult;
+        }
+        
+        result.pat = {};
+        result.pat.getTrees = function (
+            matcher, toTreeVars, fromTreeVars, namedData ) {
+            
+            var trees = new StrMap();
+            for ( var i = 0; i < n; i++ ) {
+                var patPart = parsedPat[ i ];
+                var dataPart = namedData[ i ];
+                if ( patPart.type === "var" )
+                    continue;
+                var theseToTreeVars = toTreeVars.copy();
+                var theseFromTreeVars = fromTreeVars.copy();
+                for ( var j = 0, m = patPart.boundVars.length;
+                    j < m; j++ )
+                    theseToTreeVars.del( theseFromTreeVars.get(
+                        patPart.boundVars[ j ] ) );
+                for ( var j = 0, m = patPart.boundVars.length;
+                    j < m; j++ ) {
+                    theseFromTreeVars.set( patPart.boundVars[ j ],
+                        dataPart.boundVars[ j ] );
+                    theseToTreeVars.set( dataPart.boundVars[ j ],
+                        patPart.boundVars[ j ] );
+                }
+                if ( patPart.type === "insbs" ) {
+                    trees.set( patPart.name, { params:
+                        arrMap( patPart.params, function ( treeVar ) {
+                            return theseFromTreeVars.get( treeVar );
+                        } ), term: dataPart.term } );
+                } else if ( patPart.type === "subpat" ) {
+                    // TODO: Implement matcher.getTrees().
+                    var subtrees = matcher.getTrees( patPart.subpat,
+                        theseToTreeVars, theseFromTreeVars, dataPart
+                        );
+                    if ( !subtrees.ok )
+                        return subtrees;
+                    trees.setAll( subtrees.val );
+                }
+            }
+            return { ok: true, val: trees };
+        };
+        result.pat.getLeaves = function (
+            matcher, alphaGrammars, trees, boundVars, namedData ) {
+            
+            var leaves = new StrMap();
+            for ( var i = 0; i < n; i++ ) {
+                var patPart = parsedPat[ i ];
+                var dataPart = namedData[ i ];
+                if ( patPart.type === "outsbs" ) {
+                    // TODO: Implement this case.
+                } else if ( patPart.type === "subpat" ) {
+                    // TODO: Implement matcher.getLeaves().
+                    var subleaves = matcher.getLeaves(
+                        patPart, alphaGrammars, trees,
+                        boundVars.plusArrTruth( dataPart.boundVars ),
+                        dataPart.term );
+                    if ( !subleaves.ok )
+                        return subleaves;
+                    leaves.setAll( subleaves.val );
+                }
+            }
+            return { ok: true, val: leaves };
+        };
+        return { ok: true, val: result };
+    };
+    return { ok: true, val: result };
 }
 
 var alphaGrammars = new StrMap();
