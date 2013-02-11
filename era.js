@@ -640,7 +640,32 @@ function makeAlphaGrammar( spec ) {
                 var patPart = parsedPat[ i ];
                 var dataPart = namedData[ i ];
                 if ( patPart.type === "outsbs" ) {
-                    // TODO: Implement this case.
+                    if ( !trees.has( patPart.name ) )
+                        return { ok: false, msg:
+                            "Unrecognized tree name" };
+                    var tree = trees.get( patPart.name );
+                    var numParams = tree.params.length;
+                    if ( patPart.params.length !== numParams )
+                        return { ok: false, msg:
+                            "Incorrect number of tree params" };
+                    var treeParams = new StrMap();
+                    for ( var i = 0; i < numParams; i++ )
+                        treeParams.set(
+                            tree.params[ i ], patPart.params[ i ] );
+                    // TODO: Implement matcher.getLeavesUnderTree().
+                    // Note that this pattern probably won't need its
+                    // own getLeavesUnderTree() method, since the
+                    // traversal of "namedData"-style data
+                    // representations doesn't require the use of
+                    // parsedPat.
+                    var subleaves = matcher.getLeavesUnderTree(
+                        patPart, alphaGrammars, treeParams, tree.term,
+                        trees,
+                        boundVars.plusArrTruth( dataPart.boundVars ),
+                        dataPart.term );
+                    if ( !subleaves.ok )
+                        return subleaves;
+                    leaves.setAll( subleaves.val );
                 } else if ( patPart.type === "subpat" ) {
                     // TODO: Implement matcher.getLeaves().
                     var subleaves = matcher.getLeaves(
