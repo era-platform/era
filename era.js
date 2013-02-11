@@ -438,6 +438,9 @@ function makeAlphaGrammar( spec ) {
     }
     
     var result = {};
+    result.parseData = function ( dataParams ) {
+        return nameTerm( dataParams );
+    };
     result.parsePattern = function (
         matcher, alphaGrammars, boundVars, patParams ) {
         
@@ -462,7 +465,7 @@ function makeAlphaGrammar( spec ) {
             var theseBoundVars =
                 boundVars.plusArrTruth( patPart.boundVars );
             var processSubpat = function () {
-                var subpat = matcher.parsePattern(
+                var subpat = matcher.parsePattern( matcher,
                     alphaGrammars, theseBoundVars, patPart.term );
                 if ( !subpat.ok )
                     return subpat;
@@ -533,7 +536,7 @@ function makeAlphaGrammar( spec ) {
                 var treeParams = patPart.term.slice( 2 );
                 var subpats = [];
                 for ( var j = 0, m = treeParams.length; j < m; j++ ) {
-                    var subpat = matcher.parsePattern(
+                    var subpat = matcher.parsePattern( matcher,
                         alphaGrammars, theseBoundVars, patPart.term );
                     if ( !subpat.ok )
                         return subpat;
@@ -584,7 +587,8 @@ function makeAlphaGrammar( spec ) {
                             return theseFromTreeVars.get( treeVar );
                         } ), term: dataPart.term } );
                 } else if ( patPart.type === "subpat" ) {
-                    var subtrees = matcher.getTrees( patPart.subpat,
+                    var subtrees = matcher.getTrees( matcher,
+                        patPart.subpat,
                         theseToTreeVars, theseFromTreeVars,
                         dataPart.term );
                     if ( !subtrees.ok )
@@ -639,17 +643,73 @@ function makeAlphaGrammar( spec ) {
 }
 
 var matcher = {};
-matcher.parsePattern = function ( alphaGrammars, boundVars, term ) {
-    // TODO: Implement this in terms of grammars' parsePattern(
-    // matcher, alphaGrammars, boundVars, patParams ) method. That
-    // method returns a patWithoutInfo (among other things), and this
-    // one will return a patWithInfo (among other things).
+matcher.parsePattern = function (
+    matcher, alphaGrammars, boundVars, term ) {
+    
+    // NOTE: The grammars' parsePattern( matcher, alphaGrammars,
+    // boundVars, patParams ) method returns a patWithoutInfo (among
+    // other things), and this returns a patWithInfo (among other
+    // things).
+    if ( isPrimString( term ) ) {
+        var result = {};
+        result.treeNames = new StrMap();
+        result.freeVars = new StrMap().plusArrTruth( [ term ] ).
+            minusArrTruth( boundVars );
+        result.patWithInfo = {};
+        result.patWithInfo.isArrayPat = false;
+        return { ok: true, val: result };
+    }
+    if ( term.length === 0 )
+        return { ok: false, msg:
+            "Can't parse a pattern from an empty Array" };
+    var op = term[ 0 ];
+    if ( !(isPrimString( op ) && alphaGrammars.has( op )) )
+        return { ok: false, msg: "Unrecognized pattern name" };
+    var grammar = alphaGrammars.get( op );
+    var pattern = grammar.parsePattern(
+        matcher, alphaGrammars, boundVars, term.slice( 1 ) );
+    if ( !pattern.ok )
+        return pattern;
+    var result = {};
+    result.treeNames = pattern.val.treeNames;
+    result.freeVars = pattern.val.freeVars;
+    result.patWithInfo = {};
+    result.patWithInfo.isArrayPat = true;
+    result.patWithInfo.arrayPatName = op;
+    result.patWithInfo.arrayAlphaGrammar = grammar;
+    result.patWithInfo.patWithoutInfo = pattern.val.patWithoutInfo;
+    return { ok: true, val: result };
 };
 matcher.getTrees = function (
-    patWithInfo, toTreeVars, fromTreeVars, data ) {
+    matcher, patWithInfo, toTreeVars, fromTreeVars, data ) {
     
-    // TODO: Implement this in terms of patterns' getTrees(
-    // matcher, toTreeVars, fromTreeVars, namedData ) method.
+    if ( patWithInfo.isArrayPat ) {
+        if ( !isArray( data ) )
+            return { ok: false, msg:
+                "Can't get trees when trying to match an Array " +
+                "pattern to a non-Array" };
+        if ( data.length === 0 )
+            return { ok: false, msg:
+                "Can't get trees when trying to match an Array " +
+                "pattern to an empty Array" };
+        if ( data[ 0 ] !== patWithInfo.arrayPatName )
+            return { ok: false, msg:
+                "Can't get trees when trying to match an Array " +
+                "pattern to an Array with a different operator" };
+        // TODO: See if we actually need parseData() or if we should
+        // just pass the data params directly to getTrees().
+        var namedData = patWithInfo.arrayAlphaGrammar.parseData(
+            data.slice( 1 ) );
+        if ( !namedData.ok )
+            return namedData;
+        return patWithInfo.patWithoutInfo.getTrees(
+            matcher, toTreeVars, fromTreeVars, namedData );
+    }
+    if ( !isPrimString( data ) )
+        return { ok: false, msg:
+            "Can't get trees when trying to match a non-Array " +
+            "pattern to a non-string." };
+    return { ok: true, val: new StrMap() };
 };
 matcher.getLeavesUnderTree = function ( baseTreeParams, baseTreeTerm,
     alphaGrammars, trees, boundVars, data ) {
