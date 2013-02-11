@@ -599,12 +599,22 @@ function makeAlphaGrammar( spec ) {
             return { ok: true, val: trees };
         };
         result.patWithoutInfo.getLeaves = function (
-            matcher, alphaGrammars, trees, boundVars, namedData ) {
+            matcher, alphaGrammars, trees, toPatVars, namedData ) {
             
             var leaves = new StrMap();
             for ( var i = 0; i < n; i++ ) {
                 var patPart = parsedPat[ i ];
                 var dataPart = namedData[ i ];
+                var getTheseToPatVars = function () {
+                    var n = patPart.boundVars.length;
+                    if ( dataPart.boundVars.length !== n )
+                        throw new Error();
+                    var result = toPatVars.copy();
+                    for ( var i = 0; i < n; i++ )
+                        result.set( dataPart.boundVars[ i ],
+                            patPart.boundVars[ i ] );
+                    return result;
+                };
                 if ( patPart.type === "outsbs" ) {
                     if ( !trees.has( patPart.name ) )
                         return { ok: false, msg:
@@ -620,16 +630,14 @@ function makeAlphaGrammar( spec ) {
                             tree.params[ i ], patPart.params[ i ] );
                     var subleaves = matcher.getLeavesUnderTree(
                         treeParams, tree.term, alphaGrammars, trees,
-                        boundVars.plusArrTruth( dataPart.boundVars ),
-                        dataPart.term );
+                        getTheseToPatVars(), dataPart.term );
                     if ( !subleaves.ok )
                         return subleaves;
                     leaves.setAll( subleaves.val );
                 } else if ( patPart.type === "subpat" ) {
                     var subleaves = matcher.getLeaves(
                         patPart.subpat, alphaGrammars, trees,
-                        boundVars.plusArrTruth( dataPart.boundVars ),
-                        dataPart.term );
+                        getTheseToPatVars(), dataPart.term );
                     if ( !subleaves.ok )
                         return subleaves;
                     leaves.setAll( subleaves.val );
@@ -651,13 +659,21 @@ matcher.parsePattern = function (
     // other things), and this returns a patWithInfo (among other
     // things).
     if ( isPrimString( term ) ) {
-        var result = {};
-        result.treeNames = new StrMap();
-        result.freeVars = new StrMap().plusArrTruth( [ term ] ).
-            minusArrTruth( boundVars );
-        result.patWithInfo = {};
-        result.patWithInfo.isArrayPat = false;
-        return { ok: true, val: result };
+        if ( boundVars.has( term ) {
+            var result = {};
+            result.treeNames = new StrMap();
+            result.freeVars = new StrMap();
+            result.patWithInfo =
+                { type: "boundVar", boundVarName: term };
+            return { ok: true, val: result };
+        } else {
+            var result = {};
+            result.treeNames = new StrMap();
+            result.freeVars = new StrMap().plusArrTruth( [ term ] );
+            result.patWithInfo =
+                { type: "freeVar", freeVarName: term };
+            return { ok: true, val: result };
+        }
     }
     if ( term.length === 0 )
         return { ok: false, msg:
@@ -673,17 +689,15 @@ matcher.parsePattern = function (
     var result = {};
     result.treeNames = pattern.val.treeNames;
     result.freeVars = pattern.val.freeVars;
-    result.patWithInfo = {};
-    result.patWithInfo.isArrayPat = true;
-    result.patWithInfo.arrayPatName = op;
-    result.patWithInfo.arrayAlphaGrammar = grammar;
-    result.patWithInfo.patWithoutInfo = pattern.val.patWithoutInfo;
+    result.patWithInfo = { type: "form", arrayPatName: op,
+        arrayAlphaGrammar: grammar,
+        patWithoutInfo: pattern.val.patWithoutInfo };
     return { ok: true, val: result };
 };
 matcher.getTrees = function (
     matcher, patWithInfo, toTreeVars, fromTreeVars, data ) {
     
-    if ( patWithInfo.isArrayPat ) {
+    if ( patWithInfo.type === "form" ) {
         if ( !isArray( data ) )
             return { ok: false, msg:
                 "Can't get trees when trying to match an Array " +
@@ -704,28 +718,77 @@ matcher.getTrees = function (
             return namedData;
         return patWithInfo.patWithoutInfo.getTrees(
             matcher, toTreeVars, fromTreeVars, namedData );
+    } else if ( patWithInfo.type === "boundVar" ) {
+        if ( !isPrimString( data ) )
+            return { ok: false, msg:
+                "Can't get trees when trying to match a boundVar " +
+                "pattern to a non-string." };
+        return { ok: true, val: new StrMap() };
+    } else if ( patWithInfo.type === "freeVar" ) {
+        return { ok: true, val: new StrMap() };
+    } else {
+        throw new Error();
     }
-    if ( !isPrimString( data ) )
-        return { ok: false, msg:
-            "Can't get trees when trying to match a non-Array " +
-            "pattern to a non-string." };
-    return { ok: true, val: new StrMap() };
 };
 matcher.getLeavesUnderTree = function ( baseTreeParams, baseTreeTerm,
-    alphaGrammars, trees, boundVars, data ) {
+    alphaGrammars, trees, toPatVars, data ) {
     
     // TODO: Implement this in terms of patterns' getLeaves(
-    // matcher, alphaGrammars, trees, boundVars, namedData ) method.
+    // matcher, alphaGrammars, trees, toPatVars, namedData ) method.
     // Note that patterns probably won't need their own
     // getLeavesUnderTree() method, since the traversal of
     // "namedData"-style data representations doesn't require the use
     // of grammar-specific details.
+/*
+    if ( isPrimString( baseTreeTerm ) ) {
+        if ( baseTreeParams.has( baseTreeTerm ) )
+            return matcher.getLeaves(
+                baseTreeParams.get( baseTreeTerm ),
+                alphaGrammars, trees, toPatVars, data );
+    }
+*/
 };
 matcher.getLeaves = function (
-    patWithInfo, alphaGrammars, trees, boundVars, data ) {
+    patWithInfo, alphaGrammars, trees, toPatVars, data ) {
     
-    // TODO: Implement this in terms of patterns' getLeaves(
-    // matcher, alphaGrammars, trees, boundVars, namedData ) method.
+    if ( patWithInfo.type === "form" ) {
+        if ( !isArray( data ) )
+            return { ok: false, msg:
+                "Can't get leaves when trying to match an Array " +
+                "pattern to a non-Array" };
+        if ( data.length === 0 )
+            return { ok: false, msg:
+                "Can't get leaves when trying to match an Array " +
+                "pattern to an empty Array" };
+        if ( data[ 0 ] !== patWithInfo.arrayPatName )
+            return { ok: false, msg:
+                "Can't get leaves when trying to match an Array " +
+                "pattern to an Array with a different operator" };
+        // TODO: See if we actually need parseData() or if we should
+        // just pass the data params directly to getLeaves().
+        var namedData = patWithInfo.arrayAlphaGrammar.parseData(
+            data.slice( 1 ) );
+        if ( !namedData.ok )
+            return namedData;
+        return patWithInfo.patWithoutInfo.getLeaves(
+            matcher, alphaGrammars, trees, toPatVars, namedData );
+    } else if ( patWithInfo.type === "boundVar" ) {
+        if ( !isPrimString( data ) )
+            return { ok: false, msg:
+                "Can't get leaves when trying to match a boundVar " +
+                "pattern to a non-string" };
+        if ( !(toPatVars.has( data )
+            && toPatVars.get( data ) === patWithInfo.boundVarName) )
+            return { ok: false, msg:
+                "Can't get leaves when trying to match a boundVar " +
+                "pattern to an incorrect variable name" };
+        return { ok: true, val: new StrMap() };
+    } else if ( patWithInfo.type === "freeVar" ) {
+        return { ok: true, val:
+            new StrMap().set( patWithInfo.freeVarName, data ) };
+    } else {
+        throw new Error();
+    }
 };
 
 var alphaGrammars = new StrMap();
