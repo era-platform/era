@@ -137,6 +137,11 @@ StrMap.prototype.any = function ( body ) {
         return body( v, self.unmangle_( k ) );
     } );
 };
+StrMap.prototype.hasAny = function () {
+    return this.any( function ( v, k ) {
+        return true;
+    } );
+};
 // NOTE: This body takes its args as ( k, v ).
 StrMap.prototype.each = function ( body ) {
     this.any( function ( v, k ) {
@@ -433,55 +438,7 @@ function makeAlphaGrammar( spec ) {
     }
     
     var result = {};
-    result.verifyNoInsbs = function (
-        matcher, alphaGrammars, patParams ) {
-        
-        var namedPat = nameTerm( patParams );
-        if ( !namedPat.ok )
-            return namedPat;
-        for ( var i = 0; i < n; i++ ) {
-            var patPart = namedPat[ i ];
-            if ( patPart === null )
-                continue;
-            if ( isPrimString( patPart.term ) )
-                continue;
-            var partLen = patPart.term.length;
-            if ( partLen === 0 )
-                return { ok: false, msg: "Empty array" };
-            var specialFormName = patPart.term[ 0 ];
-            if ( !isPrimString( specialFormName ) )
-                return { ok: false, msg:
-                    "Array started with a non-string." };
-            if ( specialFormName === "insbs" )
-                return { ok: false, msg: "Found insbs" };
-            if ( specialFormName === "outsbs" ) {
-                if ( partLen < 2 )
-                    return { ok: false, msg:
-                        "Not enough args to outsbs" };
-                var treeName = patPart.term[ 1 ];
-                if ( !isPrimString( treeName ) )
-                    return { ok: false, msg:
-                        "First arg to outsbs must be a tree " +
-                        "name" };
-                var treeParams = patPart.term.slice( 2 );
-                for ( var j = 0, m = treeParams.length;
-                    j < m; j++ ) {
-                    // TODO: Implement matcher.verifyNoInsbs().
-                    var verified = matcher.verifyNoInsbs(
-                        alphaGrammars, treeParam );
-                    if ( !verified.ok )
-                        return verified;
-                }
-                continue;
-            }
-            var verified = matcher.verifyNoInsbs(
-                alphaGrammars, patPart.term );
-            if ( !verified.ok )
-                return verified;
-        }
-        return { ok: true, val: null };
-    };
-    result.makePattern = function (
+    result.parsePattern = function (
         matcher, alphaGrammars, boundVars, patParams ) {
         
         var namedPat = nameTerm( patParams );
@@ -505,8 +462,7 @@ function makeAlphaGrammar( spec ) {
             var theseBoundVars =
                 boundVars.plusArrTruth( patPart.boundVars );
             var processSubpat = function () {
-                // TODO: Implement matcher.makePattern().
-                var subpat = matcher.makePattern(
+                var subpat = matcher.parsePattern(
                     alphaGrammars, theseBoundVars, patPart.term );
                 if ( !subpat.ok )
                     return subpat;
@@ -518,7 +474,7 @@ function makeAlphaGrammar( spec ) {
                         patPart.boundVars ) );
                 parsedPat.push( { type: "subpat",
                     boundVars: patPart.boundVars,
-                    subpat: subpat.val.pat } );
+                    subpat: subpat.val.patWithInfo } );
             };
             if ( isPrimString( patPart.term ) ) {
                 var subpatResult = processSubpat();
@@ -575,16 +531,23 @@ function makeAlphaGrammar( spec ) {
                         "First arg to outsbs must be a tree " +
                         "name" };
                 var treeParams = patPart.term.slice( 2 );
-                for ( var j = 0, m = treeParams.length;
-                    j < m; j++ ) {
-                    var verified = matcher.verifyNoInsbs(
-                        alphaGrammars, treeParam );
-                    if ( !verified.ok )
-                        return verified;
+                var subpats = [];
+                for ( var j = 0, m = treeParams.length; j < m; j++ ) {
+                    var subpat = matcher.parsePattern(
+                        alphaGrammars, theseBoundVars, patPart.term );
+                    if ( !subpat.ok )
+                        return subpat;
+                    if ( subpat.val.treeNames.hasAny() )
+                        return { ok: false, val:
+                            "Can't have insbs inside outsbs" };
+                    result.freeVars.setAll(
+                        subpat.val.freeVars.minusArrTruth(
+                            patPart.boundVars ) );
+                    subpats.push( subpat.val.patWithInfo );
                 }
                 parsedPat.push( { type: "outsbs",
                     boundVars: patPart.boundVars,
-                    name: treeName, params: treeParams } );
+                    name: treeName, params: subpats } );
                 continue;
             }
             var subpatResult = processSubpat();
@@ -592,8 +555,8 @@ function makeAlphaGrammar( spec ) {
                 return subpatResult;
         }
         
-        result.pat = {};
-        result.pat.getTrees = function (
+        result.patWithoutInfo = {};
+        result.patWithoutInfo.getTrees = function (
             matcher, toTreeVars, fromTreeVars, namedData ) {
             
             var trees = new StrMap();
@@ -621,10 +584,9 @@ function makeAlphaGrammar( spec ) {
                             return theseFromTreeVars.get( treeVar );
                         } ), term: dataPart.term } );
                 } else if ( patPart.type === "subpat" ) {
-                    // TODO: Implement matcher.getTrees().
                     var subtrees = matcher.getTrees( patPart.subpat,
-                        theseToTreeVars, theseFromTreeVars, dataPart
-                        );
+                        theseToTreeVars, theseFromTreeVars,
+                        dataPart.term );
                     if ( !subtrees.ok )
                         return subtrees;
                     trees.setAll( subtrees.val );
@@ -632,7 +594,7 @@ function makeAlphaGrammar( spec ) {
             }
             return { ok: true, val: trees };
         };
-        result.pat.getLeaves = function (
+        result.patWithoutInfo.getLeaves = function (
             matcher, alphaGrammars, trees, boundVars, namedData ) {
             
             var leaves = new StrMap();
@@ -652,24 +614,16 @@ function makeAlphaGrammar( spec ) {
                     for ( var i = 0; i < numParams; i++ )
                         treeParams.set(
                             tree.params[ i ], patPart.params[ i ] );
-                    // TODO: Implement matcher.getLeavesUnderTree().
-                    // Note that this pattern probably won't need its
-                    // own getLeavesUnderTree() method, since the
-                    // traversal of "namedData"-style data
-                    // representations doesn't require the use of
-                    // parsedPat.
                     var subleaves = matcher.getLeavesUnderTree(
-                        patPart, alphaGrammars, treeParams, tree.term,
-                        trees,
+                        treeParams, tree.term, alphaGrammars, trees,
                         boundVars.plusArrTruth( dataPart.boundVars ),
                         dataPart.term );
                     if ( !subleaves.ok )
                         return subleaves;
                     leaves.setAll( subleaves.val );
                 } else if ( patPart.type === "subpat" ) {
-                    // TODO: Implement matcher.getLeaves().
                     var subleaves = matcher.getLeaves(
-                        patPart, alphaGrammars, trees,
+                        patPart.subpat, alphaGrammars, trees,
                         boundVars.plusArrTruth( dataPart.boundVars ),
                         dataPart.term );
                     if ( !subleaves.ok )
@@ -683,6 +637,36 @@ function makeAlphaGrammar( spec ) {
     };
     return { ok: true, val: result };
 }
+
+var matcher = {};
+matcher.parsePattern = function ( alphaGrammars, boundVars, term ) {
+    // TODO: Implement this in terms of grammars' parsePattern(
+    // matcher, alphaGrammars, boundVars, patParams ) method. That
+    // method returns a patWithoutInfo (among other things), and this
+    // one will return a patWithInfo (among other things).
+};
+matcher.getTrees = function (
+    patWithInfo, toTreeVars, fromTreeVars, data ) {
+    
+    // TODO: Implement this in terms of patterns' getTrees(
+    // matcher, toTreeVars, fromTreeVars, namedData ) method.
+};
+matcher.getLeavesUnderTree = function ( baseTreeParams, baseTreeTerm,
+    alphaGrammars, trees, boundVars, data ) {
+    
+    // TODO: Implement this in terms of patterns' getLeaves(
+    // matcher, alphaGrammars, trees, boundVars, namedData ) method.
+    // Note that patterns probably won't need their own
+    // getLeavesUnderTree() method, since the traversal of
+    // "namedData"-style data representations doesn't require the use
+    // of grammar-specific details.
+};
+matcher.getLeaves = function (
+    patWithInfo, alphaGrammars, trees, boundVars, data ) {
+    
+    // TODO: Implement this in terms of patterns' getLeaves(
+    // matcher, alphaGrammars, trees, boundVars, namedData ) method.
+};
 
 var alphaGrammars = new StrMap();
 // TODO: This is just for getting started. Remove it.
