@@ -60,10 +60,13 @@ function isPrimString( x ) {
     return typeof x === "string";
 }
 
-// TODO: Implement and use StrMap#init() instead of using this
-// constructor.
-function StrMap() {
+function StrMap() {}
+StrMap.prototype.init_ = function () {
     this.contents_ = {};
+    return this;
+};
+function strMap() {
+    return new StrMap().init_();
 }
 StrMap.prototype.mangle_ = function ( k ) {
     return "|" + k;
@@ -103,7 +106,7 @@ StrMap.prototype.setAll = function ( other ) {
     return this;
 };
 StrMap.prototype.copy = function () {
-    return new StrMap().setAll( this );
+    return strMap().setAll( this );
 };
 StrMap.prototype.add = function ( k ) {
     return this.set( k, true );
@@ -124,13 +127,13 @@ StrMap.prototype.plusArrTruth = function ( arr ) {
 StrMap.prototype.minus = function ( other ) {
     if ( !(other instanceof StrMap) )
         throw new Error();
-    var result = new StrMap();
+    var result = strMap();
     result.contents_ = objMinus( this.contents_, other.contents_ );
     return result;
 };
 // TODO: Find a better name for this.
 StrMap.prototype.minusArrTruth = function ( arr ) {
-    return this.minus( new StrMap().plusArrTruth( arr ) );
+    return this.minus( strMap().plusArrTruth( arr ) );
 };
 // NOTE: This body takes its args as ( v, k ).
 StrMap.prototype.any = function ( body ) {
@@ -232,10 +235,10 @@ function readListUntilParen( $, consumeParen ) {
 
 var symbolChars = "abcdefghijklmnopqrstuvwxyz";
 symbolChars += symbolChars.toUpperCase() + "-*0123456789";
-var symbolChopsChars = new StrMap().setObj( { "(": ")", "[": "]" } );
+var symbolChopsChars = strMap().setObj( { "(": ")", "[": "]" } );
 var whiteChars = " \t\r\n";
 
-var readerMacros = new StrMap();
+var readerMacros = strMap();
 readerMacros.set( ";", function ( $ ) {
     function loop() {
         $.stream.readc( function ( c ) {
@@ -355,7 +358,7 @@ function macroexpand( macros, expr ) {
     return macro( macroexpand, macros, expr.slice( 1 ) );
 }
 
-var macros = new StrMap();
+var macros = strMap();
 // TODO: This is just for getting started. Remove it.
 macros.set( "log", function ( expand, macros, subexprs ) {
     if ( subexprs.length !== 1 )
@@ -384,7 +387,7 @@ ToAndFromVars.prototype.initWith_ = function ( xy, yx ) {
     return this;
 };
 ToAndFromVars.prototype.init = function () {
-    return this.initWith_( new StrMap(), new StrMap() );
+    return this.initWith_( strMap(), strMap() );
 };
 ToAndFromVars.prototype.copy = function () {
     return new ToAndFromVars().initWith_(
@@ -424,7 +427,7 @@ function makeAlphaGrammar( spec ) {
     var n = spec.length;
     
     // Validate the spec.
-    var names = new StrMap();
+    var names = strMap();
     for ( var i = 0; i < n; i++ ) {
         var specPart = spec[ i ];
         if ( !isPrimString( specPart ) )
@@ -440,7 +443,7 @@ function makeAlphaGrammar( spec ) {
             return null;
         } else if ( isArray( specPart ) ) {
             var result = [];
-            var deps = new StrMap();
+            var deps = strMap();
             for ( var j = 0, m = specPart.length; j < m; j++ ) {
                 var dep = specPart[ j ];
                 if ( !(isPrimString( dep ) && names.has( dep )) )
@@ -463,7 +466,7 @@ function makeAlphaGrammar( spec ) {
         if ( params.length !== n )
             return { ok: false, msg: "Mismatched term length" };
         
-        var bindings = new StrMap();
+        var bindings = strMap();
         for ( var i = 0; i < n; i++ ) {
             var param = params[ i ];
             if ( namelessSpec[ i ] === null
@@ -494,8 +497,8 @@ function makeAlphaGrammar( spec ) {
             return namedPat;
         var parsedPat = [];
         var result = {};
-        result.freeVars = new StrMap();
-        result.treeNames = new StrMap();
+        result.freeVars = strMap();
+        result.treeNames = strMap();
         function addTreeName( treeName ) {
             if ( result.treeNames.has( treeName ) )
                 return { ok: false, msg: "Duplicate tree name" };
@@ -555,7 +558,7 @@ function makeAlphaGrammar( spec ) {
                 } ) )
                     return { ok: false, msg:
                         "Invalid tree param to insbs" };
-                var treeParamsMap = new StrMap();
+                var treeParamsMap = strMap();
                 for ( var j = 0, m = treeParams.length;
                     j < m; j++ ) {
                     if ( treeParamsMap.has( treeParam ) )
@@ -607,7 +610,7 @@ function makeAlphaGrammar( spec ) {
         result.patWithoutInfo.getTrees = function (
             matcher, toAndFromTreeVars, namedData ) {
             
-            var trees = new StrMap();
+            var trees = strMap();
             for ( var i = 0; i < n; i++ ) {
                 var patPart = parsedPat[ i ];
                 var dataPart = namedData[ i ];
@@ -636,7 +639,7 @@ function makeAlphaGrammar( spec ) {
         result.patWithoutInfo.getLeaves = function (
             matcher, alphaGrammars, trees, toPatVars, namedData ) {
             
-            var leaves = new StrMap();
+            var leaves = strMap();
             function addLeaves( subleaves ) {
                 if ( !subleaves.ok )
                     return subleaves;
@@ -671,7 +674,7 @@ function makeAlphaGrammar( spec ) {
                     if ( patPart.params.length !== numParams )
                         return { ok: false, msg:
                             "Incorrect number of tree params" };
-                    var treeParams = new StrMap();
+                    var treeParams = strMap();
                     for ( var i = 0; i < numParams; i++ )
                         treeParams.set(
                             tree.params[ i ], patPart.params[ i ] );
@@ -707,15 +710,15 @@ matcher.parsePattern = function (
     if ( isPrimString( term ) ) {
         if ( boundVars.has( term ) ) {
             var result = {};
-            result.treeNames = new StrMap();
-            result.freeVars = new StrMap();
+            result.treeNames = strMap();
+            result.freeVars = strMap();
             result.patWithInfo =
                 { type: "boundVar", boundVarName: term };
             return { ok: true, val: result };
         } else {
             var result = {};
-            result.treeNames = new StrMap();
-            result.freeVars = new StrMap().plusArrTruth( [ term ] );
+            result.treeNames = strMap();
+            result.freeVars = strMap().plusArrTruth( [ term ] );
             result.patWithInfo =
                 { type: "freeVar", freeVarName: term };
             return { ok: true, val: result };
@@ -769,9 +772,9 @@ matcher.getTrees = function (
             return { ok: false, msg:
                 "Can't get trees when trying to match a boundVar " +
                 "pattern to a non-string." };
-        return { ok: true, val: new StrMap() };
+        return { ok: true, val: strMap() };
     } else if ( patWithInfo.type === "freeVar" ) {
-        return { ok: true, val: new StrMap() };
+        return { ok: true, val: strMap() };
     } else {
         throw new Error();
     }
@@ -791,7 +794,7 @@ matcher.getLeavesUnderTree = function (
         if ( isPrimString( data )
             && toAndFromTreeVars.hasForward( data )
             && toAndFromTreeVars.getForward( data ) === baseTreeTerm )
-            return { ok: true, val: new StrMap() };
+            return { ok: true, val: strMap() };
         return { ok: false, msg:
             "Can't get leaves under tree when trying to match a " +
             "bound variable within the tree to incompatible data" };
@@ -816,7 +819,7 @@ matcher.getLeavesUnderTree = function (
     var grammar = alphaGrammars.get( opName );
     var namedTree = grammar.parseData( baseTreeTerm.slice( 1 ) );
     var namedData = grammar.parseData( data.slice( 1 ) );
-    var leaves = new StrMap();
+    var leaves = strMap();
     function addLeaves( subleaves ) {
         if ( !subleaves.ok )
             return subleaves;
@@ -877,16 +880,16 @@ matcher.getLeaves = function (
             return { ok: false, msg:
                 "Can't get leaves when trying to match a boundVar " +
                 "pattern to an incorrect variable name" };
-        return { ok: true, val: new StrMap() };
+        return { ok: true, val: strMap() };
     } else if ( patWithInfo.type === "freeVar" ) {
         return { ok: true, val:
-            new StrMap().set( patWithInfo.freeVarName, data ) };
+            strMap().set( patWithInfo.freeVarName, data ) };
     } else {
         throw new Error();
     }
 };
 
-var alphaGrammars = new StrMap();
+var alphaGrammars = strMap();
 // TODO: This is just for getting started. Remove it.
 alphaGrammars.set( "fn", makeAlphaGrammar( [ "x", [ "x" ] ] ) );
 
