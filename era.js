@@ -60,9 +60,11 @@ function isPrimString( x ) {
     return typeof x === "string";
 }
 
+// TODO: Implement and use StrMap#init() instead of using this
+// constructor.
 function StrMap() {
     this.contents_ = {};
-};
+}
 StrMap.prototype.mangle_ = function ( k ) {
     return "|" + k;
 };
@@ -375,6 +377,49 @@ unitTests.push( function ( then ) {
 
 // ===== Alpha-equivalent pattern matching ===========================
 
+function ToAndFromVars() {}
+ToAndFromVars.prototype.initWith_ = function ( xy, yx ) {
+    this.xy_ = xy;
+    this.yx_ = yx;
+    return this;
+};
+ToAndFromVars.prototype.init = function () {
+    return this.initWith_( new StrMap(), new StrMap() );
+};
+ToAndFromVars.prototype.copy = function () {
+    return new ToAndFromVars().initWith_(
+        this.xy_.copy(), this.yx_.copy() );
+};
+ToAndFromVars.prototype.hasForward = function ( x ) {
+    return this.xy_.has( x );
+};
+ToAndFromVars.prototype.getForward = function ( x ) {
+    return this.xy_.get( x );
+};
+ToAndFromVars.prototype.getBackward = function ( y ) {
+    return this.yx_.get( y );
+};
+ToAndFromVars.prototype.shadowWithArrs = function ( xs, ys ) {
+    var n = xs.length;
+    if ( n !== ys.length )
+        throw new Error();
+    for ( var i = 0; i < n; i++ ) {
+        var y = ys[ i ];
+        if ( this.yx_.has( y ) )
+            this.xy_.del( this.yx_.get( y ) );
+    }
+    for ( var i = 0; i < n; i++ ) {
+        var x = xs[ i ];
+        var y = ys[ i ];
+        this.yx_.set( y, x );
+        this.xy_.set( x, y );
+    }
+    return this;
+};
+ToAndFromVars.prototype.withShadowingArrs = function ( xs, ys ) {
+    return this.copy().shadowWithArrs( xs, ys );
+};
+
 function makeAlphaGrammar( spec ) {
     var n = spec.length;
     
@@ -560,7 +605,7 @@ function makeAlphaGrammar( spec ) {
         
         result.patWithoutInfo = {};
         result.patWithoutInfo.getTrees = function (
-            matcher, toTreeVars, fromTreeVars, namedData ) {
+            matcher, toAndFromTreeVars, namedData ) {
             
             var trees = new StrMap();
             for ( var i = 0; i < n; i++ ) {
@@ -568,28 +613,18 @@ function makeAlphaGrammar( spec ) {
                 var dataPart = namedData[ i ];
                 if ( patPart.type === "var" )
                     continue;
-                var theseToTreeVars = toTreeVars.copy();
-                var theseFromTreeVars = fromTreeVars.copy();
-                for ( var j = 0, m = patPart.boundVars.length;
-                    j < m; j++ )
-                    theseToTreeVars.del( theseFromTreeVars.get(
-                        patPart.boundVars[ j ] ) );
-                for ( var j = 0, m = patPart.boundVars.length;
-                    j < m; j++ ) {
-                    theseFromTreeVars.set( patPart.boundVars[ j ],
-                        dataPart.boundVars[ j ] );
-                    theseToTreeVars.set( dataPart.boundVars[ j ],
-                        patPart.boundVars[ j ] );
-                }
+                var theseToAndFromTreeVars =
+                    toAndFromTreeVars.withShadowingArrs(
+                        dataPart.boundVars, patPart.boundVars );
                 if ( patPart.type === "insbs" ) {
                     trees.set( patPart.name, { params:
                         arrMap( patPart.params, function ( treeVar ) {
-                            return theseFromTreeVars.get( treeVar );
+                            return theseToAndFromTreeVars.getBackward(
+                                treeVar );
                         } ), term: dataPart.term } );
                 } else if ( patPart.type === "subpat" ) {
                     var subtrees = matcher.getTrees( matcher,
-                        patPart.subpat,
-                        theseToTreeVars, theseFromTreeVars,
+                        patPart.subpat, theseToAndFromTreeVars,
                         dataPart.term );
                     if ( !subtrees.ok )
                         return subtrees;
@@ -602,6 +637,18 @@ function makeAlphaGrammar( spec ) {
             matcher, alphaGrammars, trees, toPatVars, namedData ) {
             
             var leaves = new StrMap();
+            function addLeaves( subleaves ) {
+                if ( !subleaves.ok )
+                    return subleaves;
+                if ( subleaves.val.any( function ( v, k ) {
+                    if ( leaves.has( k ) )
+                        return true;
+                    leaves.set( k, v );
+                    return false;
+                } ) )
+                    return { ok: false, msg: "Duplicate leaf" };
+                return { ok: true, val: null };
+            }
             for ( var i = 0; i < n; i++ ) {
                 var patPart = parsedPat[ i ];
                 var dataPart = namedData[ i ];
@@ -628,19 +675,18 @@ function makeAlphaGrammar( spec ) {
                     for ( var i = 0; i < numParams; i++ )
                         treeParams.set(
                             tree.params[ i ], patPart.params[ i ] );
-                    var subleaves = matcher.getLeavesUnderTree(
-                        treeParams, tree.term, alphaGrammars, trees,
-                        getTheseToPatVars(), dataPart.term );
-                    if ( !subleaves.ok )
-                        return subleaves;
-                    leaves.setAll( subleaves.val );
+                    var added = addLeaves( matcher.getLeavesUnderTree(
+                        matcher, treeParams, tree.term,
+                        new ToAndFromVars().init(), alphaGrammars,
+                        trees, getTheseToPatVars(), dataPart.term ) );
+                    if ( !added.ok )
+                        return added;
                 } else if ( patPart.type === "subpat" ) {
-                    var subleaves = matcher.getLeaves(
-                        patPart.subpat, alphaGrammars, trees,
-                        getTheseToPatVars(), dataPart.term );
-                    if ( !subleaves.ok )
-                        return subleaves;
-                    leaves.setAll( subleaves.val );
+                    var added = addLeaves( matcher.getLeaves(
+                        matcher, patPart.subpat, alphaGrammars, trees,
+                        getTheseToPatVars(), dataPart.term ) );
+                    if ( !added.ok )
+                        return added;
                 }
             }
             return { ok: true, val: leaves };
@@ -659,7 +705,7 @@ matcher.parsePattern = function (
     // other things), and this returns a patWithInfo (among other
     // things).
     if ( isPrimString( term ) ) {
-        if ( boundVars.has( term ) {
+        if ( boundVars.has( term ) ) {
             var result = {};
             result.treeNames = new StrMap();
             result.freeVars = new StrMap();
@@ -695,7 +741,7 @@ matcher.parsePattern = function (
     return { ok: true, val: result };
 };
 matcher.getTrees = function (
-    matcher, patWithInfo, toTreeVars, fromTreeVars, data ) {
+    matcher, patWithInfo, toAndFromTreeVars, data ) {
     
     if ( patWithInfo.type === "form" ) {
         if ( !isArray( data ) )
@@ -717,7 +763,7 @@ matcher.getTrees = function (
         if ( !namedData.ok )
             return namedData;
         return patWithInfo.patWithoutInfo.getTrees(
-            matcher, toTreeVars, fromTreeVars, namedData );
+            matcher, toAndFromTreeVars, namedData );
     } else if ( patWithInfo.type === "boundVar" ) {
         if ( !isPrimString( data ) )
             return { ok: false, msg:
@@ -730,26 +776,75 @@ matcher.getTrees = function (
         throw new Error();
     }
 };
-matcher.getLeavesUnderTree = function ( baseTreeParams, baseTreeTerm,
+matcher.getLeavesUnderTree = function (
+    matcher, baseTreeParams, baseTreeTerm, toAndFromTreeVars,
     alphaGrammars, trees, toPatVars, data ) {
     
-    // TODO: Implement this in terms of patterns' getLeaves(
-    // matcher, alphaGrammars, trees, toPatVars, namedData ) method.
-    // Note that patterns probably won't need their own
-    // getLeavesUnderTree() method, since the traversal of
-    // "namedData"-style data representations doesn't require the use
-    // of grammar-specific details.
-/*
+    // TODO: See if we really need the "from" part of
+    // toAndFromTreeVars.
+    
     if ( isPrimString( baseTreeTerm ) ) {
         if ( baseTreeParams.has( baseTreeTerm ) )
-            return matcher.getLeaves(
+            return matcher.getLeaves( matcher,
                 baseTreeParams.get( baseTreeTerm ),
                 alphaGrammars, trees, toPatVars, data );
+        if ( isPrimString( data )
+            && toAndFromTreeVars.hasForward( data )
+            && toAndFromTreeVars.getForward( data ) === baseTreeTerm )
+            return { ok: true, val: new StrMap() };
+        return { ok: false, msg:
+            "Can't get leaves under tree when trying to match a " +
+            "bound variable within the tree to incompatible data" };
     }
-*/
+    if ( !isArray( data ) )
+        return { ok: false, msg:
+            "Can't get leaves under tree when trying to match an " +
+            "Array tree to non-Array data" };
+    if ( baseTreeTerm.length === 0 || data.length === 0 )
+        return { ok: false, msg:
+            "Can't get leaves under tree when the tree or data is " +
+            "an empty Array" };
+    var opName = data[ 0 ];
+    if ( baseTreeTerm[ 0 ] !== opName )
+        return { ok: false, msg:
+            "Can't get leaves under tree when the tree and data " +
+            "use different operations" };
+    if ( !alphaGrammars.has( opName ) )
+        return { ok: false, msg:
+            "Can't get leaves under tree when the operation is " +
+            "unrecognized" };
+    var grammar = alphaGrammars.get( opName );
+    var namedTree = grammar.parseData( baseTreeTerm.slice( 1 ) );
+    var namedData = grammar.parseData( data.slice( 1 ) );
+    var leaves = new StrMap();
+    function addLeaves( subleaves ) {
+        if ( !subleaves.ok )
+            return subleaves;
+        if ( subleaves.val.any( function ( v, k ) {
+            if ( leaves.has( k ) )
+                return true;
+            leaves.set( k, v );
+            return false;
+        } ) )
+            return { ok: false, msg: "Duplicate leaf" };
+        return { ok: true, val: null };
+    }
+    for ( var i = 0, n = namedTree.length; i < n; i++ ) {
+        var treePart = namedTree[ i ];
+        var dataPart = namedData[ i ];
+        if ( treePart === null )
+            continue;
+        var added = addLeaves( matcher.getLeavesUnderTree( matcher,
+            baseTreeParams, treePart.term,
+            toAndFromTreeVars.withShadowingArrs(
+                dataPart.boundVars, treePart.boundVars ),
+            alphaGrammars, trees, toPatVars, data ) );
+        if ( !added.ok )
+            return added;
+    }
 };
 matcher.getLeaves = function (
-    patWithInfo, alphaGrammars, trees, toPatVars, data ) {
+    matcher, patWithInfo, alphaGrammars, trees, toPatVars, data ) {
     
     if ( patWithInfo.type === "form" ) {
         if ( !isArray( data ) )
