@@ -59,6 +59,82 @@ function isArray( x ) {
 function isPrimString( x ) {
     return typeof x === "string";
 }
+if ( Object.getPrototypeOf )
+    var likeObjectLiteral = function ( x ) {
+        if ( x === null ||
+            {}.toString.call( x ) !== "[object Object]" )
+            return false;
+        var p = Object.getPrototypeOf( x );
+        return p !== null && typeof p === "object" &&
+            Object.getPrototypeOf( p ) === null;
+    };
+else if ( {}.__proto__ !== void 0 )
+    var likeObjectLiteral = function ( x ) {
+        if ( x === null ||
+            {}.toString.call( x ) !== "[object Object]" )
+            return false;
+        var p = x.__proto__;
+        return p !== null && typeof p === "object" &&
+            p.__proto__ === null;
+    };
+else
+    var likeObjectLiteral = function ( x ) {
+        return x !== null &&
+            {}.toString.call( x ) === "[object Object]" &&
+            x.constructor === {}.constructor;
+    };
+function sameTwo( a, b ) {
+    return (a === 0 && b === 0) ? 1 / a === 1 / b :  // 0 and -0
+        a !== a ? b !== b :  // NaN
+        a === b;
+}
+
+// TODO: Come up with something better than this.
+var naiveIsoCases = [];
+function naiveIso( a, b ) {
+    for ( var i = 0, n = naiveIsoCases.length; i < n; i++ ) {
+        var result = naiveIsoCases[ i ]( naiveIso, a, b );
+        if ( result !== null )
+            return result;
+    }
+    return null;
+}
+naiveIsoCases.push( function ( recur, a, b ) {
+    return sameTwo( a, b ) ? true : null;
+} );
+naiveIsoCases.push( function ( recur, a, b ) {
+    return (isPrimString( a ) || isPrimString( b )) ? a === b : null;
+} );
+naiveIsoCases.push( function ( recur, a, b ) {
+    if ( !(isArray( a ) && isArray( b )) )
+        return (isArray( a ) || isArray( b )) ? false : null;
+    var n = a.length;
+    if ( n !== b.length )
+        return false;
+    for ( var i = 0; i < n; i++ ) {
+        var subresult = recur( a[ i ], b[ i ] );
+        if ( subresult !== true )
+            return subresult;
+    }
+    return true;
+} );
+naiveIsoCases.push( function ( recur, a, b ) {
+    if ( !(likeObjectLiteral( a ) && likeObjectLiteral( b )) )
+        return (likeObjectLiteral( a ) || likeObjectLiteral( b )) ?
+            false : null;
+    if ( objOwnAny( a, function ( v, k ) {
+        return !hasOwn( b, k );
+    } ) || objOwnAny( b, function ( v, k ) {
+        return !hasOwn( a, k );
+    } ) )
+        return false;
+    var result = objOwnAny( a, function ( v, k ) {
+        var subresult = recur( v, b[ k ] );
+        if ( subresult !== true )
+            return { val: subresult };
+    } );
+    return result ? result.val : true;
+} );
 
 function StrMap() {}
 StrMap.prototype.init_ = function () {
@@ -155,11 +231,47 @@ StrMap.prototype.each = function ( body ) {
     } );
 };
 
+naiveIsoCases.push( function ( recur, a, b ) {
+    if ( !((a instanceof StrMap) && (b instanceof StrMap)) )
+        return ((a instanceof StrMap) || (b instanceof StrMap)) ?
+            false : null;
+    if ( a.any( function ( v, k ) {
+        return !b.has( k );
+    } ) || b.any( function ( v, k ) {
+        return !a.has( k );
+    } ) )
+        return false;
+    var result = a.any( function ( v, k ) {
+        var subresult = recur( v, b.get( k ) );
+        if ( subresult !== true )
+            return { val: subresult };
+    } );
+    return result ? result.val : true;
+} );
+
 function logJson( x ) {
     console.log( JSON.stringify( x ) );
 }
 
 var unitTests = [];
+function addNaiveIsoUnitTest( body ) {
+    // TODO: Stop using JSON.stringify() here. It might be good to
+    // have a naiveStringify() function or something for custom
+    // stringification.
+    unitTests.push( function ( then ) {
+        body( function ( calculated, expected ) {
+            if ( naiveIso( calculated, expected ) )
+                console.log( "Test passed." );
+            else
+                console.log(
+                    "Expected this:\n" +
+                    JSON.stringify( expected ) + "\n" +
+                    "But got this:\n" +
+                    JSON.stringify( calculated ) );
+            then();
+        } );
+    } );
+}
 
 
 // ===== Reader ======================================================
@@ -320,7 +432,7 @@ function stringStream( string ) {
     return stream;
 }
 
-unitTests.push( function ( then ) {
+addNaiveIsoUnitTest( function ( then ) {
     reader( {
         stream: stringStream(
             " (woo;comment\n b (c( woo( ) string) / x//)/())" ),
@@ -332,8 +444,11 @@ unitTests.push( function ( then ) {
             $.then( { ok: false, msg: "Unrecognized char" } );
         },
         then: function ( result ) {
-            logJson( result );
-            then();
+            then( result, { ok: true, val:
+                [ "woo", "b",
+                    [ "c( woo( ) string)" , [ "x", [ [] ] ] ],
+                    [ [] ] ]
+            } );
         }
     } );
 } );
@@ -370,11 +485,9 @@ macros.set( "log", function ( expand, macros, subexprs ) {
     return { ok: true, val: [ "noop" ] };
 } );
 
-unitTests.push( function ( then ) {
-    logJson( macroexpand( macros, [ "log", "hello" ] ) );
-    defer( function () {
-        then();
-    } );
+addNaiveIsoUnitTest( function ( then ) {
+    then( macroexpand( macros, [ "log", "hello" ] ),
+        { ok: true, val: [ "noop" ] } );
 } );
 
 
@@ -660,7 +773,6 @@ function makeAlphaGrammar( spec ) {
                 var dataPart = namedData[ i ];
                 var getTheseToPatVars = function () {
                     var n = patPart.boundVars.length;
-                    // TODO: Figure out why there's an exception here.
                     if ( dataPart.boundVars.length !== n )
                         throw new Error();
                     var result = toPatVars.copy();
@@ -849,7 +961,7 @@ matcher.getLeavesUnderTree = function (
             baseTreeParams, treePart.term,
             toAndFromTreeVars.withShadowingArrs(
                 dataPart.boundVars, treePart.boundVars ),
-            alphaGrammars, trees, toPatVars, data ) );
+            alphaGrammars, trees, toPatVars, dataPart.term ) );
         if ( !added.ok )
             return added;
     }
@@ -877,7 +989,7 @@ matcher.getLeaves = function (
         if ( !namedData.ok )
             return namedData;
         return patWithInfo.patWithoutInfo.getLeaves(
-            matcher, alphaGrammars, trees, toPatVars, namedData );
+            matcher, alphaGrammars, trees, toPatVars, namedData.val );
     } else if ( patWithInfo.type === "boundVar" ) {
         if ( !isPrimString( data ) )
             return { ok: false, msg:
@@ -914,23 +1026,25 @@ function matchAlpha( matcher, alphaGrammars, patTerm, dataTerm ) {
         { trees: trees.val, leaves: leaves.val } };
 }
 
-// TODO: Make this unit test work. It should bind "z" to
-// [ "call", "c", "d" ] as a leaf.
-unitTests.push( function ( then ) {
+addNaiveIsoUnitTest( function ( then ) {
     var alphaGrammars = strMap();
     alphaGrammars.set( "fn", makeAlphaGrammar( [ "x", [ "x" ] ] ) );
     alphaGrammars.set( "call", makeAlphaGrammar( [ [], [] ] ) );
-    console.log( matchAlpha( matcher, alphaGrammars,
+    var calculated = matchAlpha( matcher, alphaGrammars,
         [ "fn", "x",
-            [ "fn", "y", [ "call", [ "call", "x", "z" ], "y" ] ] ],
+            [ "fn", "y",
+                [ "call", [ "call", "x", "z" ],
+                    "y" ] ] ],
         [ "fn", "a",
             [ "fn", "b",
                 [ "call", [ "call", "a", [ "call", "c", "d" ] ],
                     "b" ] ] ]
-    ) );
-    defer( function () {
-        then();
-    } );
+    );
+    var expected = { ok: true, val: {
+        trees: strMap(),
+        leaves: strMap().set( "z", [ "call", "c", "d" ] )
+    } };
+    then( calculated, expected );
 } );
 
 
