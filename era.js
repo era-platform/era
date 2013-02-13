@@ -246,6 +246,19 @@ StrMap.prototype.each = function ( body ) {
         return false;
     } );
 };
+// NOTE: This body takes its args as ( v, k ).
+StrMap.prototype.map = function ( func ) {
+    var result = strMap();
+    this.each( function ( k, v ) {
+        result.set( k, func( v, k ) );
+    } );
+    return result;
+};
+StrMap.prototype.keys = function () {
+    return this.map( function ( v, k ) {
+        return true;
+    } );
+};
 
 naiveIsoCases.push( function ( recur, a, b ) {
     if ( !((a instanceof StrMap) && (b instanceof StrMap)) )
@@ -636,6 +649,25 @@ function makeAlphaGrammar( spec ) {
     grammar.parseData = function ( dataParams ) {
         return nameTerm( dataParams );
     };
+    grammar.verifyNoBoundVars = function (
+        matcher, alphaGrammars, boundVars, dataParams ) {
+        
+        var namedData = nameTerm( dataParams );
+        if ( !namedData.ok )
+            return namedData;
+        for ( var i = 0; i < n; i++ ) {
+            var dataPart = namedData.val[ i ];
+            if ( dataPart === null )
+                continue;
+            var verified = matcher.verifyNoBoundVars(
+                matcher, alphaGrammars,
+                boundVars.minusArrTruth( dataPart.boundVars ),
+                dataPart.term );
+            if ( !verified.ok )
+                return verified;
+        }
+        return { ok: true, val: null };
+    };
     grammar.parsePattern = function (
         matcher, alphaGrammars, boundVars, patParams ) {
         
@@ -999,6 +1031,28 @@ matcher.getLeavesUnderTree = function (
             return added;
     }
 };
+matcher.verifyNoBoundVars = function (
+    matcher, alphaGrammars, boundVars, data ) {
+    
+    if ( isPrimString( data ) ) {
+        if ( boundVars.has( data ) )
+            return { ok: false, msg:
+                "Can't get leaves when trying to match a freeVar " +
+                "pattern to data with a bound variable occurrence" };
+        return { ok: true, val: null };
+    }
+    if ( data.length === 0 )
+        return { ok: false, msg:
+            "Can't get leaves when trying to match a freeVar " +
+            "pattern to data with an empty Array" };
+    var opName = data[ 0 ];
+    if ( !alphaGrammars.has( opName ) )
+        return { ok: false, msg:
+            "Can't get leaves when trying to match a freeVar " +
+            "pattern to data with an unrecognized operation" };
+    return alphaGrammars.get( opName ).verifyNoBoundVars(
+        matcher, alphaGrammars, boundVars, data.slice( 1 ) );
+};
 matcher.getLeaves = function (
     matcher, patWithInfo, alphaGrammars, trees, toPatVars, data ) {
     
@@ -1035,6 +1089,10 @@ matcher.getLeaves = function (
                 "pattern to an incorrect variable name" };
         return { ok: true, val: strMap() };
     } else if ( patWithInfo.type === "freeVar" ) {
+        var verified = matcher.verifyNoBoundVars(
+            matcher, alphaGrammars, toPatVars.keys(), data );
+        if ( !verified.ok )
+            return verified;
         return { ok: true, val:
             strMap().set( patWithInfo.freeVarName, data ) };
     } else {
@@ -1081,7 +1139,6 @@ function matchAlpha( matcher, alphaGrammars, patTerm, dataTerm ) {
     } );
     
     // Leaves can't depend on variables bound inside the pattern.
-    // TODO: Make this test pass.
     addPredicateUnitTest( function ( then ) {
         then( matchAlpha( matcher, alphaGrammars,
             [ "fn", "x",
