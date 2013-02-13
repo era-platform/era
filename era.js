@@ -11,6 +11,22 @@ function defer( body ) {
         body();
     }, 0 );
 }
+// NOTE: This body takes its args as ( v, k ).
+function arrAny( arr, body ) {
+    for ( var i = 0, n = arr.length; i < n; i++ ) {
+        var result = body( arr[ i ], i );
+        if ( result )
+            return result;
+    }
+    return false;
+}
+// NOTE: This body takes its args as ( v, k ).
+function arrAll( arr, body ) {
+    return !arrAny( arr, function ( v, k ) {
+        return !body( v, k );
+    } );
+}
+// NOTE: This body takes its args as ( v, k ).
 function arrMap( arr, func ) {
     var result = [];
     for ( var i = 0, n = arr.length; i < n; i++ )
@@ -267,6 +283,22 @@ function addNaiveIsoUnitTest( body ) {
                     "Expected this:\n" +
                     JSON.stringify( expected ) + "\n" +
                     "But got this:\n" +
+                    JSON.stringify( calculated ) );
+            then();
+        } );
+    } );
+}
+function addPredicateUnitTest( body ) {
+    // TODO: Stop using JSON.stringify() here. It might be good to
+    // have a naiveStringify() function or something for custom
+    // stringification.
+    unitTests.push( function ( then ) {
+        body( function ( calculated, predicate ) {
+            if ( predicate( calculated ) )
+                console.log( "Test passed." );
+            else
+                console.log(
+                    "This result was unexpected:\n" +
                     JSON.stringify( calculated ) );
             then();
         } );
@@ -677,6 +709,7 @@ function makeAlphaGrammar( spec ) {
                 var treeParamsMap = strMap();
                 for ( var j = 0, m = treeParams.length;
                     j < m; j++ ) {
+                    var treeParam = treeParams[ j ];
                     if ( treeParamsMap.has( treeParam ) )
                         return { ok: false, msg:
                             "Tree params must be different" };
@@ -1026,26 +1059,84 @@ function matchAlpha( matcher, alphaGrammars, patTerm, dataTerm ) {
         { trees: trees.val, leaves: leaves.val } };
 }
 
-addNaiveIsoUnitTest( function ( then ) {
+(function () {
     var alphaGrammars = strMap();
     alphaGrammars.set( "fn", makeAlphaGrammar( [ "x", [ "x" ] ] ) );
     alphaGrammars.set( "call", makeAlphaGrammar( [ [], [] ] ) );
-    var calculated = matchAlpha( matcher, alphaGrammars,
-        [ "fn", "x",
-            [ "fn", "y",
-                [ "call", [ "call", "x", "z" ],
-                    "y" ] ] ],
-        [ "fn", "a",
-            [ "fn", "b",
-                [ "call", [ "call", "a", [ "call", "c", "d" ] ],
-                    "b" ] ] ]
-    );
-    var expected = { ok: true, val: {
-        trees: strMap(),
-        leaves: strMap().set( "z", [ "call", "c", "d" ] )
-    } };
-    then( calculated, expected );
-} );
+    
+    addNaiveIsoUnitTest( function ( then ) {
+        then( matchAlpha( matcher, alphaGrammars,
+            [ "fn", "x",
+                [ "fn", "y",
+                    [ "call", [ "call", "x", "z" ],
+                        "y" ] ] ],
+            [ "fn", "a",
+                [ "fn", "b",
+                    [ "call", [ "call", "a", [ "call", "c", "d" ] ],
+                        "b" ] ] ]
+        ), { ok: true, val: {
+            trees: strMap(),
+            leaves: strMap().set( "z", [ "call", "c", "d" ] )
+        } } );
+    } );
+    
+    // Leaves can't depend on variables bound inside the pattern.
+    // TODO: Make this test pass.
+    addPredicateUnitTest( function ( then ) {
+        then( matchAlpha( matcher, alphaGrammars,
+            [ "fn", "x",
+                [ "fn", "y",
+                    [ "call", [ "call", "x", "z" ],
+                        "y" ] ] ],
+            [ "fn", "a",
+                [ "fn", "b",
+                    [ "call", [ "call", "a", [ "call", "c", "b" ] ],
+                        "b" ] ] ]
+        ), function ( result ) {
+            return !result.ok;
+        } );
+    } );
+    
+    // Trees can depend on variables bound inside the pattern.
+    addNaiveIsoUnitTest( function ( then ) {
+        // TODO: See if we can stop hardcoding specific parameter
+        // names (namely, "b") in the expected value.
+        then( matchAlpha( matcher, alphaGrammars,
+            [ "fn", "x",
+                [ "fn", "y",
+                    [ "call", [ "call", "x", [ "insbs", "z", "y" ] ],
+                        "y" ] ] ],
+            [ "fn", "a",
+                [ "fn", "b",
+                    [ "call", [ "call", "a", [ "call", "c", "b" ] ],
+                        "b" ] ] ]
+        ), { ok: true, val: {
+            trees: strMap().set( "z",
+                { params: [ "b" ], term: [ "call", "c", "b" ] } ),
+            leaves: strMap()
+        } } );
+    } );
+    
+    // Trees don't have to use all their parameters in a match.
+    addNaiveIsoUnitTest( function ( then ) {
+        // TODO: See if we can stop hardcoding specific parameter
+        // names (namely, "b") in the expected value.
+        then( matchAlpha( matcher, alphaGrammars,
+            [ "fn", "x",
+                [ "fn", "y",
+                    [ "call", [ "call", "x", [ "insbs", "z", "y" ] ],
+                        "y" ] ] ],
+            [ "fn", "a",
+                [ "fn", "b",
+                    [ "call", [ "call", "a", [ "call", "c", "d" ] ],
+                        "b" ] ] ]
+        ), { ok: true, val: {
+            trees: strMap().set( "z",
+                { params: [ "b" ], term: [ "call", "c", "d" ] } ),
+            leaves: strMap()
+        } } );
+    } );
+})();
 
 
 // ===== Unit test runner ============================================
