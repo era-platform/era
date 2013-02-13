@@ -1195,6 +1195,37 @@ function matchAlpha( matcher, alphaGrammars, patTerm, dataTerm ) {
     } );
 })();
 
+// TODO: Use this. We need to build some inference rule objects with
+// the following methods:
+//
+// rule.getPremises()
+// rule.getConclusion()
+// rule.getUnifiedPremisesFor( conclusion )
+//
+// These method signatures may need to be updated to account for
+// variable freshness concerns. See below.
+//
+function checkRuleEntailment( inferenceRules, newRule ) {
+    var allRules = [].concat( inferenceRules, newRule.getPremises() );
+    var conclusion = newRule.getConclusion();
+    
+    return arrAny( allRules, function ( rule ) {
+        // TODO: Figure out what to do about name freshness. We need
+        // to make sure the free variables in the instantiated
+        // subpremises aren't treated as though they're equal to the
+        // free variables in the "allRules" rules (and particularly in
+        // those rules' conclusions). In order to avoid relying on
+        // object identity, we'll probably need to thread an
+        // environment around.
+        var match = rule.getUnifiedPremisesFor( conclusion );
+        return match.ok && arrAll( match.val,
+            function ( subpremise ) {
+            
+            return checkRuleEntailment( allRules, subpremise );
+        } );
+    } );
+}
+
 
 // ===== Unit test runner ============================================
 
