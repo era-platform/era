@@ -476,20 +476,22 @@ function makeAlphaGrammar( spec ) {
                 return { ok: false, msg: "Duplicate var" };
             bindings.add( param );
         }
-        return { ok: true, val: arrMap( spec, function ( specPart ) {
+        return { ok: true, val: arrMap( namelessSpec,
+            function ( specPart, i ) {
+            
             if ( specPart === null )
                 return null;
             return { boundVars: arrMap( specPart, function ( i ) {
                 return params[ i ];
-            } ), term: specPart };
+            } ), term: params[ i ] };
         } ) };
     }
     
-    var result = {};
-    result.parseData = function ( dataParams ) {
+    var grammar = {};
+    grammar.parseData = function ( dataParams ) {
         return nameTerm( dataParams );
     };
-    result.parsePattern = function (
+    grammar.parsePattern = function (
         matcher, alphaGrammars, boundVars, patParams ) {
         
         var namedPat = nameTerm( patParams );
@@ -505,7 +507,7 @@ function makeAlphaGrammar( spec ) {
             result.treeNames.add( treeName );
         }
         for ( var i = 0; i < n; i++ ) {
-            var patPart = namedPat[ i ];
+            var patPart = namedPat.val[ i ];
             if ( patPart === null ) {
                 parsedPat.push( { type: "var" } );
                 continue;
@@ -526,6 +528,7 @@ function makeAlphaGrammar( spec ) {
                 parsedPat.push( { type: "subpat",
                     boundVars: patPart.boundVars,
                     subpat: subpat.val.patWithInfo } );
+                return { ok: true, val: null };
             };
             if ( isPrimString( patPart.term ) ) {
                 var subpatResult = processSubpat();
@@ -657,6 +660,7 @@ function makeAlphaGrammar( spec ) {
                 var dataPart = namedData[ i ];
                 var getTheseToPatVars = function () {
                     var n = patPart.boundVars.length;
+                    // TODO: Figure out why there's an exception here.
                     if ( dataPart.boundVars.length !== n )
                         throw new Error();
                     var result = toPatVars.copy();
@@ -696,7 +700,7 @@ function makeAlphaGrammar( spec ) {
         };
         return { ok: true, val: result };
     };
-    return { ok: true, val: result };
+    return grammar;
 }
 
 var matcher = {};
@@ -766,7 +770,7 @@ matcher.getTrees = function (
         if ( !namedData.ok )
             return namedData;
         return patWithInfo.patWithoutInfo.getTrees(
-            matcher, toAndFromTreeVars, namedData );
+            matcher, toAndFromTreeVars, namedData.val );
     } else if ( patWithInfo.type === "boundVar" ) {
         if ( !isPrimString( data ) )
             return { ok: false, msg:
@@ -818,7 +822,11 @@ matcher.getLeavesUnderTree = function (
             "unrecognized" };
     var grammar = alphaGrammars.get( opName );
     var namedTree = grammar.parseData( baseTreeTerm.slice( 1 ) );
+    if ( !namedTree.ok )
+        return namedTree;
     var namedData = grammar.parseData( data.slice( 1 ) );
+    if ( !namedData.ok )
+        return namedData;
     var leaves = strMap();
     function addLeaves( subleaves ) {
         if ( !subleaves.ok )
@@ -832,9 +840,9 @@ matcher.getLeavesUnderTree = function (
             return { ok: false, msg: "Duplicate leaf" };
         return { ok: true, val: null };
     }
-    for ( var i = 0, n = namedTree.length; i < n; i++ ) {
-        var treePart = namedTree[ i ];
-        var dataPart = namedData[ i ];
+    for ( var i = 0, n = namedTree.val.length; i < n; i++ ) {
+        var treePart = namedTree.val[ i ];
+        var dataPart = namedData.val[ i ];
         if ( treePart === null )
             continue;
         var added = addLeaves( matcher.getLeavesUnderTree( matcher,
@@ -889,11 +897,41 @@ matcher.getLeaves = function (
     }
 };
 
-var alphaGrammars = strMap();
-// TODO: This is just for getting started. Remove it.
-alphaGrammars.set( "fn", makeAlphaGrammar( [ "x", [ "x" ] ] ) );
+function matchAlpha( matcher, alphaGrammars, patTerm, dataTerm ) {
+    var pattern = matcher.parsePattern(
+        matcher, alphaGrammars, strMap(), patTerm );
+    if ( !pattern.ok )
+        return pattern;
+    var trees = matcher.getTrees( matcher, pattern.val.patWithInfo,
+        new ToAndFromVars().init(), dataTerm );
+    if ( !trees.ok )
+        return trees;
+    var leaves = matcher.getLeaves( matcher, pattern.val.patWithInfo,
+        alphaGrammars, trees.val, strMap(), dataTerm );
+    if ( !leaves.ok )
+        return leaves;
+    return { ok: true, val:
+        { trees: trees.val, leaves: leaves.val } };
+}
 
-// TODO: Write a unit test.
+// TODO: Make this unit test work. It should bind "z" to
+// [ "call", "c", "d" ] as a leaf.
+unitTests.push( function ( then ) {
+    var alphaGrammars = strMap();
+    alphaGrammars.set( "fn", makeAlphaGrammar( [ "x", [ "x" ] ] ) );
+    alphaGrammars.set( "call", makeAlphaGrammar( [ [], [] ] ) );
+    console.log( matchAlpha( matcher, alphaGrammars,
+        [ "fn", "x",
+            [ "fn", "y", [ "call", [ "call", "x", "z" ], "y" ] ] ],
+        [ "fn", "a",
+            [ "fn", "b",
+                [ "call", [ "call", "a", [ "call", "c", "d" ] ],
+                    "b" ] ] ]
+    ) );
+    defer( function () {
+        then();
+    } );
+} );
 
 
 // ===== Unit test runner ============================================
