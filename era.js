@@ -1195,11 +1195,14 @@ function matchAlpha( matcher, alphaGrammars, patTerm, dataTerm ) {
     } );
 })();
 
-// TODO: Use this. We need to build some inference rule objects with
-// the following methods:
+// TODO: Use this. We need to build some inference rule objects, fact
+// objects (to be used as premises and conclusions), and freshWorld
+// objects with the following methods:
 //
 // rule.getPremisesAndConclusion( freshWorld )
 // rule.getUnifiedPremisesFor( freshWorld, conclusion )
+// fact.renameWith( varMap )
+// freshWorld.getFresh()
 //
 // NOTE: The point of threading freshWorld through all these
 // computations is so they can generate fresh names. It's assumed that
@@ -1224,6 +1227,29 @@ function checkRuleEntailment( freshWorld, inferenceRules, newRule ) {
                 thisFreshWorld, allRules, subpremise );
         } );
     } );
+}
+function makeInferenceRule( localVars, premises, conclusion ) {
+    var rule = {};
+    rule.getPremisesAndConclusion = function ( freshWorld ) {
+        var renamedLocalVars = strMap();
+        localVars.each( function ( localVar ) {
+            var gotten = freshWorld.getFresh();
+            freshWorld = gotten.freshWorld;
+            renamedLocalVars.set( localVar, gotten.val );
+        } );
+        return { freshWorld: freshWorld, val: {
+            premises: arrMap( premises, function ( premise ) {
+                premise.renameWith( localVars );
+            } ),
+            conclusion: conclusion.renameWith( localVars )
+        } };
+    };
+    rule.getUnifiedPremisesFor = function (
+        freshWorld, sampleConclusion ) {
+        
+        // TODO: Implement this.
+    };
+    return rule;
 }
 
 
