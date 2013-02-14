@@ -1198,30 +1198,30 @@ function matchAlpha( matcher, alphaGrammars, patTerm, dataTerm ) {
 // TODO: Use this. We need to build some inference rule objects with
 // the following methods:
 //
-// rule.getPremises()
-// rule.getConclusion()
-// rule.getUnifiedPremisesFor( conclusion )
+// rule.getPremisesAndConclusion( freshWorld )
+// rule.getUnifiedPremisesFor( freshWorld, conclusion )
 //
-// These method signatures may need to be updated to account for
-// variable freshness concerns. See below.
+// NOTE: The point of threading freshWorld through all these
+// computations is so they can generate fresh names. It's assumed that
+// the input `freshWorld` will never generate names occurring as free
+// variables in `inferenceRules` or `newRule`.
 //
-function checkRuleEntailment( inferenceRules, newRule ) {
-    var allRules = [].concat( inferenceRules, newRule.getPremises() );
-    var conclusion = newRule.getConclusion();
+function checkRuleEntailment( freshWorld, inferenceRules, newRule ) {
+    var premisesAndConclusion =
+        newRule.getPremisesAndConclusion( freshWorld );
+    freshWorld = premisesAndConclusion.freshWorld;
+    var allRules = [].concat(
+        inferenceRules, premisesAndConclusion.val.premises );
     
     return arrAny( allRules, function ( rule ) {
-        // TODO: Figure out what to do about name freshness. We need
-        // to make sure the free variables in the instantiated
-        // subpremises aren't treated as though they're equal to the
-        // free variables in the "allRules" rules (and particularly in
-        // those rules' conclusions). In order to avoid relying on
-        // object identity, we'll probably need to thread an
-        // environment around.
-        var match = rule.getUnifiedPremisesFor( conclusion );
-        return match.ok && arrAll( match.val,
-            function ( subpremise ) {
-            
-            return checkRuleEntailment( allRules, subpremise );
+        var match = rule.getUnifiedPremisesFor(
+            freshWorld, premisesAndConclusion.val.conclusion );
+        if ( !match.ok )
+            return false;
+        var thisFreshWorld = match.val.freshWorld;
+        return arrAll( match.val.val, function ( subpremise ) {
+            return checkRuleEntailment(
+                thisFreshWorld, allRules, subpremise );
         } );
     } );
 }
