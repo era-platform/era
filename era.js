@@ -1253,6 +1253,197 @@ function makeInferenceRule( localVars, premises, conclusion ) {
 }
 
 
+// ===== Hand-rolled module validity checker =========================
+//
+// Hand-rolling a pattern-matcher is turning out to be just about as
+// hard as hand-rolling the module checker itself. First things first.
+//
+// For now, we're just focusing on the deductive fragment. A more
+// complete version of the grammar is available at
+// <https://gist.github.com/4559120>. Also, it's worth noting that
+// we're using s-expressions for the grammar.
+
+// NOTE: For this version, we're taking the original grammar design
+// and filling it out with lots of extra type annotations to make the
+// type checker easy to write. Every function call expression must
+// come with a full description of the function type it's calling.
+
+// Fact ::=| UserVar "@" UserKnowledge
+// UserKnowledge ::=| "##type" Term
+// UserKnowledge ::=| Term ":" Term
+// Term ::=| TermVar
+// Term ::=| "(" Term ")"
+// Term ::=| "(" TermVar ":" Term ")" "->" Term
+// Term ::=| "\" TermVar ":" Term "->" Term
+// Term ::=| Term Term
+// Term ::=| "(" "##type" TermVar ")" "->" Term
+// Term ::=| "\" "##type" TermVar "->" Term
+// Term ::=| Term "#\t" Term
+// Term ::=| "(=#Sigma" TermVar ":" Term ")" "*" Term
+// Term ::=| "\#sigma" "(" Term ":" Term ")" "*" Term
+// Term ::=| "#fst" Term
+// Term ::=| "#snd" Term
+
+// Term ::=| TermVar
+// Term ::=| "(" "tfa" TermVar Term Term ")"
+// Term ::=| "(" "tfn" TermVar Term Term ")"
+// Term ::=| "(" "tcall" TermVar Term Term Term Term ")"
+// Term ::=| "(" "ttfa" TermVar Term ")"
+// Term ::=| "(" "ttfn" TermVar Term ")"
+// Term ::=| "(" "ttcall" TermVar Term Term Term ")"
+// Term ::=| "(" "sfa" TermVar Term Term ")"
+// Term ::=| "(" "sfn" Term Term Term ")"
+// Term ::=| "(" "fst" TermVar Term Term Term ")"
+// Term ::=| "(" "snd" TermVar Term Term Term ")"
+
+var patternLang = {};
+(function () {
+    function Pat() {}
+    Pat.prototype.init_ = function ( match ) {
+        this.match_ = match;
+    };
+    Pat.prototype.match = function ( data ) {
+        return this.match_.call( {}, data );
+    };
+    
+    patternLang.lit = function ( string ) {
+        return new Pat().init_( function ( data ) {
+            return data === string ? { val: strMap() } : null;
+        } );
+    };
+    patternLang.str = function ( x ) {
+        return new Pat().init_( function ( data ) {
+            return isPrimStr( data ) ?
+                { val: strMap().set( x, data ) } : null;
+        } );
+    };
+    patternLang.pat = function ( x ) {
+        if ( x instanceof Pat ) {
+            return x;
+        } else if ( isPrimString( x ) ) {
+            return new Pat().init_( function ( data ) {
+                return { val: strMap().set( x, data ) };
+            } );
+        } else if ( isArray( x ) ) {
+            var n = x.length;
+            var pats = arrMap( x, function ( subx ) {
+                return pat( subx );
+            } );
+            return new Pat().init_( function ( data ) {
+                if ( !(isArray( data ) && data.length === n) )
+                    return null;
+                var result = strMap();
+                for ( var i = 0; i < n; i++ ) {
+                    var subresult = pats[ i ].match( data[ i ] );
+                    if ( subresult === null )
+                        return null;
+                    // TODO: Figure out what to do when keys overlap.
+                    // For now, we just avoid overlapping keys in
+                    // practice.
+                    result.setAll( subresult.val );
+                }
+                return { val: result };
+            } );
+        } else {
+            throw new Error();
+        }
+    };
+    patternLang.getMatch = function ( arrData, arrPat ) {
+        return pat( arrPat ).match( arrData );
+    };
+})();
+
+// TODO: Implement knownEqual(), betaReduce(), and isType().
+
+function typeCheck( etenv, evenv, expr, ttenv, tvenv, type ) {
+    
+    var lit = patternLang.lit;
+    var str = patternLang.str;
+    var pat = patternLang.pat;
+    var getMatch = patternLang.getMatch;
+    
+    // TODO: Implement the following cases:
+    //
+    // Term ::=| TermVar
+    // Term ::=| "(" "sfn" Term Term Term ")"
+    // Term ::=| "(" "fst" TermVar Term Term Term ")"
+    // Term ::=| "(" "snd" TermVar Term Term Term ")"
+    
+    var em;
+    if ( em = getMatch( expr,
+        [ lit( "tfn" ), str( "arg" ), "argType", "result" ] ) ) {
+        
+        var tm = getMatch( type,
+            [ lit( "tfa" ), str( "arg" ), "argType", "resultType" ] );
+        if ( tm === null )
+            return false;
+        var argType = tm.val.get( "argType" );
+        if ( !knownEqual(
+            betaReduce( evenv, em.val.get( "argType" ) ), argType ) )
+            return false;
+        return typeCheck(
+            etenv.plus(
+                strMap().set( em.val.get( "arg" ), argType ) ),
+            evenv,
+            em.val.get( "result" ),
+            ttenv.plus(
+                strMap().set( tm.val.get( "arg" ), argType ) ),
+            tvenv,
+            tm.val.get( "resultType" ) );
+    } else if ( em = getMatch( expr, [ lit( "tcall" ),
+        str( "argName" ), "argType", "resultType",
+        "fn", "argVal" ] ) ) {
+        // TODO: Beta-reduce the (tfa ...) type somehow.
+        if ( !typeCheck( etenv, evenv, em.val.get( "fn" ),
+            ttenv, tvenv,
+            [ "tfa", em.val.get( "argName" ), em.val.get( "argType" ),
+                em.val.get( "resultType" ) ] ) )
+            return false;
+        // TODO: Beta-reduce the argType type somehow.
+        if ( !typeCheck( etenv, evenv, em.val.get( "argVal" ),
+            ttenv, tvenv, em.val.get( "argType" ) ) )
+            return false;
+        return knownEqual(
+            betaReduce(
+                evenv.plus( strMap().set(
+                    em.val.get( "argName" ), em.val.get( "argVal" )
+                ) ),
+                em.val.get( "resultType" ) ),
+            type );
+    } else if ( em = getMatch( expr,
+        [ lit( "ttfn" ), str( "arg" ), "result" ] ) ) {
+        
+        var tm = getMatch( type,
+            [ lit( "ttfa" ), str( "arg" ), "resultType" ] );
+        if ( tm === null )
+            return false;
+        return typeCheck(
+            etenv, evenv, em.val.get( "result" ),
+            ttenv, tvenv, tm.val.get( "resultType" ) );
+    } else if ( em = getMatch( expr, [ lit( "ttcall" ),
+        str( "argName" ), "resultType", "fn", "argVal" ] ) ) {
+        // TODO: Beta-reduce the (ttfa ...) type somehow.
+        if ( !typeCheck( etenv, evenv, em.val.get( "fn" ),
+            ttenv, tvenv,
+            [ "ttfa", em.val.get( "argName" ),
+                em.val.get( "resultType" ) ] ) )
+            return false;
+        if ( !isType( etenv, evenv, em.val.get( "argVal" ) ) )
+            return false;
+        return knownEqual(
+            betaReduce(
+                evenv.plus( strMap().set(
+                    em.val.get( "argName" ), em.val.get( "argVal" )
+                ) ),
+                em.val.get( "resultType" ) ),
+            type );
+    } else {
+        // TODO: the other terms
+        throw new Error();
+    }
+}
+
+
 // ===== Unit test runner ============================================
 
 (function () {
