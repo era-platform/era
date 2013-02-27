@@ -1292,7 +1292,7 @@ function makeInferenceRule( localVars, premises, conclusion ) {
 // Term ::=| "(" "ttfn" TermVar Term ")"
 // Term ::=| "(" "ttcall" TermVar Term Term Term ")"
 // Term ::=| "(" "sfa" TermVar Term Term ")"
-// Term ::=| "(" "sfn" Term Term Term ")"
+// Term ::=| "(" "sfn" TermVar Term Term Term ")"
 // Term ::=| "(" "fst" TermVar Term Term Term ")"
 // Term ::=| "(" "snd" TermVar Term Term Term ")"
 
@@ -1362,12 +1362,21 @@ function typeCheck( etenv, evenv, expr, ttenv, tvenv, type ) {
     var pat = patternLang.pat;
     var getMatch = patternLang.getMatch;
     
-    // TODO: Implement the following cases:
+    // TODO: Implement the following case:
     //
     // Term ::=| TermVar
-    // Term ::=| "(" "sfn" Term Term Term ")"
-    // Term ::=| "(" "fst" TermVar Term Term Term ")"
-    // Term ::=| "(" "snd" TermVar Term Term Term ")"
+    
+    // TODO: At the point labeled "TODO: BAD CONTEXT", we're inserting
+    // something from the expression (em) into a context where its
+    // free variables will be treated as though they're from the
+    // type's type environment (ttenv) and value environment (tvenv).
+    // They're supposed to come from the expr's environments (etenv
+    // and evenv). Figure out what to do about this.
+    //
+    // Perhaps we could combine these environments, or perhaps we'll
+    // need to write an operation that takes an expression and returns
+    // a new expression with an equivalent result but no free
+    // variables.
     
     var em;
     if ( em = getMatch( expr,
@@ -1390,18 +1399,20 @@ function typeCheck( etenv, evenv, expr, ttenv, tvenv, type ) {
                 strMap().set( tm.val.get( "arg" ), argType ) ),
             tvenv,
             tm.val.get( "resultType" ) );
+        
     } else if ( em = getMatch( expr, [ lit( "tcall" ),
         str( "argName" ), "argType", "resultType",
         "fn", "argVal" ] ) ) {
+        
         // TODO: Beta-reduce the (tfa ...) type somehow.
         if ( !typeCheck( etenv, evenv, em.val.get( "fn" ),
-            ttenv, tvenv,
+            etenv, evenv,
             [ "tfa", em.val.get( "argName" ), em.val.get( "argType" ),
                 em.val.get( "resultType" ) ] ) )
             return false;
         // TODO: Beta-reduce the argType type somehow.
         if ( !typeCheck( etenv, evenv, em.val.get( "argVal" ),
-            ttenv, tvenv, em.val.get( "argType" ) ) )
+            etenv, evenv, em.val.get( "argType" ) ) )
             return false;
         return knownEqual(
             betaReduce(
@@ -1410,6 +1421,7 @@ function typeCheck( etenv, evenv, expr, ttenv, tvenv, type ) {
                 ) ),
                 em.val.get( "resultType" ) ),
             type );
+        
     } else if ( em = getMatch( expr,
         [ lit( "ttfn" ), str( "arg" ), "result" ] ) ) {
         
@@ -1420,11 +1432,13 @@ function typeCheck( etenv, evenv, expr, ttenv, tvenv, type ) {
         return typeCheck(
             etenv, evenv, em.val.get( "result" ),
             ttenv, tvenv, tm.val.get( "resultType" ) );
+        
     } else if ( em = getMatch( expr, [ lit( "ttcall" ),
         str( "argName" ), "resultType", "fn", "argVal" ] ) ) {
+        
         // TODO: Beta-reduce the (ttfa ...) type somehow.
         if ( !typeCheck( etenv, evenv, em.val.get( "fn" ),
-            ttenv, tvenv,
+            etenv, evenv,
             [ "ttfa", em.val.get( "argName" ),
                 em.val.get( "resultType" ) ] ) )
             return false;
@@ -1437,6 +1451,64 @@ function typeCheck( etenv, evenv, expr, ttenv, tvenv, type ) {
                 ) ),
                 em.val.get( "resultType" ) ),
             type );
+        
+    } else if ( em = getMatch( expr, [ lit( "sfn" ),
+        str( "arg" ), "argType", "argVal", "resultVal" ] ) ) {
+        
+        var tm = getMatch( type,
+            [ lit( "sfa" ), str( "arg" ), "argType", "resultType" ] );
+        if ( tm === null )
+            return false;
+        var argType = tm.val.get( "argType" );
+        if ( !knownEqual(
+            betaReduce( evenv, em.val.get( "argType" ) ), argType ) )
+            return false;
+        return typeCheck(
+            etenv, evenv, em.val.get( "resultVal" ),
+            ttenv.plus( strMap().set(
+                tm.val.get( "arg" ), argType ) ),
+            tvenv.plus( strMap().set(
+                // TODO: BAD CONTEXT. See above.
+                tm.val.get( "arg" ), em.val.get( "argVal" ) ) ),
+            tm.val.get( "resultType" ) );
+        
+    } else if ( em = getMatch( expr, [ lit( "fst" ),
+        str( "argName" ), "argType", "resultType", "fn" ] ) ) {
+        
+        // TODO: Beta-reduce the (sfa ...) type somehow.
+        if ( !typeCheck( etenv, evenv, em.val.get( "fn" ),
+            etenv, evenv,
+            [ "sfa", em.val.get( "argName" ), em.val.get( "argType" ),
+                em.val.get( "resultType" ) ] ) )
+            return false;
+        // TODO: Beta-reduce the argType type somehow.
+        return knownEqual( em.val.get( "argType" ), type );
+        
+    } else if ( em = getMatch( expr, [ lit( "snd" ),
+        str( "argName" ), "argType", "resultType", "fn" ] ) ) {
+        
+        // TODO: Beta-reduce the (sfa ...) type somehow.
+        // TODO: Note how we're calling typeCheck() on fn before we
+        // call betaReduce() on it. Due to our typing rules (though we
+        // haven't rigorously proven it), the beta reduction cannot
+        // fail to terminate. Make sure every use of betaReduce() is
+        // protected this way.
+        if ( !typeCheck( etenv, evenv, em.val.get( "fn" ),
+            etenv, evenv,
+            [ "sfa", em.val.get( "argName" ), em.val.get( "argType" ),
+                em.val.get( "resultType" ) ] ) )
+            return false;
+        // TODO: It seems like a waste to calculate resultVal just to
+        // make sure it has the right type, only to throw it away. See
+        // if there's a more frugal approach.
+        var reducedFn = betaReduce( evenv, em.val.get( "fn" ) );
+        var matchedFn = getMatch( reducedFn, [ lit( "sfn" ),
+            str( "arg" ), "argType", "argVal", "resultVal" ] );
+        if ( matchedFn === null )
+            return false;
+        return typeCheck(
+            etenv, evenv, matchedFn.val.get( "resultVal" ),
+            ttenv, tvenv, type );
     } else {
         // TODO: the other terms
         throw new Error();
