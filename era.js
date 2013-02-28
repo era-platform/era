@@ -203,11 +203,8 @@ StrMap.prototype.copy = function () {
 StrMap.prototype.add = function ( k ) {
     return this.set( k, true );
 };
-StrMap.prototype.plus = function ( other ) {
-    return this.copy().setAll( other );
-};
-StrMap.prototype.plusObj = function ( other ) {
-    return this.copy().setObj( other );
+StrMap.prototype.plusEntry = function ( k, v ) {
+    return this.copy().set( k, v );
 };
 // TODO: Find a better name for this.
 StrMap.prototype.plusArrTruth = function ( arr ) {
@@ -355,7 +352,7 @@ function readListUntilParen( $, consumeParen ) {
     function sub( $, list ) {
         return objPlus( $, {
             list: list,
-            readerMacros: $.readerMacros.plusObj( { ")":
+            readerMacros: $.readerMacros.plusEntry( ")",
                 function ( $sub ) {
                 
                 if ( consumeParen )
@@ -372,7 +369,7 @@ function readListUntilParen( $, consumeParen ) {
                         result.unshift( list.last );
                     $.then( { ok: true, val: result } );
                 }
-            } } ),
+            } ),
             then: function ( result ) {
                 if ( result.ok )
                     reader(
@@ -1377,13 +1374,13 @@ function isType( expr ) {
             { env: expr.env, term: em.val.get( "argType" ) } ) )
             return false;
         return isType( {
-            env: expr.env.plus( strMap().set( em.val.get( "arg" ), {
+            env: expr.env.plusEntry( em.val.get( "arg" ), {
                 // TODO: Beta-reduce argType somehow.
                 knownIsType: null,
                 knownType: { val: { env: expr.env,
                     term: em.val.get( "argType" ) } },
                 knownVal: null
-            } ) ),
+            } ),
             term: em.val.get( "resultType" )
         } );
         
@@ -1391,11 +1388,11 @@ function isType( expr ) {
         [ lit( "ttfa" ), str( "arg" ), "resultType" ] ) ) {
         
         return isType( {
-            env: expr.env.plus( strMap().set( em.val.get( "arg" ), {
+            env: expr.env.plusEntry( em.val.get( "arg" ), {
                 knownIsType: { val: true },
                 knownType: null,
                 knownVal: null
-            } ) ),
+            } ),
             term: em.val.get( "resultType" )
         } );
         
@@ -1406,13 +1403,13 @@ function isType( expr ) {
             { env: expr.env, term: em.val.get( "argType" ) } ) )
             return false;
         return isType( {
-            env: expr.env.plus( strMap().set( em.val.get( "arg" ), {
+            env: expr.env.plusEntry( em.val.get( "arg" ), {
                 // TODO: Beta-reduce argType somehow.
                 knownIsType: null,
                 knownType: { val: { env: expr.env,
                     term: em.val.get( "argType" ) } },
                 knownVal: null
-            } ) ),
+            } ),
             term: em.val.get( "resultType" )
         } );
     } else {
@@ -1452,18 +1449,18 @@ function typeCheck( expr, type ) {
         // TODO: Figure out whether argType can have free variables at
         // this point.
         return typeCheck( {
-            env: expr.env.plus( strMap().set( em.val.get( "arg" ), {
+            env: expr.env.plusEntry( em.val.get( "arg" ), {
                 knownIsType: null,
                 knownType: { val: { env: type.env, term: argType } },
                 knownVal: null
-            } ) ),
+            } ),
             term: em.val.get( "result" ),
         }, {
-            env: type.env.plus( strMap().set( tm.val.get( "arg" ), {
+            env: type.env.plusEntry( tm.val.get( "arg" ), {
                 knownIsType: null,
                 knownType: { val: { env: type.env, term: argType } },
                 knownVal: null
-            } ) ),
+            } ),
             term: tm.val.get( "resultType" )
         } );
         
@@ -1486,15 +1483,13 @@ function typeCheck( expr, type ) {
         return knownEqual(
             betaReduce( {
                 // TODO: Beta-reduce argType and argVal somehow.
-                env: expr.env.plus( strMap().set(
-                    em.val.get( "argName" ),
-                    {
-                        knownIsType: null,
-                        knownType: { val: { env: expr.env,
-                            term: em.val.get( "argType" ) } },
-                        knownVal: { val: { env: expr.env,
-                            term: em.val.get( "argVal" ) } }
-                    } ) ),
+                env: expr.env.plusEntry( em.val.get( "argName" ), {
+                    knownIsType: null,
+                    knownType: { val: { env: expr.env,
+                        term: em.val.get( "argType" ) } },
+                    knownVal: { val: { env: expr.env,
+                        term: em.val.get( "argVal" ) } }
+                } ),
                 term: em.val.get( "resultType" )
             } ),
             type );
@@ -1525,14 +1520,12 @@ function typeCheck( expr, type ) {
         return knownEqual(
             betaReduce( {
                 // TODO: Beta-reduce argVal somehow.
-                env: expr.env.plus( strMap().set(
-                    em.val.get( "argName" ),
-                    {
-                        knownIsType: { val: true },
-                        knownType: null,
-                        knownVal: { val: { env: expr.env,
-                            term: em.val.get( "argVal" ) } }
-                    } ) ),
+                env: expr.env.plusEntry( em.val.get( "argName" ), {
+                    knownIsType: { val: true },
+                    knownType: null,
+                    knownVal: { val: { env: expr.env,
+                        term: em.val.get( "argVal" ) } }
+                } ),
                 term: em.val.get( "resultType" )
             } ),
             type );
@@ -1554,14 +1547,13 @@ function typeCheck( expr, type ) {
             { env: expr.env, term: em.val.get( "resultVal" ) },
             {
                 // TODO: Beta-reduce argVal somehow.
-                env: type.env.plus( strMap().set( tm.val.get( "arg" ),
-                    {
-                        knownIsType: null,
-                        knownType: { val: { env: type.env,
-                            term: argType } },
-                        knownVal: { val: { env: expr.env,
-                            term: em.val.get( "argVal" ) } }
-                    } ) ),
+                env: type.env.plusEntry( tm.val.get( "arg" ), {
+                    knownIsType: null,
+                    knownType: { val: { env: type.env,
+                        term: argType } },
+                    knownVal: { val: { env: expr.env,
+                        term: em.val.get( "argVal" ) } }
+                } ),
                 term: tm.val.get( "resultType" )
             } );
         
