@@ -1353,25 +1353,83 @@ var patternLang = {};
     };
 })();
 
-// TODO: Implement knownEqual(), betaReduce(), and isType().
+// TODO: Implement knownEqual() and betaReduce().
 
-function typeCheck( etenv, evenv, expr, ttenv, tvenv, type ) {
+function isType( eenv, expr ) {
     
     var lit = patternLang.lit;
     var str = patternLang.str;
     var pat = patternLang.pat;
     var getMatch = patternLang.getMatch;
     
-    // TODO: Implement the following case:
-    //
-    // Term ::=| TermVar
+    var em;
+    if ( isPrimString( expr ) ) {
+        if ( !eenv.has( expr ) )
+            return false;
+        var exprIsType = eenv.get( expr ).knownIsType;
+        if ( exprIsType === null )
+            return false;
+        return exprIsType.val;
+    } else if ( em = getMatch( expr,
+        [ lit( "tfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
+        
+        if ( !isType( eenv, em.val.get( "argType" ) ) )
+            return false;
+        return isType(
+            eenv.plus( strMap().set( em.val.get( "arg" ), {
+                // TODO: Figure out how to rename occurrences of arg
+                // in argType.
+                // TODO: Beta-reduce argType somehow.
+                knownIsType: null,
+                knownType: { val: em.val.get( "argType" ) },
+                knownVal: null
+            } ) ),
+            em.val.get( "resultType" ) );
+        
+    } else if ( em = getMatch( expr,
+        [ lit( "ttfa" ), str( "arg" ), "resultType" ] ) ) {
+        
+        return isType(
+            eenv.plus( strMap().set( em.val.get( "arg" ), {
+                knownIsType: { val: true },
+                knownType: null,
+                knownVal: null
+            } ) ),
+            em.val.get( "resultType" ) );
+        
+    } else if ( em = getMatch( expr,
+        [ lit( "sfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
+        
+        if ( !isType( eenv, em.val.get( "argType" ) ) )
+            return false;
+        return isType(
+            eenv.plus( strMap().set( em.val.get( "arg" ), {
+                // TODO: Figure out how to rename occurrences of arg
+                // in argType.
+                // TODO: Beta-reduce argType somehow.
+                knownIsType: null,
+                knownType: { val: em.val.get( "argType" ) },
+                knownVal: null
+            } ) ),
+            em.val.get( "resultType" ) );
+    } else {
+        // TODO: Handle more language fragments.
+        return false;
+    }
+}
+
+function typeCheck( eenv, expr, tenv, type ) {
+    
+    var lit = patternLang.lit;
+    var str = patternLang.str;
+    var pat = patternLang.pat;
+    var getMatch = patternLang.getMatch;
     
     // TODO: At the point labeled "TODO: BAD CONTEXT", we're inserting
     // something from the expression (em) into a context where its
     // free variables will be treated as though they're from the
-    // type's type environment (ttenv) and value environment (tvenv).
-    // They're supposed to come from the expr's environments (etenv
-    // and evenv). Figure out what to do about this.
+    // type's environment (tenv). They're supposed to come from the
+    // expr's environment (eenv). Figure out what to do about this.
     //
     // Perhaps we could combine these environments, or perhaps we'll
     // need to write an operation that takes an expression and returns
@@ -1379,7 +1437,14 @@ function typeCheck( etenv, evenv, expr, ttenv, tvenv, type ) {
     // variables.
     
     var em;
-    if ( em = getMatch( expr,
+    if ( isPrimString( expr ) ) {
+        if ( !eenv.has( expr ) )
+            return false;
+        var exprType = eenv.get( expr ).knownType;
+        if ( exprType === null )
+            return false;
+        return knownEqual( eenv, exprType.val, tenv, type );
+    } else if ( em = getMatch( expr,
         [ lit( "tfn" ), str( "arg" ), "argType", "result" ] ) ) {
         
         var tm = getMatch( type,
@@ -1388,16 +1453,23 @@ function typeCheck( etenv, evenv, expr, ttenv, tvenv, type ) {
             return false;
         var argType = tm.val.get( "argType" );
         if ( !knownEqual(
-            betaReduce( evenv, em.val.get( "argType" ) ), argType ) )
+            eenv, betaReduce( eenv, em.val.get( "argType" ) ),
+            tenv, argType ) )
             return false;
+        // TODO: Figure out whether argType can have free variables at
+        // this point, and if it can, figure out what to do with them.
         return typeCheck(
-            etenv.plus(
-                strMap().set( em.val.get( "arg" ), argType ) ),
-            evenv,
+            eenv.plus( strMap().set( em.val.get( "arg" ), {
+                knownIsType: null,
+                knownType: { val: argType },
+                knownVal: null
+            } ) ),
             em.val.get( "result" ),
-            ttenv.plus(
-                strMap().set( tm.val.get( "arg" ), argType ) ),
-            tvenv,
+            tenv.plus( strMap().set( tm.val.get( "arg" ), {
+                knownIsType: null,
+                knownType: { val: argType },
+                knownVal: null
+            } ) ),
             tm.val.get( "resultType" ) );
         
     } else if ( em = getMatch( expr, [ lit( "tcall" ),
@@ -1405,22 +1477,28 @@ function typeCheck( etenv, evenv, expr, ttenv, tvenv, type ) {
         "fn", "argVal" ] ) ) {
         
         // TODO: Beta-reduce the (tfa ...) type somehow.
-        if ( !typeCheck( etenv, evenv, em.val.get( "fn" ),
-            etenv, evenv,
+        if ( !typeCheck( eenv, em.val.get( "fn" ),
+            eenv,
             [ "tfa", em.val.get( "argName" ), em.val.get( "argType" ),
                 em.val.get( "resultType" ) ] ) )
             return false;
         // TODO: Beta-reduce the argType type somehow.
-        if ( !typeCheck( etenv, evenv, em.val.get( "argVal" ),
-            etenv, evenv, em.val.get( "argType" ) ) )
+        if ( !typeCheck( eenv, em.val.get( "argVal" ),
+            eenv, em.val.get( "argType" ) ) )
             return false;
+        // TODO: Figure out how to rename occurrences of argName in
+        // argType and argVal.
+        // TODO: Beta-reduce argType and argVal somehow.
+        var subEenv =
+            eenv.plus( strMap().set( em.val.get( "argName" ), {
+                knownIsType: null,
+                knownType: { val: em.val.get( "argType" ) },
+                knownVal: { val: em.val.get( "argVal" ) }
+            } ) );
         return knownEqual(
-            betaReduce(
-                evenv.plus( strMap().set(
-                    em.val.get( "argName" ), em.val.get( "argVal" )
-                ) ),
-                em.val.get( "resultType" ) ),
-            type );
+            subEenv,
+            betaReduce( subEenv, em.val.get( "resultType" ) ),
+            tenv, type );
         
     } else if ( em = getMatch( expr,
         [ lit( "ttfn" ), str( "arg" ), "result" ] ) ) {
@@ -1429,28 +1507,33 @@ function typeCheck( etenv, evenv, expr, ttenv, tvenv, type ) {
             [ lit( "ttfa" ), str( "arg" ), "resultType" ] );
         if ( tm === null )
             return false;
-        return typeCheck(
-            etenv, evenv, em.val.get( "result" ),
-            ttenv, tvenv, tm.val.get( "resultType" ) );
+        return typeCheck( eenv, em.val.get( "result" ),
+            tenv, tm.val.get( "resultType" ) );
         
     } else if ( em = getMatch( expr, [ lit( "ttcall" ),
         str( "argName" ), "resultType", "fn", "argVal" ] ) ) {
         
         // TODO: Beta-reduce the (ttfa ...) type somehow.
-        if ( !typeCheck( etenv, evenv, em.val.get( "fn" ),
-            etenv, evenv,
+        if ( !typeCheck( eenv, em.val.get( "fn" ),
+            eenv,
             [ "ttfa", em.val.get( "argName" ),
                 em.val.get( "resultType" ) ] ) )
             return false;
-        if ( !isType( etenv, evenv, em.val.get( "argVal" ) ) )
+        if ( !isType( eenv, em.val.get( "argVal" ) ) )
             return false;
+        // TODO: Figure out how to rename occurrences of argName in
+        // argVal.
+        // TODO: Beta-reduce argVal somehow.
+        var subEenv =
+            eenv.plus( strMap().set( em.val.get( "argName" ), {
+                knownIsType: { val: true },
+                knownType: null,
+                knownVal: { val: em.val.get( "argVal" ) }
+            } ) );
         return knownEqual(
-            betaReduce(
-                evenv.plus( strMap().set(
-                    em.val.get( "argName" ), em.val.get( "argVal" )
-                ) ),
-                em.val.get( "resultType" ) ),
-            type );
+            subEenv,
+            betaReduce( subEenv, em.val.get( "resultType" ) ),
+            tenv, type );
         
     } else if ( em = getMatch( expr, [ lit( "sfn" ),
         str( "arg" ), "argType", "argVal", "resultVal" ] ) ) {
@@ -1461,28 +1544,34 @@ function typeCheck( etenv, evenv, expr, ttenv, tvenv, type ) {
             return false;
         var argType = tm.val.get( "argType" );
         if ( !knownEqual(
-            betaReduce( evenv, em.val.get( "argType" ) ), argType ) )
+            eenv, betaReduce( eenv, em.val.get( "argType" ) ),
+            tenv, argType ) )
             return false;
         return typeCheck(
-            etenv, evenv, em.val.get( "resultVal" ),
-            ttenv.plus( strMap().set(
-                tm.val.get( "arg" ), argType ) ),
-            tvenv.plus( strMap().set(
+            eenv, em.val.get( "resultVal" ),
+            // TODO: Figure out how to rename occurrences of arg in
+            // argType and argVal.
+            // TODO: Beta-reduce argVal somehow.
+            tenv.plus( strMap().set( tm.val.get( "arg" ), {
+                knownIsType: null,
+                knownType: { val: argType },
                 // TODO: BAD CONTEXT. See above.
-                tm.val.get( "arg" ), em.val.get( "argVal" ) ) ),
+                knownVal: { val: em.val.get( "argVal" ) }
+            } ) ),
             tm.val.get( "resultType" ) );
         
     } else if ( em = getMatch( expr, [ lit( "fst" ),
         str( "argName" ), "argType", "resultType", "fn" ] ) ) {
         
         // TODO: Beta-reduce the (sfa ...) type somehow.
-        if ( !typeCheck( etenv, evenv, em.val.get( "fn" ),
-            etenv, evenv,
+        if ( !typeCheck( eenv, em.val.get( "fn" ),
+            eenv,
             [ "sfa", em.val.get( "argName" ), em.val.get( "argType" ),
                 em.val.get( "resultType" ) ] ) )
             return false;
         // TODO: Beta-reduce the argType type somehow.
-        return knownEqual( em.val.get( "argType" ), type );
+        return knownEqual(
+            eenv, em.val.get( "argType" ), tenv, type );
         
     } else if ( em = getMatch( expr, [ lit( "snd" ),
         str( "argName" ), "argType", "resultType", "fn" ] ) ) {
@@ -1493,25 +1582,24 @@ function typeCheck( etenv, evenv, expr, ttenv, tvenv, type ) {
         // haven't rigorously proven it), the beta reduction cannot
         // fail to terminate. Make sure every use of betaReduce() is
         // protected this way.
-        if ( !typeCheck( etenv, evenv, em.val.get( "fn" ),
-            etenv, evenv,
+        if ( !typeCheck( eenv, em.val.get( "fn" ),
+            eenv,
             [ "sfa", em.val.get( "argName" ), em.val.get( "argType" ),
                 em.val.get( "resultType" ) ] ) )
             return false;
         // TODO: It seems like a waste to calculate resultVal just to
         // make sure it has the right type, only to throw it away. See
         // if there's a more frugal approach.
-        var reducedFn = betaReduce( evenv, em.val.get( "fn" ) );
+        var reducedFn = betaReduce( eenv, em.val.get( "fn" ) );
         var matchedFn = getMatch( reducedFn, [ lit( "sfn" ),
             str( "arg" ), "argType", "argVal", "resultVal" ] );
         if ( matchedFn === null )
             return false;
         return typeCheck(
-            etenv, evenv, matchedFn.val.get( "resultVal" ),
-            ttenv, tvenv, type );
+            eenv, matchedFn.val.get( "resultVal" ), tenv, type );
     } else {
-        // TODO: the other terms
-        throw new Error();
+        // TODO: Handle more language fragments.
+        return false;
     }
 }
 
