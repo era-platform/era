@@ -1352,6 +1352,17 @@ var patternLang = {};
 
 // TODO: Implement knownEqual() and betaReduce().
 
+// NOTE: Pretty much every time we call betaReduce(), we call isType()
+// or typeCheck() first, so that we know beta reduction will
+// terminate (albeit without rigorous mathematical proof yet).
+//
+// TODO: See if this practice leads to significant amounts of
+// duplicated computation.
+//
+// TODO: Figure out if it should be necessary to beta-reduce env-term
+// pairs that are stored in environments (under knownType and
+// knownVal). We do this now, but do we have to?
+
 function isType( expr ) {
     
     var lit = patternLang.lit;
@@ -1378,9 +1389,8 @@ function isType( expr ) {
             return false;
         return isType( {
             env: expr.env.plusEntry( em.val.get( "arg" ), {
-                // TODO: Beta-reduce argType somehow.
                 knownIsType: null,
-                knownType: { val: eget( "argType" ) },
+                knownType: { val: betaReduce( eget( "argType" ) ) },
                 knownVal: null
             } ),
             term: em.val.get( "resultType" )
@@ -1405,9 +1415,8 @@ function isType( expr ) {
             return false;
         return isType( {
             env: expr.env.plusEntry( em.val.get( "arg" ), {
-                // TODO: Beta-reduce argType somehow.
                 knownIsType: null,
-                knownType: { val: eget( "argType" ) },
+                knownType: { val: betaReduce( eget( "argType" ) ) },
                 knownVal: null
             } ),
             term: em.val.get( "resultType" )
@@ -1419,6 +1428,7 @@ function isType( expr ) {
 }
 
 function typeCheck( expr, type ) {
+    // NOTE: The type is assumed to be beta-reduced already.
     
     var lit = patternLang.lit;
     var str = patternLang.str;
@@ -1449,6 +1459,8 @@ function typeCheck( expr, type ) {
         if ( tm === null )
             return false;
         var argType = tget( "argType" );
+        if ( !isType( eget( "argType" ) ) )
+            return false;
         if ( !knownEqual( betaReduce( eget( "argType" ) ), argType ) )
             return false;
         // TODO: Figure out whether argType can have free variables at
@@ -1460,36 +1472,35 @@ function typeCheck( expr, type ) {
                 knownVal: null
             } ),
             term: em.val.get( "result" ),
-        }, {
+        }, betaReduce( {
             env: type.env.plusEntry( tm.val.get( "arg" ), {
                 knownIsType: null,
                 knownType: { val: argType },
                 knownVal: null
             } ),
             term: tm.val.get( "resultType" )
-        } );
+        } ) );
         
     } else if ( em = getMatch( expr.term, [ lit( "tcall" ),
         str( "argName" ), "argType", "resultType",
         "fn", "argVal" ] ) ) {
         
-        // TODO: Beta-reduce the (tfa ...) type somehow.
-        if ( !typeCheck( eget( "fn" ),
-            { env: expr.env,
-                term: [ "tfa", em.val.get( "argName" ),
-                    em.val.get( "argType" ),
-                    em.val.get( "resultType" ) ] } ) )
+        var fnType = { env: expr.env, term:
+            [ "tfa", em.val.get( "argName" ), em.val.get( "argType" ),
+                em.val.get( "resultType" ) ] };
+        if ( !isType( fnType ) )
             return false;
-        // TODO: Beta-reduce the argType type somehow.
-        if ( !typeCheck( eget( "argVal" ), eget( "argType" ) ) )
+        if ( !typeCheck( eget( "fn" ), betaReduce( fnType ) ) )
+            return false;
+        var argType = betaReduce( eget( "argType" ) );
+        if ( !typeCheck( eget( "argVal" ), argType ) )
             return false;
         return knownEqual(
             betaReduce( {
-                // TODO: Beta-reduce argType and argVal somehow.
                 env: expr.env.plusEntry( em.val.get( "argName" ), {
                     knownIsType: null,
-                    knownType: { val: eget( "argType" ) },
-                    knownVal: { val: eget( "argVal" ) }
+                    knownType: { val: argType },
+                    knownVal: { val: betaReduce( eget( "argVal" ) ) }
                 } ),
                 term: em.val.get( "resultType" )
             } ),
@@ -1507,21 +1518,21 @@ function typeCheck( expr, type ) {
     } else if ( em = getMatch( expr.term, [ lit( "ttcall" ),
         str( "argName" ), "resultType", "fn", "argVal" ] ) ) {
         
-        // TODO: Beta-reduce the (ttfa ...) type somehow.
-        if ( !typeCheck( eget( "fn" ),
-            { env: expr.env,
-                term: [ "ttfa", em.val.get( "argName" ),
-                    em.val.get( "resultType" ) ] } ) )
+        var fnType = { env: expr.env, term:
+            [ "ttfa", em.val.get( "argName" ),
+                em.val.get( "resultType" ) ] };
+        if ( !isType( fnType ) )
+            return false;
+        if ( !typeCheck( eget( "fn" ), betaReduce( fnType ) ) )
             return false;
         if ( !isType( eget( "argVal" ) ) )
             return false;
         return knownEqual(
             betaReduce( {
-                // TODO: Beta-reduce argVal somehow.
                 env: expr.env.plusEntry( em.val.get( "argName" ), {
                     knownIsType: { val: true },
                     knownType: null,
-                    knownVal: { val: eget( "argVal" ) }
+                    knownVal: { val: betaReduce( eget( "argVal" ) ) }
                 } ),
                 term: em.val.get( "resultType" )
             } ),
@@ -1535,49 +1546,43 @@ function typeCheck( expr, type ) {
         if ( tm === null )
             return false;
         var argType = tget( "argType" );
+        if ( !isType( eget( "argType" ) ) )
+            return false;
         if ( !knownEqual( betaReduce( eget( "argType" ) ), argType ) )
             return false;
-        return typeCheck( eget( "resultVal" ), {
-            // TODO: Beta-reduce argVal somehow.
+        if ( !typeCheck( eget( "argVal" ), argType ) )
+            return false;
+        return typeCheck( eget( "resultVal" ), betaReduce( {
             env: type.env.plusEntry( tm.val.get( "arg" ), {
                 knownIsType: null,
                 knownType: { val: argType },
-                knownVal: { val: eget( "argVal" ) }
+                knownVal: { val: betaReduce( eget( "argVal" ) ) }
             } ),
             term: tm.val.get( "resultType" )
-        } );
+        } ) );
         
     } else if ( em = getMatch( expr.term, [ lit( "fst" ),
         str( "argName" ), "argType", "resultType", "fn" ] ) ) {
         
-        // TODO: Beta-reduce the (sfa ...) type somehow.
-        if ( !typeCheck( eget( "fn" ),
-            { env: expr.env,
-                term: [ "sfa", em.val.get( "argName" ),
-                    em.val.get( "argType" ),
-                    em.val.get( "resultType" ) ] } ) )
+        var fnType = { env: expr.env, term:
+            [ "sfa", em.val.get( "argName" ), em.val.get( "argType" ),
+                em.val.get( "resultType" ) ] };
+        if ( !isType( fnType ) )
             return false;
-        // TODO: Beta-reduce the argType type somehow.
-        return knownEqual( eget( "argType" ), type );
+        if ( !typeCheck( eget( "fn" ), betaReduce( fnType ) ) )
+            return false;
+        return knownEqual( betaReduce( eget( "argType" ) ), type );
         
     } else if ( em = getMatch( expr.term, [ lit( "snd" ),
         str( "argName" ), "argType", "resultType", "fn" ] ) ) {
         
-        // TODO: Beta-reduce the (sfa ...) type somehow.
-        // TODO: Note how we're calling typeCheck() on fn before we
-        // call betaReduce() on it. Due to our typing rules (though we
-        // haven't rigorously proven it), the beta reduction cannot
-        // fail to terminate. Make sure every use of betaReduce() is
-        // protected this way.
-        if ( !typeCheck( eget( "fn" ),
-            { env: expr.env,
-                term: [ "sfa", em.val.get( "argName" ),
-                    em.val.get( "argType" ),
-                    em.val.get( "resultType" ) ] } ) )
+        var fnType = { env: expr.env, term:
+            [ "sfa", em.val.get( "argName" ), em.val.get( "argType" ),
+                em.val.get( "resultType" ) ] }
+        if ( !isType( fnType ) )
             return false;
-        // TODO: It seems like a waste to calculate resultVal just to
-        // make sure it has the right type, only to throw it away. See
-        // if there's a more frugal approach.
+        if ( !typeCheck( eget( "fn" ), betaReduce( fnType ) ) )
+            return false;
         var reducedFn = betaReduce( eget( "fn" ) );
         var matchedFn = getMatch( reducedFn.term, [ lit( "sfn" ),
             str( "arg" ), "argType", "argVal", "resultVal" ] );
