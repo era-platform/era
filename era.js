@@ -1351,7 +1351,7 @@ var patternLang = {};
 })();
 
 
-// TODO: Implement knownEqual().
+// TODO: Implement knownEqual() and renameAway().
 
 function betaReduce( expr ) {
     // NOTE: Pretty much every time we call betaReduce(), we call
@@ -1371,40 +1371,54 @@ function betaReduce( expr ) {
         return { env: expr.env, term: em.val.get( k ) };
     }
     
+    var env = expr.env;
+    
+    // NOTE: This has a side effect (changing the binding of `env`),
+    // even if we use it in a way that makes it look pure.
+    function rename( k ) {
+        var result = renameAway( env, [], betaReduce( eget( k ) ) );
+        env = result.env;
+        return result.term;
+    }
+    
+    
+    // TODO: Figure out if it's really important to do
+    // rename( "argType" ) when the overall value isn't a type.
+    // There might be some static-versus-dynamic confusion here.
+    
     var em;
     if ( isPrimString( expr.term ) ) {
         if ( !expr.env.has( expr.term ) )
             throw new Error();
         var exprVal = expr.env.get( expr.term ).knownVal;
         if ( exprVal === null )
-            return false;
+            throw new Error();
+        
         // TODO: Figure out if it should be necessary to beta-reduce
-        // env-term pairs that are stored in environments (under
+        // env-term pairs before they're stored in environments (under
         // knownType and knownVal). We do this now, but do we have to?
-        // Maybe we could beta-reduce here instead.
+        // Maybe we could beta-reduce knownVal here instead. But
+        // where would we beta-reduce knownType?
+        
+        // TODO: See if a call to renameAway() here would obviate the
+        // need to do renaming in any other case. After all, this
+        // seems to be the only case whose result's environment has
+        // mappings that conflict with the original environment.
+        
         return exprVal.val;
     } else if ( em = getMatch( expr.term,
         [ lit( "tfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
         
-        return { env: expr.env, term: [ "tfa", em.val.get( "arg" ),
-            // TODO: Fix this. It won't work, since betaReduce()
-            // returns an env-term pair rather than just a term.
-            betaReduce( eget( "argType" ) ),
-            em.val.get( "resultType" ) };
+        var term = [ "tfa", em.val.get( "arg" ),
+            rename( "argType" ), em.val.get( "resultType" ) ];
+        return { env: env, term: term };
         
     } else if ( em = getMatch( expr.term,
         [ lit( "tfn" ), str( "arg" ), "argType", "result" ] ) ) {
         
-        return { env: expr.env, term: [ "tfn", em.val.get( "arg" ),
-            
-            // TODO: Fix this. It won't work, since betaReduce()
-            // returns an env-term pair rather than just a term.
-            //
-            // TODO: Figure out if it's really important to reduce
-            // types when the final value isn't a type. There might be
-            // some static-versus-dynamic confusion here.
-            //
-            betaReduce( eget( "argType" ) ), em.val.get( "return" ) };
+        var term = [ "tfn", em.val.get( "arg" ),
+            rename( "argType" ), em.val.get( "result" ) ];
+        return { env: env, term: term };
         
     } else if ( em = getMatch( expr.term, [ lit( "tcall" ),
         str( "argName" ), "argType", "resultType",
@@ -1430,29 +1444,23 @@ function betaReduce( expr ) {
     } else if ( em = getMatch( expr.term,
         [ lit( "sfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
         
-        return { env: expr.env, term: [ "sfa", em.val.get( "arg" ),
-            // TODO: Fix this. It won't work, since betaReduce()
-            // returns an env-term pair rather than just a term.
-            betaReduce( eget( "argType" ) ),
-            em.val.get( "resultType" ) };
+        var term = [ "sfa", em.val.get( "arg" ),
+            rename( "argType" ), em.val.get( "resultType" ) ];
+        return { env: env, term: term };
         
     } else if ( em = getMatch( expr.term, [ lit( "sfn" ),
         str( "arg" ), "argType", "argVal", "resultVal" ] ) ) {
         
-        // TODO: Fix this. It won't work, since betaReduce() returns
-        // an env-term pair rather than just a term.
-        return { env: expr.env, term: [ "sfn", em.val.get( "arg" ),
-            
-            // TODO: Figure out if it's really important to reduce
-            // types when the final value isn't a type. There might be
-            // some static-versus-dynamic confusion here.
-            betaReduce( eget( "argType" ) ),
-            
-            betaReduce( eget( "argVal" ) ),
-            betaReduce( eget( "resultVal" ) ) };
+        var term = [ "sfn", em.val.get( "arg" ), rename( "argType" ),
+            rename( "argVal" ), rename( "resultVal" ) ];
+        return { env: env, term: term };
         
     } else if ( em = getMatch( expr.term, [ lit( "fst" ),
         str( "argName" ), "argType", "resultType", "fn" ] ) ) {
+        
+        var reducedFn = betaReduce( eget( "fn" ) );
+        var matchedFn = getMatch( reducedFn.term, [ lit( "sfn" ),
+            str( "arg" ), "argType", "argVal", "resultVal" ] );
         
         // TODO: Implement this case.
         
