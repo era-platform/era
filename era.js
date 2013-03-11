@@ -1370,21 +1370,25 @@ function betaReduce( expr ) {
     function eget( k ) {
         return { env: expr.env, term: em.val.get( k ) };
     }
+    function bget( k ) {
+        return betaReduce( eget( k ) );
+    }
     
     var env = expr.env;
     
     // NOTE: This has a side effect (changing the binding of `env`),
     // even if we use it in a way that makes it look pure.
     function rename( k ) {
-        var result = renameAway( env, [], betaReduce( eget( k ) ) );
+        var result = renameAway( env, [], bget( k ) );
         env = result.env;
         return result.term;
     }
     
     
     // TODO: Figure out if it's really important to do
-    // rename( "argType" ) when the overall value isn't a type.
-    // There might be some static-versus-dynamic confusion here.
+    // rename( "argType" ) or bget( "argType" ) when the overall value
+    // isn't a type. There might be some static-versus-dynamic
+    // confusion here.
     
     var em;
     if ( isPrimString( expr.term ) ) {
@@ -1424,7 +1428,23 @@ function betaReduce( expr ) {
         str( "argName" ), "argType", "resultType",
         "fn", "argVal" ] ) ) {
         
-        // TODO: Implement this case.
+        var reducedFn = bget( "fn" );
+        var matchedFn = getMatch( reducedFn.term,
+            [ lit( "tfn" ), str( "arg" ), "argType", "result" ] );
+        if ( !matchedFn )
+            throw new Error();
+        return betaReduce( {
+            env: reducedFn.env.plusEntry( matchedFn.val.get( "arg" ),
+            {
+                knownIsType: null,
+                // TODO: Figure out if we actually need this knownType
+                // here. If so, figure out whether we should use
+                // argType from matchedFn instead.
+                knownType: { val: bget( "argType" ) },
+                knownVal: { val: bget( "argVal" ) }
+            } ),
+            term: matchedFn.val.get( "result" )
+        } );
         
     } else if ( em = getMatch( expr.term,
         [ lit( "ttfa" ), str( "arg" ), "resultType" ] ) ) {
@@ -1439,7 +1459,22 @@ function betaReduce( expr ) {
     } else if ( em = getMatch( expr.term, [ lit( "ttcall" ),
         str( "argName" ), "resultType", "fn", "argVal" ] ) ) {
         
-        // TODO: Implement this case.
+        var reducedFn = bget( "fn" );
+        var matchedFn = getMatch( reducedFn.term,
+            [ lit( "ttfn" ), str( "arg" ), "result" ] );
+        if ( !matchedFn )
+            throw new Error();
+        return betaReduce( {
+            env: reducedFn.env.plusEntry( matchedFn.val.get( "arg" ),
+            {
+                // TODO: Figure out if we actually need this
+                // knownIsType here.
+                knownIsType: { val: true },
+                knownType: null,
+                knownVal: { val: bget( "argVal" ) }
+            } ),
+            term: matchedFn.val.get( "result" )
+        } );
         
     } else if ( em = getMatch( expr.term,
         [ lit( "sfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
@@ -1458,16 +1493,20 @@ function betaReduce( expr ) {
     } else if ( em = getMatch( expr.term, [ lit( "fst" ),
         str( "argName" ), "argType", "resultType", "fn" ] ) ) {
         
-        var reducedFn = betaReduce( eget( "fn" ) );
+        var reducedFn = bget( "fn" );
         var matchedFn = getMatch( reducedFn.term, [ lit( "sfn" ),
             str( "arg" ), "argType", "argVal", "resultVal" ] );
-        
-        // TODO: Implement this case.
+        if ( !matchedFn )
+            throw new Error();
+        return { env: env, term: matchedFn.val.get( "argVal" ) };
         
     } else if ( em = getMatch( expr.term, [ lit( "snd" ),
         str( "argName" ), "argType", "resultType", "fn" ] ) ) {
         
-        // TODO: Implement this case.
+        var reducedFn = bget( "fn" );
+        var matchedFn = getMatch( reducedFn.term, [ lit( "sfn" ),
+            str( "arg" ), "argType", "argVal", "resultVal" ] );
+        return { env: env, term: matchedFn.val.get( "resultVal" ) };
         
     } else {
         // TODO: Handle more language fragments.
@@ -1484,6 +1523,9 @@ function isType( expr ) {
     
     function eget( k ) {
         return { env: expr.env, term: em.val.get( k ) };
+    }
+    function bget( k ) {
+        return betaReduce( eget( k ) );
     }
     
     var em;
@@ -1502,7 +1544,7 @@ function isType( expr ) {
         return isType( {
             env: expr.env.plusEntry( em.val.get( "arg" ), {
                 knownIsType: null,
-                knownType: { val: betaReduce( eget( "argType" ) ) },
+                knownType: { val: bget( "argType" ) },
                 knownVal: null
             } ),
             term: em.val.get( "resultType" )
@@ -1528,7 +1570,7 @@ function isType( expr ) {
         return isType( {
             env: expr.env.plusEntry( em.val.get( "arg" ), {
                 knownIsType: null,
-                knownType: { val: betaReduce( eget( "argType" ) ) },
+                knownType: { val: bget( "argType" ) },
                 knownVal: null
             } ),
             term: em.val.get( "resultType" )
@@ -1550,6 +1592,9 @@ function typeCheck( expr, type ) {
     // NOTE: Var hoisting is so convenient!
     function eget( k ) {
         return { env: expr.env, term: em.val.get( k ) };
+    }
+    function bget( k ) {
+        return betaReduce( eget( k ) );
     }
     function tget( k ) {
         return { env: type.env, term: tm.val.get( k ) };
@@ -1573,7 +1618,7 @@ function typeCheck( expr, type ) {
         var argType = tget( "argType" );
         if ( !isType( eget( "argType" ) ) )
             return false;
-        if ( !knownEqual( betaReduce( eget( "argType" ) ), argType ) )
+        if ( !knownEqual( bget( "argType" ), argType ) )
             return false;
         // TODO: Figure out whether argType can have free variables at
         // this point.
@@ -1604,7 +1649,7 @@ function typeCheck( expr, type ) {
             return false;
         if ( !typeCheck( eget( "fn" ), betaReduce( fnType ) ) )
             return false;
-        var argType = betaReduce( eget( "argType" ) );
+        var argType = bget( "argType" );
         if ( !typeCheck( eget( "argVal" ), argType ) )
             return false;
         return knownEqual(
@@ -1612,7 +1657,7 @@ function typeCheck( expr, type ) {
                 env: expr.env.plusEntry( em.val.get( "argName" ), {
                     knownIsType: null,
                     knownType: { val: argType },
-                    knownVal: { val: betaReduce( eget( "argVal" ) ) }
+                    knownVal: { val: bget( "argVal" ) }
                 } ),
                 term: em.val.get( "resultType" )
             } ),
@@ -1644,7 +1689,7 @@ function typeCheck( expr, type ) {
                 env: expr.env.plusEntry( em.val.get( "argName" ), {
                     knownIsType: { val: true },
                     knownType: null,
-                    knownVal: { val: betaReduce( eget( "argVal" ) ) }
+                    knownVal: { val: bget( "argVal" ) }
                 } ),
                 term: em.val.get( "resultType" )
             } ),
@@ -1660,7 +1705,7 @@ function typeCheck( expr, type ) {
         var argType = tget( "argType" );
         if ( !isType( eget( "argType" ) ) )
             return false;
-        if ( !knownEqual( betaReduce( eget( "argType" ) ), argType ) )
+        if ( !knownEqual( bget( "argType" ), argType ) )
             return false;
         if ( !typeCheck( eget( "argVal" ), argType ) )
             return false;
@@ -1668,7 +1713,7 @@ function typeCheck( expr, type ) {
             env: type.env.plusEntry( tm.val.get( "arg" ), {
                 knownIsType: null,
                 knownType: { val: argType },
-                knownVal: { val: betaReduce( eget( "argVal" ) ) }
+                knownVal: { val: bget( "argVal" ) }
             } ),
             term: tm.val.get( "resultType" )
         } ) );
@@ -1683,7 +1728,7 @@ function typeCheck( expr, type ) {
             return false;
         if ( !typeCheck( eget( "fn" ), betaReduce( fnType ) ) )
             return false;
-        return knownEqual( betaReduce( eget( "argType" ) ), type );
+        return knownEqual( bget( "argType" ), type );
         
     } else if ( em = getMatch( expr.term, [ lit( "snd" ),
         str( "argName" ), "argType", "resultType", "fn" ] ) ) {
@@ -1695,7 +1740,7 @@ function typeCheck( expr, type ) {
             return false;
         if ( !typeCheck( eget( "fn" ), betaReduce( fnType ) ) )
             return false;
-        var reducedFn = betaReduce( eget( "fn" ) );
+        var reducedFn = bget( "fn" );
         var matchedFn = getMatch( reducedFn.term, [ lit( "sfn" ),
             str( "arg" ), "argType", "argVal", "resultVal" ] );
         if ( matchedFn === null )
