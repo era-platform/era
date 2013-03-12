@@ -224,6 +224,9 @@ StrMap.prototype.minus = function ( other ) {
     result.contents_ = objMinus( this.contents_, other.contents_ );
     return result;
 };
+StrMap.prototype.minusEntry = function ( k ) {
+    return this.copy().del( k );
+};
 // TODO: Find a better name for this.
 StrMap.prototype.minusArrTruth = function ( arr ) {
     return this.minus( strMap().plusArrTruth( arr ) );
@@ -1355,124 +1358,185 @@ var patternLang = {};
 })();
 
 
-function renameAway( env, localVars, expr ) {
+function getFreeVars( term, opt_boundVars ) {
     
     var lit = patternLang.lit;
     var str = patternLang.str;
     var pat = patternLang.pat;
     var getMatch = patternLang.getMatch;
     
-    function eget( k ) {
-        return { env: expr.env, term: em.val.get( k ) };
+    var boundVars =
+        opt_boundVars !== void 0 ? opt_boundVars : strMap();
+    
+    function recurWith( k, boundVars ) {
+        return getFreeVars( em.val.get( k ), boundVars );
     }
-    
-    var env = expr.env;
-    
-    // NOTE: These have a side effects (changing the binding of
-    // `env`), even if we use them in a way that makes them look pure.
-    function rename( k ) {
-        var result = renameAway( env, localVars, eget( k ) );
-        env = result.env;
-        return result.term;
+    function recur( k ) {
+        return recurWith( k, boundVars );
     }
-    function renameWithout( termK, argK ) {
-        var result = renameAway( env,
-            localVars.plusTruth( em.val.get( argK ) ),
-            eget( termK ) );
-        env = result.env;
-        return result.term;
+    function recurMinus( termK, argK ) {
+        return recurWith( k, boundVars.minusEntry( argK ) );
     }
-    
-    
-    // TODO: Figure out if it's really important to do
-    // rename( "argType" ) when the overall value isn't a type. There
-    // might be some static-versus-dynamic confusion here.
     
     var em;
-    if ( isPrimString( expr.term ) ) {
-        if ( localVars.has( expr.term ) )
-            return { env: strMap(), term: expr.term };
+    if ( isPrimString( term ) ) {
+        if ( boundVars.has( term ) )
+            return strMap();
+        return strMap().plusTruth( term );
         
-        // TODO: Implement this case. This might require adding
-        // another recursion-specific parameter.
-        
-    } else if ( em = getMatch( expr.term,
+    } else if ( em = getMatch( term,
         [ lit( "tfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
         
-        var term = [ "tfa", em.val.get( "arg" ), rename( "argType" ),
-            renameWithout( "resultType", "arg" ) ];
-        return { env: env, term: term };
+        return recur( "argType" ).
+            addAll( recurMinus( "resultType", "arg" ) );
         
-    } else if ( em = getMatch( expr.term,
+    } else if ( em = getMatch( term,
         [ lit( "tfn" ), str( "arg" ), "argType", "result" ] ) ) {
         
-        var term = [ "tfn", em.val.get( "arg" ),
-            rename( "argType" ), renameWithout( "result", "arg" ) ];
-        return { env: env, term: term };
+        return recur( "argType" ).
+            addAll( recurMinus( "result", "arg" ) );
         
-    } else if ( em = getMatch( expr.term, [ lit( "tcall" ),
+    } else if ( em = getMatch( term, [ lit( "tcall" ),
         str( "argName" ), "argType", "resultType",
         "fn", "argVal" ] ) ) {
         
-        var term = [ "tcall", em.val.get( "argName" ),
-            rename( "argType" ),
-            renameWithout( "resultType", "argName" ),
-            rename( "fn" ), rename( "argVal" ) ];
-        return { env: env, term: term };
+        return recur( "argType" ).
+            addAll( recurMinus( "resultType", "arg" ) ).
+            addAll( recur( "fn" ) ).addAll( recur( "argVal" ) );
         
-    } else if ( em = getMatch( expr.term,
+    } else if ( em = getMatch( term,
         [ lit( "ttfa" ), str( "arg" ), "resultType" ] ) ) {
         
-        var term = [ "tfa", em.val.get( "arg" ),
-            renameWithout( "resultType", "arg" ) ];
-        return { env: env, term: term };
+        return recurMinus( "resultType", "arg" );
         
-    } else if ( em = getMatch( expr.term,
+    } else if ( em = getMatch( term,
         [ lit( "ttfn" ), str( "arg" ), "result" ] ) ) {
         
-        var term = [ "ttfn", em.val.get( "arg" ),
-            renameWithout( "result", "arg" ) ];
-        return { env: env, term: term };
+        return recurMinus( "result", "arg" );
         
-    } else if ( em = getMatch( expr.term, [ lit( "ttcall" ),
+    } else if ( em = getMatch( term, [ lit( "ttcall" ),
         str( "argName" ), "resultType", "fn", "argVal" ] ) ) {
         
-        var term = [ "ttcall", em.val.get( "argName" ),
-            renameWithout( "resultType", "argName" ),
-            rename( "fn" ), rename( "argVal" ) ];
-        return { env: env, term: term };
+        return recurMinus( "resultType", "argName" ).
+            addAll( recur( "fn" ) ).addAll( recur( "argVal" ) );
         
-    } else if ( em = getMatch( expr.term,
+    } else if ( em = getMatch( term,
         [ lit( "sfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
         
-        var term = [ "sfa", em.val.get( "arg" ), rename( "argType" ),
-            renameWithout( "resultType", "arg" ) ];
-        return { env: env, term: term };
+        return recur( "argType" ).
+            addAll( recurMinus( "resultType", "arg" ) );
         
-    } else if ( em = getMatch( expr.term, [ lit( "sfn" ),
+    } else if ( em = getMatch( term, [ lit( "sfn" ),
         str( "arg" ), "argType", "argVal", "resultVal" ] ) ) {
         
-        var term = [ "sfn", em.val.get( "arg" ), rename( "argType" ),
-            rename( "argVal" ), rename( "resultVal" ) ];
-        return { env: env, term: term };
+        return recur( "argType" ).addAll( recur( "argVal" ) ).
+            addAll( recurMinus( "resultVal", "arg" ) );
         
-    } else if ( em = getMatch( expr.term, [ lit( "fst" ),
+    } else if ( em = getMatch( term, [ lit( "fst" ),
         str( "argName" ), "argType", "resultType", "fn" ] ) ) {
         
-        var term = [ "fst", em.val.get( "argName" ),
-            rename( "argType" ),
-            renameWithout( "resultType", "argName" ),
-            rename( "fn" ) ];
-        return { env: env, term: term };
+        return recur( "argType" ).
+            addAll( recurMinus( "resultType", "argName" ) ).
+            addAll( recur( "fn" ) );
         
-    } else if ( em = getMatch( expr.term, [ lit( "snd" ),
+    } else if ( em = getMatch( term, [ lit( "snd" ),
         str( "argName" ), "argType", "resultType", "fn" ] ) ) {
         
-        var term = [ "snd", em.val.get( "argName" ),
-            rename( "argType" ),
-            renameWithout( "resultType", "argName" ),
-            rename( "fn" ) ];
-        return { env: env, term: term };
+        return recur( "argType" ).
+            addAll( recurMinus( "resultType", "argName" ) ).
+            addAll( recur( "fn" ) );
+        
+    } else {
+        // TODO: Handle more language fragments.
+        throw new Error();
+    }
+}
+
+function renameVarsToVars( renameMap, term ) {
+    
+    var lit = patternLang.lit;
+    var str = patternLang.str;
+    var pat = patternLang.pat;
+    var getMatch = patternLang.getMatch;
+    
+    function recurWith( k, renameMap ) {
+        return renameVarsToVars( renameMap, em.val.get( k ) );
+    }
+    function recur( k ) {
+        return recurWith( k, renameMap );
+    }
+    function recurMinus( termK, argK ) {
+        return recurWith( k, renameMap.minusEntry( argK ) );
+    }
+    
+    var em;
+    if ( isPrimString( term ) ) {
+        if ( boundVars.has( term ) )
+            return strMap();
+        return strMap().plusTruth( term );
+        
+    } else if ( em = getMatch( term,
+        [ lit( "tfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
+        
+        return [ "tfa", em.val.get( "arg" ), recur( "argType" ),
+            recurMinus( "resultType", "arg" ) ];
+        
+    } else if ( em = getMatch( term,
+        [ lit( "tfn" ), str( "arg" ), "argType", "result" ] ) ) {
+        
+        return [ "tfn", em.val.get( "arg" ), recur( "argType" ),
+            recurMinus( "result", "arg" ) ];
+        
+    } else if ( em = getMatch( term, [ lit( "tcall" ),
+        str( "argName" ), "argType", "resultType",
+        "fn", "argVal" ] ) ) {
+        
+        return [ "tcall", em.val.get( "argName" ), recur( "argType" ),
+            recurMinus( "resultType", "arg" ),
+            recur( "fn" ), recur( "argVal" ) ];
+        
+    } else if ( em = getMatch( term,
+        [ lit( "ttfa" ), str( "arg" ), "resultType" ] ) ) {
+        
+        return [ "ttfa", em.val.get( "arg" ),
+            recurMinus( "resultType", "arg" ) ];
+        
+    } else if ( em = getMatch( term,
+        [ lit( "ttfn" ), str( "arg" ), "result" ] ) ) {
+        
+        return [ "ttfn", em.val.get( "arg" ),
+            recurMinus( "result", "arg" ) ];
+        
+    } else if ( em = getMatch( term, [ lit( "ttcall" ),
+        str( "argName" ), "resultType", "fn", "argVal" ] ) ) {
+        
+        return [ "ttcall", em.val.get( "argName" ),
+            recurMinus( "resultType", "argName" ),
+            recur( "fn" ), recur( "argVal" ) ];
+        
+    } else if ( em = getMatch( term,
+        [ lit( "sfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
+        
+        return [ "sfa", em.val.get( "arg" ), recur( "argType" ),
+            recurMinus( "resultType", "argName" ) ];
+        
+    } else if ( em = getMatch( term, [ lit( "sfn" ),
+        str( "arg" ), "argType", "argVal", "resultVal" ] ) ) {
+        
+        return [ "sfa", em.val.get( "arg" ), recur( "argType" ),
+            recur( "argVal" ), recurMinus( "resultVal", "argName" ) ];
+        
+    } else if ( em = getMatch( term, [ lit( "fst" ),
+        str( "argName" ), "argType", "resultType", "fn" ] ) ) {
+        
+        return [ "fst", em.val.get( "argName" ), recur( "argType" ),
+            recurMinus( "resultType", "argName" ), recur( "fn" ) ];
+        
+    } else if ( em = getMatch( term, [ lit( "snd" ),
+        str( "argName" ), "argType", "resultType", "fn" ] ) ) {
+        
+        return [ "snd", em.val.get( "argName" ), recur( "argType" ),
+            recurMinus( "resultType", "argName" ), recur( "fn" ) ];
         
     } else {
         // TODO: Handle more language fragments.
@@ -1651,8 +1715,23 @@ function betaReduce( expr ) {
     // NOTE: This has a side effect (changing the binding of `env`),
     // even if we use it in a way that makes it look pure.
     function rename( k ) {
-        var result = renameAway( env, strMap(), beget( k ) );
-        env = result.env;
+        var reduced = beget( k );
+        var freeVars = getFreeVars( reduced.term );
+        
+        var renameForward = strMap();
+        var renameBackward = strMap();
+        freeVars.each( function ( origName, truth ) {
+            // TODO: Calculate real fresh vars here instead of using
+            // randomness.
+            var newName = "gs" + Math.random();
+            renameForward.set( origName, newName );
+            renameBackward.set( newName, origName );
+        } );
+        
+        var result = renameVarsToVars( renameForward, reduced.term );
+        env = env.plusAll( renameBackward.map( function ( origName ) {
+            return env.get( origName );
+        } ) );
         return result.term;
     }
     
@@ -1676,10 +1755,11 @@ function betaReduce( expr ) {
         // Maybe we could beta-reduce knownVal here instead. But
         // where would we beta-reduce knownType?
         
-        // TODO: See if a call to renameAway() here would obviate the
-        // need to do renaming in any other case. After all, this
-        // seems to be the only case whose result's environment has
-        // mappings that conflict with the original environment.
+        // TODO: See if a call to renameVarsToVars() here would
+        // obviate the need to do renaming in any other case. After
+        // all, this seems to be the only case whose result's
+        // environment has mappings that conflict with the original
+        // environment.
         
         return exprVal.val;
     } else if ( em = getMatch( expr.term,
@@ -1758,6 +1838,9 @@ function betaReduce( expr ) {
     } else if ( em = getMatch( expr.term, [ lit( "sfn" ),
         str( "arg" ), "argType", "argVal", "resultVal" ] ) ) {
         
+        // TODO: Whoops, we should beta-reduce resultVal with `arg` in
+        // its environment. Make sure all the other "sfn"-related code
+        // treats the scope the same way.
         var term = [ "sfn", em.val.get( "arg" ), rename( "argType" ),
             rename( "argVal" ), rename( "resultVal" ) ];
         return { env: env, term: term };
@@ -1778,6 +1861,8 @@ function betaReduce( expr ) {
         var reducedFn = beget( "fn" );
         var matchedFn = getMatch( reducedFn.term, [ lit( "sfn" ),
             str( "arg" ), "argType", "argVal", "resultVal" ] );
+        if ( !matchedFn )
+            throw new Error();
         return { env: env, term: matchedFn.val.get( "resultVal" ) };
         
     } else {
