@@ -206,6 +206,9 @@ StrMap.prototype.add = function ( k ) {
 StrMap.prototype.plusEntry = function ( k, v ) {
     return this.copy().set( k, v );
 };
+StrMap.prototype.plus = function ( other ) {
+    return this.copy().setAll( other );
+};
 // TODO: Find a better name for this.
 StrMap.prototype.plusTruth = function ( k ) {
     return this.copy().add( k );
@@ -1305,6 +1308,7 @@ var patternLang = {};
     function Pat() {}
     Pat.prototype.init_ = function ( match ) {
         this.match_ = match;
+        return this;
     };
     Pat.prototype.match = function ( data ) {
         return this.match_.call( {}, data );
@@ -1317,10 +1321,11 @@ var patternLang = {};
     };
     patternLang.str = function ( x ) {
         return new Pat().init_( function ( data ) {
-            return isPrimStr( data ) ?
+            return isPrimString( data ) ?
                 { val: strMap().set( x, data ) } : null;
         } );
     };
+    var pat =
     patternLang.pat = function ( x ) {
         if ( x instanceof Pat ) {
             return x;
@@ -1374,8 +1379,9 @@ function getFreeVars( term, opt_boundVars ) {
     function recur( k ) {
         return recurWith( k, boundVars );
     }
-    function recurMinus( termK, argK ) {
-        return recurWith( k, boundVars.minusEntry( argK ) );
+    function recurUnder( termK, argK ) {
+        return recurWith( termK,
+            boundVars.plusTruth( em.val.get( argK ) ) );
     }
     
     var em;
@@ -1388,63 +1394,63 @@ function getFreeVars( term, opt_boundVars ) {
         [ lit( "tfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
         
         return recur( "argType" ).
-            addAll( recurMinus( "resultType", "arg" ) );
+            plus( recurUnder( "resultType", "arg" ) );
         
     } else if ( em = getMatch( term,
         [ lit( "tfn" ), str( "arg" ), "argType", "result" ] ) ) {
         
         return recur( "argType" ).
-            addAll( recurMinus( "result", "arg" ) );
+            plus( recurUnder( "result", "arg" ) );
         
     } else if ( em = getMatch( term, [ lit( "tcall" ),
         str( "argName" ), "argType", "resultType",
         "fn", "argVal" ] ) ) {
         
         return recur( "argType" ).
-            addAll( recurMinus( "resultType", "arg" ) ).
-            addAll( recur( "fn" ) ).addAll( recur( "argVal" ) );
+            plus( recurUnder( "resultType", "arg" ) ).
+            plus( recur( "fn" ) ).plus( recur( "argVal" ) );
         
     } else if ( em = getMatch( term,
         [ lit( "ttfa" ), str( "arg" ), "resultType" ] ) ) {
         
-        return recurMinus( "resultType", "arg" );
+        return recurUnder( "resultType", "arg" );
         
     } else if ( em = getMatch( term,
         [ lit( "ttfn" ), str( "arg" ), "result" ] ) ) {
         
-        return recurMinus( "result", "arg" );
+        return recurUnder( "result", "arg" );
         
     } else if ( em = getMatch( term, [ lit( "ttcall" ),
         str( "argName" ), "resultType", "fn", "argVal" ] ) ) {
         
-        return recurMinus( "resultType", "argName" ).
-            addAll( recur( "fn" ) ).addAll( recur( "argVal" ) );
+        return recurUnder( "resultType", "argName" ).
+            plus( recur( "fn" ) ).plus( recur( "argVal" ) );
         
     } else if ( em = getMatch( term,
         [ lit( "sfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
         
         return recur( "argType" ).
-            addAll( recurMinus( "resultType", "arg" ) );
+            plus( recurUnder( "resultType", "arg" ) );
         
     } else if ( em = getMatch( term, [ lit( "sfn" ),
         str( "arg" ), "argType", "argVal", "resultVal" ] ) ) {
         
-        return recur( "argType" ).addAll( recur( "argVal" ) ).
-            addAll( recurMinus( "resultVal", "arg" ) );
+        return recur( "argType" ).plus( recur( "argVal" ) ).
+            plus( recurUnder( "resultVal", "arg" ) );
         
     } else if ( em = getMatch( term, [ lit( "fst" ),
         str( "argName" ), "argType", "resultType", "fn" ] ) ) {
         
         return recur( "argType" ).
-            addAll( recurMinus( "resultType", "argName" ) ).
-            addAll( recur( "fn" ) );
+            plus( recurUnder( "resultType", "argName" ) ).
+            plus( recur( "fn" ) );
         
     } else if ( em = getMatch( term, [ lit( "snd" ),
         str( "argName" ), "argType", "resultType", "fn" ] ) ) {
         
         return recur( "argType" ).
-            addAll( recurMinus( "resultType", "argName" ) ).
-            addAll( recur( "fn" ) );
+            plus( recurUnder( "resultType", "argName" ) ).
+            plus( recur( "fn" ) );
         
     } else {
         // TODO: Handle more language fragments.
@@ -1466,7 +1472,8 @@ function renameVarsToVars( renameMap, term ) {
         return recurWith( k, renameMap );
     }
     function recurMinus( termK, argK ) {
-        return recurWith( k, renameMap.minusEntry( argK ) );
+        return recurWith( k,
+            renameMap.minusEntry( em.val.get( argK ) ) );
     }
     
     var em;
@@ -1740,7 +1747,7 @@ function betaReduce( expr ) {
         } );
         
         var result = renameVarsToVars( renameForward, reduced.term );
-        env = env.plusAll( renameBackward.map( function ( origName ) {
+        env = env.plus( renameBackward.map( function ( origName ) {
             return env.get( origName );
         } ) );
         return result.term;
@@ -2177,6 +2184,28 @@ function typeCheck( expr, type ) {
         return false;
     }
 }
+
+addNaiveIsoUnitTest( function ( then ) {
+    console.log(
+        "Now we're testing the hand-rolled module checker." );
+    
+    then( getFreeVars( "foo" ), strMap().plusTruth( "foo" ) );
+} );
+
+addNaiveIsoUnitTest( function ( then ) {
+    then( getFreeVars( [ "tfn", "a", "aType", "b" ] ),
+        strMap().plusArrTruth( [ "aType", "b" ] ) );
+} );
+
+addNaiveIsoUnitTest( function ( then ) {
+    then( getFreeVars( [ "tfn", "a", "aType", "a" ] ),
+        strMap().plusArrTruth( [ "aType" ] ) );
+} );
+
+addNaiveIsoUnitTest( function ( then ) {
+    then( getFreeVars( [ "tfn", "a", "a", "a" ] ),
+        strMap().plusArrTruth( [ "a" ] ) );
+} );
 
 
 // ===== Unit test runner ============================================
