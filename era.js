@@ -207,6 +207,10 @@ StrMap.prototype.plusEntry = function ( k, v ) {
     return this.copy().set( k, v );
 };
 // TODO: Find a better name for this.
+StrMap.prototype.plusTruth = function ( k ) {
+    return this.copy().add( k );
+};
+// TODO: Find a better name for this.
 StrMap.prototype.plusArrTruth = function ( arr ) {
     var result = this.copy();
     for ( var i = 0, n = arr.length; i < n; i++ )
@@ -1351,7 +1355,130 @@ var patternLang = {};
 })();
 
 
-// TODO: Implement renameAway().
+function renameAway( env, localVars, expr ) {
+    
+    var lit = patternLang.lit;
+    var str = patternLang.str;
+    var pat = patternLang.pat;
+    var getMatch = patternLang.getMatch;
+    
+    function eget( k ) {
+        return { env: expr.env, term: em.val.get( k ) };
+    }
+    
+    var env = expr.env;
+    
+    // NOTE: These have a side effects (changing the binding of
+    // `env`), even if we use them in a way that makes them look pure.
+    function rename( k ) {
+        var result = renameAway( env, localVars, eget( k ) );
+        env = result.env;
+        return result.term;
+    }
+    function renameWithout( termK, argK ) {
+        var result = renameAway( env,
+            localVars.plusTruth( em.val.get( argK ) ),
+            eget( termK ) );
+        env = result.env;
+        return result.term;
+    }
+    
+    
+    // TODO: Figure out if it's really important to do
+    // rename( "argType" ) when the overall value isn't a type. There
+    // might be some static-versus-dynamic confusion here.
+    
+    var em;
+    if ( isPrimString( expr.term ) ) {
+        if ( localVars.has( expr.term ) )
+            return { env: strMap(), term: expr.term };
+        
+        // TODO: Implement this case. This might require adding
+        // another recursion-specific parameter.
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "tfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
+        
+        var term = [ "tfa", em.val.get( "arg" ), rename( "argType" ),
+            renameWithout( "resultType", "arg" ) ];
+        return { env: env, term: term };
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "tfn" ), str( "arg" ), "argType", "result" ] ) ) {
+        
+        var term = [ "tfn", em.val.get( "arg" ),
+            rename( "argType" ), renameWithout( "result", "arg" ) ];
+        return { env: env, term: term };
+        
+    } else if ( em = getMatch( expr.term, [ lit( "tcall" ),
+        str( "argName" ), "argType", "resultType",
+        "fn", "argVal" ] ) ) {
+        
+        var term = [ "tcall", em.val.get( "argName" ),
+            rename( "argType" ),
+            renameWithout( "resultType", "argName" ),
+            rename( "fn" ), rename( "argVal" ) ];
+        return { env: env, term: term };
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "ttfa" ), str( "arg" ), "resultType" ] ) ) {
+        
+        var term = [ "tfa", em.val.get( "arg" ),
+            renameWithout( "resultType", "arg" ) ];
+        return { env: env, term: term };
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "ttfn" ), str( "arg" ), "result" ] ) ) {
+        
+        var term = [ "ttfn", em.val.get( "arg" ),
+            renameWithout( "result", "arg" ) ];
+        return { env: env, term: term };
+        
+    } else if ( em = getMatch( expr.term, [ lit( "ttcall" ),
+        str( "argName" ), "resultType", "fn", "argVal" ] ) ) {
+        
+        var term = [ "ttcall", em.val.get( "argName" ),
+            renameWithout( "resultType", "argName" ),
+            rename( "fn" ), rename( "argVal" ) ];
+        return { env: env, term: term };
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "sfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
+        
+        var term = [ "sfa", em.val.get( "arg" ), rename( "argType" ),
+            renameWithout( "resultType", "arg" ) ];
+        return { env: env, term: term };
+        
+    } else if ( em = getMatch( expr.term, [ lit( "sfn" ),
+        str( "arg" ), "argType", "argVal", "resultVal" ] ) ) {
+        
+        var term = [ "sfn", em.val.get( "arg" ), rename( "argType" ),
+            rename( "argVal" ), rename( "resultVal" ) ];
+        return { env: env, term: term };
+        
+    } else if ( em = getMatch( expr.term, [ lit( "fst" ),
+        str( "argName" ), "argType", "resultType", "fn" ] ) ) {
+        
+        var term = [ "fst", em.val.get( "argName" ),
+            rename( "argType" ),
+            renameWithout( "resultType", "argName" ),
+            rename( "fn" ) ];
+        return { env: env, term: term };
+        
+    } else if ( em = getMatch( expr.term, [ lit( "snd" ),
+        str( "argName" ), "argType", "resultType", "fn" ] ) ) {
+        
+        var term = [ "snd", em.val.get( "argName" ),
+            rename( "argType" ),
+            renameWithout( "resultType", "argName" ),
+            rename( "fn" ) ];
+        return { env: env, term: term };
+        
+    } else {
+        // TODO: Handle more language fragments.
+        throw new Error();
+    }
+}
 
 function knownEqual( exprA, exprB, opt_boundVarsAToB ) {
     // Do a test of intrinsic equality, respecting alpha-equivalence.
@@ -1524,7 +1651,7 @@ function betaReduce( expr ) {
     // NOTE: This has a side effect (changing the binding of `env`),
     // even if we use it in a way that makes it look pure.
     function rename( k ) {
-        var result = renameAway( env, [], beget( k ) );
+        var result = renameAway( env, strMap(), beget( k ) );
         env = result.env;
         return result.term;
     }
