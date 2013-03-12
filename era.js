@@ -420,7 +420,7 @@ addReaderMacros( readerMacros, whiteChars, function ( $ ) {
 addReaderMacros( readerMacros, symbolChars, function ( $ ) {
     // TODO: See if this series of string concatenations is a
     // painter's algorithm. Those in the know seem to say it's faster
-    // than keeping a big array and concatenating later, but maybe
+    // than keeping a big Array and concatenating later, but maybe
     // there's something even better than either option.
     function collectChops( stringSoFar, open, close, nesting ) {
         if ( nesting === 0 )
@@ -719,7 +719,7 @@ function makeAlphaGrammar( spec ) {
             }
             var partLen = patPart.term.length;
             if ( partLen === 0 )
-                return { ok: false, msg: "Empty array" };
+                return { ok: false, msg: "Empty Array" };
             var specialFormName = patPart.term[ 0 ];
             if ( !isPrimString( specialFormName ) )
                 return { ok: false, msg:
@@ -1524,7 +1524,7 @@ function renameVarsToVars( renameMap, term ) {
         str( "arg" ), "argType", "argVal", "resultVal" ] ) ) {
         
         return [ "sfa", em.val.get( "arg" ), recur( "argType" ),
-            recur( "argVal" ), recurMinus( "resultVal", "argName" ) ];
+            recur( "argVal" ), recurMinus( "resultVal", "arg" ) ];
         
     } else if ( em = getMatch( term, [ lit( "fst" ),
         str( "argName" ), "argType", "resultType", "fn" ] ) ) {
@@ -1685,7 +1685,7 @@ function knownEqual( exprA, exprB, opt_boundVarsAToB ) {
         
     } else {
         // TODO: Handle more language fragments.
-        return false;
+        throw new Error();
     }
 }
 
@@ -1712,18 +1712,29 @@ function betaReduce( expr ) {
     
     var env = expr.env;
     
-    // NOTE: This has a side effect (changing the binding of `env`),
-    // even if we use it in a way that makes it look pure.
-    function rename( k ) {
-        var reduced = beget( k );
+    // NOTE: These have side effects (changing the binding of `env`),
+    // even if we use them in a way that makes them look pure.
+    function renameExpr( expr ) {
+        var reduced = betaReduce( expr );
         var freeVars = getFreeVars( reduced.term );
+        
+        function pickNameOutside( desiredName, isTaken ) {
+            desiredName += "";
+            var result = desiredName;
+            var index = 1;
+            while ( isTaken( result ) ) {
+                index++;
+                result = desiredName + "_" + index;
+            }
+            return result;
+        }
         
         var renameForward = strMap();
         var renameBackward = strMap();
         freeVars.each( function ( origName, truth ) {
-            // TODO: Calculate real fresh vars here instead of using
-            // randomness.
-            var newName = "gs" + Math.random();
+            var newName = pickNameOutside( origName, function ( n ) {
+                return renameForward.has( n );
+            } );
             renameForward.set( origName, newName );
             renameBackward.set( newName, origName );
         } );
@@ -1733,6 +1744,9 @@ function betaReduce( expr ) {
             return env.get( origName );
         } ) );
         return result.term;
+    }
+    function rename( k ) {
+        return renameExpr( eget( k ) );
     }
     
     
@@ -1746,8 +1760,12 @@ function betaReduce( expr ) {
         if ( !expr.env.has( expr.term ) )
             throw new Error();
         var exprVal = expr.env.get( expr.term ).knownVal;
+        // TODO: During typeCheck(), some of the calls to betaReduce()
+        // pass null for knownVal, so we just return the expression
+        // as-is if we run across that case. Figure out if those calls
+        // should be passing null in the first place.
         if ( exprVal === null )
-            throw new Error();
+            return expr;
         
         // TODO: Figure out if it should be necessary to beta-reduce
         // env-term pairs before they're stored in environments (under
@@ -1791,7 +1809,8 @@ function betaReduce( expr ) {
                 knownIsType: null,
                 // TODO: Figure out if we actually need this knownType
                 // here. If so, figure out whether we should use
-                // argType from matchedFn instead.
+                // argType from matchedFn instead. Currently, we make
+                // the opposite decision for `snd`.
                 knownType: { val: beget( "argType" ) },
                 knownVal: { val: beget( "argVal" ) }
             } ),
@@ -1838,11 +1857,23 @@ function betaReduce( expr ) {
     } else if ( em = getMatch( expr.term, [ lit( "sfn" ),
         str( "arg" ), "argType", "argVal", "resultVal" ] ) ) {
         
-        // TODO: Whoops, we should beta-reduce resultVal with `arg` in
-        // its environment. Make sure all the other "sfn"-related code
-        // treats the scope the same way.
-        var term = [ "sfn", em.val.get( "arg" ), rename( "argType" ),
-            rename( "argVal" ), rename( "resultVal" ) ];
+        var argTypeTerm = rename( "argType" );
+        var argTypeExpr = { env: env, term: argTypeTerm };
+        
+        var argValTerm = rename( "argVal" );
+        var argValExpr = { env: env, term: argValTerm };
+        
+        var term = [ "sfn", em.val.get( "arg" ), argTypeTerm, argVal,
+            renameExpr( {
+                env: env.plusEntry( em.val.get( "arg" ), {
+                    knownIsType: null,
+                    // TODO: Figure out if we actually need this
+                    // knownType here.
+                    knownType: { val: argTypeExpr },
+                    knownVal: { val: argValExpr }
+                } ),
+                term: em.val.get( "resultVal" )
+            } ) ];
         return { env: env, term: term };
         
     } else if ( em = getMatch( expr.term, [ lit( "fst" ),
@@ -1863,7 +1894,21 @@ function betaReduce( expr ) {
             str( "arg" ), "argType", "argVal", "resultVal" ] );
         if ( !matchedFn )
             throw new Error();
-        return { env: env, term: matchedFn.val.get( "resultVal" ) };
+        return {
+            env: reducedFn.env.plusEntry( matchedFn.val.get( "arg" ),
+            {
+                knownIsType: null,
+                // TODO: Figure out if we actually need this knownType
+                // here. If so, figure out whether we should use
+                // argType from `em` instead. Currently, we make the
+                // opposite decision for `tcall`.
+                knownType: { val: { env: reducedFn.env,
+                    term: matchedFn.val.get( "argType" ) } },
+                knownVal: { val: { env: reducedFn.env,
+                    term: matchedFn.val.get( "argVal" ) } }
+            } ),
+            term: matchedFn.val.get( "resultVal" )
+        };
         
     } else {
         // TODO: Handle more language fragments.
@@ -2059,18 +2104,32 @@ function typeCheck( expr, type ) {
             [ lit( "sfa" ), str( "arg" ), "argType", "resultType" ] );
         if ( tm === null )
             return false;
-        var argType = tget( "argType" );
+        var typeArgType = tget( "argType" );
         if ( !isType( eget( "argType" ) ) )
             return false;
-        if ( !knownEqual( beget( "argType" ), argType ) )
+        var exprArgType = beget( "argType" );
+        if ( !knownEqual( exprArgType, typeArgType ) )
             return false;
-        if ( !typeCheck( eget( "argVal" ), argType ) )
+        if ( !typeCheck( eget( "argVal" ), typeArgType ) )
             return false;
-        return typeCheck( eget( "resultVal" ), betaReduce( {
+        var argVal = beget( "argVal" );
+        
+        // TODO: Figure out if we should really be passing
+        // `exprArgType` and `typeArgType` like this, rather than in
+        // some other combination. Anyhow, they're knownEqual at this
+        // point.
+        return typeCheck( {
+            env: expr.env.plusEntry( tm.val.get( "arg" ), {
+                knownIsType: null,
+                knownType: { val: exprArgType },
+                knownVal: { val: argVal }
+            } ),
+            term: em.val.get( "resultVal" )
+        }, betaReduce( {
             env: type.env.plusEntry( tm.val.get( "arg" ), {
                 knownIsType: null,
-                knownType: { val: argType },
-                knownVal: { val: beget( "argVal" ) }
+                knownType: { val: typeArgType },
+                knownVal: { val: argVal }
             } ),
             term: tm.val.get( "resultType" )
         } ) );
@@ -2102,10 +2161,17 @@ function typeCheck( expr, type ) {
             str( "arg" ), "argType", "argVal", "resultVal" ] );
         if ( matchedFn === null )
             return false;
-        return typeCheck(
-            { env: reducedFn.env,
-                term: matchedFn.val.get( "resultVal" ) },
-            type );
+        return typeCheck( {
+            env: reducedFn.env.plusEntry( matchedFn.val.get( "arg" ),
+            {
+                knownIsType: null,
+                knownType: { val: { env: reducedFn.env,
+                    term: matchedFn.val.get( "argType" ) } },
+                knownVal: { val: { env: reducedFn.env,
+                    term: matchedFn.val.get( "argVal" ) } }
+            } ),
+            term: matchedFn.val.get( "resultVal" )
+        }, type );
     } else {
         // TODO: Handle more language fragments.
         return false;
