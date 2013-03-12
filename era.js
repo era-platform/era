@@ -2191,17 +2191,32 @@ addNaiveIsoUnitTest( function ( then ) {
     
     then( getFreeVars( "foo" ), strMap().plusTruth( "foo" ) );
 } );
-
+addNaiveIsoUnitTest( function ( then ) {
+    then( getFreeVars( [ "tfa", "a", "aType", "bType" ] ),
+        strMap().plusArrTruth( [ "aType", "bType" ] ) );
+} );
+addNaiveIsoUnitTest( function ( then ) {
+    // NOTE: This test is farfetched since there should be no existing
+    // way to make (tfa a aType a) typecheck. It would require a way
+    // to make `a` a value of `aType` and a type of its own
+    // simultaneously.
+    then( getFreeVars( [ "tfa", "a", "aType", "a" ] ),
+        strMap().plusArrTruth( [ "aType" ] ) );
+} );
+addNaiveIsoUnitTest( function ( then ) {
+    // NOTE: Again, there should be no existing way to make this term
+    // typecheck.
+    then( getFreeVars( [ "tfa", "a", "a", "a" ] ),
+        strMap().plusArrTruth( [ "a" ] ) );
+} );
 addNaiveIsoUnitTest( function ( then ) {
     then( getFreeVars( [ "tfn", "a", "aType", "b" ] ),
         strMap().plusArrTruth( [ "aType", "b" ] ) );
 } );
-
 addNaiveIsoUnitTest( function ( then ) {
     then( getFreeVars( [ "tfn", "a", "aType", "a" ] ),
         strMap().plusArrTruth( [ "aType" ] ) );
 } );
-
 addNaiveIsoUnitTest( function ( then ) {
     then( getFreeVars( [ "tfn", "a", "a", "a" ] ),
         strMap().plusArrTruth( [ "a" ] ) );
