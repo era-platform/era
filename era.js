@@ -1165,6 +1165,7 @@ function isType( expr ) {
         if ( exprIsType === null )
             return false;
         return exprIsType.val;
+        
     } else if ( em = getMatch( expr.term,
         [ lit( "tfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
         
@@ -1180,6 +1181,17 @@ function isType( expr ) {
         } );
         
     } else if ( em = getMatch( expr.term,
+        [ lit( "tfn" ), str( "arg" ), "argType", "result" ] ) ) {
+        
+        return false;
+        
+    } else if ( em = getMatch( expr.term, [ lit( "tcall" ),
+        str( "argName" ), "argType", "resultType",
+        "fn", "argVal" ] ) ) {
+        
+        return false;
+        
+    } else if ( em = getMatch( expr.term,
         [ lit( "ttfa" ), str( "arg" ), "resultType" ] ) ) {
         
         return isType( {
@@ -1190,6 +1202,16 @@ function isType( expr ) {
             } ),
             term: em.val.get( "resultType" )
         } );
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "ttfn" ), str( "arg" ), "result" ] ) ) {
+        
+        return false;
+        
+    } else if ( em = getMatch( expr.term, [ lit( "ttcall" ),
+        str( "argName" ), "resultType", "fn", "argVal" ] ) ) {
+        
+        return false;
         
     } else if ( em = getMatch( expr.term,
         [ lit( "sfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
@@ -1204,9 +1226,24 @@ function isType( expr ) {
             } ),
             term: em.val.get( "resultType" )
         } );
+        
+    } else if ( em = getMatch( expr.term, [ lit( "sfn" ),
+        str( "arg" ), "argType", "argVal", "resultVal" ] ) ) {
+        
+        return false;
+        
+    } else if ( em = getMatch( expr.term, [ lit( "fst" ),
+        str( "argName" ), "argType", "resultType", "fn" ] ) ) {
+        
+        return false;
+        
+    } else if ( em = getMatch( expr.term, [ lit( "snd" ),
+        str( "argName" ), "argType", "resultType", "fn" ] ) ) {
+        
+        return false;
     } else {
         // TODO: Handle more language fragments.
-        return false;
+        throw new Error();
     }
 }
 
@@ -1237,6 +1274,12 @@ function typeCheck( expr, type ) {
         if ( exprType === null )
             return false;
         return knownEqual( exprType.val, type );
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "tfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
+        
+        return false;
+        
     } else if ( em = getMatch( expr.term,
         [ lit( "tfn" ), str( "arg" ), "argType", "result" ] ) ) {
         
@@ -1293,6 +1336,11 @@ function typeCheck( expr, type ) {
             type );
         
     } else if ( em = getMatch( expr.term,
+        [ lit( "ttfa" ), str( "arg" ), "resultType" ] ) ) {
+        
+        return false;
+        
+    } else if ( em = getMatch( expr.term,
         [ lit( "ttfn" ), str( "arg" ), "result" ] ) ) {
         
         var tm = getMatch( type.term,
@@ -1323,6 +1371,11 @@ function typeCheck( expr, type ) {
                 term: em.val.get( "resultType" )
             } ),
             type );
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "sfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
+        
+        return false;
         
     } else if ( em = getMatch( expr.term, [ lit( "sfn" ),
         str( "arg" ), "argType", "argVal", "resultVal" ] ) ) {
@@ -1401,7 +1454,7 @@ function typeCheck( expr, type ) {
         }, type );
     } else {
         // TODO: Handle more language fragments.
-        return false;
+        throw new Error();
     }
 }
 
