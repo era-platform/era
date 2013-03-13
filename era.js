@@ -1143,6 +1143,82 @@ function betaReduce( expr ) {
     }
 }
 
+function isWellFormed( term ) {
+    
+    var lit = patternLang.lit;
+    var str = patternLang.str;
+    var pat = patternLang.pat;
+    var getMatch = patternLang.getMatch;
+    
+    function recur( k ) {
+        return isWellFormed( em.val.get( k ) );
+    }
+    
+    var em;
+    if ( isPrimString( term ) ) {
+        return true;
+        
+    } else if ( em = getMatch( term,
+        [ lit( "tfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
+        
+        return recur( "argType" ) && recur( "resultType" );
+        
+    } else if ( em = getMatch( term,
+        [ lit( "tfn" ), str( "arg" ), "argType", "result" ] ) ) {
+        
+        return recur( "argType" ) && recur( "result" );
+        
+    } else if ( em = getMatch( term, [ lit( "tcall" ),
+        str( "argName" ), "argType", "resultType",
+        "fn", "argVal" ] ) ) {
+        
+        return recur( "argType" ) && recur( "resultType" ) &&
+            recur( "fn" ) && recur( "argVal" );
+        
+    } else if ( em = getMatch( term,
+        [ lit( "ttfa" ), str( "arg" ), "resultType" ] ) ) {
+        
+        return recur( "resultType" );
+        
+    } else if ( em = getMatch( term,
+        [ lit( "ttfn" ), str( "arg" ), "result" ] ) ) {
+        
+        return recur( "result" );
+        
+    } else if ( em = getMatch( term, [ lit( "ttcall" ),
+        str( "argName" ), "resultType", "fn", "argVal" ] ) ) {
+        
+        return recur( "resultType" ) && recur( "fn" ) &&
+            recur( "argVal" );
+        
+    } else if ( em = getMatch( term,
+        [ lit( "sfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
+        
+        return recur( "argType" ) && recur( "resultType" );
+        
+    } else if ( em = getMatch( term, [ lit( "sfn" ),
+        str( "arg" ), "argType", "argVal", "resultVal" ] ) ) {
+        
+        return recur( "argType" ) && recur( "argVal" ) &&
+            recur( "resultVal" );
+        
+    } else if ( em = getMatch( term, [ lit( "fst" ),
+        str( "argName" ), "argType", "resultType", "fn" ] ) ) {
+        
+        return recur( "argType" ) && recur( "resultType" ) &&
+            recur( "fn" );
+        
+    } else if ( em = getMatch( term, [ lit( "snd" ),
+        str( "argName" ), "argType", "resultType", "fn" ] ) ) {
+        
+        return recur( "argType" ) && recur( "resultType" ) &&
+            recur( "fn" );
+    } else {
+        // TODO: Handle more language fragments.
+        return false;
+    }
+}
+
 function isType( expr ) {
     
     var lit = patternLang.lit;
@@ -1711,6 +1787,107 @@ addShouldThrowUnitTest( function () {
         term: !"a boolean rather than a nested Array of strings" };
     return knownEqual( expr, expr );
 } );
+
+(function () {
+    function add( expected, term ) {
+        addPredicateUnitTest( function ( then ) {
+            then( term, function ( term ) {
+                return expected === isWellFormed( term );
+            } );
+        } );
+    }
+    
+    var vari = "x";
+    var expr = [ "ttfn", "z", "z" ];
+    
+    add( true, expr );
+    
+    
+    // NOTE: Again, for many of these terms that pass isWellFormed(),
+    // there should be no existing way to make them fully typecheck.
+    
+    
+    // Systematically verify the variable binding behavior of all
+    // expression syntaxes, at least for the purposes of
+    // isWellFormed().
+    
+    add( true, vari );
+    add( false, true );
+    
+    add( true, [ "tfa", vari, expr, expr ] );
+    add( false, [ "tfa", true, expr, expr ] );
+    add( false, [ "tfa", vari, true, expr ] );
+    add( false, [ "tfa", vari, expr, true ] );
+    add( false, [ "tfa", expr, expr, expr ] );
+    
+    add( true, [ "tfn", vari, expr, expr ] );
+    add( false, [ "tfn", true, expr, expr ] );
+    add( false, [ "tfn", vari, true, expr ] );
+    add( false, [ "tfn", vari, expr, true ] );
+    add( false, [ "tfn", expr, expr, expr ] );
+    
+    add( true, [ "tcall", vari, expr, expr, expr, expr ] );
+    add( false, [ "tcall", true, expr, expr, expr, expr ] );
+    add( false, [ "tcall", vari, true, expr, expr, expr ] );
+    add( false, [ "tcall", vari, expr, true, expr, expr ] );
+    add( false, [ "tcall", vari, expr, expr, true, expr ] );
+    add( false, [ "tcall", vari, expr, expr, expr, true ] );
+    add( false, [ "tcall", expr, expr, expr, expr, expr ] );
+    
+    add( true, [ "ttfa", vari, expr ] );
+    add( false, [ "ttfa", true, expr ] );
+    add( false, [ "ttfa", vari, true ] );
+    add( false, [ "ttfa", expr, expr ] );
+    
+    add( true, [ "ttfn", vari, expr ] );
+    add( false, [ "ttfn", true, expr ] );
+    add( false, [ "ttfn", vari, true ] );
+    add( false, [ "ttfn", expr, expr ] );
+    
+    add( true, [ "ttcall", vari, expr, expr, expr ] );
+    add( false, [ "ttcall", true, expr, expr, expr ] );
+    add( false, [ "ttcall", vari, true, expr, expr ] );
+    add( false, [ "ttcall", vari, expr, true, expr ] );
+    add( false, [ "ttcall", vari, expr, expr, true ] );
+    add( false, [ "ttcall", expr, expr, expr, expr ] );
+    
+    add( true, [ "sfa", vari, expr, expr ] );
+    add( false, [ "sfa", true, expr, expr ] );
+    add( false, [ "sfa", vari, true, expr ] );
+    add( false, [ "sfa", vari, expr, true ] );
+    add( false, [ "sfa", expr, expr, expr ] );
+    
+    add( true, [ "sfn", vari, expr, expr, expr ] );
+    add( false, [ "sfn", true, expr, expr, expr ] );
+    add( false, [ "sfn", vari, true, expr, expr ] );
+    add( false, [ "sfn", vari, expr, true, expr ] );
+    add( false, [ "sfn", vari, expr, expr, true ] );
+    add( false, [ "sfn", expr, expr, expr, expr ] );
+    
+    add( true, [ "fst", vari, expr, expr, expr ] );
+    add( false, [ "fst", true, expr, expr, expr ] );
+    add( false, [ "fst", vari, true, expr, expr ] );
+    add( false, [ "fst", vari, expr, true, expr ] );
+    add( false, [ "fst", vari, expr, expr, true ] );
+    add( false, [ "fst", expr, expr, expr, expr ] );
+    
+    add( true, [ "snd", vari, expr, expr, expr ] );
+    add( false, [ "snd", true, expr, expr, expr ] );
+    add( false, [ "snd", vari, true, expr, expr ] );
+    add( false, [ "snd", vari, expr, true, expr ] );
+    add( false, [ "snd", vari, expr, expr, true ] );
+    add( false, [ "snd", expr, expr, expr, expr ] );
+    
+    
+    // Just try something wacky with nesting and shadowing.
+    add( true,
+        [ "sfn", "f", [ "sfn", "x", "x", "x", "x" ],
+            [ "sfn", "f", "x", "x", "x" ],
+            [ "sfn", "f", "f", "x", "f" ] ] );
+    
+    
+    add( false, [ "nonexistentSyntax", "a", "b", "c" ] );
+})();
 
 
 // ===== Unit test runner ============================================
