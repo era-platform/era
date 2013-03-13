@@ -253,14 +253,13 @@ function addNaiveIsoUnitTest( body ) {
     unitTests.push( function ( then ) {
         body( function ( calculated, expected ) {
             if ( naiveIso( calculated, expected ) )
-                console.log( "Test passed." );
+                then( null );
             else
-                console.log(
+                then(
                     "Expected this:\n" +
                     JSON.stringify( expected ) + "\n" +
                     "But got this:\n" +
                     JSON.stringify( calculated ) );
-            then();
         } );
     } );
 }
@@ -271,12 +270,28 @@ function addPredicateUnitTest( body ) {
     unitTests.push( function ( then ) {
         body( function ( calculated, predicate ) {
             if ( predicate( calculated ) )
-                console.log( "Test passed." );
+                then( null );
             else
-                console.log(
+                then(
                     "This result was unexpected:\n" +
                     JSON.stringify( calculated ) );
-            then();
+        } );
+    } );
+}
+function addShouldThrowUnitTest( body ) {
+    // TODO: Stop using JSON.stringify() here. It might be good to
+    // have a naiveStringify() function or something for custom
+    // stringification.
+    unitTests.push( function ( then ) {
+        try { var calculated = body(), success = true; }
+        catch ( e ) {}
+        defer( function () {
+            if ( !success )
+                then( null );
+            else
+                then(
+                    "This result was unexpected:\n" +
+                    JSON.stringify( calculated ) );
         } );
     } );
 }
@@ -606,7 +621,7 @@ function getFreeVars( term, opt_boundVars ) {
         "fn", "argVal" ] ) ) {
         
         return recur( "argType" ).
-            plus( recurUnder( "resultType", "arg" ) ).
+            plus( recurUnder( "resultType", "argName" ) ).
             plus( recur( "fn" ) ).plus( recur( "argVal" ) );
         
     } else if ( em = getMatch( term,
@@ -1384,52 +1399,130 @@ function typeCheck( expr, type ) {
     }
 }
 
-addNaiveIsoUnitTest( function ( then ) {
-    console.log(
-        "Now we're testing the hand-rolled module checker." );
+(function () {
+    function add( term, vars ) {
+        addNaiveIsoUnitTest( function ( then ) {
+            then(
+                getFreeVars( term ), strMap().plusArrTruth( vars ) );
+        } );
+    }
     
-    then( getFreeVars( "foo" ), strMap().plusTruth( "foo" ) );
-} );
-addNaiveIsoUnitTest( function ( then ) {
-    then( getFreeVars( [ "tfa", "a", "aType", "bType" ] ),
-        strMap().plusArrTruth( [ "aType", "bType" ] ) );
-} );
-addNaiveIsoUnitTest( function ( then ) {
+    
+    // Systematically verify the variable binding behavior of all
+    // expression syntaxes, at least for the purposes of
+    // getFreeVars().
+    
+    add( "foo", [ "foo" ] );
+    
+    add( [ "tfa", "a", "aType", "bType" ], [ "aType", "bType" ] );
     // NOTE: This test is farfetched since there should be no existing
     // way to make (tfa a aType a) typecheck. It would require a way
     // to make `a` a value of `aType` and a type of its own
     // simultaneously.
-    then( getFreeVars( [ "tfa", "a", "aType", "a" ] ),
-        strMap().plusArrTruth( [ "aType" ] ) );
-} );
-addNaiveIsoUnitTest( function ( then ) {
+    add( [ "tfa", "a", "aType", "a" ], [ "aType" ] );
     // NOTE: Again, there should be no existing way to make this term
     // typecheck.
-    then( getFreeVars( [ "tfa", "a", "a", "a" ] ),
-        strMap().plusArrTruth( [ "a" ] ) );
+    add( [ "tfa", "a", "a", "a" ], [ "a" ] );
+    
+    add( [ "tfn", "a", "aType", "b" ], [ "aType", "b" ] );
+    add( [ "tfn", "a", "aType", "a" ], [ "aType" ] );
+    add( [ "tfn", "a", "a", "a" ], [ "a" ] );
+    
+    add( [ "tcall", "a", "aType", "bType", "fn", "arg" ],
+        [ "aType", "bType", "fn", "arg" ] );
+    add( [ "tcall", "a", "aType", "a", "fn", "arg" ],
+        [ "aType", "fn", "arg" ] );
+    add( [ "tcall", "a", "a", "a", "fn", "arg" ],
+        [ "a", "fn", "arg" ] );
+    add( [ "tcall", "a", "aType", "a", "a", "arg" ],
+        [ "aType", "a", "arg" ] );
+    add( [ "tcall", "a", "aType", "a", "fn", "a" ],
+        [ "aType", "fn", "a" ] );
+    
+    add( [ "ttfa", "a", "bType" ], [ "bType" ] );
+    // NOTE: This term actually can typecheck. It's the type of a
+    // type-to-term function that procures a value of the given type.
+    // This corresponds pretty well to inconsistency of the type
+    // system, so it's how we represent bottom.
+    add( [ "ttfa", "a", "a" ], [] );
+    
+    add( [ "ttfn", "a", "b" ], [ "b" ] );
+    add( [ "ttfn", "a", "a" ], [] );
+    
+    add( [ "ttcall", "a", "bType", "fn", "arg" ],
+        [ "bType", "fn", "arg" ] );
+    add( [ "ttcall", "a", "a", "fn", "arg" ], [ "fn", "arg" ] );
+    add( [ "ttcall", "a", "a", "a", "arg" ], [ "a", "arg" ] );
+    add( [ "ttcall", "a", "a", "fn", "a" ], [ "fn", "a" ] );
+    
+    add( [ "sfa", "a", "aType", "bType" ], [ "aType", "bType" ] );
+    // NOTE: Again, there should be no existing way to make this term
+    // typecheck.
+    add( [ "sfa", "a", "aType", "a" ], [ "aType" ] );
+    // NOTE: Again, there should be no existing way to make this term
+    // typecheck.
+    add( [ "sfa", "a", "a", "a" ], [ "a" ] );
+    
+    add( [ "sfn", "a", "aType", "fst", "snd" ],
+        [ "aType", "fst", "snd" ] );
+    add( [ "sfn", "a", "aType", "fst", "a" ], [ "aType", "fst" ] );
+    add( [ "sfn", "a", "a", "fst", "a" ], [ "a", "fst" ] );
+    add( [ "sfn", "a", "aType", "a", "a" ], [ "aType", "a" ] );
+    
+    add( [ "fst", "a", "aType", "bType", "sfn" ],
+        [ "aType", "bType", "sfn" ] );
+    add( [ "fst", "a", "aType", "a", "sfn" ], [ "aType", "sfn" ] );
+    add( [ "fst", "a", "a", "a", "sfn" ], [ "a", "sfn" ] );
+    add( [ "fst", "a", "aType", "a", "a" ], [ "aType", "a" ] );
+    
+    add( [ "snd", "a", "aType", "bType", "sfn" ],
+        [ "aType", "bType", "sfn" ] );
+    add( [ "snd", "a", "aType", "a", "sfn" ], [ "aType", "sfn" ] );
+    add( [ "snd", "a", "a", "a", "sfn" ], [ "a", "sfn" ] );
+    add( [ "snd", "a", "aType", "a", "a" ], [ "aType", "a" ] );
+    
+    
+    // Just try something wacky with nesting and shadowing.
+    add( [ "sfn", "a", [ "sfn", "a", "x1", "x2", "x3" ],
+        [ "sfn", "a", "x4", "x5", "x6" ],
+        [ "sfn", "a", "a", "x7", "a" ] ],
+        [ "x1", "x2", "x3", "x4", "x5", "x6", "x7" ] );
+})();
+
+addShouldThrowUnitTest( function () {
+    return getFreeVars( [ "nonexistentSyntax", "a", "b", "c" ] );
 } );
-addNaiveIsoUnitTest( function ( then ) {
-    then( getFreeVars( [ "tfn", "a", "aType", "b" ] ),
-        strMap().plusArrTruth( [ "aType", "b" ] ) );
-} );
-addNaiveIsoUnitTest( function ( then ) {
-    then( getFreeVars( [ "tfn", "a", "aType", "a" ] ),
-        strMap().plusArrTruth( [ "aType" ] ) );
-} );
-addNaiveIsoUnitTest( function ( then ) {
-    then( getFreeVars( [ "tfn", "a", "a", "a" ] ),
-        strMap().plusArrTruth( [ "a" ] ) );
+
+addShouldThrowUnitTest( function () {
+    return getFreeVars(
+        !"a boolean rather than a nested Array of strings" );
 } );
 
 
 // ===== Unit test runner ============================================
 
 (function () {
+    var testsPassedInARow = 0;
+    function resetTestsPassedInARow() {
+        if ( testsPassedInARow !== 0 )
+            console.log(
+                "A streak of " + testsPassedInARow + " tests " +
+                "passed." );
+        testsPassedInARow = 0;
+    }
     function run( i ) {
-        if ( !(i < unitTests.length) )
+        if ( !(i < unitTests.length) ) {
+            resetTestsPassedInARow();
             return;
+        }
         var unitTest = unitTests[ i ];
-        unitTest( function () {
+        unitTest( function ( errorMessage ) {
+            if ( errorMessage === null ) {
+                testsPassedInARow++;
+            } else {
+                resetTestsPassedInARow();
+                console.log( errorMessage );
+            }
             run( i + 1 );
         } )
     }
