@@ -765,7 +765,7 @@ function renameVarsToVars( renameMap, term ) {
     }
 }
 
-function knownEqual( exprA, exprB, opt_boundVarsAToB ) {
+function knownEqual( exprA, exprB, opt_boundVars ) {
     // Do a test of intrinsic equality, respecting alpha-equivalence.
     //
     // NOTE: When we support the observational subtyping fragment,
@@ -777,8 +777,8 @@ function knownEqual( exprA, exprB, opt_boundVarsAToB ) {
     // NOTE: Even though we take exprA and exprB as env-term pairs, we
     // only use the terms.
     
-    var aToB =
-        opt_boundVarsAToB !== void 0 ? opt_boundVarsAToB : strMap();
+    var boundVars = opt_boundVars !== void 0 ? opt_boundVars :
+        { ab: strMap(), ba: strMap() };
     
     var lit = patternLang.lit;
     var str = patternLang.str;
@@ -792,15 +792,19 @@ function knownEqual( exprA, exprB, opt_boundVarsAToB ) {
     function bget( k ) {
         return { env: exprB.env, term: bm.val.get( k ) };
     }
-    function recurWith( k, aToB ) {
-        return knownEqual( aget( k ), bget( k ), aToB );
+    function recurWith( k, boundVars ) {
+        return knownEqual( aget( k ), bget( k ), boundVars );
     }
     function recur( k ) {
-        return recurWith( k, aToB );
+        return recurWith( k, boundVars );
     }
     function recurPlus( termK, argK ) {
-        return recurWith( termK, aToB.plusEntry(
-            am.val.get( argK ), bm.val.get( argK ) ) );
+        var a = am.val.get( argK );
+        var b = bm.val.get( argK );
+        return recurWith( termK, {
+            ab: boundVars.ab.plusEntry( a, b ),
+            ba: boundVars.ba.plusEntry( b, a )
+        } );
     }
     
     function aSucceeds( pattern ) {
@@ -814,8 +818,10 @@ function knownEqual( exprA, exprB, opt_boundVarsAToB ) {
     if ( isPrimString( exprA.term ) ) {
         if ( !isPrimString( exprB.term ) )
             return false;
-        return aToB.has( exprA.term ) &&
-            aToB.get( exprA.term ) === exprB.term;
+        return boundVars.ab.has( exprA.term ) ?
+            boundVars.ab.get( exprA.term ) === exprB.term :
+            (!boundVars.ba.has( exprB.term ) &&
+                exprA.term === exprB.term);
         
     } else if ( aSucceeds(
         [ lit( "tfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
@@ -1490,6 +1496,13 @@ function typeCheck( expr, type ) {
         [ "sfn", "a", "a", "x7", "a" ] ],
         [ "x1", "x2", "x3", "x4", "x5", "x6", "x7" ] );
 })();
+addShouldThrowUnitTest( function () {
+    return getFreeVars( [ "nonexistentSyntax", "a", "b", "c" ] );
+} );
+addShouldThrowUnitTest( function () {
+    return getFreeVars(
+        !"a boolean rather than a nested Array of strings" );
+} );
 
 (function () {
     function add( map, input, output ) {
@@ -1541,21 +1554,109 @@ function typeCheck( expr, type ) {
     // NOTE: Again, there should be no existing way to make this term
     // typecheck.
     add( xo,
-        [ "sfn", "a", [ "sfn", "x", "x", "x", "x" ],
-            [ "sfn", "a", "x", "x", "x" ],
-            [ "sfn", "a", "a", "x", "a" ] ],
-        [ "sfn", "a", [ "sfn", "x", "o", "o", "x" ],
-            [ "sfn", "a", "o", "o", "o" ],
-            [ "sfn", "a", "a", "o", "a" ] ] );
+        [ "sfn", "f", [ "sfn", "x", "x", "x", "x" ],
+            [ "sfn", "f", "x", "x", "x" ],
+            [ "sfn", "f", "f", "x", "f" ] ],
+        [ "sfn", "f", [ "sfn", "x", "o", "o", "x" ],
+            [ "sfn", "f", "o", "o", "o" ],
+            [ "sfn", "f", "f", "o", "f" ] ] );
 })();
-
 addShouldThrowUnitTest( function () {
-    return getFreeVars( [ "nonexistentSyntax", "a", "b", "c" ] );
+    return renameVarsToVars( strMap(),
+        [ "nonexistentSyntax", "a", "b", "c" ] );
+} );
+addShouldThrowUnitTest( function () {
+    return renameVarsToVars( strMap(),
+        !"a boolean rather than a nested Array of strings" );
 } );
 
+(function () {
+    function add( a, b ) {
+        addPredicateUnitTest( function ( then ) {
+            then( {
+                a: { env: strMap(), term: a },
+                b: { env: strMap(), term: b }
+            }, function ( aAndB ) {
+                var a = aAndB.a, b = aAndB.b;
+                return ( true
+                    && knownEqual( a, a )
+                    && knownEqual( a, b )
+                    && knownEqual( b, a )
+                    && knownEqual( b, b )
+                );
+            } );
+        } );
+    }
+    function addNegative( a, b ) {
+        addPredicateUnitTest( function ( then ) {
+            then( {
+                a: { env: strMap(), term: a },
+                b: { env: strMap(), term: b }
+            }, function ( aAndB ) {
+                var a = aAndB.a, b = aAndB.b;
+                return ( true
+                    && knownEqual( a, a )
+                    && !knownEqual( a, b )
+                    && !knownEqual( b, a )
+                    && knownEqual( b, b )
+                );
+            } );
+        } );
+    }
+    
+    addNegative(
+        [ "sfn", "x", "x", "x", "x" ],
+        [ "sfn", "o", "x", "x", "x" ] );
+    
+    // Systematically verify the variable binding behavior of all
+    // expression syntaxes, at least for the purposes of
+    // renameVarsToVars().
+    add( "x", "x" );
+    // NOTE: Again, there should be no existing way to make this term
+    // typecheck.
+    add( [ "tfa", "x", "x", "x" ], [ "tfa", "o", "x", "o" ] );
+    add( [ "tfn", "x", "x", "x" ], [ "tfn", "o", "x", "o" ] );
+    add(
+        [ "tcall", "x", "x", "x", "x", "x" ],
+        [ "tcall", "o", "x", "o", "x", "x" ] );
+    add( [ "ttfa", "x", "x" ], [ "ttfa", "o", "o" ] );
+    add( [ "ttfn", "x", "x" ], [ "ttfn", "o", "o" ] );
+    add(
+        [ "ttcall", "x", "x", "x", "x" ],
+        [ "ttcall", "o", "o", "x", "x" ] );
+    // NOTE: Again, there should be no existing way to make this term
+    // typecheck.
+    add( [ "sfa", "x", "x", "x" ], [ "sfa", "o", "x", "o" ] );
+    add(
+        [ "sfn", "x", "x", "x", "x" ],
+        [ "sfn", "o", "x", "x", "o" ] );
+    add(
+        [ "fst", "x", "x", "x", "x" ],
+        [ "fst", "o", "x", "o", "x" ] );
+    add(
+        [ "snd", "x", "x", "x", "x" ],
+        [ "snd", "o", "x", "o", "x" ] );
+    
+    // Just try something wacky with nesting and shadowing.
+    // NOTE: Again, there should be no existing way to make this term
+    // typecheck.
+    add(
+        [ "sfn", "f", [ "sfn", "x", "x", "x", "x" ],
+            [ "sfn", "f", "x", "x", "x" ],
+            [ "sfn", "f", "f", "x", "f" ] ],
+        [ "sfn", "a", [ "sfn", "b", "x", "x", "b" ],
+            [ "sfn", "c", "x", "x", "x" ],
+            [ "sfn", "d", "a", "x", "d" ] ] );
+})();
 addShouldThrowUnitTest( function () {
-    return getFreeVars(
-        !"a boolean rather than a nested Array of strings" );
+    var expr = { env: strMap(),
+        term: [ "nonexistentSyntax", "a", "b", "c" ] };
+    return knownEqual( expr, expr );
+} );
+addShouldThrowUnitTest( function () {
+    var expr = { env: strMap(),
+        term: !"a boolean rather than a nested Array of strings" };
+    return knownEqual( expr, expr );
 } );
 
 
