@@ -686,15 +686,15 @@ function renameVarsToVars( renameMap, term ) {
         return recurWith( k, renameMap );
     }
     function recurMinus( termK, argK ) {
-        return recurWith( k,
+        return recurWith( termK,
             renameMap.minusEntry( em.val.get( argK ) ) );
     }
     
     var em;
     if ( isPrimString( term ) ) {
-        if ( boundVars.has( term ) )
-            return strMap();
-        return strMap().plusTruth( term );
+        if ( renameMap.has( term ) )
+            return renameMap.get( term );
+        return term;
         
     } else if ( em = getMatch( term,
         [ lit( "tfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
@@ -713,7 +713,7 @@ function renameVarsToVars( renameMap, term ) {
         "fn", "argVal" ] ) ) {
         
         return [ "tcall", em.val.get( "argName" ), recur( "argType" ),
-            recurMinus( "resultType", "arg" ),
+            recurMinus( "resultType", "argName" ),
             recur( "fn" ), recur( "argVal" ) ];
         
     } else if ( em = getMatch( term,
@@ -739,12 +739,12 @@ function renameVarsToVars( renameMap, term ) {
         [ lit( "sfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
         
         return [ "sfa", em.val.get( "arg" ), recur( "argType" ),
-            recurMinus( "resultType", "argName" ) ];
+            recurMinus( "resultType", "arg" ) ];
         
     } else if ( em = getMatch( term, [ lit( "sfn" ),
         str( "arg" ), "argType", "argVal", "resultVal" ] ) ) {
         
-        return [ "sfa", em.val.get( "arg" ), recur( "argType" ),
+        return [ "sfn", em.val.get( "arg" ), recur( "argType" ),
             recur( "argVal" ), recurMinus( "resultVal", "arg" ) ];
         
     } else if ( em = getMatch( term, [ lit( "fst" ),
@@ -1483,10 +1483,70 @@ function typeCheck( expr, type ) {
     
     
     // Just try something wacky with nesting and shadowing.
+    // NOTE: Again, there should be no existing way to make this term
+    // typecheck.
     add( [ "sfn", "a", [ "sfn", "a", "x1", "x2", "x3" ],
         [ "sfn", "a", "x4", "x5", "x6" ],
         [ "sfn", "a", "a", "x7", "a" ] ],
         [ "x1", "x2", "x3", "x4", "x5", "x6", "x7" ] );
+})();
+
+(function () {
+    function add( map, input, output ) {
+        addNaiveIsoUnitTest( function ( then ) {
+            then( renameVarsToVars( map, input ), output );
+        } );
+    }
+    
+    var xo = strMap().setObj( { "x": "o" } );
+    
+    // Try a few base cases.
+    add( strMap(), "f", "f" );
+    add( xo, "o", "o" );
+    add( xo, "f", "f" );
+    add( strMap().setObj( { "x1": "o1", "x2": "o2" } ),
+        [ "ttcall", "a", "a", "x1", "x2" ],
+        [ "ttcall", "a", "a", "o1", "o2" ] );
+    
+    // Systematically verify the variable binding behavior of all
+    // expression syntaxes, at least for the purposes of
+    // renameVarsToVars().
+    add( xo, "x", "o" );
+    // NOTE: Again, there should be no existing way to make this term
+    // typecheck.
+    add( xo, [ "tfa", "x", "x", "x" ], [ "tfa", "x", "o", "x" ] );
+    add( xo, [ "tfn", "x", "x", "x" ], [ "tfn", "x", "o", "x" ] );
+    add( xo,
+        [ "tcall", "x", "x", "x", "x", "x" ],
+        [ "tcall", "x", "o", "x", "o", "o" ] );
+    add( xo, [ "ttfa", "x", "x" ], [ "ttfa", "x", "x" ] );
+    add( xo, [ "ttfn", "x", "x" ], [ "ttfn", "x", "x" ] );
+    add( xo,
+        [ "ttcall", "x", "x", "x", "x" ],
+        [ "ttcall", "x", "x", "o", "o" ] );
+    // NOTE: Again, there should be no existing way to make this term
+    // typecheck.
+    add( xo, [ "sfa", "x", "x", "x" ], [ "sfa", "x", "o", "x" ] );
+    add( xo,
+        [ "sfn", "x", "x", "x", "x" ],
+        [ "sfn", "x", "o", "o", "x" ] );
+    add( xo,
+        [ "fst", "x", "x", "x", "x" ],
+        [ "fst", "x", "o", "x", "o" ] );
+    add( xo,
+        [ "snd", "x", "x", "x", "x" ],
+        [ "snd", "x", "o", "x", "o" ] );
+    
+    // Just try something wacky with nesting and shadowing.
+    // NOTE: Again, there should be no existing way to make this term
+    // typecheck.
+    add( xo,
+        [ "sfn", "a", [ "sfn", "x", "x", "x", "x" ],
+            [ "sfn", "a", "x", "x", "x" ],
+            [ "sfn", "a", "a", "x", "a" ] ],
+        [ "sfn", "a", [ "sfn", "x", "o", "o", "x" ],
+            [ "sfn", "a", "o", "o", "o" ],
+            [ "sfn", "a", "a", "o", "a" ] ] );
 })();
 
 addShouldThrowUnitTest( function () {
