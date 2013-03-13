@@ -1889,6 +1889,90 @@ addShouldThrowUnitTest( function () {
     add( false, [ "nonexistentSyntax", "a", "b", "c" ] );
 })();
 
+(function () {
+    function addTerm( expected, env, type, expr, opt_reduced ) {
+        addPredicateUnitTest( function ( then ) {
+            then( {
+                type: { env: env, term: type },
+                expr: { env: env, term: expr },
+                reduced: { env: env, term:
+                    opt_reduced !== void 0 ? opt_reduced : expr },
+            }, function ( args ) {
+                if ( !isType( args.type ) )
+                    return false;
+                var checksOut = typeCheck( args.expr, args.type );
+                if ( checksOut !== expected )
+                    return false;
+                if ( checksOut
+                    && !knownEqual(
+                        betaReduce( expr ), args.reduced ) )
+                    return false;
+                return true;
+            } );
+        } );
+    }
+    
+    
+    // TODO: Add more thorough unit tests, exploring the impact of
+    // non-empty environments, unsuccessful typechecks, and such.
+    
+    var _env = strMap();  // NOTE: The "_" stands for "empty."
+    var igno = "_";
+    var unitType = [ "ttfa", "t", [ "tfa", igno, "t", "t" ] ];
+    var unit = [ "ttfn", "t", [ "tfn", "x", "t", "x" ] ];
+    var sfn = [ "sfn", igno, unitType, unit, unit ];
+    
+    // TODO: Figure out why each one of these fails.
+    addTerm( true, _env, unitType, unit );
+    addTerm( true, _env, [ "tfa", igno, unitType, unitType ],
+        [ "tfn", igno, unitType, unit ] );
+    addTerm( true, _env, unitType,
+        [ "tcall", igno, unitType, unitType,
+            [ "tfn", "x", unitType, "x" ], unit ],
+        unit );
+    addTerm( true, _env, [ "ttfa", igno, unitType ],
+        [ "ttfn", igno, unit ] );
+    addTerm( true, _env, [ "tfa", igno, unitType, unitType ],
+        [ "ttcall", "t", [ "tfa", igno, "t", "t" ], unit, unitType ],
+        [ "tfn", "x", "t", "x" ] );
+    addTerm( true, _env, [ "sfa", igno, unitType, unitType ], sfn );
+    addTerm( true, _env, unitType,
+        [ "fst", igno, unitType, unitType, sfn ], unit );
+    addTerm( true, _env, unitType,
+        [ "snd", igno, unitType, unitType, sfn ], unit );
+})();
+addShouldThrowUnitTest( function () {
+    return betaReduce( { env: strMap(),
+        term: [ "nonexistentSyntax", "a", "b", "c" ] } );
+} );
+addShouldThrowUnitTest( function () {
+    return betaReduce( { env: strMap(),
+        term: !"a boolean rather than a nested Array of strings" } );
+} );
+addShouldThrowUnitTest( function () {
+    return isType( { env: strMap(),
+        term: [ "nonexistentSyntax", "a", "b", "c" ] } );
+} );
+addShouldThrowUnitTest( function () {
+    return isType( { env: strMap(),
+        term: !"a boolean rather than a nested Array of strings" } );
+} );
+addShouldThrowUnitTest( function () {
+    var env = strMap();
+    return typeCheck(
+        { env: env, term: [ "nonexistentSyntax", "a", "b", "c" ] },
+        { env: env, term: [ "ttfa", "t", [ "tfa", "x", "t", "t" ] ] }
+    );
+} );
+addShouldThrowUnitTest( function () {
+    var env = strMap();
+    return typeCheck(
+        { env: env, term:
+            !"a boolean rather than a nested Array of strings" },
+        { env: env, term: [ "ttfa", "t", [ "tfa", "x", "t", "t" ] ] }
+    );
+} );
+
 
 // ===== Unit test runner ============================================
 
