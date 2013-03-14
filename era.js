@@ -784,9 +784,6 @@ function knownEqual( exprA, exprB, opt_boundVars ) {
     
     // NOTE: We assume exprA and exprB have already been beta-reduced.
     
-    // NOTE: Even though we take exprA and exprB as env-term pairs, we
-    // only use the terms.
-    
     var boundVars = opt_boundVars !== void 0 ? opt_boundVars :
         { ab: strMap(), ba: strMap() };
     
@@ -802,16 +799,27 @@ function knownEqual( exprA, exprB, opt_boundVars ) {
     function bget( k ) {
         return { env: exprB.env, term: bm.val.get( k ) };
     }
-    function recurWith( k, boundVars ) {
-        return knownEqual( aget( k ), bget( k ), boundVars );
-    }
     function recur( k ) {
-        return recurWith( k, boundVars );
+        return knownEqual( aget( k ), bget( k ), boundVars );
     }
     function recurPlus( termK, argK ) {
         var a = am.val.get( argK );
         var b = bm.val.get( argK );
-        return recurWith( termK, {
+        return knownEqual( {
+            env: exprA.env.plusEntry( a, {
+                knownIsType: null,
+                knownType: null,
+                knownVal: null
+            } ),
+            term: am.val.get( termK )
+        }, {
+            env: exprB.env.plusEntry( b, {
+                knownIsType: null,
+                knownType: null,
+                knownVal: null
+            } ),
+            term: bm.val.get( termK )
+        }, {
             ab: boundVars.ab.plusEntry( a, b ),
             ba: boundVars.ba.plusEntry( b, a )
         } );
@@ -825,13 +833,35 @@ function knownEqual( exprA, exprB, opt_boundVars ) {
         return true;
     }
     
+    // If either variable is bound in its term's lexical closure,
+    // then we look it up that way and continue, as though the
+    // variable value had been substituted in instead of carried
+    // in a closure.
+    while ( isPrimString( exprA.term )
+        && !boundVars.ab.has( exprA.term )
+        && exprA.env.has( exprA.term )
+        && exprA.env.get( exprA.term ).knownVal !== null )
+        exprA = exprA.env.get( exprA.term ).knownVal.val;
+    while ( isPrimString( exprB.term )
+        && !boundVars.ba.has( exprB.term )
+        && exprB.env.has( exprB.term )
+        && exprB.env.get( exprB.term ).knownVal !== null )
+        exprB = exprB.env.get( exprB.term ).knownVal.val;
+    
     if ( isPrimString( exprA.term ) ) {
         if ( !isPrimString( exprB.term ) )
             return false;
-        return boundVars.ab.has( exprA.term ) ?
-            boundVars.ab.get( exprA.term ) === exprB.term :
-            (!boundVars.ba.has( exprB.term ) &&
-                exprA.term === exprB.term);
+        
+        // If either variable is part of our tracked local variables,
+        // compare them on that basis.
+        if ( boundVars.ab.has( exprA.term ) )
+            return boundVars.ab.get( exprA.term ) === exprB.term;
+        if ( boundVars.ba.has( exprB.term ) )
+            return false;
+        
+        // If they're both free, they're equal if they have the same
+        // name.
+        return exprA.term === exprB.term;
         
     } else if ( aSucceeds(
         [ lit( "tfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
@@ -951,6 +981,13 @@ function betaReduce( expr ) {
     
     // NOTE: These have side effects (changing the binding of `env`),
     // even if we use them in a way that makes them look pure.
+    //
+    // TODO: For the moment, we don't end up renaming anything in
+    // practice, and if and when we do, we might run across a bug: The
+    // implementation of knownEqual() for free variables depends on
+    // the exact names of those variables. See if this will come up as
+    // an issue.
+    //
     function renameExpr( expr ) {
         var reduced = betaReduce( expr );
         var freeVars = getFreeVars( reduced.term );
@@ -1951,7 +1988,6 @@ addShouldThrowUnitTest( function () {
     var unit = [ "ttfn", "t", [ "tfn", "x", "t", "x" ] ];
     var sfn = [ "sfn", igno, unitType, unit, unit ];
     
-    // TODO: Figure out why each one of these fails.
     addTerm( true, _env, unitType, unit );
     addTerm( true, _env, [ "tfa", igno, unitType, unitType ],
         [ "tfn", igno, unitType, unit ] );
@@ -1961,19 +1997,18 @@ addShouldThrowUnitTest( function () {
         unit );
     addTerm( true, _env, [ "ttfa", igno, unitType ],
         [ "ttfn", igno, unit ] );
-    // TODO: Currently, this test fails because during type checking
-    // of the beta-reduced expression, the final type we compare to is
+    // NOTE: This test encounters the case where one of the arguments
+    // to knownEqual() is a variable reference and it's bound in its
+    // environment. This happens because during type checking of the
+    // beta-reduced expression, the final type we compare to is
     // actually [ "tfa", igno, unitType, "t" ] with "t" bound to
-    // unitType in the lexical closure. That's a good reason to fail,
-    // but on the other hand it means there's no empty-environment
-    // type we can accept for this term. See if we can adapt the
-    // algorithm to make this test work.
+    // unitType in the lexical closure.
     addTerm( true, _env, [ "tfa", igno, unitType, unitType ],
         [ "ttcall", "t", [ "tfa", igno, "t", "t" ], unit, unitType ],
-        [ "tfn", "x", "t", "x" ] );
+        [ "tfn", "x", unitType, "x" ] );
     // NOTE: This test of ttcall makes no use of lexical closure in
-    // the result, so it doesn't have the same trouble as the previous
-    // test.
+    // the result, so it hasn't run across the same trouble as the
+    // previous test.
     addTerm( true, _env, unitType,
         [ "ttcall", igno, unitType,
             [ "ttfn", igno, unit ], unitType ],
