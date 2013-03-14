@@ -480,16 +480,47 @@ addNaiveIsoUnitTest( function ( then ) {
 
 // ===== Module validity checker =====================================
 //
-// For now, we're just focusing on the deductive fragment. A more
-// complete version of the grammar is available at
+// For now, we just implement the deductive fragment. A more complete
+// version of the grammar is available at
 // <https://gist.github.com/4559120>. Also, it's worth noting that
 // we're using s-expressions for the grammar.
+//
+// Here's a map of the dependencies among the seven language fragments
+// in that Gist:
+//
+// Local collaboration
+//   Deductive
+//   Action
+// Local collaborative value-level definition
+//   Local collaboration
+//     ...
+// Local collaborative phantom type
+//   Local collaboration
+//     ...
+// Local collaborative extensible sum
+//   Local collaboration
+//     ...
+//   Observational subtyping
+//     Deductive
+//
+// To build an unambitious dynamic programming language within this
+// system, the basis we need is the local collaborative value-level
+// definition fragment, so we should build the action and local
+// collaboration fragments next.
+
 
 // NOTE: For this version, we're taking the original grammar design
-// and filling it out with lots of extra type annotations to make the
-// type checker easy to write. Every function call expression must
-// come with a full description of the function type it's calling.
+// and filling it out with lots of extra annotations to make the
+// checker easy to write. For one thing, every function call
+// expression must come with a full description of the function type
+// it's calling. For another, when the original inference rules would
+// have allowed certain expressions on the grounds that an observed
+// action ambiently enabled them, for now we instead force those
+// dependencies to the top level. In particular, we use (withthe ...)
+// instead of (the ...).
 
+// Deductive fragment grammar notes:
+//
 // Fact ::=| UserVar "@" UserKnowledge
 // UserKnowledge ::=| "##type" Term
 // UserKnowledge ::=| Term ":" Term
@@ -505,7 +536,7 @@ addNaiveIsoUnitTest( function ( then ) {
 // Term ::=| "\#sigma" "(" Term ":" Term ")" "*" Term
 // Term ::=| "#fst" Term
 // Term ::=| "#snd" Term
-
+//
 // UserKnowledge ::=| "(" "istype" Term ")"
 // UserKnowledge ::=| "(" "describes" Term Term ")"
 // Term ::=| TermVar
@@ -519,7 +550,7 @@ addNaiveIsoUnitTest( function ( then ) {
 // Term ::=| "(" "sfn" TermVar Term Term Term ")"
 // Term ::=| "(" "fst" TermVar Term Term Term ")"
 // Term ::=| "(" "snd" TermVar Term Term Term ")"
-
+//
 // istype: is type
 // describes: describes
 // tfa: total for-all
@@ -532,6 +563,44 @@ addNaiveIsoUnitTest( function ( then ) {
 // sfn: sigma function (i.e. a dependent pair)
 // fst: first (of an sfn)
 // snd: second (of an sfn)
+
+// Action fragment grammar notes:
+//
+// MODULE ::= UserAction*
+// Fact ::=| UserVar "@!" UserAction
+// UserKnowledge ::=| UserAction
+//
+// // TODO: Figure out how to account for the signatures and timestamp
+// // information in the pre-build module grammar.
+// //
+// // TODO: Figure out if there needs to be a separate grammar for
+// // post-build shared modules.
+// //
+// MODULE ::= "(" "era" "1" UserAction ")"
+// UserKnowledge ::=| "(" "can" UserAction ")"
+
+// Local collaboration fragment grammar notes:
+//
+// UserKnowledge ::=| "##secret" Key
+// UserKnowledge ::=| "##public" Key
+// Key ::=| KeyVar
+// Key ::=| "$" ## CryptographicKeyName
+// Key ::=| "$$everyone"
+// Key ::=| Key ## "/" ## SubName
+//
+// UserKnowledge ::=| "(" "secret" Key ")"
+// UserKnowledge ::=| "(" "public" Key ")"
+// UserAction ::=| "(" "withsecret" Key UserAction ")"
+
+// Local collaborative value-level definition fragment grammar notes:
+//
+// UserAction ::=| "!!define" Key Key Term Term
+// Term ::=| "#the" Key Key Term
+//
+// UserAction ::=| "(" "define" Key Key Term Term ")"
+// UserAction ::=| "(" "withthe" TermVar Key Key Term UserAction ")"
+
+
 
 var patternLang = {};
 (function () {
