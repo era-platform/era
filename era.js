@@ -243,6 +243,7 @@ naiveIsoCases.push( function ( recur, a, b ) {
 
 function logJson( x ) {
     console.log( JSON.stringify( x ) );
+    return x;
 }
 
 var unitTests = [];
@@ -672,92 +673,101 @@ function getFreeVars( term, opt_boundVars ) {
     }
 }
 
-function renameVarsToVars( renameMap, term ) {
+function renameVarsToVars( renameMap, expr ) {
+    
+    // NOTE: This takes an env-term pair, but it returns a term.
     
     var lit = patternLang.lit;
     var str = patternLang.str;
     var pat = patternLang.pat;
     var getMatch = patternLang.getMatch;
     
-    function recurWith( k, renameMap ) {
-        return renameVarsToVars( renameMap, em.val.get( k ) );
-    }
     function recur( k ) {
-        return recurWith( k, renameMap );
+        return renameVarsToVars( renameMap,
+            { env: expr.env, term: em.val.get( k ) } );
     }
-    function recurMinus( termK, argK ) {
-        return recurWith( termK,
-            renameMap.minusEntry( em.val.get( argK ) ) );
+    function recurUnder( termK, argK ) {
+        return renameVarsToVars( renameMap, {
+            env: expr.env.plusEntry( em.val.get( argK ), {
+                knownIsType: null,
+                knownType: null,
+                knownVal: null
+            } ),
+            term: em.val.get( termK )
+        } );
     }
     
     var em;
-    if ( isPrimString( term ) ) {
-        if ( renameMap.has( term ) )
-            return renameMap.get( term );
-        return term;
+    if ( isPrimString( expr.term ) ) {
+        if ( expr.env.has( expr.term ) )
+            return expr.term;
+        if ( renameMap.has( expr.term ) )
+            return renameMap.get( expr.term );
+        // TODO: Figure out if this is really what we should do here.
+        return expr.term;
         
-    } else if ( em = getMatch( term,
+    } else if ( em = getMatch( expr.term,
         [ lit( "tfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
         
         return [ "tfa", em.val.get( "arg" ), recur( "argType" ),
-            recurMinus( "resultType", "arg" ) ];
+            recurUnder( "resultType", "arg" ) ];
         
-    } else if ( em = getMatch( term,
+    } else if ( em = getMatch( expr.term,
         [ lit( "tfn" ), str( "arg" ), "argType", "result" ] ) ) {
         
         return [ "tfn", em.val.get( "arg" ), recur( "argType" ),
-            recurMinus( "result", "arg" ) ];
+            recurUnder( "result", "arg" ) ];
         
-    } else if ( em = getMatch( term, [ lit( "tcall" ),
+    } else if ( em = getMatch( expr.term, [ lit( "tcall" ),
         str( "argName" ), "argType", "resultType",
         "fn", "argVal" ] ) ) {
         
         return [ "tcall", em.val.get( "argName" ), recur( "argType" ),
-            recurMinus( "resultType", "argName" ),
+            recurUnder( "resultType", "argName" ),
             recur( "fn" ), recur( "argVal" ) ];
         
-    } else if ( em = getMatch( term,
+    } else if ( em = getMatch( expr.term,
         [ lit( "ttfa" ), str( "arg" ), "resultType" ] ) ) {
         
         return [ "ttfa", em.val.get( "arg" ),
-            recurMinus( "resultType", "arg" ) ];
+            recurUnder( "resultType", "arg" ) ];
         
-    } else if ( em = getMatch( term,
+    } else if ( em = getMatch( expr.term,
         [ lit( "ttfn" ), str( "arg" ), "result" ] ) ) {
         
         return [ "ttfn", em.val.get( "arg" ),
-            recurMinus( "result", "arg" ) ];
+            recurUnder( "result", "arg" ) ];
         
-    } else if ( em = getMatch( term, [ lit( "ttcall" ),
+    } else if ( em = getMatch( expr.term, [ lit( "ttcall" ),
         str( "argName" ), "resultType", "fn", "argVal" ] ) ) {
         
         return [ "ttcall", em.val.get( "argName" ),
-            recurMinus( "resultType", "argName" ),
+            recurUnder( "resultType", "argName" ),
             recur( "fn" ), recur( "argVal" ) ];
         
-    } else if ( em = getMatch( term,
+    } else if ( em = getMatch( expr.term,
         [ lit( "sfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
         
         return [ "sfa", em.val.get( "arg" ), recur( "argType" ),
-            recurMinus( "resultType", "arg" ) ];
+            recurUnder( "resultType", "arg" ) ];
         
-    } else if ( em = getMatch( term, [ lit( "sfn" ),
+    } else if ( em = getMatch( expr.term, [ lit( "sfn" ),
         str( "arg" ), "argType", "argVal", "resultVal" ] ) ) {
         
         return [ "sfn", em.val.get( "arg" ), recur( "argType" ),
-            recur( "argVal" ), recurMinus( "resultVal", "arg" ) ];
+            recur( "argVal" ), recurUnder( "resultVal", "arg" ) ];
         
-    } else if ( em = getMatch( term, [ lit( "fst" ),
+    } else if ( em = getMatch( expr.term, [ lit( "fst" ),
         str( "argName" ), "argType", "resultType", "fn" ] ) ) {
         
         return [ "fst", em.val.get( "argName" ), recur( "argType" ),
-            recurMinus( "resultType", "argName" ), recur( "fn" ) ];
+            recurUnder( "resultType", "argName" ), recur( "fn" ) ];
         
-    } else if ( em = getMatch( term, [ lit( "snd" ),
+    } else if ( em = getMatch( expr.term, [ lit( "snd" ),
         str( "argName" ), "argType", "resultType", "fn" ] ) ) {
         
         return [ "snd", em.val.get( "argName" ), recur( "argType" ),
-            recurMinus( "resultType", "argName" ), recur( "fn" ) ];
+            recurUnder( "resultType", "argName" ), recur( "fn" ) ];
         
     } else {
         // TODO: Handle more language fragments.
@@ -966,11 +976,11 @@ function betaReduce( expr ) {
             renameBackward.set( newName, origName );
         } );
         
-        var result = renameVarsToVars( renameForward, reduced.term );
+        var result = renameVarsToVars( renameForward, reduced );
         env = env.plus( renameBackward.map( function ( origName ) {
             return env.get( origName );
         } ) );
-        return result.term;
+        return result;
     }
     function rename( k ) {
         return renameExpr( eget( k ) );
@@ -1090,7 +1100,8 @@ function betaReduce( expr ) {
         var argValTerm = rename( "argVal" );
         var argValExpr = { env: env, term: argValTerm };
         
-        var term = [ "sfn", em.val.get( "arg" ), argTypeTerm, argVal,
+        var term = [ "sfn", em.val.get( "arg" ), argTypeTerm,
+            argValTerm,
             renameExpr( {
                 env: env.plusEntry( em.val.get( "arg" ), {
                     knownIsType: null,
@@ -1368,8 +1379,6 @@ function typeCheck( expr, type ) {
             return false;
         if ( !knownEqual( beget( "argType" ), argType ) )
             return false;
-        // TODO: Figure out whether argType can have free variables at
-        // this point.
         return typeCheck( {
             env: expr.env.plusEntry( em.val.get( "arg" ), {
                 knownIsType: null,
@@ -1423,7 +1432,22 @@ function typeCheck( expr, type ) {
             [ lit( "ttfa" ), str( "arg" ), "resultType" ] );
         if ( tm === null )
             return false;
-        return typeCheck( eget( "result" ), tget( "resultType" ) );
+        
+        return typeCheck( {
+            env: expr.env.plusEntry( em.val.get( "arg" ), {
+                knownIsType: { val: true },
+                knownType: null,
+                knownVal: null
+            } ),
+            term: em.val.get( "result" ),
+        }, betaReduce( {
+            env: type.env.plusEntry( tm.val.get( "arg" ), {
+                knownIsType: { val: true },
+                knownType: null,
+                knownVal: null
+            } ),
+            term: tm.val.get( "resultType" )
+        } ) );
         
     } else if ( em = getMatch( expr.term, [ lit( "ttcall" ),
         str( "argName" ), "resultType", "fn", "argVal" ] ) ) {
@@ -1636,11 +1660,16 @@ addShouldThrowUnitTest( function () {
 (function () {
     function add( map, input, output ) {
         addNaiveIsoUnitTest( function ( then ) {
-            then( renameVarsToVars( map, input ), output );
+            then(
+                renameVarsToVars(
+                    map, { env: strMap(), term: input } ),
+                output );
         } );
     }
     
     var xo = strMap().setObj( { "x": "o" } );
+    
+    // TODO: Try some tests in a nonempty environment.
     
     // Try a few base cases.
     add( strMap(), "f", "f" );
@@ -1691,12 +1720,12 @@ addShouldThrowUnitTest( function () {
             [ "sfn", "f", "f", "o", "f" ] ] );
 })();
 addShouldThrowUnitTest( function () {
-    return renameVarsToVars( strMap(),
-        [ "nonexistentSyntax", "a", "b", "c" ] );
+    return renameVarsToVars( strMap(), { env: strMap(),
+        term: [ "nonexistentSyntax", "a", "b", "c" ] } );
 } );
 addShouldThrowUnitTest( function () {
-    return renameVarsToVars( strMap(),
-        !"a boolean rather than a nested Array of strings" );
+    return renameVarsToVars( strMap(), { env: strMap(),
+        term: !"a boolean rather than a nested Array of strings" } );
 } );
 
 (function () {
@@ -1905,7 +1934,7 @@ addShouldThrowUnitTest( function () {
                     return false;
                 if ( checksOut
                     && !knownEqual(
-                        betaReduce( expr ), args.reduced ) )
+                        betaReduce( args.expr ), args.reduced ) )
                     return false;
                 return true;
             } );
@@ -1932,9 +1961,23 @@ addShouldThrowUnitTest( function () {
         unit );
     addTerm( true, _env, [ "ttfa", igno, unitType ],
         [ "ttfn", igno, unit ] );
+    // TODO: Currently, this test fails because during type checking
+    // of the beta-reduced expression, the final type we compare to is
+    // actually [ "tfa", igno, unitType, "t" ] with "t" bound to
+    // unitType in the lexical closure. That's a good reason to fail,
+    // but on the other hand it means there's no empty-environment
+    // type we can accept for this term. See if we can adapt the
+    // algorithm to make this test work.
     addTerm( true, _env, [ "tfa", igno, unitType, unitType ],
         [ "ttcall", "t", [ "tfa", igno, "t", "t" ], unit, unitType ],
         [ "tfn", "x", "t", "x" ] );
+    // NOTE: This test of ttcall makes no use of lexical closure in
+    // the result, so it doesn't have the same trouble as the previous
+    // test.
+    addTerm( true, _env, unitType,
+        [ "ttcall", igno, unitType,
+            [ "ttfn", igno, unit ], unitType ],
+        unit );
     addTerm( true, _env, [ "sfa", igno, unitType, unitType ], sfn );
     addTerm( true, _env, unitType,
         [ "fst", igno, unitType, unitType, sfn ], unit );
