@@ -506,6 +506,8 @@ addNaiveIsoUnitTest( function ( then ) {
 // Term ::=| "#fst" Term
 // Term ::=| "#snd" Term
 
+// UserKnowledge ::=| "(" "istype" Term ")"
+// UserKnowledge ::=| "(" "describes" Term Term ")"
 // Term ::=| TermVar
 // Term ::=| "(" "tfa" TermVar Term Term ")"
 // Term ::=| "(" "tfn" TermVar Term Term ")"
@@ -517,6 +519,19 @@ addNaiveIsoUnitTest( function ( then ) {
 // Term ::=| "(" "sfn" TermVar Term Term Term ")"
 // Term ::=| "(" "fst" TermVar Term Term Term ")"
 // Term ::=| "(" "snd" TermVar Term Term Term ")"
+
+// istype: is type
+// describes: describes
+// tfa: total for-all
+// tfn: total function
+// tcall: total call
+// ttfa: total type for-all
+// ttfn: total type function (a function that takes types to values)
+// ttcall: total type call
+// sfa: sigma for-all
+// sfn: sigma function (i.e. a dependent pair)
+// fst: first (of an sfn)
+// snd: second (of an sfn)
 
 var patternLang = {};
 (function () {
@@ -1595,6 +1610,61 @@ function typeCheck( expr, type ) {
     }
 }
 
+function isWellFormedKnowledge( term ) {
+    
+    var lit = patternLang.lit;
+    var str = patternLang.str;
+    var pat = patternLang.pat;
+    var getMatch = patternLang.getMatch;
+    
+    var em;
+    if ( em = getMatch( term,
+        [ lit( "istype" ), "purportedType" ] ) ) {
+        
+        return isWellFormed( em.val.get( "purportedType" ) );
+        
+    } else if ( em = getMatch( term,
+        [ lit( "describes" ), "type", "purportedInhabitant" ] ) ) {
+        
+        return isWellFormed( em.val.get( "type" ) ) &&
+            isWellFormed( em.val.get( "purportedInhabitant" ) );
+    } else {
+        // TODO: Handle more language fragments.
+        return false;
+    }
+}
+
+function knowledgeCheck( expr ) {
+    
+    var lit = patternLang.lit;
+    var str = patternLang.str;
+    var pat = patternLang.pat;
+    var getMatch = patternLang.getMatch;
+    
+    function eget( k ) {
+        return { env: expr.env, term: em.val.get( k ) };
+    }
+    
+    var em;
+    if ( em = getMatch( expr.term,
+        [ lit( "istype" ), "purportedType" ] ) ) {
+        
+        return isType( eget( "purportedType" ) );
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "describes" ), "type", "purportedInhabitant" ] ) ) {
+        
+        // TODO: See if we should really be checking isType() here, or
+        // if there's another place for this kind of checking.
+        return isType( eget( "type" ) ) && typeCheck(
+            eget( "purportedInhabitant" ), eget( "type" ) );
+    } else {
+        // TODO: Handle more language fragments.
+        throw new Error();
+    }
+}
+
+
 (function () {
     function add( term, vars ) {
         addNaiveIsoUnitTest( function ( then ) {
@@ -1962,7 +2032,7 @@ addShouldThrowUnitTest( function () {
                 type: { env: env, term: type },
                 expr: { env: env, term: expr },
                 reduced: { env: env, term:
-                    opt_reduced !== void 0 ? opt_reduced : expr },
+                    opt_reduced !== void 0 ? opt_reduced : expr }
             }, function ( args ) {
                 if ( !isType( args.type ) )
                     return false;
@@ -2049,6 +2119,94 @@ addShouldThrowUnitTest( function () {
             !"a boolean rather than a nested Array of strings" },
         { env: env, term: [ "ttfa", "t", [ "tfa", "x", "t", "t" ] ] }
     );
+} );
+
+(function () {
+    function add( expected, term ) {
+        addPredicateUnitTest( function ( then ) {
+            then( term, function ( term ) {
+                return expected === isWellFormedKnowledge( term );
+            } );
+        } );
+    }
+    
+    var vari = "x";
+    
+    add( false, vari );
+    add( false, true );
+    
+    add( true, [ "istype", vari ] );
+    add( false, [ "istype", true ] );
+    
+    add( true, [ "describes", vari, vari ] );
+    add( false, [ "describes", true, vari ] );
+    add( false, [ "describes", vari, true ] );
+    
+    add( false, [ "nonexistentSyntax", "a", "b", "c" ] );
+})();
+
+(function () {
+    function add( type, expr ) {
+        addPredicateUnitTest( function ( then ) {
+            then( {
+                typeKnowledge:
+                    { env: strMap(), term: [ "istype", type ] },
+                exprKnowledge: { env: strMap(), term:
+                    [ "describes", type, expr ] }
+            }, function ( args ) {
+                if ( !isWellFormedKnowledge(
+                    args.typeKnowledge.term ) )
+                    return false;
+                if ( !knowledgeCheck( args.typeKnowledge ) )
+                    return false;
+                if ( !isWellFormedKnowledge(
+                    args.exprKnowledge.term ) )
+                    return false;
+                if ( !knowledgeCheck( args.exprKnowledge ) )
+                    return false;
+                return true;
+            } );
+        } );
+    }
+    
+    // TODO: These test expressions and types are exactly the same as
+    // those in the all-in-one tests for typeCheck(), betaReduce(),
+    // and knownEqual(). See if we should put them in a shared
+    // definition.
+    
+    // TODO: Add more thorough unit tests, exploring the impact of
+    // non-empty environments, unsuccessful knowledge checks, and
+    // such.
+    
+    var igno = "_";
+    var unitType = [ "ttfa", "t", [ "tfa", igno, "t", "t" ] ];
+    var unit = [ "ttfn", "t", [ "tfn", "x", "t", "x" ] ];
+    var sfn = [ "sfn", igno, unitType, unit, unit ];
+    
+    add( unitType, unit );
+    add( [ "tfa", igno, unitType, unitType ],
+        [ "tfn", igno, unitType, unit ] );
+    add( unitType,
+        [ "tcall", igno, unitType, unitType,
+            [ "tfn", "x", unitType, "x" ], unit ] );
+    add( [ "ttfa", igno, unitType ], [ "ttfn", igno, unit ] );
+    add( [ "tfa", igno, unitType, unitType ],
+        [ "ttcall", "t", [ "tfa", igno, "t", "t" ],
+            unit, unitType ] );
+    add( unitType,
+        [ "ttcall", igno, unitType,
+            [ "ttfn", igno, unit ], unitType ] );
+    add( [ "sfa", igno, unitType, unitType ], sfn );
+    add( unitType, [ "fst", igno, unitType, unitType, sfn ] );
+    add( unitType, [ "snd", igno, unitType, unitType, sfn ] );
+})();
+addShouldThrowUnitTest( function () {
+    return knowledgeCheck( { env: strMap(),
+        term: [ "nonexistentSyntax", "a", "b", "c" ] } );
+} );
+addShouldThrowUnitTest( function () {
+    return knowledgeCheck( { env: strMap(),
+        term: !"a boolean rather than a nested Array of strings" } );
 } );
 
 
