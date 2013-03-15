@@ -606,7 +606,7 @@ addNaiveIsoUnitTest( function ( then ) {
 //
 // UserKnowledge ::=| "(" "secret" Key ")"
 // UserKnowledge ::=| "(" "public" Key ")"
-// UserAction ::=| "(" "withsecret" Term Key UserAction ")"
+// UserAction ::=| "(" "withsecret" TermVar Key UserAction ")"
 // // NOTE: There is no "KeyVar" production here because there is no
 // // program syntax that binds a KeyVar. It was just used for
 // // specifying inference rules in the Gist.
@@ -1799,6 +1799,116 @@ function checkKey( keyring, term ) {
         [ lit( "subkey" ), "parent", "subname" ] ) ) {
         
         return checkKey( keyring, em.val.get( "parent" ) );
+    } else {
+        // TODO: Handle more language fragments.
+        throw new Error();
+    }
+}
+
+// NOTE: The "wf" stands for "well-formed."
+function isWfUserAction( term ) {
+    
+    var lit = patternLang.lit;
+    var str = patternLang.str;
+    var pat = patternLang.pat;
+    var getMatch = patternLang.getMatch;
+    
+    var em;
+    if ( em = getMatch( term,
+        [ lit( "withsecret" ), str( "var" ), "key", "action" ] ) ) {
+        
+        return isWfKey( em.val.get( "key" ) ) &&
+            isWfUserAction( em.val.get( "action" ) );
+        
+    } else if ( em = getMatch( term, [ lit( "define" ),
+        "myPrivKey", "yourPubKey", "type", "expr" ] ) ) {
+        
+        // TODO: While `myPrivKey` is a term, it also can't be
+        // anything but a variable reference. See if we should check
+        // that here or just leave it to checkUserAction().
+        return isWfTerm( em.val.get( "myPrivKey" ) ) &&
+            isWfKey( em.val.get( "yourPubKey" ) ) &&
+            isWfTerm( em.val.get( "type" ) ) &&
+            isWfTerm( em.val.get( "expr" ) );
+        
+    } else if ( em = getMatch( term, [ lit( "withthe" ),
+        str( "var" ), "yourPubKey", "myPrivKey", "type",
+        "action" ] ) ) {
+        
+        // TODO: While `myPrivKey` is a term, it also can't be
+        // anything but a variable reference. See if we should check
+        // that here or just leave it to checkUserAction().
+        return isWfKey( em.val.get( "yourPubKey" ) ) &&
+            isWfTerm( em.val.get( "myPrivKey" ) ) &&
+            isWfTerm( em.val.get( "type" ) ) &&
+            isWfUserAction( em.val.get( "expr" ) );
+        
+    } else {
+        // TODO: Handle more language fragments.
+        return false;
+    }
+}
+
+function checkUserAction( keyring, expr ) {
+    
+    var lit = patternLang.lit;
+    var str = patternLang.str;
+    var pat = patternLang.pat;
+    var getMatch = patternLang.getMatch;
+    
+    function eget( k ) {
+        return { env: expr.env, term: em.val.get( k ) };
+    }
+    
+    var em;
+    if ( em = getMatch( expr.term,
+        [ lit( "withsecret" ), str( "var" ), "key", "action" ] ) ) {
+        
+        return checkKey( keyring, em.val.get( "key" ) ) &&
+            checkUserAction( keyring, {
+                env: envWith( expr.env, {
+                    knownIsPrivateKey: { val: true }
+                } ),
+                term: em.val.get( "action" )
+            } );
+        
+    } else if ( em = getMatch( expr.term, [ lit( "define" ),
+        "myPrivKey", "yourPubKey", "type", "expr" ] ) ) {
+        
+        return (true
+            && expr.env.has( em.val.get( "myPrivKey" ) )
+            && expr.env.get( em.val.get( "myPrivKey" )
+                ).knownIsPrivateKey !== null
+            && expr.env.get( em.val.get( "myPrivKey" )
+                ).knownIsPrivateKey.val
+            // TODO: See if we should write a checkPublicKey()
+            // function. For the moment, it would always return true,
+            // so we just call isWfKey().
+            && isWfKey( em.val.get( "yourPubKey" ) )
+            && checkIsType( eget( "type" ) )
+            && checkInhabitsType( eget( "expr" ), eget( "type" ) )
+        );
+        
+    } else if ( em = getMatch( expr.term, [ lit( "withthe" ),
+        str( "var" ), "yourPubKey", "myPrivKey", "type",
+        "action" ] ) ) {
+        
+        return (true
+            && isWfKey( em.val.get( "yourPubKey" ) )
+            && expr.env.has( em.val.get( "myPrivKey" ) )
+            && expr.env.get( em.val.get( "myPrivKey" )
+                ).knownIsPrivateKey !== null
+            && expr.env.get( em.val.get( "myPrivKey" )
+                ).knownIsPrivateKey.val
+            && checkIsType( eget( "type" ) )
+            && checkUserAction( keyring, {
+                env: envWith( expr.env, {
+                    knownType: { val: betaReduce( eget( "type" ) ) }
+                } ),
+                term: em.val.get( "action" )
+            } )
+        );
+        
     } else {
         // TODO: Handle more language fragments.
         throw new Error();
