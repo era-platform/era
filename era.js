@@ -607,11 +607,16 @@ addNaiveIsoUnitTest( function ( then ) {
 // UserKnowledge ::=| "(" "secret" Key ")"
 // UserKnowledge ::=| "(" "public" Key ")"
 // UserAction ::=| "(" "withsecret" Term Key UserAction ")"
-// Key ::=| KeyVar
-// Key ::=| "(" "cryptokey" CryptoKey ")"
+// // NOTE: There is no "KeyVar" production here because there is no
+// // program syntax that binds a KeyVar. It was just used for
+// // specifying inference rules in the Gist.
+// // NOTE: There is no "CryptographicKey" production here because it
+// // was just a suggestive way to specify what other key syntaxes
+// // should exist in the future.
+// // TODO: Make at least one cryptographic key syntax.
 // Key ::=| "(" "everyone" ")"
 // Key ::=| "(" "subkey" Key ExternallyVisibleWord ")"
-// ExternallyVisibleWord ::=| "(" "str" Symbol ")"
+// ExternallyVisibleWord ::=| "(" "sym" Symbol ")"
 
 // Local collaborative value-level definition fragment grammar notes:
 //
@@ -690,7 +695,7 @@ var patternLang = {};
 })();
 
 
-function getFreeVars( term, opt_boundVars ) {
+function getFreeVarsOfTerm( term, opt_boundVars ) {
     
     var lit = patternLang.lit;
     var str = patternLang.str;
@@ -701,7 +706,7 @@ function getFreeVars( term, opt_boundVars ) {
         opt_boundVars !== void 0 ? opt_boundVars : strMap();
     
     function recurWith( k, boundVars ) {
-        return getFreeVars( em.val.get( k ), boundVars );
+        return getFreeVarsOfTerm( em.val.get( k ), boundVars );
     }
     function recur( k ) {
         return recurWith( k, boundVars );
@@ -1090,7 +1095,7 @@ function betaReduce( expr ) {
     //
     function renameExpr( expr ) {
         var reduced = betaReduce( expr );
-        var freeVars = getFreeVars( reduced.term );
+        var freeVars = getFreeVarsOfTerm( reduced.term );
         
         function pickNameOutside( desiredName, isTaken ) {
             desiredName += "";
@@ -1692,13 +1697,18 @@ function isWfUserKnowledge( term ) {
         
         return isWfTerm( em.val.get( "type" ) ) &&
             isWfTerm( em.val.get( "purportedInhabitant" ) );
+        
+    } else if ( em = getMatch( term, [ lit( "public" ), "key" ] ) ) {
+        return isWfKey( em.val.get( "key" ) );
+    } else if ( em = getMatch( term, [ lit( "private" ), "key" ] ) ) {
+        return isWfKey( em.val.get( "key" ) );
     } else {
         // TODO: Handle more language fragments.
         return false;
     }
 }
 
-function checkUserKnowledge( expr ) {
+function checkUserKnowledge( keyring, expr ) {
     
     var lit = patternLang.lit;
     var str = patternLang.str;
@@ -1723,6 +1733,71 @@ function checkUserKnowledge( expr ) {
         // checking.
         return checkIsType( eget( "type" ) ) && checkInhabitsType(
             eget( "purportedInhabitant" ), eget( "type" ) );
+    } else if ( em = getMatch( term, [ lit( "public" ), "key" ] ) ) {
+        return true;
+    } else if ( em = getMatch( term, [ lit( "private" ), "key" ] ) ) {
+        return checkKey( keyring, em.val.get( "key" ) );
+    } else {
+        // TODO: Handle more language fragments.
+        throw new Error();
+    }
+}
+
+// NOTE: The "wf" stands for "well-formed."
+function isWfExternallyVisibleWord( term ) {
+    
+    var lit = patternLang.lit;
+    var str = patternLang.str;
+    var pat = patternLang.pat;
+    var getMatch = patternLang.getMatch;
+    
+    var em;
+    if ( em = getMatch( term, [ lit( "sym" ), str( "word" ) ] ) ) {
+        return true;
+    } else {
+        // TODO: Handle more language fragments.
+        return false;
+    }
+}
+
+// NOTE: The "wf" stands for "well-formed."
+function isWfKey( term ) {
+    
+    var lit = patternLang.lit;
+    var str = patternLang.str;
+    var pat = patternLang.pat;
+    var getMatch = patternLang.getMatch;
+    
+    var em;
+    if ( em = getMatch( term, [ lit( "everyone" ) ] ) ) {
+        return true;
+        
+    } else if ( em = getMatch( term,
+        [ lit( "subkey" ), "parent", "subname" ] ) ) {
+        
+        return isWfKey( em.val.get( "parent" ) ) &&
+            isWfExternallyVisibleWord( em.val.get( "subname" ) );
+    } else {
+        // TODO: Handle more language fragments.
+        return false;
+    }
+}
+
+function checkKey( keyring, term ) {
+    
+    var lit = patternLang.lit;
+    var str = patternLang.str;
+    var pat = patternLang.pat;
+    var getMatch = patternLang.getMatch;
+    
+    var em;
+    if ( em = getMatch( term, [ lit( "everyone" ) ] ) ) {
+        return true;
+        
+    } else if ( em = getMatch( term,
+        [ lit( "subkey" ), "parent", "subname" ] ) ) {
+        
+        return checkKey( keyring, em.val.get( "parent" ) );
     } else {
         // TODO: Handle more language fragments.
         throw new Error();
@@ -1733,15 +1808,15 @@ function checkUserKnowledge( expr ) {
 (function () {
     function add( term, vars ) {
         addNaiveIsoUnitTest( function ( then ) {
-            then(
-                getFreeVars( term ), strMap().plusArrTruth( vars ) );
+            then( getFreeVarsOfTerm( term ),
+                strMap().plusArrTruth( vars ) );
         } );
     }
     
     
     // Systematically verify the variable binding behavior of all
     // expression syntaxes, at least for the purposes of
-    // getFreeVars().
+    // getFreeVarsOfTerm().
     
     add( "foo", [ "foo" ] );
     
@@ -1822,10 +1897,11 @@ function checkUserKnowledge( expr ) {
         [ "x1", "x2", "x3", "x4", "x5", "x6", "x7" ] );
 })();
 addShouldThrowUnitTest( function () {
-    return getFreeVars( [ "nonexistentSyntax", "a", "b", "c" ] );
+    return getFreeVarsOfTerm(
+        [ "nonexistentSyntax", "a", "b", "c" ] );
 } );
 addShouldThrowUnitTest( function () {
-    return getFreeVars(
+    return getFreeVarsOfTerm(
         !"a boolean rather than a nested Array of strings" );
 } );
 
@@ -2221,11 +2297,13 @@ addShouldThrowUnitTest( function () {
             }, function ( args ) {
                 if ( !isWfUserKnowledge( args.typeKnowledge.term ) )
                     return false;
-                if ( !checkUserKnowledge( args.typeKnowledge ) )
+                if ( !checkUserKnowledge(
+                    strMap(), args.typeKnowledge ) )
                     return false;
                 if ( !isWfUserKnowledge( args.exprKnowledge.term ) )
                     return false;
-                if ( !checkUserKnowledge( args.exprKnowledge ) )
+                if ( !checkUserKnowledge(
+                    strMap(), args.exprKnowledge ) )
                     return false;
                 return true;
             } );
@@ -2264,12 +2342,71 @@ addShouldThrowUnitTest( function () {
     add( unitType, [ "snd", igno, unitType, unitType, sfn ] );
 })();
 addShouldThrowUnitTest( function () {
-    return checkUserKnowledge( { env: strMap(),
+    return checkUserKnowledge( strMap(), { env: strMap(),
         term: [ "nonexistentSyntax", "a", "b", "c" ] } );
 } );
 addShouldThrowUnitTest( function () {
-    return checkUserKnowledge( { env: strMap(),
+    return checkUserKnowledge( strMap(), { env: strMap(),
         term: !"a boolean rather than a nested Array of strings" } );
+} );
+
+(function () {
+    function add( expected, check, term ) {
+        addPredicateUnitTest( function ( then ) {
+            then( term, function ( term ) {
+                return expected === check( term );
+            } );
+        } );
+    }
+    
+    var sym = [ "sym", "This is an arbitrary string." ];
+    
+    
+    add( true, isWfExternallyVisibleWord, sym );
+    
+    add( false, isWfExternallyVisibleWord,
+        [ "nonexistentSyntax", "a", "b", "c" ] );
+    add( false, isWfExternallyVisibleWord,
+        !"a boolean rather than a nested Array of strings" );
+    
+    
+    add( true, isWfKey, [ "everyone" ] );
+    
+    add( true, isWfKey, [ "subkey", [ "everyone" ], sym ] );
+    add( false, isWfKey, [ "subkey", true, sym ] );
+    add( false, isWfKey, [ "subkey", [ "everyone" ], true ] );
+    
+    add( false, isWfKey,
+        [ "nonexistentSyntax", "a", "b", "c" ] );
+    add( false, isWfKey,
+        !"a boolean rather than a nested Array of strings" );
+})();
+
+(function () {
+    function add( term ) {
+        addPredicateUnitTest( function ( then ) {
+            then( term, function ( term ) {
+                if ( !isWfKey( term ) )
+                    return false;
+                if ( !checkKey( strMap(), term ) )
+                    return false;
+                return true;
+            } );
+        } );
+    }
+    
+    add( [ "everyone" ] );
+    add( [ "subkey", [ "everyone" ], [ "sym", "a" ] ] );
+    add( [ "subkey", [ "subkey", [ "everyone" ], [ "sym", "a" ] ],
+        [ "sym", "b" ] ] );
+})();
+addShouldThrowUnitTest( function () {
+    return checkKey( strMap(),
+        [ "nonexistentSyntax", "a", "b", "c" ] );
+} );
+addShouldThrowUnitTest( function () {
+    return checkKey( strMap(),
+        !"a boolean rather than a nested Array of strings" );
 } );
 
 
