@@ -519,6 +519,22 @@ addNaiveIsoUnitTest( function ( then ) {
 // dependencies to the top level. In particular, we use (withthe ...)
 // instead of (the ...).
 
+// NOTE: The deductive fragment actually has no way to construct a
+// type that depends on a term! It doesn't even provide a type
+// signature for built-in utilities to fill this void, since no
+// function can return a type. This makes the term variable in each
+// type constructor a bit silly. However, the observational subtyping
+// fragment does define one operator, ((a : aType) <= (b : bType)),
+// that makes a dependent type, so fragments like that can justify
+// this infrastructure.
+//
+// TODO: See if we should include the capitalized
+// (If <term> Then <type> Else <type>) operator from
+// "Observational Equality, Now!" This would be a second (or first)
+// constructor of dependent types, but for the moment we don't have a
+// particular use for it. We might approach type-level computation in
+// a different way.
+
 // Deductive fragment grammar notes:
 //
 // Fact ::=| UserVar "@" UserKnowledge
@@ -1592,8 +1608,7 @@ function typeCheck( expr, type ) {
         // some other combination. Anyhow, they're knownEqual at this
         // point.
         return typeCheck( {
-            // TODO: Use em instead of tm here.
-            env: envWith( expr.env, tm.val.get( "arg" ), {
+            env: envWith( expr.env, em.val.get( "arg" ), {
                 knownType: { val: exprArgType },
                 knownVal: { val: argVal }
             } ),
