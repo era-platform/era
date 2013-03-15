@@ -629,6 +629,7 @@ addNaiveIsoUnitTest( function ( then ) {
 
 function envWith( env, varName, varSpecifics ) {
     return env.plusEntry( varName, objPlus( {
+        knownIsPrivateKey: null,
         knownIsType: null,
         knownType: null,
         knownVal: null
