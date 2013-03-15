@@ -606,15 +606,20 @@ addNaiveIsoUnitTest( function ( then ) {
 //
 // UserKnowledge ::=| "(" "secret" Key ")"
 // UserKnowledge ::=| "(" "public" Key ")"
-// UserAction ::=| "(" "withsecret" Key UserAction ")"
+// UserAction ::=| "(" "withsecret" Term Key UserAction ")"
+// Key ::=| KeyVar
+// Key ::=| "(" "cryptokey" CryptoKey ")"
+// Key ::=| "(" "everyone" ")"
+// Key ::=| "(" "subkey" Key ExternallyVisibleWord ")"
+// ExternallyVisibleWord ::=| "(" "str" Symbol ")"
 
 // Local collaborative value-level definition fragment grammar notes:
 //
 // UserAction ::=| "!!define" Key Key Term Term
 // Term ::=| "#the" Key Key Term
 //
-// UserAction ::=| "(" "define" Key Key Term Term ")"
-// UserAction ::=| "(" "withthe" TermVar Key Key Term UserAction ")"
+// UserAction ::=| "(" "define" Term Key Term Term ")"
+// UserAction ::=| "(" "withthe" TermVar Key Term Term UserAction ")"
 
 
 function envWith( env, varName, varSpecifics ) {
@@ -1053,9 +1058,9 @@ function knownEqual( exprA, exprB, opt_boundVars ) {
 
 function betaReduce( expr ) {
     // NOTE: Pretty much every time we call betaReduce(), we call
-    // isType() or typeCheck() first, so that we know beta reduction
-    // will terminate (albeit without rigorous mathematical proof
-    // yet).
+    // checkIsType() or checkInhabitsType() first, so that we know
+    // beta reduction will terminate (albeit without rigorous
+    // mathematical proof yet).
     //
     // TODO: See if this practice leads to significant amounts of
     // duplicated computation.
@@ -1129,10 +1134,10 @@ function betaReduce( expr ) {
         if ( !expr.env.has( expr.term ) )
             throw new Error();
         var exprVal = expr.env.get( expr.term ).knownVal;
-        // TODO: During typeCheck(), some of the calls to betaReduce()
-        // pass null for knownVal, so we just return the expression
-        // as-is if we run across that case. Figure out if those calls
-        // should be passing null in the first place.
+        // TODO: During checkInhabitsType(), some of the calls to
+        // betaReduce() pass null for knownVal, so we just return the
+        // expression as-is if we run across that case. Figure out if
+        // those calls should be passing null in the first place.
         if ( exprVal === null )
             return expr;
         
@@ -1279,7 +1284,8 @@ function betaReduce( expr ) {
     }
 }
 
-function isWellFormed( term ) {
+// NOTE: The "wf" stands for "well-formed."
+function isWfTerm( term ) {
     
     var lit = patternLang.lit;
     var str = patternLang.str;
@@ -1287,7 +1293,7 @@ function isWellFormed( term ) {
     var getMatch = patternLang.getMatch;
     
     function recur( k ) {
-        return isWellFormed( em.val.get( k ) );
+        return isWfTerm( em.val.get( k ) );
     }
     
     var em;
@@ -1355,7 +1361,7 @@ function isWellFormed( term ) {
     }
 }
 
-function isType( expr ) {
+function checkIsType( expr ) {
     
     var lit = patternLang.lit;
     var str = patternLang.str;
@@ -1381,9 +1387,9 @@ function isType( expr ) {
     } else if ( em = getMatch( expr.term,
         [ lit( "tfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
         
-        if ( !isType( eget( "argType" ) ) )
+        if ( !checkIsType( eget( "argType" ) ) )
             return false;
-        return isType( {
+        return checkIsType( {
             env: envWith( expr.env, em.val.get( "arg" ), {
                 knownType: { val: beget( "argType" ) }
             } ),
@@ -1404,7 +1410,7 @@ function isType( expr ) {
     } else if ( em = getMatch( expr.term,
         [ lit( "ttfa" ), str( "arg" ), "resultType" ] ) ) {
         
-        return isType( {
+        return checkIsType( {
             env: envWith( expr.env, em.val.get( "arg" ), {
                 knownIsType: { val: true }
             } ),
@@ -1424,9 +1430,9 @@ function isType( expr ) {
     } else if ( em = getMatch( expr.term,
         [ lit( "sfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
         
-        if ( !isType( eget( "argType" ) ) )
+        if ( !checkIsType( eget( "argType" ) ) )
             return false;
-        return isType( {
+        return checkIsType( {
             env: envWith( expr.env, em.val.get( "arg" ), {
                 knownType: { val: beget( "argType" ) }
             } ),
@@ -1453,7 +1459,7 @@ function isType( expr ) {
     }
 }
 
-function typeCheck( expr, type ) {
+function checkInhabitsType( expr, type ) {
     // NOTE: The type is assumed to be beta-reduced already.
     
     var lit = patternLang.lit;
@@ -1494,11 +1500,11 @@ function typeCheck( expr, type ) {
         if ( tm === null )
             return false;
         var argType = tget( "argType" );
-        if ( !isType( eget( "argType" ) ) )
+        if ( !checkIsType( eget( "argType" ) ) )
             return false;
         if ( !knownEqual( beget( "argType" ), argType ) )
             return false;
-        return typeCheck( {
+        return checkInhabitsType( {
             env: envWith( expr.env, em.val.get( "arg" ), {
                 knownType: { val: argType }
             } ),
@@ -1517,12 +1523,13 @@ function typeCheck( expr, type ) {
         var fnType = { env: expr.env, term:
             [ "tfa", em.val.get( "argName" ), em.val.get( "argType" ),
                 em.val.get( "resultType" ) ] };
-        if ( !isType( fnType ) )
+        if ( !checkIsType( fnType ) )
             return false;
-        if ( !typeCheck( eget( "fn" ), betaReduce( fnType ) ) )
+        if ( !checkInhabitsType(
+            eget( "fn" ), betaReduce( fnType ) ) )
             return false;
         var argType = beget( "argType" );
-        if ( !typeCheck( eget( "argVal" ), argType ) )
+        if ( !checkInhabitsType( eget( "argVal" ), argType ) )
             return false;
         return knownEqual(
             betaReduce( {
@@ -1547,7 +1554,7 @@ function typeCheck( expr, type ) {
         if ( tm === null )
             return false;
         
-        return typeCheck( {
+        return checkInhabitsType( {
             env: envWith( expr.env, em.val.get( "arg" ), {
                 knownIsType: { val: true }
             } ),
@@ -1565,11 +1572,12 @@ function typeCheck( expr, type ) {
         var fnType = { env: expr.env, term:
             [ "ttfa", em.val.get( "argName" ),
                 em.val.get( "resultType" ) ] };
-        if ( !isType( fnType ) )
+        if ( !checkIsType( fnType ) )
             return false;
-        if ( !typeCheck( eget( "fn" ), betaReduce( fnType ) ) )
+        if ( !checkInhabitsType(
+            eget( "fn" ), betaReduce( fnType ) ) )
             return false;
-        if ( !isType( eget( "argVal" ) ) )
+        if ( !checkIsType( eget( "argVal" ) ) )
             return false;
         return knownEqual(
             betaReduce( {
@@ -1594,12 +1602,12 @@ function typeCheck( expr, type ) {
         if ( tm === null )
             return false;
         var typeArgType = tget( "argType" );
-        if ( !isType( eget( "argType" ) ) )
+        if ( !checkIsType( eget( "argType" ) ) )
             return false;
         var exprArgType = beget( "argType" );
         if ( !knownEqual( exprArgType, typeArgType ) )
             return false;
-        if ( !typeCheck( eget( "argVal" ), typeArgType ) )
+        if ( !checkInhabitsType( eget( "argVal" ), typeArgType ) )
             return false;
         var argVal = beget( "argVal" );
         
@@ -1607,7 +1615,7 @@ function typeCheck( expr, type ) {
         // `exprArgType` and `typeArgType` like this, rather than in
         // some other combination. Anyhow, they're knownEqual at this
         // point.
-        return typeCheck( {
+        return checkInhabitsType( {
             env: envWith( expr.env, em.val.get( "arg" ), {
                 knownType: { val: exprArgType },
                 knownVal: { val: argVal }
@@ -1627,9 +1635,10 @@ function typeCheck( expr, type ) {
         var fnType = { env: expr.env, term:
             [ "sfa", em.val.get( "argName" ), em.val.get( "argType" ),
                 em.val.get( "resultType" ) ] };
-        if ( !isType( fnType ) )
+        if ( !checkIsType( fnType ) )
             return false;
-        if ( !typeCheck( eget( "fn" ), betaReduce( fnType ) ) )
+        if ( !checkInhabitsType(
+            eget( "fn" ), betaReduce( fnType ) ) )
             return false;
         return knownEqual( beget( "argType" ), type );
         
@@ -1639,16 +1648,17 @@ function typeCheck( expr, type ) {
         var fnType = { env: expr.env, term:
             [ "sfa", em.val.get( "argName" ), em.val.get( "argType" ),
                 em.val.get( "resultType" ) ] }
-        if ( !isType( fnType ) )
+        if ( !checkIsType( fnType ) )
             return false;
-        if ( !typeCheck( eget( "fn" ), betaReduce( fnType ) ) )
+        if ( !checkInhabitsType(
+            eget( "fn" ), betaReduce( fnType ) ) )
             return false;
         var reducedFn = beget( "fn" );
         var matchedFn = getMatch( reducedFn.term, [ lit( "sfn" ),
             str( "arg" ), "argType", "argVal", "resultVal" ] );
         if ( matchedFn === null )
             return false;
-        return typeCheck( {
+        return checkInhabitsType( {
             env: envWith( reducedFn.env, matchedFn.val.get( "arg" ), {
                 knownType: { val: { env: reducedFn.env,
                     term: matchedFn.val.get( "argType" ) } },
@@ -1663,7 +1673,8 @@ function typeCheck( expr, type ) {
     }
 }
 
-function isWellFormedKnowledge( term ) {
+// NOTE: The "wf" stands for "well-formed."
+function isWfUserKnowledge( term ) {
     
     var lit = patternLang.lit;
     var str = patternLang.str;
@@ -1674,20 +1685,20 @@ function isWellFormedKnowledge( term ) {
     if ( em = getMatch( term,
         [ lit( "istype" ), "purportedType" ] ) ) {
         
-        return isWellFormed( em.val.get( "purportedType" ) );
+        return isWfTerm( em.val.get( "purportedType" ) );
         
     } else if ( em = getMatch( term,
         [ lit( "describes" ), "type", "purportedInhabitant" ] ) ) {
         
-        return isWellFormed( em.val.get( "type" ) ) &&
-            isWellFormed( em.val.get( "purportedInhabitant" ) );
+        return isWfTerm( em.val.get( "type" ) ) &&
+            isWfTerm( em.val.get( "purportedInhabitant" ) );
     } else {
         // TODO: Handle more language fragments.
         return false;
     }
 }
 
-function knowledgeCheck( expr ) {
+function checkUserKnowledge( expr ) {
     
     var lit = patternLang.lit;
     var str = patternLang.str;
@@ -1702,14 +1713,15 @@ function knowledgeCheck( expr ) {
     if ( em = getMatch( expr.term,
         [ lit( "istype" ), "purportedType" ] ) ) {
         
-        return isType( eget( "purportedType" ) );
+        return checkIsType( eget( "purportedType" ) );
         
     } else if ( em = getMatch( expr.term,
         [ lit( "describes" ), "type", "purportedInhabitant" ] ) ) {
         
-        // TODO: See if we should really be checking isType() here, or
-        // if there's another place for this kind of checking.
-        return isType( eget( "type" ) ) && typeCheck(
+        // TODO: See if we should really be checking checkIsType()
+        // here, or if there's another place for this kind of
+        // checking.
+        return checkIsType( eget( "type" ) ) && checkInhabitsType(
             eget( "purportedInhabitant" ), eget( "type" ) );
     } else {
         // TODO: Handle more language fragments.
@@ -1981,7 +1993,7 @@ addShouldThrowUnitTest( function () {
     function add( expected, term ) {
         addPredicateUnitTest( function ( then ) {
             then( term, function ( term ) {
-                return expected === isWellFormed( term );
+                return expected === isWfTerm( term );
             } );
         } );
     }
@@ -1992,13 +2004,12 @@ addShouldThrowUnitTest( function () {
     add( true, expr );
     
     
-    // NOTE: Again, for many of these terms that pass isWellFormed(),
+    // NOTE: Again, for many of these terms that pass isWfTerm(),
     // there should be no existing way to make them fully typecheck.
     
     
     // Systematically verify the variable binding behavior of all
-    // expression syntaxes, at least for the purposes of
-    // isWellFormed().
+    // expression syntaxes, at least for the purposes of isWfTerm().
     
     add( true, vari );
     add( false, true );
@@ -2087,9 +2098,10 @@ addShouldThrowUnitTest( function () {
                 reduced: { env: env, term:
                     opt_reduced !== void 0 ? opt_reduced : expr }
             }, function ( args ) {
-                if ( !isType( args.type ) )
+                if ( !checkIsType( args.type ) )
                     return false;
-                var checksOut = typeCheck( args.expr, args.type );
+                var checksOut =
+                    checkInhabitsType( args.expr, args.type );
                 if ( checksOut !== expected )
                     return false;
                 if ( checksOut
@@ -2151,23 +2163,23 @@ addShouldThrowUnitTest( function () {
         term: !"a boolean rather than a nested Array of strings" } );
 } );
 addShouldThrowUnitTest( function () {
-    return isType( { env: strMap(),
+    return checkIsType( { env: strMap(),
         term: [ "nonexistentSyntax", "a", "b", "c" ] } );
 } );
 addShouldThrowUnitTest( function () {
-    return isType( { env: strMap(),
+    return checkIsType( { env: strMap(),
         term: !"a boolean rather than a nested Array of strings" } );
 } );
 addShouldThrowUnitTest( function () {
     var env = strMap();
-    return typeCheck(
+    return checkInhabitsType(
         { env: env, term: [ "nonexistentSyntax", "a", "b", "c" ] },
         { env: env, term: [ "ttfa", "t", [ "tfa", "x", "t", "t" ] ] }
     );
 } );
 addShouldThrowUnitTest( function () {
     var env = strMap();
-    return typeCheck(
+    return checkInhabitsType(
         { env: env, term:
             !"a boolean rather than a nested Array of strings" },
         { env: env, term: [ "ttfa", "t", [ "tfa", "x", "t", "t" ] ] }
@@ -2178,7 +2190,7 @@ addShouldThrowUnitTest( function () {
     function add( expected, term ) {
         addPredicateUnitTest( function ( then ) {
             then( term, function ( term ) {
-                return expected === isWellFormedKnowledge( term );
+                return expected === isWfUserKnowledge( term );
             } );
         } );
     }
@@ -2207,15 +2219,13 @@ addShouldThrowUnitTest( function () {
                 exprKnowledge: { env: strMap(), term:
                     [ "describes", type, expr ] }
             }, function ( args ) {
-                if ( !isWellFormedKnowledge(
-                    args.typeKnowledge.term ) )
+                if ( !isWfUserKnowledge( args.typeKnowledge.term ) )
                     return false;
-                if ( !knowledgeCheck( args.typeKnowledge ) )
+                if ( !checkUserKnowledge( args.typeKnowledge ) )
                     return false;
-                if ( !isWellFormedKnowledge(
-                    args.exprKnowledge.term ) )
+                if ( !isWfUserKnowledge( args.exprKnowledge.term ) )
                     return false;
-                if ( !knowledgeCheck( args.exprKnowledge ) )
+                if ( !checkUserKnowledge( args.exprKnowledge ) )
                     return false;
                 return true;
             } );
@@ -2223,9 +2233,9 @@ addShouldThrowUnitTest( function () {
     }
     
     // TODO: These test expressions and types are exactly the same as
-    // those in the all-in-one tests for typeCheck(), betaReduce(),
-    // and knownEqual(). See if we should put them in a shared
-    // definition.
+    // those in the all-in-one tests for checkInhabitsType(),
+    // betaReduce(), and knownEqual(). See if we should put them in a
+    // shared definition.
     
     // TODO: Add more thorough unit tests, exploring the impact of
     // non-empty environments, unsuccessful knowledge checks, and
@@ -2254,11 +2264,11 @@ addShouldThrowUnitTest( function () {
     add( unitType, [ "snd", igno, unitType, unitType, sfn ] );
 })();
 addShouldThrowUnitTest( function () {
-    return knowledgeCheck( { env: strMap(),
+    return checkUserKnowledge( { env: strMap(),
         term: [ "nonexistentSyntax", "a", "b", "c" ] } );
 } );
 addShouldThrowUnitTest( function () {
-    return knowledgeCheck( { env: strMap(),
+    return checkUserKnowledge( { env: strMap(),
         term: !"a boolean rather than a nested Array of strings" } );
 } );
 
