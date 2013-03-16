@@ -480,13 +480,15 @@ addNaiveIsoUnitTest( function ( then ) {
 
 // ===== Module validity checker =====================================
 //
-// For now, we just implement the deductive fragment. A more complete
+// For now, we implement the deductive fragment, almost all the action
+// fragment, the local collaboration fragment, and the local
+// collaborative value-level definition fragment. A more complete
 // version of the grammar is available at
 // <https://gist.github.com/4559120>. Also, it's worth noting that
 // we're using s-expressions for the grammar.
 //
 // Here's a map of the dependencies among the seven language fragments
-// in that Gist:
+// in that Gist, with "[ ]" showing which ones we haven't implemented:
 //
 // Local collaboration
 //   Deductive
@@ -494,19 +496,21 @@ addNaiveIsoUnitTest( function ( then ) {
 // Local collaborative value-level definition
 //   Local collaboration
 //     ...
-// Local collaborative phantom type
+// [ ] Local collaborative phantom type
 //   Local collaboration
 //     ...
-// Local collaborative extensible sum
+// [ ] Local collaborative extensible sum
 //   Local collaboration
 //     ...
-//   Observational subtyping
+//   [ ] Observational subtyping
 //     Deductive
 //
-// To build an unambitious dynamic programming language within this
-// system, the basis we need is the local collaborative value-level
-// definition fragment, so we should build the action and local
-// collaboration fragments next.
+// At this point, we're not aiming to implement the other three
+// fragments in the Gist yet. For now, we're going to implement
+// another fragment or two for imperative state models and
+// possibly-nonterminating lambdas with imperative effects. We'll use
+// these features with a surface syntax layer to make a relatively
+// unambitious dynamic programming language.
 
 
 // NOTE: For this version, we're taking the original grammar design
@@ -1699,6 +1703,8 @@ function isWfUserKnowledge( term ) {
         return isWfTerm( em.val.get( "type" ) ) &&
             isWfTerm( em.val.get( "purportedInhabitant" ) );
         
+    } else if ( em = getMatch( term, [ lit( "can" ), "action" ] ) ) {
+        return isWfUserAction( em.val.get( "action" ) );
     } else if ( em = getMatch( term, [ lit( "public" ), "key" ] ) ) {
         return isWfKey( em.val.get( "key" ) );
     } else if ( em = getMatch( term, [ lit( "secret" ), "key" ] ) ) {
@@ -1734,6 +1740,11 @@ function checkUserKnowledge( keyring, expr ) {
         // checking.
         return checkIsType( eget( "type" ) ) && checkInhabitsType(
             eget( "purportedInhabitant" ), eget( "type" ) );
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "can" ), "action" ] ) ) {
+        
+        return checkUserAction( keyring, eget( "action" ) );
         
     } else if ( em = getMatch( expr.term,
         [ lit( "public" ), "key" ] ) ) {
@@ -2561,6 +2572,11 @@ addShouldThrowUnitTest( function () {
                     return false;
                 if ( expectedCheck !== checkUserAction( strMap(),
                     { env: strMap(), term: term } ) )
+                    return false;
+                if ( !isWfUserKnowledge( [ "can", term ] ) )
+                    return false;
+                if ( expectedCheck !== checkUserKnowledge( strMap(),
+                    { env: strMap(), term: [ "can", term ] } ) )
                     return false;
                 return true;
             } );
