@@ -1701,7 +1701,7 @@ function isWfUserKnowledge( term ) {
         
     } else if ( em = getMatch( term, [ lit( "public" ), "key" ] ) ) {
         return isWfKey( em.val.get( "key" ) );
-    } else if ( em = getMatch( term, [ lit( "private" ), "key" ] ) ) {
+    } else if ( em = getMatch( term, [ lit( "secret" ), "key" ] ) ) {
         return isWfKey( em.val.get( "key" ) );
     } else {
         // TODO: Handle more language fragments.
@@ -1734,9 +1734,15 @@ function checkUserKnowledge( keyring, expr ) {
         // checking.
         return checkIsType( eget( "type" ) ) && checkInhabitsType(
             eget( "purportedInhabitant" ), eget( "type" ) );
-    } else if ( em = getMatch( term, [ lit( "public" ), "key" ] ) ) {
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "public" ), "key" ] ) ) {
+        
         return true;
-    } else if ( em = getMatch( term, [ lit( "private" ), "key" ] ) ) {
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "secret" ), "key" ] ) ) {
+        
         return checkKey( keyring, em.val.get( "key" ) );
     } else {
         // TODO: Handle more language fragments.
@@ -1894,6 +1900,9 @@ function checkUserAction( keyring, expr ) {
         "action" ] ) ) {
         
         return (true
+            // TODO: See if we should write a checkPublicKey()
+            // function. For the moment, it would always return true,
+            // so we just call isWfKey().
             && isWfKey( em.val.get( "yourPubKey" ) )
             && expr.env.has( em.val.get( "myPrivKey" ) )
             && expr.env.get( em.val.get( "myPrivKey" )
@@ -2394,6 +2403,12 @@ addShouldThrowUnitTest( function () {
     add( false, [ "describes", true, vari ] );
     add( false, [ "describes", vari, true ] );
     
+    add( true, [ "public", [ "everyone" ] ] );
+    add( false, [ "public", true ] );
+    
+    add( true, [ "secret", [ "everyone" ] ] );
+    add( false, [ "secret", true ] );
+    
     add( false, [ "nonexistentSyntax", "a", "b", "c" ] );
 })();
 
@@ -2460,6 +2475,24 @@ addShouldThrowUnitTest( function () {
     return checkUserKnowledge( strMap(), { env: strMap(),
         term: !"a boolean rather than a nested Array of strings" } );
 } );
+
+(function () {
+    function add( term ) {
+        addPredicateUnitTest( function ( then ) {
+            then( term, function ( term ) {
+                if ( !isWfUserKnowledge( term ) )
+                    return false;
+                if ( !checkUserKnowledge(
+                    strMap(), { env: strMap(), term: term } ) )
+                    return false;
+                return true;
+            } );
+        } );
+    }
+    
+    add( [ "public", [ "everyone" ] ] );
+    add( [ "secret", [ "everyone" ] ] );
+})();
 
 (function () {
     function add( expected, check, term ) {
