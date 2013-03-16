@@ -1841,7 +1841,7 @@ function isWfUserAction( term ) {
         return isWfKey( em.val.get( "yourPubKey" ) ) &&
             isWfTerm( em.val.get( "myPrivKey" ) ) &&
             isWfTerm( em.val.get( "type" ) ) &&
-            isWfUserAction( em.val.get( "expr" ) );
+            isWfUserAction( em.val.get( "action" ) );
         
     } else {
         // TODO: Handle more language fragments.
@@ -1866,7 +1866,7 @@ function checkUserAction( keyring, expr ) {
         
         return checkKey( keyring, em.val.get( "key" ) ) &&
             checkUserAction( keyring, {
-                env: envWith( expr.env, {
+                env: envWith( expr.env, em.val.get( "var" ), {
                     knownIsPrivateKey: { val: true }
                 } ),
                 term: em.val.get( "action" )
@@ -1902,7 +1902,7 @@ function checkUserAction( keyring, expr ) {
                 ).knownIsPrivateKey.val
             && checkIsType( eget( "type" ) )
             && checkUserAction( keyring, {
-                env: envWith( expr.env, {
+                env: envWith( expr.env, em.val.get( "var" ), {
                     knownType: { val: betaReduce( eget( "type" ) ) }
                 } ),
                 term: em.val.get( "action" )
@@ -2517,6 +2517,59 @@ addShouldThrowUnitTest( function () {
 } );
 addShouldThrowUnitTest( function () {
     return checkKey( strMap(),
+        !"a boolean rather than a nested Array of strings" );
+} );
+
+(function () {
+    function add( expectedCheck, term ) {
+        addPredicateUnitTest( function ( then ) {
+            then( term, function ( term ) {
+                if ( !isWfUserAction( term ) )
+                    return false;
+                if ( expectedCheck !== checkUserAction( strMap(),
+                    { env: strMap(), term: term } ) )
+                    return false;
+                return true;
+            } );
+        } );
+    }
+    
+    var igno = "_";
+    var unitType = [ "ttfa", "t", [ "tfa", igno, "t", "t" ] ];
+    var unit = [ "ttfn", "t", [ "tfn", "x", "t", "x" ] ];
+    
+    function everyoneVar( name ) {
+        return [ "subkey", [ "everyone" ], [ "sym", name ] ];
+    }
+    
+    add( true,
+        [ "withsecret", "theUnit", everyoneVar( "theOneAndOnlyUnit" ),
+            [ "define", "theUnit", [ "everyone" ],
+                unitType, unit ] ] );
+    add( true,
+        [ "withsecret", "theReturn", everyoneVar( "returnOfTheUnit" ),
+            [ "withsecret", "all", [ "everyone" ],
+                [ "withthe", "theUnit",
+                    everyoneVar( "theOneAndOnlyUnit" ), "all",
+                    unitType,
+                    [ "define", "theReturn", [ "everyone" ],
+                        unitType, "theUnit" ] ] ] ] );
+    
+    // Free variables aren't allowed.
+    add( false,
+        [ "withsecret", "all", [ "everyone" ],
+            [ "withthe", "theUnit",
+                everyoneVar( "theOneAndOnlyUnit" ), "all",
+                unitType,
+                [ "define", "theReturn", [ "everyone" ],
+                    unitType, "theUnit" ] ] ] );
+})();
+addShouldThrowUnitTest( function () {
+    return checkUserAction( strMap(),
+        [ "nonexistentSyntax", "a", "b", "c" ] );
+} );
+addShouldThrowUnitTest( function () {
+    return checkUserAction( strMap(),
         !"a boolean rather than a nested Array of strings" );
 } );
 
