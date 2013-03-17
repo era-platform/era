@@ -510,7 +510,7 @@ addNaiveIsoUnitTest( function ( then ) {
 // another fragment or two for imperative state models and
 // possibly-nonterminating lambdas with imperative effects. We'll use
 // these features with a surface syntax layer to make a relatively
-// unambitious dynamic programming language.
+// unambitious Scheme-like programming language.
 
 
 // NOTE: For this version, we're taking the original grammar design
@@ -629,6 +629,78 @@ addNaiveIsoUnitTest( function ( then ) {
 //
 // UserAction ::=| "(" "define" Term Key Term Term ")"
 // UserAction ::=| "(" "withthe" TermVar Key Term Term UserAction ")"
+
+// TODO: For everything marked with "NEW:", write a more
+// implementation-agnostic description, as with the original Gist.
+
+// NEW: The partiality monad fragment:
+//
+// Term ::=| "(" "partialtype" Term ")"
+//
+// Built-in module exports:
+//
+// unitpartial : (ttfa a (tfa _ a (partialtype a)))
+//
+// bindpartial :
+//   (ttfa a
+//     (ttfa b
+//       (tfa _ (partialtype a)
+//         (tfa _ (tfa _ a (partialtype b)) (partialtype b)))))
+//
+// fixpartial :
+//   (ttfa a
+//     (tfa _ (tfa _ (partialtype a) (partialtype a))
+//       (partialtype a)))
+
+// NEW: The kitchen sink "un"-type fragment:
+//
+// // TODO: Use the phantom type fragment or extensible sum fragment
+// // for this. Note that not all pairs of types can be
+// // programmatically compared for extrinsic equality, and not all
+// // types will necessarily be able to survive past compile time, so
+// // we can't just handle all cases at once.
+// Term ::=| "(" "sink" ")"
+//
+// Built-in module exports, with (maybe ...) as shorthand:
+//
+// // TODO: See if we need this.
+// tfntosink : (tfa _ (tfa _ (sink) (sink)) (sink))
+// sinktotfn : (tfa _ (sink) (maybe (tfa _ (sink) (sink))))
+//
+// // NOTE: "pfn" = "partial function"
+// pfntosink : (tfa _ (tfa _ (sink) (partialtype (sink))) (sink))
+// sinktopfn :
+//   (tfa _ (sink) (maybe (tfa _ (sink) (partialtype (sink)))))
+
+// TODO: Model a side-effectful computation as a value of this
+// recursively specified type, where (either ...) and (pair ...) are
+// shorthands:
+//
+// (effectful a) =
+//   (partialtype
+//     (either a (pair (sink) (tfa _ (sink) (effectful a)))))
+//
+// We'll almost certainly need to design this as another language
+// fragment since we don't have a way to do this kind of recursive
+// specification.
+//
+// Note that this representation has some accidental complexity, since
+// it's possible for the execution harness to manipulate continuations
+// and thereby perform branching, reentrant, and/or short-circuiting
+// effects as in Haskell. If we had linear types, we could restrict
+// this.
+//
+// If we take out the (partialtype ...) wrapper, we get another
+// interesting option: An effectful computation that can never diverge
+// between side effects, but which can still go into a divergent
+// series of side effects.
+//
+// It would be nice to make this type-safe rather than using (sink).
+// Perhaps we can somehow make the output (sink) into an extensible
+// sum type where each entry of the sum has its own appropriate
+// response type to use in place of the input (sink). The extensible
+// sum fragment might not be enough for this, since we don't have a
+// way to return types from functions.
 
 
 function envWith( env, varName, varSpecifics ) {
