@@ -652,26 +652,6 @@ addNaiveIsoUnitTest( function ( then ) {
 //     (tfa _ (tfa _ (partialtype a) (partialtype a))
 //       (partialtype a)))
 
-// NEW: The kitchen sink "un"-type fragment:
-//
-// // TODO: Use the phantom type fragment or extensible sum fragment
-// // for this. Note that not all pairs of types can be
-// // programmatically compared for extrinsic equality, and not all
-// // types will necessarily be able to survive past compile time, so
-// // we can't just handle all cases at once.
-// Term ::=| "(" "sink" ")"
-//
-// Built-in module exports, with (maybe ...) as shorthand:
-//
-// // TODO: See if we need this.
-// tfntosink : (tfa _ (tfa _ (sink) (sink)) (sink))
-// sinktotfn : (tfa _ (sink) (maybe (tfa _ (sink) (sink))))
-//
-// // NOTE: "pfn" = "partial function"
-// pfntosink : (tfa _ (tfa _ (sink) (partialtype (sink))) (sink))
-// sinktopfn :
-//   (tfa _ (sink) (maybe (tfa _ (sink) (partialtype (sink)))))
-
 // NEW: The imperative partial computation fragment:
 //
 // // NOTE: This takes primary inspiration from [1]. The original
@@ -723,6 +703,26 @@ addNaiveIsoUnitTest( function ( then ) {
 // //         (impartialtype cmd3 commandType responseType[ cmd3 ]
 // //           terminationType))))
 // Term ::=| "(" "invkimpartial" TermVar Term Term Term Term ")"
+
+// NEW: The kitchen sink "un"-type fragment:
+//
+// // TODO: Use the phantom type fragment or extensible sum fragment
+// // for this. Note that not all pairs of types can be
+// // programmatically compared for extrinsic equality, and not all
+// // types will necessarily be able to survive past compile time, so
+// // we can't just handle all cases at once.
+// Term ::=| "(" "sink" ")"
+//
+// Built-in module exports, with (maybe ...) as shorthand:
+//
+// // TODO: See if we need this.
+// tfntosink : (tfa _ (tfa _ (sink) (sink)) (sink))
+// sinktotfn : (tfa _ (sink) (maybe (tfa _ (sink) (sink))))
+//
+// // NOTE: "pfn" = "partial function"
+// pfntosink : (tfa _ (tfa _ (sink) (partialtype (sink))) (sink))
+// sinktopfn :
+//   (tfa _ (sink) (maybe (tfa _ (sink) (partialtype (sink)))))
 
 
 function envWith( env, varName, varSpecifics ) {
