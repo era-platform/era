@@ -704,6 +704,21 @@ addNaiveIsoUnitTest( function ( then ) {
 // //           terminationType))))
 // Term ::=| "(" "invkimpartial" TermVar Term Term Term Term ")"
 
+// NEW: The statically generated dynamic token fragment:
+//
+// // TODO: See if there are better names for this fragment and its
+// // definitions.
+//
+// Term ::=| "(" "tokentype" ")"
+//
+// // Convert a known private key into a corresponding dynamically
+// // comparable value.
+// UserAction ::=| "(" "withtoken" TermVar Term UserAction ")"
+//
+// Built-in module exports, with (bool) as shorthand:
+//
+// tokenequals : (tfa _ (token) (tfa _ (token) _ (bool)))
+
 // NEW: The kitchen sink "un"-type fragment:
 //
 // // TODO: Use the phantom type fragment or extensible sum fragment
@@ -715,14 +730,26 @@ addNaiveIsoUnitTest( function ( then ) {
 //
 // Built-in module exports, with (maybe ...) as shorthand:
 //
+// tokentosink : (tfa _ (token) (sink))
+// sinktotoken : (tfa _ (sink) (maybe (token)))
+//
 // // TODO: See if we need this.
 // tfntosink : (tfa _ (tfa _ (sink) (sink)) (sink))
 // sinktotfn : (tfa _ (sink) (maybe (tfa _ (sink) (sink))))
 //
+// // TODO: See if we need this.
 // // NOTE: "pfn" = "partial function"
 // pfntosink : (tfa _ (tfa _ (sink) (partialtype (sink))) (sink))
 // sinktopfn :
 //   (tfa _ (sink) (maybe (tfa _ (sink) (partialtype (sink)))))
+//
+// // NOTE: "ipfn" = "imperative partial function"
+// ipfntosink :
+//   (tfa _ (tfa _ (sink) (impartialtype _ (sink) (sink) (sink)))
+//     (sink))
+// sinktoipfn :
+//   (tfa _ (sink)
+//     (maybe (tfa _ (sink) (impartialtype _ (sink) (sink) (sink)))))
 
 
 function envWith( env, varName, varSpecifics ) {
