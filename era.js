@@ -672,35 +672,57 @@ addNaiveIsoUnitTest( function ( then ) {
 // sinktopfn :
 //   (tfa _ (sink) (maybe (tfa _ (sink) (partialtype (sink)))))
 
-// TODO: Model a side-effectful computation as a value of this
-// recursively specified type, where (either ...) and (pair ...) are
-// shorthands:
+// NEW: The imperative partial computation fragment:
 //
-// (effectful a) =
-//   (partialtype
-//     (either a (pair (sink) (tfa _ (sink) (effectful a)))))
+// // NOTE: This takes primary inspiration from [1]. The original
+// // formulation of this idea is in [2], whose authors continued
+// // their analysis in [3].
+// //
+// // [1] "A new paradigm for component-based development,"
+// //     Johan G. Granstrom, 2012.
+// // [2] "Interactive Programs in Dependent Type Theory,"
+// //     Peter Hancock and Anton Setzer, 2000.
+// // [3] "Interactive Programs and Weakly Final Coalgebras in
+// //     Dependent Type Theory (Extended Version)," Anton Setzer and
+// //     Peter Hancock, 2005.
 //
-// We'll almost certainly need to design this as another language
-// fragment since we don't have a way to do this kind of recursive
-// specification.
+// // NOTE: Occurrences of "impartial" here are short for "imperative
+// // partial," and they distinguish this kind of imperative
+// // computation from at least two other possibilities: One where the
+// // computation must terminate after a finite number of commands,
+// // and one where each stage of computation must terminate in full
+// // termination or a command, but where infinite regresses of
+// // commands are permitted.
+// // TODO: See if there's a better term than "impartial."
 //
-// Note that this representation has some accidental complexity, since
-// it's possible for the execution harness to manipulate continuations
-// and thereby perform branching, reentrant, and/or short-circuiting
-// effects as in Haskell. If we had linear types, we could restrict
-// this.
+// // NOTE: This representation of imperative computation has some
+// // accidental complexity, a meaningful use case we don't
+// // necessarily intend to support: It's possible for the execution
+// // harness to manipulate continuations and thereby perform
+// // branching, reentrant, and/or early termination effects as in
+// // Haskell Monads. If we had linear types, we could restrict this.
+// // The approach in "A new paradigm..." might mitigate this in
+// // practice since a "world map" doesn't seem like it would
+// // introduce these features in the target world unless they already
+// // exist in the source world.
 //
-// If we take out the (partialtype ...) wrapper, we get another
-// interesting option: An effectful computation that can never diverge
-// between side effects, but which can still go into a divergent
-// series of side effects.
+// // (impartialtype cmd commandType responseType[ cmd ]
+// //   terminationType)
+// Term ::=| "(" "impartialtype" TermVar Term Term Term ")"
 //
-// It would be nice to make this type-safe rather than using (sink).
-// Perhaps we can somehow make the output (sink) into an extensible
-// sum type where each entry of the sum has its own appropriate
-// response type to use in place of the input (sink). The extensible
-// sum fragment might not be enough for this, since we don't have a
-// way to return types from functions.
+// // (unitimpartial cmd commandType responseType[ cmd ] result)
+// Term ::=| "(" "unitimpartial" TermVar Term Term Term ")"
+//
+// // (invkimpartial cmd1 commandType responseType[ cmd1 ]
+// //   terminationType
+// //   pairOfCommandAndCallback)
+// // where pairOfCommandAndCallback :
+// //   (sfa cmd2 commandType
+// //     (tfa _ responseType[ cmd2 ]
+// //       (partialtype
+// //         (impartialtype cmd3 commandType responseType[ cmd3 ]
+// //           terminationType))))
+// Term ::=| "(" "invkimpartial" TermVar Term Term Term Term ")"
 
 
 function envWith( env, varName, varSpecifics ) {
