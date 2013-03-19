@@ -910,6 +910,10 @@ function getFreeVarsOfTerm( term, opt_boundVars ) {
             plus( recurUnder( "resultType", "argName" ) ).
             plus( recur( "fn" ) );
         
+    } else if ( em = getMatch( term,
+        [ lit( "partialtype" ), "innerType" ] ) ) {
+        
+        return recur( "innerType" );
     } else {
         // TODO: Handle more language fragments.
         throw new Error();
@@ -1008,6 +1012,10 @@ function renameVarsToVars( renameMap, expr ) {
         return [ "snd", em.val.get( "argName" ), recur( "argType" ),
             recurUnder( "resultType", "argName" ), recur( "fn" ) ];
         
+    } else if ( em = getMatch( expr.term,
+        [ lit( "partialtype" ), "innerType" ] ) ) {
+        
+        return [ "partialtype", recur( "innerType" ) ];
     } else {
         // TODO: Handle more language fragments.
         throw new Error();
@@ -1181,6 +1189,12 @@ function knownEqual( exprA, exprB, opt_boundVars ) {
         return recur( "argType" ) &&
             recurPlus( "resultType", "argName" ) && recur( "fn" );
         
+    } else if ( aSucceeds( [ lit( "partialtype" ), "innerType" ] ) ) {
+        
+        if ( !bm )
+            return false;
+        
+        return recur( "innerType" );
     } else {
         // TODO: Handle more language fragments.
         throw new Error();
@@ -1409,6 +1423,10 @@ function betaReduce( expr ) {
             term: matchedFn.val.get( "resultVal" )
         };
         
+    } else if ( em = getMatch( expr.term,
+        [ lit( "partialtype" ), "innerType" ] ) ) {
+        
+        return expr;
     } else {
         // TODO: Handle more language fragments.
         throw new Error();
@@ -1486,6 +1504,11 @@ function isWfTerm( term ) {
         
         return recur( "argType" ) && recur( "resultType" ) &&
             recur( "fn" );
+        
+    } else if ( em = getMatch( term,
+        [ lit( "partialtype" ), "innerType" ] ) ) {
+        
+        return recur( "innerType" );
     } else {
         // TODO: Handle more language fragments.
         return false;
@@ -1584,6 +1607,11 @@ function checkIsType( expr ) {
         str( "argName" ), "argType", "resultType", "fn" ] ) ) {
         
         return false;
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "partialtype" ), "innerType" ] ) ) {
+        
+        return checkIsType( eget( "innerType" ) );
     } else {
         // TODO: Handle more language fragments.
         throw new Error();
@@ -1798,6 +1826,11 @@ function checkInhabitsType( expr, type ) {
             } ),
             term: matchedFn.val.get( "resultVal" )
         }, type );
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "partialtype" ), "innerType" ] ) ) {
+        
+        return false;
     } else {
         // TODO: Handle more language fragments.
         throw new Error();
@@ -2139,6 +2172,8 @@ function checkUserAction( keyring, expr ) {
     add( [ "snd", "a", "a", "a", "sfn" ], [ "a", "sfn" ] );
     add( [ "snd", "a", "aType", "a", "a" ], [ "aType", "a" ] );
     
+    add( [ "partialtype", "a" ], [ "a" ] );
+    
     
     // Just try something wacky with nesting and shadowing.
     // NOTE: Again, there should be no existing way to make this term
@@ -2207,6 +2242,7 @@ addShouldThrowUnitTest( function () {
     add( xo,
         [ "snd", "x", "x", "x", "x" ],
         [ "snd", "x", "o", "x", "o" ] );
+    add( xo, [ "partialtype", "x" ], [ "partialtype", "o" ] );
     
     // Just try something wacky with nesting and shadowing.
     // NOTE: Again, there should be no existing way to make this term
@@ -2294,6 +2330,7 @@ addShouldThrowUnitTest( function () {
     add(
         [ "snd", "x", "x", "x", "x" ],
         [ "snd", "o", "x", "o", "x" ] );
+    add( [ "partialtype", "x" ], [ "partialtype", "x" ] );
     
     // Just try something wacky with nesting and shadowing.
     // NOTE: Again, there should be no existing way to make this term
@@ -2406,6 +2443,9 @@ addShouldThrowUnitTest( function () {
     add( false, [ "snd", vari, expr, expr, true ] );
     add( false, [ "snd", expr, expr, expr, expr ] );
     
+    add( true, [ "partialtype", expr ] );
+    add( false, [ "partialtype", true ] );
+    
     
     // Just try something wacky with nesting and shadowing.
     add( true,
@@ -2430,6 +2470,24 @@ addShouldThrowUnitTest( function () {
                     return false;
                 var checksOut =
                     checkInhabitsType( args.expr, args.type );
+                if ( checksOut !== expected )
+                    return false;
+                if ( checksOut
+                    && !knownEqual(
+                        betaReduce( args.expr ), args.reduced ) )
+                    return false;
+                return true;
+            } );
+        } );
+    }
+    function addType( expected, env, expr, opt_reduced ) {
+        addPredicateUnitTest( function ( then ) {
+            then( {
+                expr: { env: env, term: expr },
+                reduced: { env: env, term:
+                    opt_reduced !== void 0 ? opt_reduced : expr }
+            }, function ( args ) {
+                var checksOut = checkIsType( args.expr );
                 if ( checksOut !== expected )
                     return false;
                 if ( checksOut
@@ -2481,6 +2539,7 @@ addShouldThrowUnitTest( function () {
         [ "fst", igno, unitType, unitType, sfn ], unit );
     addTerm( true, _env, unitType,
         [ "snd", igno, unitType, unitType, sfn ], unit );
+    addType( true, _env, [ "partialtype", unitType ] );
 })();
 addShouldThrowUnitTest( function () {
     return betaReduce( { env: strMap(),
@@ -2545,7 +2604,7 @@ addShouldThrowUnitTest( function () {
 })();
 
 (function () {
-    function add( type, expr ) {
+    function addTerm( type, expr ) {
         addPredicateUnitTest( function ( then ) {
             then( {
                 typeKnowledge:
@@ -2567,6 +2626,19 @@ addShouldThrowUnitTest( function () {
             } );
         } );
     }
+    function addType( expr ) {
+        addPredicateUnitTest( function ( then ) {
+            then( {
+                knowledge: { env: strMap(), term: [ "istype", expr ] }
+            }, function ( args ) {
+                if ( !isWfUserKnowledge( args.knowledge.term ) )
+                    return false;
+                if ( !checkUserKnowledge( strMap(), args.knowledge ) )
+                    return false;
+                return true;
+            } );
+        } );
+    }
     
     // TODO: These test expressions and types are exactly the same as
     // those in the all-in-one tests for checkInhabitsType(),
@@ -2582,22 +2654,23 @@ addShouldThrowUnitTest( function () {
     var unit = [ "ttfn", "t", [ "tfn", "x", "t", "x" ] ];
     var sfn = [ "sfn", igno, unitType, unit, unit ];
     
-    add( unitType, unit );
-    add( [ "tfa", igno, unitType, unitType ],
+    addTerm( unitType, unit );
+    addTerm( [ "tfa", igno, unitType, unitType ],
         [ "tfn", igno, unitType, unit ] );
-    add( unitType,
+    addTerm( unitType,
         [ "tcall", igno, unitType, unitType,
             [ "tfn", "x", unitType, "x" ], unit ] );
-    add( [ "ttfa", igno, unitType ], [ "ttfn", igno, unit ] );
-    add( [ "tfa", igno, unitType, unitType ],
+    addTerm( [ "ttfa", igno, unitType ], [ "ttfn", igno, unit ] );
+    addTerm( [ "tfa", igno, unitType, unitType ],
         [ "ttcall", "t", [ "tfa", igno, "t", "t" ],
             unit, unitType ] );
-    add( unitType,
+    addTerm( unitType,
         [ "ttcall", igno, unitType,
             [ "ttfn", igno, unit ], unitType ] );
-    add( [ "sfa", igno, unitType, unitType ], sfn );
-    add( unitType, [ "fst", igno, unitType, unitType, sfn ] );
-    add( unitType, [ "snd", igno, unitType, unitType, sfn ] );
+    addTerm( [ "sfa", igno, unitType, unitType ], sfn );
+    addTerm( unitType, [ "fst", igno, unitType, unitType, sfn ] );
+    addTerm( unitType, [ "snd", igno, unitType, unitType, sfn ] );
+    addType( [ "partialtype", unitType ] );
 })();
 addShouldThrowUnitTest( function () {
     return checkUserKnowledge( strMap(), { env: strMap(),
