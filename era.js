@@ -722,20 +722,20 @@ addNaiveIsoUnitTest( function ( then ) {
 // NEW: The kitchen sink "un"-type fragment:
 //
 // // TODO: Use the phantom type fragment or extensible sum fragment
-// // for this. Note that not all pairs of types can be
-// // programmatically compared for extrinsic equality, and not all
-// // types will necessarily be able to survive past compile time, so
-// // we can't just handle all cases at once.
+// // for this. Note that we can't just handle all types at once:
+// // If the type (tfa _ (sink) (sink)) can be contained in a sink,
+// // then we can formulate the Y combinator and we lose the "total"
+// // property of our total functions. Moreover, not all types can
+// // necessarily be programmatically compared for observational
+// // equality (in order to check whether the sink destruction type
+// // matches the construction type), and not all types will
+// // necessarily be able to survive past compile time.
 // Term ::=| "(" "sink" ")"
 //
 // Built-in module exports, with (maybe ...) as shorthand:
 //
 // tokentosink : (tfa _ (token) (sink))
 // sinktotoken : (tfa _ (sink) (maybe (token)))
-//
-// // TODO: See if we need this.
-// tfntosink : (tfa _ (tfa _ (sink) (sink)) (sink))
-// sinktotfn : (tfa _ (sink) (maybe (tfa _ (sink) (sink))))
 //
 // // TODO: See if we need this.
 // // NOTE: "pfn" = "partial function"
@@ -957,6 +957,10 @@ function getFreeVarsOfTerm( term, opt_boundVars ) {
             plus( recurUnder( "responseType", "cmd" ) ).
             plus( recur( "terminationType" ) ).
             plus( recur( "pairOfCommandAndCallback" ) );
+    } else if ( em = getMatch( term, [ lit( "tokentype" ) ] ) ) {
+        return strMap();
+    } else if ( em = getMatch( term, [ lit( "sink" ) ] ) ) {
+        return strMap();
     } else {
         // TODO: Handle more language fragments.
         throw new Error();
@@ -1085,6 +1089,10 @@ function renameVarsToVars( renameMap, expr ) {
             recurUnder( "responseType", "cmd" ),
             recur( "terminationType" ),
             recur( "pairOfCommandAndCallback" ) ];
+    } else if ( em = getMatch( expr.term, [ lit( "tokentype" ) ] ) ) {
+        return [ "tokentype" ];
+    } else if ( em = getMatch( expr.term, [ lit( "sink" ) ] ) ) {
+        return [ "sink" ];
     } else {
         // TODO: Handle more language fragments.
         throw new Error();
@@ -1298,6 +1306,16 @@ function knownEqual( exprA, exprB, opt_boundVars ) {
             recurUnder( "responseType", "cmd" ) &&
             recur( "terminationType" ) &&
             recur( "pairOfCommandAndCallback" );
+    } else if ( aSucceeds( [ lit( "tokentype" ) ] ) ) {
+        if ( !bm )
+            return false;
+        
+        return true;
+    } else if ( aSucceeds( [ lit( "sink" ) ] ) ) {
+        if ( !bm )
+            return false;
+        
+        return true;
     } else {
         // TODO: Handle more language fragments.
         throw new Error();
@@ -1545,6 +1563,10 @@ function betaReduce( expr ) {
             rename( "terminationType" ),
             rename( "pairOfCommandAndCallback" ) ];
         return { env: env, term: term };
+    } else if ( em = getMatch( expr.term, [ lit( "tokentype" ) ] ) ) {
+        return expr;
+    } else if ( em = getMatch( expr.term, [ lit( "sink" ) ] ) ) {
+        return expr;
     } else {
         // TODO: Handle more language fragments.
         throw new Error();
@@ -1648,6 +1670,10 @@ function isWfTerm( term ) {
         return recur( "commandType" ) && recur( "responseType" ) &&
             recur( "terminationType" ) &&
             recur( "pairOfCommandAndCallback" );
+    } else if ( em = getMatch( term, [ lit( "tokentype" ) ] ) ) {
+        return true;
+    } else if ( em = getMatch( term, [ lit( "sink" ) ] ) ) {
+        return true;
     } else {
         // TODO: Handle more language fragments.
         return false;
@@ -1777,6 +1803,10 @@ function checkIsType( expr ) {
         "terminationType", "pairOfCommandAndCallback" ] ) ) {
         
         return false;
+    } else if ( em = getMatch( expr.term, [ lit( "tokentype" ) ] ) ) {
+        return true;
+    } else if ( em = getMatch( expr.term, [ lit( "sink" ) ] ) ) {
+        return true;
     } else {
         // TODO: Handle more language fragments.
         throw new Error();
@@ -2094,6 +2124,10 @@ function checkInhabitsType( expr, type ) {
                     tm.val.get( "commandType" ),
                     [ "tfa", ignoVar, tm.val.get( "responseType" ),
                         [ "partialtype", type.term ] ] ] } );
+    } else if ( em = getMatch( expr.term, [ lit( "tokentype" ) ] ) ) {
+        return false;
+    } else if ( em = getMatch( expr.term, [ lit( "sink" ) ] ) ) {
+        return false;
     } else {
         // TODO: Handle more language fragments.
         throw new Error();
@@ -2469,6 +2503,10 @@ function checkUserAction( keyring, expr ) {
     add( [ "invkimpartial", "c", "cType", "c", "tType", "c" ],
         [ "cType", "tType", "c" ] );
     
+    add( [ "tokentype" ], [] );
+    
+    add( [ "sink" ], [] );
+    
     
     // Just try something wacky with nesting and shadowing.
     // NOTE: Again, there should be no existing way to make this term
@@ -2547,6 +2585,8 @@ addShouldThrowUnitTest( function () {
     add( xo,
         [ "invkimpartial", "x", "x", "x", "x", "x" ],
         [ "invkimpartial", "x", "o", "x", "o", "o" ] );
+    add( xo, [ "tokentype" ], [ "tokentype" ] );
+    add( xo, [ "sink" ], [ "sink" ] );
     
     // Just try something wacky with nesting and shadowing.
     // NOTE: Again, there should be no existing way to make this term
@@ -2644,6 +2684,8 @@ addShouldThrowUnitTest( function () {
     add(
         [ "invkimpartial", "x", "x", "x", "x", "x" ],
         [ "invkimpartial", "o", "x", "o", "x", "x" ] );
+    add( [ "tokentype" ], [ "tokentype" ] );
+    add( [ "sink" ], [ "sink" ] );
     
     // Just try something wacky with nesting and shadowing.
     // NOTE: Again, there should be no existing way to make this term
@@ -2781,6 +2823,10 @@ addShouldThrowUnitTest( function () {
     add( false, [ "invkimpartial", vari, expr, expr, expr, true ] );
     add( false, [ "invkimpartial", expr, expr, expr, expr, expr ] );
     
+    add( true, [ "tokentype" ] );
+    
+    add( true, [ "sink" ] );
+    
     
     // Just try something wacky with nesting and shadowing.
     add( true,
@@ -2897,6 +2943,8 @@ addShouldThrowUnitTest( function () {
                                 "unitpartial",
                                 impt ],
                             impu ] ] ] ] ] );
+    addType( true, _env, [ "tokentype" ] );
+    addType( true, _env, [ "sink" ] );
 })();
 addShouldThrowUnitTest( function () {
     return betaReduce( { env: strMap(),
@@ -3050,6 +3098,8 @@ addShouldThrowUnitTest( function () {
                                 "unitpartial",
                                 impt ],
                             impu ] ] ] ] ] );
+    addType( [ "tokentype" ] );
+    addType( [ "sink" ] );
 })();
 addShouldThrowUnitTest( function () {
     return checkUserKnowledge( strMap(), { env: strMap(),
