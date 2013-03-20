@@ -751,6 +751,14 @@ addNaiveIsoUnitTest( function ( then ) {
 //   (tfa _ (sink)
 //     (maybe (tfa _ (sink) (impartialtype _ (sink) (sink) (sink)))))
 
+// TODO: Figure out what should happen if we beta-reduce a call to a
+// builtin. In many cases, we check the type of an expression,
+// beta-reduce it, and then pull it apart as though the syntax is in
+// some known canonical form, so our approach will need to coordinate
+// with this somehow. (In particular, this pulling-apart happens
+// during the beta reduction of (tcall ...), (ttcall ...), (fst ...),
+// and (snd ...).)
+
 
 function envWith( env, varName, varSpecifics ) {
     return env.plusEntry( varName, objPlus( {
@@ -759,6 +767,17 @@ function envWith( env, varName, varSpecifics ) {
         knownType: null,
         knownVal: null
     }, varSpecifics ) );
+}
+
+function fresh( desiredName, strMapWhoseKeysToAvoid ) {
+    desiredName += "";
+    var result = desiredName;
+    var index = 1;
+    while ( strMapWhoseKeysToAvoid.has( result ) ) {
+        index++;
+        result = desiredName + "_" + index;
+    }
+    return result;
 }
 
 var patternLang = {};
@@ -914,6 +933,30 @@ function getFreeVarsOfTerm( term, opt_boundVars ) {
         [ lit( "partialtype" ), "innerType" ] ) ) {
         
         return recur( "innerType" );
+        
+    } else if ( em = getMatch( term, [ lit( "impartialtype" ),
+        str( "cmd" ), "commandType", "responseType",
+        "terminationType" ] ) ) {
+        
+        return recur( "commandType" ).
+            plus( recurUnder( "responseType", "cmd" ) ).
+            plus( recur( "terminationType" ) );
+        
+    } else if ( em = getMatch( term, [ lit( "unitimpartial" ),
+        str( "cmd" ), "commandType", "responseType", "result" ] ) ) {
+        
+        return recur( "commandType" ).
+            plus( recurUnder( "responseType", "cmd" ) ).
+            plus( recur( "result" ) );
+        
+    } else if ( em = getMatch( term, [ lit( "invkimpartial" ),
+        str( "cmd" ), "commandType", "responseType",
+        "terminationType", "pairOfCommandAndCallback" ] ) ) {
+        
+        return recur( "commandType" ).
+            plus( recurUnder( "responseType", "cmd" ) ).
+            plus( recur( "terminationType" ) ).
+            plus( recur( "pairOfCommandAndCallback" ) );
     } else {
         // TODO: Handle more language fragments.
         throw new Error();
@@ -1016,6 +1059,32 @@ function renameVarsToVars( renameMap, expr ) {
         [ lit( "partialtype" ), "innerType" ] ) ) {
         
         return [ "partialtype", recur( "innerType" ) ];
+        
+    } else if ( em = getMatch( expr.term, [ lit( "impartialtype" ),
+        str( "cmd" ), "commandType", "responseType",
+        "terminationType" ] ) ) {
+        
+        return [ "impartialtype", em.val.get( "cmd" ),
+            recur( "commandType" ),
+            recurUnder( "responseType", "cmd" ),
+            recur( "terminationType" ) ];
+        
+    } else if ( em = getMatch( expr.term, [ lit( "unitimpartial" ),
+        str( "cmd" ), "commandType", "responseType", "result" ] ) ) {
+        
+        return [ "unitimpartial", em.val.get( "cmd" ),
+            recur( "commandType" ),
+            recurUnder( "responseType", "cmd" ), recur( "result" ) ];
+        
+    } else if ( em = getMatch( expr.term, [ lit( "invkimpartial" ),
+        str( "cmd" ), "commandType", "responseType",
+        "terminationType", "pairOfCommandAndCallback" ] ) ) {
+        
+        return [ "invkimpartial", em.val.get( "cmd" ),
+            recur( "commandType" ),
+            recurUnder( "responseType", "cmd" ),
+            recur( "terminationType" ),
+            recur( "pairOfCommandAndCallback" ) ];
     } else {
         // TODO: Handle more language fragments.
         throw new Error();
@@ -1049,7 +1118,7 @@ function knownEqual( exprA, exprB, opt_boundVars ) {
     function recur( k ) {
         return knownEqual( aget( k ), bget( k ), boundVars );
     }
-    function recurPlus( termK, argK ) {
+    function recurUnder( termK, argK ) {
         var a = am.val.get( argK );
         var b = bm.val.get( argK );
         return knownEqual( {
@@ -1108,7 +1177,8 @@ function knownEqual( exprA, exprB, opt_boundVars ) {
         if ( !bm )
             return false;
         
-        return recur( "argType" ) && recurPlus( "resultType", "arg" );
+        return recur( "argType" ) &&
+            recurUnder( "resultType", "arg" );
         
     } else if ( aSucceeds(
         [ lit( "tfn" ), str( "arg" ), "argType", "result" ] ) ) {
@@ -1116,7 +1186,7 @@ function knownEqual( exprA, exprB, opt_boundVars ) {
         if ( !bm )
             return false;
         
-        return recur( "argType" ) && recurPlus( "result", "arg" );
+        return recur( "argType" ) && recurUnder( "result", "arg" );
         
     } else if ( aSucceeds( [ lit( "tcall" ),
         str( "argName" ), "argType", "resultType",
@@ -1126,7 +1196,7 @@ function knownEqual( exprA, exprB, opt_boundVars ) {
             return false;
         
         return recur( "argType" ) &&
-            recurPlus( "resultType", "argName" ) &&
+            recurUnder( "resultType", "argName" ) &&
             recur( "fn" ) && recur( "argVal" );
         
     } else if ( aSucceeds(
@@ -1135,7 +1205,7 @@ function knownEqual( exprA, exprB, opt_boundVars ) {
         if ( !bm )
             return false;
         
-        return recurPlus( "resultType", "arg" );
+        return recurUnder( "resultType", "arg" );
         
     } else if ( aSucceeds(
         [ lit( "ttfn" ), str( "arg" ), "result" ] ) ) {
@@ -1143,7 +1213,7 @@ function knownEqual( exprA, exprB, opt_boundVars ) {
         if ( !bm )
             return false;
         
-        return recurPlus( "result", "arg" );
+        return recurUnder( "result", "arg" );
         
     } else if ( aSucceeds( [ lit( "ttcall" ),
         str( "argName" ), "resultType", "fn", "argVal" ] ) ) {
@@ -1151,7 +1221,7 @@ function knownEqual( exprA, exprB, opt_boundVars ) {
         if ( !bm )
             return false;
         
-        return recurPlus( "resultType", "argName" ) &&
+        return recurUnder( "resultType", "argName" ) &&
             recur( "fn" ) && recur( "argVal" );
         
     } else if ( aSucceeds(
@@ -1160,7 +1230,8 @@ function knownEqual( exprA, exprB, opt_boundVars ) {
         if ( !bm )
             return false;
         
-        return recur( "argType" ) && recurPlus( "resultType", "arg" );
+        return recur( "argType" ) &&
+            recurUnder( "resultType", "arg" );
         
     } else if ( aSucceeds( [ lit( "sfn" ),
         str( "arg" ), "argType", "argVal", "resultVal" ] ) ) {
@@ -1169,7 +1240,7 @@ function knownEqual( exprA, exprB, opt_boundVars ) {
             return false;
         
         return recur( "argType" ) && recur( "argVal" ) &&
-            recurPlus( "resultVal", "arg" );
+            recurUnder( "resultVal", "arg" );
         
     } else if ( aSucceeds( [ lit( "fst" ),
         str( "argName" ), "argType", "resultType", "fn" ] ) ) {
@@ -1178,7 +1249,7 @@ function knownEqual( exprA, exprB, opt_boundVars ) {
             return false;
         
         return recur( "argType" ) &&
-            recurPlus( "resultType", "argName" ) && recur( "fn" );
+            recurUnder( "resultType", "argName" ) && recur( "fn" );
         
     } else if ( aSucceeds( [ lit( "snd" ),
         str( "argName" ), "argType", "resultType", "fn" ] ) ) {
@@ -1187,7 +1258,7 @@ function knownEqual( exprA, exprB, opt_boundVars ) {
             return false;
         
         return recur( "argType" ) &&
-            recurPlus( "resultType", "argName" ) && recur( "fn" );
+            recurUnder( "resultType", "argName" ) && recur( "fn" );
         
     } else if ( aSucceeds( [ lit( "partialtype" ), "innerType" ] ) ) {
         
@@ -1195,6 +1266,38 @@ function knownEqual( exprA, exprB, opt_boundVars ) {
             return false;
         
         return recur( "innerType" );
+        
+    } else if ( aSucceeds( [ lit( "impartialtype" ),
+        str( "cmd" ), "commandType", "responseType",
+        "terminationType" ] ) ) {
+        
+        if ( !bm )
+            return false;
+        
+        return recur( "commandType" ) &&
+            recurUnder( "responseType", "cmd" ) &&
+            recur( "terminationType" );
+        
+    } else if ( aSucceeds( [ lit( "unitimpartial" ),
+        str( "cmd" ), "commandType", "responseType", "result" ] ) ) {
+        
+        if ( !bm )
+            return false;
+        
+        return recur( "commandType" ) &&
+            recurUnder( "responseType", "cmd" ) && recur( "result" );
+        
+    } else if ( aSucceeds( [ lit( "invkimpartial" ),
+        str( "cmd" ), "commandType", "responseType",
+        "terminationType", "pairOfCommandAndCallback" ] ) ) {
+        
+        if ( !bm )
+            return false;
+        
+        return recur( "commandType" ) &&
+            recurUnder( "responseType", "cmd" ) &&
+            recur( "terminationType" ) &&
+            recur( "pairOfCommandAndCallback" );
     } else {
         // TODO: Handle more language fragments.
         throw new Error();
@@ -1237,23 +1340,10 @@ function betaReduce( expr ) {
         var reduced = betaReduce( expr );
         var freeVars = getFreeVarsOfTerm( reduced.term );
         
-        function pickNameOutside( desiredName, isTaken ) {
-            desiredName += "";
-            var result = desiredName;
-            var index = 1;
-            while ( isTaken( result ) ) {
-                index++;
-                result = desiredName + "_" + index;
-            }
-            return result;
-        }
-        
         var renameForward = strMap();
         var renameBackward = strMap();
         freeVars.each( function ( origName, truth ) {
-            var newName = pickNameOutside( origName, function ( n ) {
-                return renameForward.has( n );
-            } );
+            var newName = fresh( origName, renameForward );
             renameForward.set( origName, newName );
             renameBackward.set( newName, origName );
         } );
@@ -1426,7 +1516,35 @@ function betaReduce( expr ) {
     } else if ( em = getMatch( expr.term,
         [ lit( "partialtype" ), "innerType" ] ) ) {
         
-        return expr;
+        var term = [ "partialtype", rename( "innerType" ) ];
+        return { env: env, term: term };
+        
+    } else if ( em = getMatch( expr.term, [ lit( "impartialtype" ),
+        str( "cmd" ), "commandType", "responseType",
+        "terminationType" ] ) ) {
+        
+        var term = [ "impartialtype", em.val.get( "cmd" ),
+            rename( "commandType" ), em.val.get( "responseType" ),
+            rename( "terminationType" ) ];
+        return { env: env, term: term };
+        
+    } else if ( em = getMatch( expr.term, [ lit( "unitimpartial" ),
+        str( "cmd" ), "commandType", "responseType", "result" ] ) ) {
+        
+        var term = [ "unitimpartial", em.val.get( "cmd" ),
+            rename( "commandType" ), em.val.get( "responseType" ),
+            rename( "result" ) ];
+        return { env: env, term: term };
+        
+    } else if ( em = getMatch( expr.term, [ lit( "invkimpartial" ),
+        str( "cmd" ), "commandType", "responseType",
+        "terminationType", "pairOfCommandAndCallback" ] ) ) {
+        
+        var term = [ "impartialtype", em.val.get( "cmd" ),
+            rename( "commandType" ), em.val.get( "responseType" ),
+            rename( "terminationType" ),
+            rename( "pairOfCommandAndCallback" ) ];
+        return { env: env, term: term };
     } else {
         // TODO: Handle more language fragments.
         throw new Error();
@@ -1509,6 +1627,27 @@ function isWfTerm( term ) {
         [ lit( "partialtype" ), "innerType" ] ) ) {
         
         return recur( "innerType" );
+        
+    } else if ( em = getMatch( term, [ lit( "impartialtype" ),
+        str( "cmd" ), "commandType", "responseType",
+        "terminationType" ] ) ) {
+        
+        return recur( "commandType" ) && recur( "responseType" ) &&
+            recur( "terminationType" );
+        
+    } else if ( em = getMatch( term, [ lit( "unitimpartial" ),
+        str( "cmd" ), "commandType", "responseType", "result" ] ) ) {
+        
+        return recur( "commandType" ) && recur( "responseType" ) &&
+            recur( "result" );
+        
+    } else if ( em = getMatch( term, [ lit( "invkimpartial" ),
+        str( "cmd" ), "commandType", "responseType",
+        "terminationType", "pairOfCommandAndCallback" ] ) ) {
+        
+        return recur( "commandType" ) && recur( "responseType" ) &&
+            recur( "terminationType" ) &&
+            recur( "pairOfCommandAndCallback" );
     } else {
         // TODO: Handle more language fragments.
         return false;
@@ -1612,6 +1751,32 @@ function checkIsType( expr ) {
         [ lit( "partialtype" ), "innerType" ] ) ) {
         
         return checkIsType( eget( "innerType" ) );
+        
+    } else if ( em = getMatch( expr.term, [ lit( "impartialtype" ),
+        str( "cmd" ), "commandType", "responseType",
+        "terminationType" ] ) ) {
+        
+        if ( !checkIsType( eget( "commandType" ) ) )
+            return false;
+        if ( !checkIsType( {
+            env: envWith( expr.env, em.val.get( "cmd" ), {
+                knownType: { val: beget( "commandType" ) },
+            } ),
+            term: em.val.get( "responseType" )
+        } ) )
+            return false;
+        return checkIsType( eget( "terminationType" ) );
+        
+    } else if ( em = getMatch( expr.term, [ lit( "unitimpartial" ),
+        str( "cmd" ), "commandType", "responseType", "result" ] ) ) {
+        
+        return false;
+        
+    } else if ( em = getMatch( expr.term, [ lit( "invkimpartial" ),
+        str( "cmd" ), "commandType", "responseType",
+        "terminationType", "pairOfCommandAndCallback" ] ) ) {
+        
+        return false;
     } else {
         // TODO: Handle more language fragments.
         throw new Error();
@@ -1831,6 +1996,104 @@ function checkInhabitsType( expr, type ) {
         [ lit( "partialtype" ), "innerType" ] ) ) {
         
         return false;
+        
+    } else if ( em = getMatch( expr.term, [ lit( "impartialtype" ),
+        str( "cmd" ), "commandType", "responseType",
+        "terminationType" ] ) ) {
+        
+        return false;
+        
+    } else if ( em = getMatch( expr.term, [ lit( "unitimpartial" ),
+        str( "cmd" ), "commandType", "responseType", "result" ] ) ) {
+        
+        var tm = getMatch( type.term, [ lit( "impartialtype" ),
+            str( "cmd" ), "commandType", "responseType",
+            "terminationType" ] );
+        if ( tm === null )
+            return false;
+        var typeCommandType = tget( "commandType" );
+        if ( !checkIsType( eget( "commandType" ) ) )
+            return false;
+        var exprCommandType = beget( "commandType" );
+        if ( !knownEqual( exprCommandType, typeCommandType ) )
+            return false;
+        // TODO: See if we should beta-reduce the arguments here.
+        // TODO: Figure out if we should really be passing
+        // `exprCommandType` and `typeCommandType` like this, rather
+        // than in some other combination. Anyhow, they're knownEqual
+        // at this point.
+        if ( !knownEqual( {
+            env: envWith( expr.env, em.val.get( "cmd" ), {
+                knownType: { val: exprCommandType }
+            } ),
+            term: em.val.get( "responseType" ),
+        }, {
+            env: envWith( type.env, tm.val.get( "cmd" ), {
+                knownType: { val: typeCommandType }
+            } ),
+            term: tm.val.get( "responseType" )
+        } ) )
+            return false;
+        return checkInhabitsType(
+            eget( "result" ), tget( "responseType" ) );
+        
+    } else if ( em = getMatch( expr.term, [ lit( "invkimpartial" ),
+        str( "cmd" ), "commandType", "responseType",
+        "terminationType", "pairOfCommandAndCallback" ] ) ) {
+        
+        var tm = getMatch( type.term, [ lit( "impartialtype" ),
+            str( "cmd" ), "commandType", "responseType",
+            "terminationType" ] );
+        if ( tm === null )
+            return false;
+        var typeCommandType = tget( "commandType" );
+        if ( !checkIsType( eget( "commandType" ) ) )
+            return false;
+        var exprCommandType = beget( "commandType" );
+        if ( !knownEqual( exprCommandType, typeCommandType ) )
+            return false;
+        // TODO: See if we should beta-reduce the arguments here.
+        // TODO: Figure out if we should really be passing
+        // `exprCommandType` and `typeCommandType` like this, rather
+        // than in some other combination. Anyhow, they're knownEqual
+        // at this point.
+        if ( !knownEqual( {
+            env: envWith( expr.env, em.val.get( "cmd" ), {
+                knownType: { val: exprCommandType }
+            } ),
+            term: em.val.get( "responseType" ),
+        }, {
+            env: envWith( type.env, tm.val.get( "cmd" ), {
+                knownType: { val: typeCommandType }
+            } ),
+            term: tm.val.get( "responseType" )
+        } ) )
+            return false;
+        var typeTerminationType = tget( "terminationType" );
+        if ( !checkIsType( eget( "terminationType" ) ) )
+            return false;
+        var exprTerminationType = beget( "terminationType" );
+        if ( !knownEqual( exprTerminationType, typeTerminationType ) )
+            return false;
+        
+        // Check the invoked command and callback against this type:
+        //
+        // (sfa cmd2 commandType
+        //   (tfa _ responseType[ cmd2 ]
+        //     (partialtype
+        //       (impartialtype cmd3 commandType responseType[ cmd3 ]
+        //         terminationType))))
+        var ignoVar =
+            fresh( "unused", getFreeVarsOfTerm( type.term ) );
+        return checkInhabitsType( eget( "pairOfCommandAndCallback" ),
+            { env: type.env, term:
+                // NOTE: We could make a fresh variable name and
+                // substitute it into responseType, but we reuse the
+                // `cmd` variable instead.
+                [ "sfa", tm.val.get( "cmd" ),
+                    tm.val.get( "commandType" ),
+                    [ "tfa", ignoVar, tm.val.get( "responseType" ),
+                        [ "partialtype", type.term ] ] ] } );
     } else {
         // TODO: Handle more language fragments.
         throw new Error();
@@ -2174,6 +2437,38 @@ function checkUserAction( keyring, expr ) {
     
     add( [ "partialtype", "a" ], [ "a" ] );
     
+    add( [ "impartialtype", "c", "cType", "rType", "tType" ],
+        [ "cType", "rType", "tType" ] );
+    add( [ "impartialtype", "c", "cType", "c", "tType" ],
+        [ "cType", "tType" ] );
+    add( [ "impartialtype", "c", "c", "c", "tType" ],
+        [ "c", "tType" ] );
+    add( [ "impartialtype", "c", "cType", "c", "c" ],
+        [ "cType", "c" ] );
+    
+    add( [ "unitimpartial", "c", "cType", "rType", "result" ],
+        [ "cType", "rType", "result" ] );
+    add( [ "unitimpartial", "c", "cType", "c", "result" ],
+        [ "cType", "result" ] );
+    add( [ "unitimpartial", "c", "c", "c", "result" ],
+        [ "c", "result" ] );
+    add( [ "unitimpartial", "c", "cType", "c", "c" ],
+        [ "cType", "c" ] );
+    
+    add(
+        [ "invkimpartial", "c", "cType", "rType", "tType",
+            "invocation" ],
+        [ "cType", "rType", "tType", "invocation" ] );
+    add(
+        [ "invkimpartial", "c", "cType", "c", "tType", "invocation" ],
+        [ "cType", "tType", "invocation" ] );
+    add( [ "invkimpartial", "c", "c", "c", "tType", "invocation" ],
+        [ "c", "tType", "invocation" ] );
+    add( [ "invkimpartial", "c", "cType", "c", "c", "invocation" ],
+        [ "cType", "c", "invocation" ] );
+    add( [ "invkimpartial", "c", "cType", "c", "tType", "c" ],
+        [ "cType", "tType", "c" ] );
+    
     
     // Just try something wacky with nesting and shadowing.
     // NOTE: Again, there should be no existing way to make this term
@@ -2243,6 +2538,15 @@ addShouldThrowUnitTest( function () {
         [ "snd", "x", "x", "x", "x" ],
         [ "snd", "x", "o", "x", "o" ] );
     add( xo, [ "partialtype", "x" ], [ "partialtype", "o" ] );
+    add( xo,
+        [ "impartialtype", "x", "x", "x", "x" ],
+        [ "impartialtype", "x", "o", "x", "o" ] );
+    add( xo,
+        [ "unitimpartial", "x", "x", "x", "x" ],
+        [ "unitimpartial", "x", "o", "x", "o" ] );
+    add( xo,
+        [ "invkimpartial", "x", "x", "x", "x", "x" ],
+        [ "invkimpartial", "x", "o", "x", "o", "o" ] );
     
     // Just try something wacky with nesting and shadowing.
     // NOTE: Again, there should be no existing way to make this term
@@ -2331,6 +2635,15 @@ addShouldThrowUnitTest( function () {
         [ "snd", "x", "x", "x", "x" ],
         [ "snd", "o", "x", "o", "x" ] );
     add( [ "partialtype", "x" ], [ "partialtype", "x" ] );
+    add(
+        [ "impartialtype", "x", "x", "x", "x" ],
+        [ "impartialtype", "o", "x", "o", "x" ] );
+    add(
+        [ "unitimpartial", "x", "x", "x", "x" ],
+        [ "unitimpartial", "o", "x", "o", "x" ] );
+    add(
+        [ "invkimpartial", "x", "x", "x", "x", "x" ],
+        [ "invkimpartial", "o", "x", "o", "x", "x" ] );
     
     // Just try something wacky with nesting and shadowing.
     // NOTE: Again, there should be no existing way to make this term
@@ -2446,6 +2759,28 @@ addShouldThrowUnitTest( function () {
     add( true, [ "partialtype", expr ] );
     add( false, [ "partialtype", true ] );
     
+    add( true, [ "impartialtype", vari, expr, expr, expr ] );
+    add( false, [ "impartialtype", true, expr, expr, expr ] );
+    add( false, [ "impartialtype", vari, true, expr, expr ] );
+    add( false, [ "impartialtype", vari, expr, true, expr ] );
+    add( false, [ "impartialtype", vari, expr, expr, true ] );
+    add( false, [ "impartialtype", expr, expr, expr, expr ] );
+    
+    add( true, [ "unitimpartial", vari, expr, expr, expr ] );
+    add( false, [ "unitimpartial", true, expr, expr, expr ] );
+    add( false, [ "unitimpartial", vari, true, expr, expr ] );
+    add( false, [ "unitimpartial", vari, expr, true, expr ] );
+    add( false, [ "unitimpartial", vari, expr, expr, true ] );
+    add( false, [ "unitimpartial", expr, expr, expr, expr ] );
+    
+    add( true, [ "invkimpartial", vari, expr, expr, expr, expr ] );
+    add( false, [ "invkimpartial", true, expr, expr, expr, expr ] );
+    add( false, [ "invkimpartial", vari, true, expr, expr, expr ] );
+    add( false, [ "invkimpartial", vari, expr, true, expr, expr ] );
+    add( false, [ "invkimpartial", vari, expr, expr, true, expr ] );
+    add( false, [ "invkimpartial", vari, expr, expr, expr, true ] );
+    add( false, [ "invkimpartial", expr, expr, expr, expr, expr ] );
+    
     
     // Just try something wacky with nesting and shadowing.
     add( true,
@@ -2508,6 +2843,13 @@ addShouldThrowUnitTest( function () {
     var unitType = [ "ttfa", "t", [ "tfa", igno, "t", "t" ] ];
     var unit = [ "ttfn", "t", [ "tfn", "x", "t", "x" ] ];
     var sfn = [ "sfn", igno, unitType, unit, unit ];
+    // NOTE: This stands for "imperative partial type."
+    var impt =
+        [ "impartialtype", igno, unitType, unitType, unitType ];
+    // NOTE: This stands for "imperative partial unit."
+    var impu = [ "unitimpartial", igno, unitType, unitType, unit ];
+    var typeOfUnitpartialResult =
+        [ "tfa", igno, "a", [ "partialtype", "a" ] ];
     
     addTerm( true, _env, unitType, unit );
     addTerm( true, _env, [ "tfa", igno, unitType, unitType ],
@@ -2540,6 +2882,21 @@ addShouldThrowUnitTest( function () {
     addTerm( true, _env, unitType,
         [ "snd", igno, unitType, unitType, sfn ], unit );
     addType( true, _env, [ "partialtype", unitType ] );
+    addTerm( true, _env, impt, impu );
+    addTerm( true, _env,
+        [ "tfa", igno, [ "ttfa", "a", typeOfUnitpartialResult ],
+            impt ],
+        [ "tfn", "unitpartial",
+            [ "ttfa", "a",
+                [ "tfa", "x", "a", [ "partialtype", "a" ] ] ],
+            [ "invkimpartial", igno, unitType, unitType, unitType,
+                [ "sfn", igno, unitType, unit,
+                    [ "tfn", igno, unitType,
+                        [ "tcall", "a", impt, [ "partialtype", impt ],
+                            [ "ttcall", "a", typeOfUnitpartialResult,
+                                "unitpartial",
+                                impt ],
+                            impu ] ] ] ] ] );
 })();
 addShouldThrowUnitTest( function () {
     return betaReduce( { env: strMap(),
@@ -2653,6 +3010,13 @@ addShouldThrowUnitTest( function () {
     var unitType = [ "ttfa", "t", [ "tfa", igno, "t", "t" ] ];
     var unit = [ "ttfn", "t", [ "tfn", "x", "t", "x" ] ];
     var sfn = [ "sfn", igno, unitType, unit, unit ];
+    // NOTE: This stands for "imperative partial type."
+    var impt =
+        [ "impartialtype", igno, unitType, unitType, unitType ];
+    // NOTE: This stands for "imperative partial unit."
+    var impu = [ "unitimpartial", igno, unitType, unitType, unit ];
+    var typeOfUnitpartialResult =
+        [ "tfa", igno, "a", [ "partialtype", "a" ] ];
     
     addTerm( unitType, unit );
     addTerm( [ "tfa", igno, unitType, unitType ],
@@ -2671,6 +3035,21 @@ addShouldThrowUnitTest( function () {
     addTerm( unitType, [ "fst", igno, unitType, unitType, sfn ] );
     addTerm( unitType, [ "snd", igno, unitType, unitType, sfn ] );
     addType( [ "partialtype", unitType ] );
+    addTerm( impt, impu );
+    addTerm(
+        [ "tfa", igno, [ "ttfa", "a", typeOfUnitpartialResult ],
+            impt ],
+        [ "tfn", "unitpartial",
+            [ "ttfa", "a",
+                [ "tfa", "x", "a", [ "partialtype", "a" ] ] ],
+            [ "invkimpartial", igno, unitType, unitType, unitType,
+                [ "sfn", igno, unitType, unit,
+                    [ "tfn", igno, unitType,
+                        [ "tcall", "a", impt, [ "partialtype", impt ],
+                            [ "ttcall", "a", typeOfUnitpartialResult,
+                                "unitpartial",
+                                impt ],
+                            impu ] ] ] ] ] );
 })();
 addShouldThrowUnitTest( function () {
     return checkUserKnowledge( strMap(), { env: strMap(),
