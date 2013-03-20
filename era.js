@@ -2311,6 +2311,15 @@ function isWfUserAction( term ) {
             isWfTerm( em.val.get( "type" ) ) &&
             isWfUserAction( em.val.get( "action" ) );
         
+    } else if ( em = getMatch( term, [ lit( "withtoken" ),
+        str( "var" ), "privKey", "action" ] ) ) {
+        
+        // TODO: While `privKey` is a term, it also can't be anything
+        // but a variable reference. See if we should check that here
+        // or just leave it to checkUserAction().
+        return isWfTerm( em.val.get( "privKey" ) ) &&
+            isWfUserAction( em.val.get( "action" ) );
+        
     } else {
         // TODO: Handle more language fragments.
         return false;
@@ -2326,6 +2335,16 @@ function checkUserAction( keyring, expr ) {
     
     function eget( k ) {
         return { env: expr.env, term: em.val.get( k ) };
+    }
+    
+    function checkPrivKey( k ) {
+        var term = em.val.get( k );
+        return (true
+            && isPrimString( term )
+            && expr.env.has( term )
+            && expr.env.get( term ).knownIsPrivateKey !== null
+            && expr.env.get( term ).knownIsPrivateKey.val
+        );
     }
     
     var em;
@@ -2344,12 +2363,8 @@ function checkUserAction( keyring, expr ) {
         "myPrivKey", "yourPubKey", "type", "expr" ] ) ) {
         
         return (true
-            && expr.env.has( em.val.get( "myPrivKey" ) )
-            && expr.env.get( em.val.get( "myPrivKey" )
-                ).knownIsPrivateKey !== null
-            && expr.env.get( em.val.get( "myPrivKey" )
-                ).knownIsPrivateKey.val
-            // TODO: See if we should write a checkPublicKey()
+            && checkPrivKey( "myPrivKey" )
+            // TODO: See if we should write a global checkPublicKey()
             // function. For the moment, it would always return true,
             // so we just call isWfKey().
             && isWfKey( em.val.get( "yourPubKey" ) )
@@ -2362,19 +2377,32 @@ function checkUserAction( keyring, expr ) {
         "action" ] ) ) {
         
         return (true
-            // TODO: See if we should write a checkPublicKey()
+            // TODO: See if we should write a global checkPublicKey()
             // function. For the moment, it would always return true,
             // so we just call isWfKey().
             && isWfKey( em.val.get( "yourPubKey" ) )
-            && expr.env.has( em.val.get( "myPrivKey" ) )
-            && expr.env.get( em.val.get( "myPrivKey" )
-                ).knownIsPrivateKey !== null
-            && expr.env.get( em.val.get( "myPrivKey" )
-                ).knownIsPrivateKey.val
+            && checkPrivKey( "myPrivKey" )
             && checkIsType( eget( "type" ) )
             && checkUserAction( keyring, {
                 env: envWith( expr.env, em.val.get( "var" ), {
                     knownType: { val: betaReduce( eget( "type" ) ) }
+                } ),
+                term: em.val.get( "action" )
+            } )
+        );
+        
+    } else if ( em = getMatch( expr.term, [ lit( "withtoken" ),
+        str( "var" ), "privKey", "action" ] ) ) {
+        
+        return (true
+            && checkPrivKey( "privKey" )
+            && checkUserAction( keyring, {
+                env: envWith( expr.env, em.val.get( "var" ), {
+                    knownType: { val:
+                        { env: strMap(), term: [ "tokentype" ] } }
+                    // TODO: Figure out if we should put a knownVal in
+                    // here so we can beta-reduce code that compares
+                    // tokens.
                 } ),
                 term: em.val.get( "action" )
             } )
@@ -3226,6 +3254,14 @@ addShouldThrowUnitTest( function () {
                     unitType,
                     [ "define", "theReturn", [ "everyone" ],
                         unitType, "theUnit" ] ] ] ] );
+    add( true,
+        [ "withsecret", "theTokenDefined",
+            everyoneVar( "theTokenDefined" ),
+            [ "withsecret", "theTokenSource",
+                everyoneVar( "theTokenSource" ),
+                [ "withtoken", "t", "theTokenSource",
+                    [ "define", "theTokenDefined", [ "everyone" ],
+                        [ "tokentype" ], "t" ] ] ] ] );
     
     // Free variables aren't allowed.
     add( false,
