@@ -2134,6 +2134,277 @@ function checkInhabitsType( expr, type ) {
     }
 }
 
+function compileTermToSyncJs( expr ) {
+    
+    // TODO: Even though the input is an env-term pair, we only use
+    // the term for now. Even once we try to compile built-in
+    // functions, we'll probably take care of that in
+    // compileTermToSyncJsFull(). See if we need to keep the env.
+    
+    var lit = patternLang.lit;
+    var str = patternLang.str;
+    var pat = patternLang.pat;
+    var getMatch = patternLang.getMatch;
+    
+    function eget( k ) {
+        return { env: expr.env, term: em.val.get( k ) };
+    }
+    
+    function toKey( name ) {
+        // TODO: Escape line break characters that are valid in JSON
+        // string literals but not in JS string literals.
+        return JSON.stringify( "|" + name );
+    }
+    
+    function instructions( var_args ) {
+        var reversed = [];
+        for ( var i = arguments.length - 1; 0 <= i; i-- )
+            reversed.push( ""
+                + "_.pushInst( function ( _ ) {\n"
+                + "\n"
+                + arguments[ i ]
+                + "\n"
+                + "} );\n"
+            );
+        return reversed.join( "" );
+    }
+    
+    var em;
+    if ( isPrimString( expr.term ) ) {
+        return  "_.pushRes( _.env[ " + toKey( expr.term ) + " ] );\n";
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "tfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
+        
+        throw new Error();
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "tfn" ), str( "arg" ), "argType", "result" ] ) ) {
+        
+        var arg = em.val.get( "arg" );
+        var captures = [];
+        getFreeVarsOfTerm( expr.term ).minusEntry( arg ).each(
+            function ( v ) {
+            
+            v = toKey( v );
+            captures.push( "    " + v + ": _.env[ " + v + " ]" );
+        } );
+        return instructions( ""
+            + "_.pushRes( { arg: " + toKey( arg ) + ", lexEnv: {\n"
+            + captures.join( ",\n" ) + "\n"
+            + "}, go: function ( _ ) {\n"
+            + "\n"
+            + compileTermToSyncJs( eget( "result" ) )
+            + "\n"
+            + "} } );\n"
+        );
+        
+    } else if ( em = getMatch( expr.term, [ lit( "tcall" ),
+        str( "argName" ), "argType", "resultType",
+        "fn", "argVal" ] ) ) {
+        
+        return instructions(
+            compileTermToSyncJs( eget( "fn" ) ),
+            compileTermToSyncJs( eget( "argVal" ) ),
+            ""
+            + "var argVal = _.popRes();\n"
+            + "var fn = _.popRes();\n"
+            // TODO: Delete this entry once we're done with it.
+            + "(_.env = fn.lexEnv)[ fn.arg ] = argVal;\n"
+            + "fn.go( _ );\n"
+        );
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "ttfa" ), str( "arg" ), "resultType" ] ) ) {
+        
+        throw new Error();
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "ttfn" ), str( "arg" ), "result" ] ) ) {
+        
+        var arg = em.val.get( "arg" );
+        var captures = [];
+        getFreeVarsOfTerm( expr.term ).minusEntry( arg ).each(
+            function ( v ) {
+            
+            v = toKey( v );
+            captures.push( "    " + v + ": _.env[ " + v + " ]" );
+        } );
+        return instructions( ""
+            + "_.pushRes( { lexEnv: {\n"
+            + captures.join( ",\n" ) + "\n"
+            + "}, go: function ( _ ) {\n"
+            + "\n"
+            + compileTermToSyncJs( eget( "result" ) )
+            + "\n"
+            + "} } );\n"
+        );
+        
+    } else if ( em = getMatch( expr.term, [ lit( "ttcall" ),
+        str( "argName" ), "resultType", "fn", "argVal" ] ) ) {
+        
+        return instructions(
+            compileTermToSyncJs( eget( "fn" ) ),
+            ""
+            + "var fn = _.popRes();\n"
+            + "_.env = fn.lexEnv;\n"
+            + "fn.go( _ );\n"
+        );
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "sfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
+        
+        throw new Error();
+        
+    } else if ( em = getMatch( expr.term, [ lit( "sfn" ),
+        str( "arg" ), "argType", "argVal", "resultVal" ] ) ) {
+        
+        var arg = em.val.get( "arg" );
+        var captures = "";
+        getFreeVarsOfTerm( expr.term ).minusEntry( arg ).each(
+            function ( v ) {
+            
+            v = toKey( v );
+            captures += "    " + v + ": _.env[ " + v + " ],\n";
+        } );
+        return instructions(
+            compileTermToSyncJs( eget( "argVal" ) ),
+            ""
+            + "var argVal = _.popRes();\n"
+            + "_.pushRes( argVal );\n"
+            + "_.pushRes( _.env );\n"
+            + "_.env = {\n"
+            + captures
+            + "    " + toKey( em.val.get( "arg" ) ) + ": argVal\n"
+            + "};\n",
+            compileTermToSyncJs( eget( "resultVal" ) ),
+            ""
+            + "var resultVal = _.popRes();\n"
+            + "_.env = _.popRes();\n"
+            + "var argVal = _.popRes();\n"
+            + "_.pushRes( [ argVal, resultVal ] );\n"
+        );
+        
+    } else if ( em = getMatch( expr.term, [ lit( "fst" ),
+        str( "argName" ), "argType", "resultType", "fn" ] ) ) {
+        
+        return instructions(
+            compileTermToSyncJs( eget( "fn" ) ),
+            ""
+            + "var fn = _.popRes();\n"
+            + "_.pushRes( fn[ 0 ] );\n"
+        );
+        
+    } else if ( em = getMatch( expr.term, [ lit( "snd" ),
+        str( "argName" ), "argType", "resultType", "fn" ] ) ) {
+        
+        return instructions(
+            compileTermToSyncJs( eget( "fn" ) ),
+            ""
+            + "var fn = _.popRes();\n"
+            + "_.pushRes( fn[ 1 ] );\n"
+        );
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "partialtype" ), "innerType" ] ) ) {
+        
+        throw new Error();
+        
+    } else if ( em = getMatch( expr.term, [ lit( "impartialtype" ),
+        str( "cmd" ), "commandType", "responseType",
+        "terminationType" ] ) ) {
+        
+        throw new Error();
+        
+    } else if ( em = getMatch( expr.term, [ lit( "unitimpartial" ),
+        str( "cmd" ), "commandType", "responseType", "result" ] ) ) {
+        
+        // TODO: For now, we automatically interpret the
+        // (impartialtype ...) effects. See if we should return boxed
+        // computations instead.
+        return compileTermToSyncJs( eget( "result" ) );
+        
+    } else if ( em = getMatch( expr.term, [ lit( "invkimpartial" ),
+        str( "cmd" ), "commandType", "responseType",
+        "terminationType", "pairOfCommandAndCallback" ] ) ) {
+        
+        // TODO: For now, we automatically interpret the
+        // (impartialtype ...) effects. See if we should return boxed
+        // computations instead.
+        return instructions(
+            compileTermToSyncJs( eget( "pairOfCommandAndCallback" ) ),
+            ""
+            + "var pair = _.popRes();\n"
+            + "var response = _.invk( pair[ 0 ] );\n"
+            + "var fn = pair[ 1 ];\n"
+            // TODO: Delete this entry once we're done with it.
+            + "(_.env = fn.lexEnv)[ fn.arg ] = response;\n"
+            + "fn.go( _ );\n"
+        );
+    } else if ( em = getMatch( expr.term, [ lit( "tokentype" ) ] ) ) {
+        throw new Error();
+    } else if ( em = getMatch( expr.term, [ lit( "sink" ) ] ) ) {
+        throw new Error();
+    } else {
+        // TODO: Handle more language fragments.
+        throw new Error();
+    }
+}
+
+function compileTermToSyncJsFull( expr ) {
+    
+    // TODO: See if we're actually going to use the environment. For
+    // now we just do a sanity check to make sure it's empty, and then
+    // we pass it along to compileTermToSyncJs(), which doesn't use it
+    // either.
+    if ( expr.env.any( function () { return true; } ) )
+        throw new Error();
+    
+    // TODO: Deal with imports and such. Maybe we'll need to compile
+    // UserActions instead of Terms, or maybe we'll need to keep track
+    // of import data and built-in function code as part of envWith().
+    
+    return (""
+        + "(function () { \"use strict\";\n"
+        + "\n"
+        + "var total = 0;\n"
+        + "var results = [];\n"
+        + "var instructions = [];\n"
+        + "var _ = {};\n"
+        + "_.pushRes = function ( result ) {\n"
+        + "    results.push( result );\n"
+        + "};\n"
+        + "_.popRes = function () {\n"
+        + "    return results.pop();\n"
+        + "};\n"
+        + "_.pushInst = function ( instruction ) {\n"
+        + "    instructions.push( instruction );\n"
+        + "};\n"
+        + "_.env = {};\n"
+        + "_.invk = function ( command ) {\n"
+        // TODO: Support better side effects. For now, any and every
+        // command increments a variable and responds with the command
+        // value itself.
+        + "    total++;\n"
+        + "    return command;\n"
+        + "};\n"
+        + "\n"
+        + compileTermToSyncJs( expr )
+        + "\n"
+        + "while ( instructions.length )\n"
+        + "    instructions.pop()( _ );\n"
+        // TODO: Make sure this never happens. This check is here just
+        // in case.
+        + "if ( results.length !== 1 )\n"
+        + "    throw new Error();\n"
+        + "return { total: total, result: results[ 0 ] };\n"
+        + "\n"
+        + "})()"
+        + "\n"
+        + "//@ sourceURL=dynamic-era.js\n"
+    );
+}
+
 // NOTE: The "wf" stands for "well-formed."
 function isWfUserKnowledge( term ) {
     
@@ -3005,6 +3276,63 @@ addShouldThrowUnitTest( function () {
         { env: env, term: [ "ttfa", "t", [ "tfa", "x", "t", "t" ] ] }
     );
 } );
+
+(function () {
+    
+    var igno = "_";
+    var unitType = [ "ttfa", "t", [ "tfa", igno, "t", "t" ] ];
+    var unit = [ "ttfn", "t", [ "tfn", "x", "t", "x" ] ];
+    var sfn = [ "sfn", igno, unitType, unit, unit ];
+    // NOTE: This stands for "imperative partial type."
+    var impt =
+        [ "impartialtype", igno, unitType, unitType, unitType ];
+    // NOTE: This stands for "imperative partial unit."
+    var impu = [ "unitimpartial", igno, unitType, unitType, unit ];
+    var typeOfUnitpartialResult =
+        [ "tfa", igno, "a", [ "partialtype", "a" ] ];
+    
+    function run( program ) {
+        return Function( ""
+            + "return (\n"
+            + "\n"
+            + compileTermToSyncJsFull(
+                { env: strMap(), term: program } )
+            + "\n"
+            + ");\n"
+        )();
+    }
+    
+    // NOTE: This test is type safe, but it has no side effects.
+    var boringProgram =
+        [ "tfn", "unitpartial",
+            [ "ttfa", "a",
+                [ "tfa", "x", "a", [ "partialtype", "a" ] ] ],
+            [ "invkimpartial", igno, unitType, unitType, unitType,
+                [ "sfn", igno, unitType, unit,
+                    [ "tfn", igno, unitType,
+                        [ "tcall", "a", impt, [ "partialtype", impt ],
+                            [ "ttcall", "a", typeOfUnitpartialResult,
+                                "unitpartial",
+                                impt ],
+                            impu ] ] ] ] ];
+    addNaiveIsoUnitTest( function ( then ) {
+        then( run( boringProgram ).total, 0 );
+    } );
+    
+    // TODO: This test may display a working side effect, but it's
+    // not type safe since the occurrence of `impu` isn't inside a
+    // call to `unitpartial`. We should support built-in functions
+    // like `unitpartial` and use a type safe example instead of this
+    // one.
+    var bogusProgram =
+        [ "invkimpartial", igno, unitType, unitType, unitType,
+            [ "sfn", igno, unitType, unit,
+                [ "tfn", igno, unitType,
+                    impu ] ] ];
+    addNaiveIsoUnitTest( function ( then ) {
+        then( run( bogusProgram ).total, 1 );
+    } );
+})();
 
 (function () {
     function add( expected, term ) {
