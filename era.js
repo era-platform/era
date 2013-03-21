@@ -2523,6 +2523,12 @@ function isWfKey( term ) {
     }
 }
 
+// Convert a public key to a JavaScript string for comparing equality.
+// TODO: Write unit tests for this.
+function stringifyKey( term ) {
+    return JSON.stringify( term );
+}
+
 function checkKey( keyring, term ) {
     
     var lit = patternLang.lit;
@@ -2684,6 +2690,97 @@ function checkUserAction( keyring, expr ) {
         throw new Error();
     }
 }
+
+// TODO: Actually use this. Test it, too.
+var builtins = strMap();
+function addBuiltinSyntax( key, nickname ) {
+    builtins.set( stringifyKey( key ), {
+        knownIsSyntax: { val: true },
+        knownNickname: nickname === null ? null : { val: nickname },
+        knownType: null,
+        knownJsCode: null
+    } );
+}
+function addBuiltinComputation( key, type, jsCode ) {
+    builtins.set( stringifyKey( key ), {
+        knownIsSyntax: null,
+        knownNickname: null,
+        knownType: { val: type },
+        knownJsCode: { val: jsCode }
+    } );
+}
+// TODO: Use a real identity rather than [ "everyone" ].
+function addBuiltinEraSyntax( fragmentName, nickname ) {
+    addBuiltinSyntax(
+        [ "subkey", [ "everyone" ],
+            "era_" + fragmentName + "_stx_" + nickname ],
+        nickname );
+}
+function addBuiltinEraComputation(
+    fragmentName, nickname, typeTerm, jsCode ) {
+    
+    addBuiltinComputation(
+        [ "subkey", [ "everyone" ],
+            "era_" + fragmentName + "_stx_" + nickname ],
+        { env: strMap(), term: typeTerm },
+        jsCode );
+}
+addBuiltinEraSyntax( "deductive", "istype" );
+addBuiltinEraSyntax( "deductive", "describes" );
+// TODO: Come up with a shorter name than "variableReference".
+addBuiltinSyntax(
+    [ "subkey", [ "everyone" ],
+        "era_deductive_stx_variableReference" ],
+    null );
+addBuiltinEraSyntax( "deductive", "tfa" );
+addBuiltinEraSyntax( "deductive", "tfn" );
+addBuiltinEraSyntax( "deductive", "tcall" );
+addBuiltinEraSyntax( "deductive", "ttfa" );
+addBuiltinEraSyntax( "deductive", "ttfn" );
+addBuiltinEraSyntax( "deductive", "ttcall" );
+addBuiltinEraSyntax( "deductive", "sfa" );
+addBuiltinEraSyntax( "deductive", "sfn" );
+addBuiltinEraSyntax( "deductive", "fst" );
+addBuiltinEraSyntax( "deductive", "snd" );
+addBuiltinEraSyntax( "active", "can" );
+addBuiltinEraSyntax( "localCollaboration", "secret" );
+addBuiltinEraSyntax( "localCollaboration", "public" );
+addBuiltinEraSyntax( "localCollaboration", "withsecret" );
+addBuiltinEraSyntax( "localCollaboration", "everyone" );
+addBuiltinEraSyntax( "localCollaboration", "subkey" );
+addBuiltinEraSyntax( "localCollaboration", "sym" );
+// TODO: Come up with a shorter name than
+// "localCollaborativeValueLevelDefinition".
+addBuiltinEraSyntax( "localCollaborativeValueLevelDefinition",
+    "define" );
+addBuiltinEraSyntax( "localCollaborativeValueLevelDefinition",
+    "withthe" );
+// TODO: Come up with a better name than "partiality".
+addBuiltinEraSyntax( "partiality", "partialtype" );
+addBuiltinEraComputation( "partiality", "unitpartial",
+    [ "ttfa", "a", [ "tfa", "_", "a", [ "partialtype", "a" ] ] ],
+    // TODO: For now, we automatically interpret the (partialtype ...)
+    // effects. See if we should return boxed computations instead.
+    ""
+    + "_.pushRes( { lexEnv: {\n"
+    + "}, go: function ( _ ) {\n"
+    + "    _.pushRes( { arg: \"x\", lexEnv: {\n"
+    + "    }, go: function ( _ ) {\n"
+    + "        _.pushRes( _.env[ \"x\" ] );\n"
+    + "    } } );\n"
+    + "} } );\n"
+);
+// TODO: Add these.
+// bindpartial :
+//   (ttfa a
+//     (ttfa b
+//       (tfa _ (partialtype a)
+//         (tfa _ (tfa _ a (partialtype b)) (partialtype b)))))
+// fixpartial :
+//   (ttfa a
+//     (tfa _ (tfa _ (partialtype a) (partialtype a))
+//       (partialtype a)))
+// TODO: Start adding the other "NEW:" fragments' built-ins too.
 
 
 (function () {
