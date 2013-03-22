@@ -717,7 +717,7 @@ addNaiveIsoUnitTest( function ( then ) {
 //
 // Built-in module exports, with (bool) as shorthand:
 //
-// tokenequals : (tfa _ (token) (tfa _ (token) _ (bool)))
+// tokenequals : (tfa _ (tokentype) (tfa _ (tokentype) (bool)))
 
 // NEW: The kitchen sink "un"-type fragment:
 //
@@ -734,8 +734,8 @@ addNaiveIsoUnitTest( function ( then ) {
 //
 // Built-in module exports, with (maybe ...) as shorthand:
 //
-// tokentosink : (tfa _ (token) (sink))
-// sinktotoken : (tfa _ (sink) (maybe (token)))
+// tokentosink : (tfa _ (tokentype) (sink))
+// sinktotoken : (tfa _ (sink) (maybe (tokentype)))
 //
 // // TODO: See if we need this.
 // // NOTE: "pfn" = "partial function"
@@ -745,11 +745,15 @@ addNaiveIsoUnitTest( function ( then ) {
 //
 // // NOTE: "ipfn" = "imperative partial function"
 // ipfntosink :
-//   (tfa _ (tfa _ (sink) (impartialtype _ (sink) (sink) (sink)))
+//   (tfa _
+//     (tfa _ (sink)
+//       (partialtype (impartialtype _ (sink) (sink) (sink))))
 //     (sink))
 // sinktoipfn :
 //   (tfa _ (sink)
-//     (maybe (tfa _ (sink) (impartialtype _ (sink) (sink) (sink)))))
+//     (maybe
+//       (tfa _ (sink)
+//         (partialtype (impartialtype _ (sink) (sink) (sink))))))
 
 // TODO: Figure out what should happen if we beta-reduce a call to a
 // builtin. In many cases, we check the type of an expression,
@@ -1558,7 +1562,7 @@ function betaReduce( expr ) {
         str( "cmd" ), "commandType", "responseType",
         "terminationType", "pairOfCommandAndCallback" ] ) ) {
         
-        var term = [ "impartialtype", em.val.get( "cmd" ),
+        var term = [ "invkimpartial", em.val.get( "cmd" ),
             rename( "commandType" ), em.val.get( "responseType" ),
             rename( "terminationType" ),
             rename( "pairOfCommandAndCallback" ) ];
@@ -2134,6 +2138,8 @@ function checkInhabitsType( expr, type ) {
     }
 }
 
+// TODO: Change this so it only accepts terms with this type:
+// (partialtype (impartialtype _ (unit) (unit) (unit)))
 function compileTermToSyncJs( expr ) {
     
     // TODO: Even though the input is an env-term pair, we only use
@@ -2760,27 +2766,145 @@ addBuiltinEraSyntax( "partiality", "partialtype" );
 addBuiltinEraComputation( "partiality", "unitpartial",
     [ "ttfa", "a", [ "tfa", "_", "a", [ "partialtype", "a" ] ] ],
     // TODO: For now, we automatically interpret the (partialtype ...)
-    // effects. See if we should return boxed computations instead.
+    // effects. Return boxed computations instead; we'll need them for
+    // `bindpartial` and `fixpartial`.
     ""
-    + "_.pushRes( { lexEnv: {\n"
-    + "}, go: function ( _ ) {\n"
-    + "    _.pushRes( { arg: \"x\", lexEnv: {\n"
+    + "_.pushRes( { lexEnv: {}, go: function ( _ ) {\n"
+    + "    _.pushRes( { arg: \"|x\", lexEnv: {\n"
     + "    }, go: function ( _ ) {\n"
-    + "        _.pushRes( _.env[ \"x\" ] );\n"
+    + "        _.pushRes( _.env[ \"|x\" ] );\n"
     + "    } } );\n"
     + "} } );\n"
 );
-// TODO: Add these.
-// bindpartial :
-//   (ttfa a
-//     (ttfa b
-//       (tfa _ (partialtype a)
-//         (tfa _ (tfa _ a (partialtype b)) (partialtype b)))))
-// fixpartial :
-//   (ttfa a
-//     (tfa _ (tfa _ (partialtype a) (partialtype a))
-//       (partialtype a)))
-// TODO: Start adding the other "NEW:" fragments' built-ins too.
+addBuiltinEraComputation( "partiality", "bindpartial",
+    [ "ttfa", "a",
+        [ "ttfa", "b",
+            [ "tfa", "_", [ "partialtype", "a" ],
+                [ "tfa", "_",
+                    [ "tfa", "_", "a", [ "partialtype", "b" ] ],
+                    [ "partialtype", "b" ] ] ] ] ],
+    // TODO: Implement this. It'll require revisions to
+    // compileTermToSyncJsFull() and `unitpartial` so they don't
+    // auto-execute every (partialtype ...) effect.
+    "throw new Error();\n"
+);
+addBuiltinEraComputation( "partiality", "fixpartial",
+    [ "ttfa", "a",
+        [ "tfa", "_",
+            [ "tfa", "_", [ "partialtype", "a" ],
+                [ "partialtype", "a" ] ],
+            [ "partialtype", "a" ] ] ],
+    // TODO: Implement this. It'll require revisions to
+    // compileTermToSyncJsFull() and `unitpartial` so they don't
+    // auto-execute every (partialtype ...) effect.
+    "throw new Error();\n"
+);
+// TODO: Come up with a shorter name than
+// "imperativePartialComputation".
+addBuiltinEraSyntax( "imperativePartialComputation",
+    "impartialtype" );
+addBuiltinEraSyntax( "imperativePartialComputation",
+    "unitimpartial" );
+addBuiltinEraSyntax( "imperativePartialComputation",
+    "invkimpartial" );
+// TODO: Come up with a shorter name than
+// "staticallyGeneratedDynamicToken".
+addBuiltinEraSyntax( "staticallyGeneratedDynamicToken", "tokentype" );
+addBuiltinEraSyntax( "staticallyGeneratedDynamicToken", "withtoken" );
+addBuiltinEraComputation( "staticallyGeneratedDynamicToken",
+    "tokenequals",
+    [ "tfa", "_", [ "tokentype" ],
+        [ "tfa", "_", [ "tokentype" ],
+            // TODO: This is an expansion of the (bool) shorthand we
+            // use above, but it may not be sufficient for type-level
+            // computation. Figure out if there's a better expansion
+            // option.
+            [ "ttfa", "a",
+                [ "tfa", "_", "a", [ "tfa", "_", "a", "a" ] ] ] ] ],
+    // TODO: When we implement `withtoken`, make sure the JavaScript
+    // values it uses to represent tokens are the outputs of
+    // stringifyKey() so === will work.
+    ""
+    + "_.pushRes( { arg: \"|a\", lexEnv: {\n"
+    + "}, go: function ( _ ) {\n"
+    + "    _.pushRes( { arg: \"|b\", lexEnv: {\n"
+    + "    }, go: function ( _ ) {\n"
+    + "        _.pushRes( { lexEnv: {}, go: function ( _ ) {\n"
+    + "            _.pushRes( { arg: \"|ifSame\", lexEnv: {\n"
+    + "            }, go: function ( _ ) {\n"
+    + "                _.pushRes( { arg: \"|ifDifferent\",\n"
+    + "                    lexEnv: {}, go: function ( _ ) {\n"
+    + "                    \n"
+    + "                    _.pushRes(\n"
+    + "                        _.env[ \"|a\" ] ===\n"
+    + "                            _.env[ \"|b\" ] ?\n"
+    + "                            _.env[ \"|ifSame\" ] :\n"
+    + "                            _.env[ \"|ifDifferent\" ] );\n"
+    + "                } } );\n"
+    + "            } } );\n"
+    + "        } } );\n"
+    + "    } } );\n"
+    + "} } );\n"
+);
+// TODO: Come up with a better name than "kitchenSinkUnType".
+addBuiltinEraSyntax( "kitchenSinkUnType", "sink" );
+function addSinkTag( tagName, type ) {
+    if ( !/^[a-z]+$/.test( tagName ) )
+        throw new Error(
+            "Sink tags can only contain lowercase letters." );
+    addBuiltinEraComputation( "kitchenSinkUnType", tagName + "tosink",
+        [ "tfa", "_", type, [ "sink" ] ],
+        ""
+        + "_.pushRes( { arg: \"|x\", lexEnv: {\n"
+        + "}, go: function ( _ ) {\n"
+        + "    _.pushRes( { sinkTag: \"" + tagName + "\",\n"
+        + "        val: _.env[ \"|x\" ] } );\n"
+        + "} } );\n"
+    );
+    addBuiltinEraComputation( "kitchenSinkUnType", "sinkto" + tagName,
+        [ "tfa", "_", [ "sink" ],
+            // TODO: This is an expansion of the (maybe ...) shorthand
+            // we use above, but it may not be sufficiently expressive
+            // for type-level computation. Figure out if there's a
+            // better expansion option.
+            [ "ttfa", "a",
+                [ "tfa", "_", "a",
+                    [ "tfa", "_", [ "tfn", "_", type, "a" ],
+                        "a" ] ] ] ],
+        ""
+        + "_.pushRes( { arg: \"|x\", lexEnv: {\n"
+        + "}, go: function ( _ ) {\n"
+        + "    _.pushRes( { lexEnv: {}, go: function ( _ ) {\n"
+        + "        _.pushRes( { arg: \"|ifFailure\", lexEnv: {\n"
+        + "        }, go: function ( _ ) {\n"
+        + "            _.pushRes( { arg: \"|ifSuccess\", lexEnv: {\n"
+        + "            }, go: function ( _ ) {\n"
+        + "                var x = _.env[ \"|x\" ];\n"
+        + "                if ( x.sinkTag !== \"" + tagName + "\" )\n"
+        + "                    _.pushRes(\n"
+        + "                        _.env[ \"|ifFailure\" ] );\n"
+        + "                else\n"
+        + "                    _.pushInst( function ( _ ) {\n"
+        + "                        var fn =\n"
+        + "                            _.env[ \"|ifSuccess\" ];\n"
+        + "                        (_.env = fn.lexEnv)[ fn.arg ] =\n"
+        + "                            x.val;\n"
+        + "                        fn.go( _ );\n"
+        + "                    } );\n"
+        + "            } } );\n"
+        + "        } } );\n"
+        + "    } } );\n"
+        + "} } );\n"
+    );
+}
+addSinkTag( "token", [ "tokentype" ] );
+addSinkTag( "pfn",
+    [ "tfa", "_", [ "sink" ], [ "partialtype", [ "sink" ] ] ] );
+addSinkTag( "ipfn",
+    [ "tfa", "_", [ "sink" ],
+        [ "partialtype",
+            [ "impartialtype", "_", [ "sink" ], [ "sink" ],
+                [ "sink" ] ] ] ] );
 
 
 (function () {
