@@ -520,8 +520,8 @@ addNaiveIsoUnitTest( function ( then ) {
 // it's calling. For another, when the original inference rules would
 // have allowed certain expressions on the grounds that an observed
 // action ambiently enabled them, for now we instead force those
-// dependencies to the top level. In particular, we use (withthe ...)
-// instead of (the ...).
+// dependencies to the top level. For instance, we use
+// (withsecret ...) and (witheach ...).
 
 // NOTE: The deductive fragment actually has no way to construct a
 // type that depends on a term! It doesn't even provide a type
@@ -628,7 +628,12 @@ addNaiveIsoUnitTest( function ( then ) {
 // Term ::=| "#the" Key Key Term
 //
 // UserAction ::=| "(" "define" Term Key Term Term ")"
-// UserAction ::=| "(" "withthe" TermVar Key Term Term UserAction ")"
+// // NOTE: The original Gist didn't tackle the problem of what to do
+// // if an author publishes two definitions with the same key and the
+// // same type. We don't prevent that scenario from happening, but we
+// // do settle on a consistent interpretation. Instead of saying
+// // "the definition," we say "each definition."
+// UserAction ::=| "(" "witheach" TermVar Key Term Term UserAction ")"
 
 // TODO: For everything marked with "NEW:", write a more
 // implementation-agnostic description, as with the original Gist.
@@ -2582,7 +2587,7 @@ function isWfUserAction( term ) {
             isWfTerm( em.val.get( "type" ) ) &&
             isWfTerm( em.val.get( "expr" ) );
         
-    } else if ( em = getMatch( term, [ lit( "withthe" ),
+    } else if ( em = getMatch( term, [ lit( "witheach" ),
         str( "var" ), "yourPubKey", "myPrivKey", "type",
         "action" ] ) ) {
         
@@ -2655,7 +2660,7 @@ function checkUserAction( keyring, expr ) {
             && checkInhabitsType( eget( "expr" ), eget( "type" ) )
         );
         
-    } else if ( em = getMatch( expr.term, [ lit( "withthe" ),
+    } else if ( em = getMatch( expr.term, [ lit( "witheach" ),
         str( "var" ), "yourPubKey", "myPrivKey", "type",
         "action" ] ) ) {
         
@@ -2760,7 +2765,7 @@ addBuiltinEraSyntax( "localCollaboration", "sym" );
 addBuiltinEraSyntax( "localCollaborativeValueLevelDefinition",
     "define" );
 addBuiltinEraSyntax( "localCollaborativeValueLevelDefinition",
-    "withthe" );
+    "witheach" );
 // TODO: Come up with a better name than "partiality".
 addBuiltinEraSyntax( "partiality", "partialtype" );
 addBuiltinEraComputation( "partiality", "unitpartial",
@@ -3798,7 +3803,7 @@ addShouldThrowUnitTest( function () {
     add( true,
         [ "withsecret", "theReturn", everyoneVar( "returnOfTheUnit" ),
             [ "withsecret", "all", [ "everyone" ],
-                [ "withthe", "theUnit",
+                [ "witheach", "theUnit",
                     everyoneVar( "theOneAndOnlyUnit" ), "all",
                     unitType,
                     [ "define", "theReturn", [ "everyone" ],
@@ -3815,7 +3820,7 @@ addShouldThrowUnitTest( function () {
     // Free variables aren't allowed.
     add( false,
         [ "withsecret", "all", [ "everyone" ],
-            [ "withthe", "theUnit",
+            [ "witheach", "theUnit",
                 everyoneVar( "theOneAndOnlyUnit" ), "all",
                 unitType,
                 [ "define", "theReturn", [ "everyone" ],
