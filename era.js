@@ -727,12 +727,17 @@ addNaiveIsoUnitTest( function ( then ) {
 //
 // // TODO: Make sure all syntaxes that begin with "z" are hidden from
 // // language users.
-// // TODO: Implement these syntaxes.
 // Term ::=| "(" "ztokenequals" Term Term ")"
 //
-// Built-in module exports, with (bool) as shorthand:
+// Built-in module exports:
 //
-// tokenequals : (tfa _ (tokentype) (tfa _ (tokentype) (bool)))
+// tokenequals :
+//   (tfa _ (tokentype)
+//     (tfa _ (tokentype)
+//       // TODO: This is meant to represent a boolean value, but it
+//       // may not be sufficient for type-level computation. Figure
+//       // out if there's a better option.
+//       (ttfa a (tfa _ a (tfa _ a a)))))
 
 // NEW: The kitchen sink "un"-type fragment:
 //
@@ -789,6 +794,7 @@ function envWith( env, varName, varSpecifics ) {
         knownIsPrivateKey: null,
         knownIsType: null,
         knownType: null,
+        knownTokenStringifiedKey: null,
         knownVal: null
     }, varSpecifics ) );
 }
@@ -1000,6 +1006,11 @@ function getFreeVarsOfTerm( term, opt_boundVars ) {
             plus( recur( "pairOfCommandAndCallback" ) );
     } else if ( em = getMatch( term, [ lit( "tokentype" ) ] ) ) {
         return strMap();
+        
+    } else if ( em = getMatch( term,
+        [ lit( "ztokenequals" ), "a", "b" ] ) ) {
+        
+        return recur( "a" ).plus( recur( "b" ) );
     } else if ( em = getMatch( term, [ lit( "sink" ) ] ) ) {
         return strMap();
     } else {
@@ -1150,6 +1161,11 @@ function renameVarsToVars( renameMap, expr ) {
             recur( "pairOfCommandAndCallback" ) ];
     } else if ( em = getMatch( expr.term, [ lit( "tokentype" ) ] ) ) {
         return [ "tokentype" ];
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "ztokenequals" ), "a", "b" ] ) ) {
+        
+        return [ "ztokenequals", recur( "a" ), recur( "b" ) ];
     } else if ( em = getMatch( expr.term, [ lit( "sink" ) ] ) ) {
         return [ "sink" ];
     } else {
@@ -1395,6 +1411,11 @@ function knownEqual( exprA, exprB, opt_boundVars ) {
             return false;
         
         return true;
+    } else if ( aSucceeds( [ lit( "ztokenequals" ), "a", "b" ] ) ) {
+        if ( !bm )
+            return false;
+        
+        return recur( "a" ) && recur( "b" );
     } else if ( aSucceeds( [ lit( "sink" ) ] ) ) {
         if ( !bm )
             return false;
@@ -1671,6 +1692,31 @@ function betaReduce( expr ) {
         return { env: env, term: term };
     } else if ( em = getMatch( expr.term, [ lit( "tokentype" ) ] ) ) {
         return expr;
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "ztokenequals" ), "a", "b" ] ) ) {
+        
+        var a = beget( "a" );
+        if ( !(isPrimString( a.term )
+            && a.env.has( a.term )
+            && a.env.get( a.term ).knownTokenStringifiedKey !== null
+        ) )
+            throw new Error();
+        
+        var b = beget( "b" );
+        if ( !(isPrimString( b.term )
+            && b.env.has( b.term )
+            && b.env.get( b.term ).knownTokenStringifiedKey !== null
+        ) )
+            throw new Error();
+        
+        var boolVal = a.env.get( a.term ).knownTokenStringifiedKey ===
+            b.env.get( b.term ).knownTokenStringifiedKey;
+        return { env: strMap(), term:
+            [ "ttfn", "a",
+                [ "tfn", "then", "a",
+                    [ "tfn", "else", "a",
+                        boolVal ? "then" : "else" ] ] ] };
     } else if ( em = getMatch( expr.term, [ lit( "sink" ) ] ) ) {
         return expr;
     } else {
@@ -1794,6 +1840,11 @@ function isWfTerm( term ) {
             recur( "pairOfCommandAndCallback" );
     } else if ( em = getMatch( term, [ lit( "tokentype" ) ] ) ) {
         return true;
+        
+    } else if ( em = getMatch( term,
+        [ lit( "ztokenequals" ), "a", "b" ] ) ) {
+        
+        return recur( "a" ) && recur( "b" );
     } else if ( em = getMatch( term, [ lit( "sink" ) ] ) ) {
         return true;
     } else {
@@ -1942,6 +1993,11 @@ function checkIsType( expr ) {
         return false;
     } else if ( em = getMatch( expr.term, [ lit( "tokentype" ) ] ) ) {
         return true;
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "ztokenequals" ), "a", "b" ] ) ) {
+        
+        return false;
     } else if ( em = getMatch( expr.term, [ lit( "sink" ) ] ) ) {
         return true;
     } else {
@@ -2315,6 +2371,21 @@ function checkInhabitsType( expr, type ) {
                         [ "partialtype", type.term ] ] ] } );
     } else if ( em = getMatch( expr.term, [ lit( "tokentype" ) ] ) ) {
         return false;
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "ztokenequals" ), "a", "b" ] ) ) {
+        
+        if ( !checkInhabitsType( eget( "a" ),
+            { env: strMap(), term: [ "tokentype" ] } ) )
+            return false;
+        if ( !checkInhabitsType( eget( "b" ),
+            { env: strMap(), term: [ "tokentype" ] } ) )
+            return false;
+        return knownEqual(
+            { env: strMap(), term:
+                [ "ttfa", "a",
+                    [ "tfa", "_", "a", [ "tfa", "_", "a", "a" ] ] ] },
+            type );
     } else if ( em = getMatch( expr.term, [ lit( "sink" ) ] ) ) {
         return false;
     } else {
@@ -2569,6 +2640,32 @@ function compileTermToSyncJs( expr ) {
         );
     } else if ( em = getMatch( expr.term, [ lit( "tokentype" ) ] ) ) {
         throw new Error();
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "ztokenequals" ), "a", "b" ] ) ) {
+        
+        // TODO: When we implement `withtoken`, make sure the
+        // JavaScript values it uses to represent tokens are the
+        // outputs of stringifyKey() so === will work.
+        return instructions(
+            compileTermToSyncJs( eget( "a" ) ),
+            compileTermToSyncJs( eget( "b" ) ),
+            ""
+            + "var b = _.popRes();\n"
+            + "var a = _.popRes();\n"
+            + "var boolVal = a === b;\n"
+            + "_.pushRes( { lexEnv: {}, go: function ( _ ) {\n"
+            + "    _.pushRes( { arg: \"|then\", lexEnv: {\n"
+            + "    }, go: function ( _ ) {\n"
+            + "        _.pushRes( { arg: \"|else\", lexEnv: {\n"
+            + "        }, go: function ( _ ) {\n"
+            + "            _.pushRes( boolVal ?\n"
+            + "                _.env[ \"|then\" ] :\n"
+            + "                _.env[ \"|else\" ] );\n"
+            + "        } } );\n"
+            + "    } } );\n"
+            + "} } );\n"
+        );
     } else if ( em = getMatch( expr.term, [ lit( "sink" ) ] ) ) {
         throw new Error();
     } else {
@@ -2968,9 +3065,9 @@ function checkUserAction( keyring, expr ) {
                 env: envWith( expr.env, em.val.get( "var" ), {
                     knownType: { val:
                         { env: strMap(), term: [ "tokentype" ] } }
-                    // TODO: Figure out if we should put a knownVal in
-                    // here so we can beta-reduce code that compares
-                    // tokens.
+                    // TODO: Figure out if we should put a knownVal or
+                    // knownTokenStringifiedKey in here so we can
+                    // beta-reduce code that compares tokens.
                 } ),
                 term: em.val.get( "action" )
             } )
@@ -3087,42 +3184,16 @@ addBuiltinEraSyntax( "imperativePartialComputation",
 // "staticallyGeneratedDynamicToken".
 addBuiltinEraSyntax( "staticallyGeneratedDynamicToken", "tokentype" );
 addBuiltinEraSyntax( "staticallyGeneratedDynamicToken", "withtoken" );
+addBuiltinEraSyntax( "staticallyGeneratedDynamicToken",
+    "ztokenequals" );
 addBuiltinEraComputation( "staticallyGeneratedDynamicToken",
     "tokenequals",
     [ "tfa", "_", [ "tokentype" ],
         [ "tfa", "_", [ "tokentype" ],
-            // TODO: This is an expansion of the (bool) shorthand we
-            // use above, but it may not be sufficient for type-level
-            // computation. Figure out if there's a better expansion
-            // option.
             [ "ttfa", "a",
                 [ "tfa", "_", "a", [ "tfa", "_", "a", "a" ] ] ] ] ],
-    // TODO: Implement (ztokenequals ...) using code like this, and
-    // then implement this in terms of it.
-    // TODO: When we implement `withtoken`, make sure the JavaScript
-    // values it uses to represent tokens are the outputs of
-    // stringifyKey() so === will work.
-    ""
-    + "_.pushRes( { arg: \"|a\", lexEnv: {\n"
-    + "}, go: function ( _ ) {\n"
-    + "    _.pushRes( { arg: \"|b\", lexEnv: {\n"
-    + "    }, go: function ( _ ) {\n"
-    + "        _.pushRes( { lexEnv: {}, go: function ( _ ) {\n"
-    + "            _.pushRes( { arg: \"|ifSame\", lexEnv: {\n"
-    + "            }, go: function ( _ ) {\n"
-    + "                _.pushRes( { arg: \"|ifDifferent\",\n"
-    + "                    lexEnv: {}, go: function ( _ ) {\n"
-    + "                    \n"
-    + "                    _.pushRes(\n"
-    + "                        _.env[ \"|a\" ] ===\n"
-    + "                            _.env[ \"|b\" ] ?\n"
-    + "                            _.env[ \"|ifSame\" ] :\n"
-    + "                            _.env[ \"|ifDifferent\" ] );\n"
-    + "                } } );\n"
-    + "            } } );\n"
-    + "        } } );\n"
-    + "    } } );\n"
-    + "} } );\n"
+    // TODO: Implement this in terms of (ztokenequals ...).
+    "throw new Error();\n"
 );
 // TODO: Come up with a better name than "kitchenSinkUnType".
 addBuiltinEraSyntax( "kitchenSinkUnType", "sink" );
@@ -3318,6 +3389,8 @@ addSinkTag( "ipfn",
     
     add( [ "tokentype" ], [] );
     
+    add( [ "ztokenequals", "a", "b" ], [ "a", "b" ] );
+    
     add( [ "sink" ], [] );
     
     
@@ -3408,6 +3481,9 @@ addShouldThrowUnitTest( function () {
         [ "invkimpartial", "x", "x", "x", "x", "x" ],
         [ "invkimpartial", "x", "o", "x", "o", "o" ] );
     add( xo, [ "tokentype" ], [ "tokentype" ] );
+    add( xo,
+        [ "ztokenequals", "x", "x" ],
+        [ "ztokenequals", "o", "o" ] );
     add( xo, [ "sink" ], [ "sink" ] );
     
     // Just try something wacky with nesting and shadowing.
@@ -3512,6 +3588,7 @@ addShouldThrowUnitTest( function () {
         [ "invkimpartial", "x", "x", "x", "x", "x" ],
         [ "invkimpartial", "o", "x", "o", "x", "x" ] );
     add( [ "tokentype" ], [ "tokentype" ] );
+    add( [ "ztokenequals", "x", "x" ], [ "ztokenequals", "x", "x" ] );
     add( [ "sink" ], [ "sink" ] );
     
     // Just try something wacky with nesting and shadowing.
@@ -3666,6 +3743,10 @@ addShouldThrowUnitTest( function () {
     
     add( true, [ "tokentype" ] );
     
+    add( true, [ "ztokenequals", expr, expr ] );
+    add( false, [ "ztokenequals", true, expr ] );
+    add( false, [ "ztokenequals", expr, true ] );
+    
     add( true, [ "sink" ] );
     
     
@@ -3790,6 +3871,15 @@ addShouldThrowUnitTest( function () {
                 [ "tfn", igno, unitType,
                     [ "zunitpartial", impt, impu ] ] ] ] );
     addType( true, _env, [ "tokentype" ] );
+    addTerm( true, _env,
+        [ "tfa", igno, [ "tokentype" ],
+            [ "tfa", igno, [ "tokentype" ],
+                [ "ttfa", "a",
+                    [ "tfa", igno, "a",
+                        [ "tfa", igno, "a", "a" ] ] ] ] ],
+        [ "tfn", "a", [ "tokentype" ],
+            [ "tfn", "b", [ "tokentype" ],
+                [ "ztokenequals", "a", "b" ] ] ] );
     addType( true, _env, [ "sink" ] );
 })();
 addShouldThrowUnitTest( function () {
@@ -3982,6 +4072,15 @@ addShouldThrowUnitTest( function () {
                 [ "tfn", igno, unitType,
                     [ "zunitpartial", impt, impu ] ] ] ] );
     addType( [ "tokentype" ] );
+    addTerm(
+        [ "tfa", igno, [ "tokentype" ],
+            [ "tfa", igno, [ "tokentype" ],
+                [ "ttfa", "a",
+                    [ "tfa", igno, "a",
+                        [ "tfa", igno, "a", "a" ] ] ] ] ],
+        [ "tfn", "a", [ "tokentype" ],
+            [ "tfn", "b", [ "tokentype" ],
+                [ "ztokenequals", "a", "b" ] ] ] );
     addType( [ "sink" ] );
 })();
 addShouldThrowUnitTest( function () {
