@@ -2382,7 +2382,8 @@ function compileTermToSyncJs( expr ) {
         } );
         return instructions( ""
             + "_.pushRes( { arg: " + toKey( arg ) + ", lexEnv: {\n"
-            + captures.join( ",\n" ) + "\n"
+            + (captures.length === 0 ? "" :
+                captures.join( ",\n" ) + "\n")
             + "}, go: function ( _ ) {\n"
             + "\n"
             + compileTermToSyncJs( eget( "result" ) )
@@ -2423,7 +2424,8 @@ function compileTermToSyncJs( expr ) {
         } );
         return instructions( ""
             + "_.pushRes( { lexEnv: {\n"
-            + captures.join( ",\n" ) + "\n"
+            + (captures.length === 0 ? "" :
+                captures.join( ",\n" ) + "\n")
             + "}, go: function ( _ ) {\n"
             + "\n"
             + compileTermToSyncJs( eget( "result" ) )
