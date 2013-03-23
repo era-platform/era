@@ -641,6 +641,12 @@ addNaiveIsoUnitTest( function ( then ) {
 // NEW: The partiality monad fragment:
 //
 // Term ::=| "(" "partialtype" Term ")"
+// // TODO: Make sure all syntaxes that begin with "z" are hidden from
+// // language users.
+// // TODO: Implement these syntaxes.
+// Term ::=| "(" "zunitpartial" Term Term ")"
+// Term ::=| "(" "zbindpartial" Term Term Term Term ")"
+// Term ::=| "(" "zfixpartial" Term Term ")"
 //
 // Built-in module exports:
 //
@@ -720,6 +726,11 @@ addNaiveIsoUnitTest( function ( then ) {
 // // comparable value.
 // UserAction ::=| "(" "withtoken" TermVar Term UserAction ")"
 //
+// // TODO: Make sure all syntaxes that begin with "z" are hidden from
+// // language users.
+// // TODO: Implement these syntaxes.
+// Term ::=| "(" "ztokenequals" Term Term ")"
+//
 // Built-in module exports, with (bool) as shorthand:
 //
 // tokenequals : (tfa _ (tokentype) (tfa _ (tokentype) (bool)))
@@ -736,6 +747,15 @@ addNaiveIsoUnitTest( function ( then ) {
 // // matches the construction type), and not all types will
 // // necessarily be able to survive past compile time.
 // Term ::=| "(" "sink" ")"
+// // TODO: Make sure all syntaxes that begin with "z" are hidden from
+// // language users.
+// // TODO: Implement these syntaxes.
+// Term ::=| "(" "ztokentosink" Term ")"
+// Term ::=| "(" "zsinktotoken" Term ")"
+// Term ::=| "(" "zpfntosink" Term ")"
+// Term ::=| "(" "zsinktopfn" Term ")"
+// Term ::=| "(" "zipfntosink" Term ")"
+// Term ::=| "(" "zsinktoipfn" Term ")"
 //
 // Built-in module exports, with (maybe ...) as shorthand:
 //
@@ -760,13 +780,9 @@ addNaiveIsoUnitTest( function ( then ) {
 //       (tfa _ (sink)
 //         (partialtype (impartialtype _ (sink) (sink) (sink))))))
 
-// TODO: Figure out what should happen if we beta-reduce a call to a
-// builtin. In many cases, we check the type of an expression,
-// beta-reduce it, and then pull it apart as though the syntax is in
-// some known canonical form, so our approach will need to coordinate
-// with this somehow. (In particular, this pulling-apart happens
-// during the beta reduction of (tcall ...), (ttcall ...), (fst ...),
-// and (snd ...).)
+// TODO: Define built-in module exports straightforwardly in terms of
+// their corresponding syntaxes. We won't end up using raw JavaScript
+// code after all.
 
 
 function envWith( env, varName, varSpecifics ) {
@@ -1406,8 +1422,8 @@ function betaReduce( expr ) {
         // TODO: Figure out if it should be necessary to beta-reduce
         // env-term pairs before they're stored in environments (under
         // knownType and knownVal). We do this now, but do we have to?
-        // Maybe we could beta-reduce knownVal here instead. But
-        // where would we beta-reduce knownType?
+        // Maybe we could beta-reduce knownVal here instead. But where
+        // would we beta-reduce knownType?
         
         // TODO: See if a call to renameVarsToVars() here would
         // obviate the need to do renaming in any other case. After
