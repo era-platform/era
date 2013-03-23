@@ -643,7 +643,6 @@ addNaiveIsoUnitTest( function ( then ) {
 // Term ::=| "(" "partialtype" Term ")"
 // // TODO: Make sure all syntaxes that begin with "z" are hidden from
 // // language users.
-// // TODO: Implement these syntaxes.
 // Term ::=| "(" "zunitpartial" Term Term ")"
 // Term ::=| "(" "zbindpartial" Term Term Term Term ")"
 // Term ::=| "(" "zfixpartial" Term Term ")"
@@ -959,6 +958,23 @@ function getFreeVarsOfTerm( term, opt_boundVars ) {
         
         return recur( "innerType" );
         
+    } else if ( em = getMatch( term,
+        [ lit( "zunitpartial" ), "terminationType", "result" ] ) ) {
+        
+        return recur( "terminationType" ).plus( recur( "result" ) );
+        
+    } else if ( em = getMatch( term, [ lit( "zbindpartial" ),
+        "aType", "bType", "thunkA", "aToThunkB" ] ) ) {
+        
+        return recur( "aType" ).plus( recur( "bType" ) ).
+            plus( recur( "thunkA" ) ).plus( recur( "aToThunkB" ) );
+        
+    } else if ( em = getMatch( term, [ lit( "zfixpartial" ),
+        "terminationType", "thunkToThunk" ] ) ) {
+        
+        return recur( "terminationType" ).
+            plus( recur( "thunkToThunk" ) );
+        
     } else if ( em = getMatch( term, [ lit( "impartialtype" ),
         str( "cmd" ), "commandType", "responseType",
         "terminationType" ] ) ) {
@@ -1088,6 +1104,24 @@ function renameVarsToVars( renameMap, expr ) {
         [ lit( "partialtype" ), "innerType" ] ) ) {
         
         return [ "partialtype", recur( "innerType" ) ];
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "zunitpartial" ), "terminationType", "result" ] ) ) {
+        
+        return [ "zunitpartial", recur( "terminationType" ),
+            recur( "result" ) ];
+        
+    } else if ( em = getMatch( expr.term, [ lit( "zbindpartial" ),
+        "aType", "bType", "thunkA", "aToThunkB" ] ) ) {
+        
+        return [ "zbindpartial", recur( "aType" ), recur( "bType" ),
+            recur( "thunkA" ), recur( "aToThunkB" ) ];
+        
+    } else if ( em = getMatch( expr.term, [ lit( "zfixpartial" ),
+        "terminationType", "thunkToThunk" ] ) ) {
+        
+        return [ "zfixpartial", recur( "terminationType" ),
+            recur( "thunkToThunk" ) ];
         
     } else if ( em = getMatch( expr.term, [ lit( "impartialtype" ),
         str( "cmd" ), "commandType", "responseType",
@@ -1299,6 +1333,31 @@ function knownEqual( exprA, exprB, opt_boundVars ) {
             return false;
         
         return recur( "innerType" );
+        
+    } else if ( aSucceeds(
+        [ lit( "zunitpartial" ), "terminationType", "result" ] ) ) {
+        
+        if ( !bm )
+            return false;
+        
+        return recur( "terminationType" ) && recur( "result" );
+        
+    } else if ( aSucceeds( [ lit( "zbindpartial" ),
+        "aType", "bType", "thunkA", "aToThunkB" ] ) ) {
+        
+        if ( !bm )
+            return false;
+        
+        return recur( "aType" ) && recur( "bType" ) &&
+            recur( "thunkA" ) && recur( "aToThunkB" );
+        
+    } else if ( aSucceeds( [ lit( "zfixpartial" ),
+        "terminationType", "thunkToThunk" ] ) ) {
+        
+        if ( !bm )
+            return false;
+        
+        return recur( "terminationType" ) && recur( "thunkToThunk" );
         
     } else if ( aSucceeds( [ lit( "impartialtype" ),
         str( "cmd" ), "commandType", "responseType",
@@ -1562,6 +1621,28 @@ function betaReduce( expr ) {
         var term = [ "partialtype", rename( "innerType" ) ];
         return { env: env, term: term };
         
+    } else if ( em = getMatch( expr.term,
+        [ lit( "zunitpartial" ), "terminationType", "result" ] ) ) {
+        
+        var term = [ "zunitpartial", rename( "terminationType" ),
+            rename( "result" ) ];
+        return { env: env, term: term };
+        
+    } else if ( em = getMatch( expr.term, [ lit( "zbindpartial" ),
+        "aType", "bType", "thunkA", "aToThunkB" ] ) ) {
+        
+        var term = [ "zbindpartial",
+            rename( "aType" ), rename( "bType" ),
+            rename( "thunkA" ), rename( "aToThunkB" ) ];
+        return { env: env, term: term };
+        
+    } else if ( em = getMatch( expr.term, [ lit( "zfixpartial" ),
+        "terminationType", "thunkToThunk" ] ) ) {
+        
+        var term = [ "zfixpartial", rename( "terminationType" ),
+            rename( "thunkToThunk" ) ];
+        return { env: env, term: term };
+        
     } else if ( em = getMatch( expr.term, [ lit( "impartialtype" ),
         str( "cmd" ), "commandType", "responseType",
         "terminationType" ] ) ) {
@@ -1674,6 +1755,22 @@ function isWfTerm( term ) {
         [ lit( "partialtype" ), "innerType" ] ) ) {
         
         return recur( "innerType" );
+        
+    } else if ( em = getMatch( term,
+        [ lit( "zunitpartial" ), "terminationType", "result" ] ) ) {
+        
+        return recur( "terminationType" ) && recur( "result" );
+        
+    } else if ( em = getMatch( term, [ lit( "zbindpartial" ),
+        "aType", "bType", "thunkA", "aToThunkB" ] ) ) {
+        
+        return recur( "aType" ) && recur( "bType" ) &&
+            recur( "thunkA" ) && recur( "aToThunkB" );
+        
+    } else if ( em = getMatch( term, [ lit( "zfixpartial" ),
+        "terminationType", "thunkToThunk" ] ) ) {
+        
+        return recur( "terminationType" ) && recur( "thunkToThunk" );
         
     } else if ( em = getMatch( term, [ lit( "impartialtype" ),
         str( "cmd" ), "commandType", "responseType",
@@ -1802,6 +1899,21 @@ function checkIsType( expr ) {
         [ lit( "partialtype" ), "innerType" ] ) ) {
         
         return checkIsType( eget( "innerType" ) );
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "zunitpartial" ), "terminationType", "result" ] ) ) {
+        
+        return false;
+        
+    } else if ( em = getMatch( expr.term, [ lit( "zbindpartial" ),
+        "aType", "bType", "thunkA", "aToThunkB" ] ) ) {
+        
+        return false;
+        
+    } else if ( em = getMatch( expr.term, [ lit( "zfixpartial" ),
+        "terminationType", "thunkToThunk" ] ) ) {
+        
+        return false;
         
     } else if ( em = getMatch( expr.term, [ lit( "impartialtype" ),
         str( "cmd" ), "commandType", "responseType",
@@ -2051,6 +2163,58 @@ function checkInhabitsType( expr, type ) {
         [ lit( "partialtype" ), "innerType" ] ) ) {
         
         return false;
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "zunitpartial" ), "terminationType", "result" ] ) ) {
+        
+        var thunkType = { env: expr.env, term:
+            [ "partialtype", em.val.get( "terminationType" ) ] };
+        if ( !checkIsType( thunkType ) )
+            return false;
+        if ( !checkInhabitsType(
+            eget( "result" ), eget( "terminationType" ) ) )
+            return false;
+        return knownEqual( betaReduce( thunkType ), type );
+        
+    } else if ( em = getMatch( expr.term, [ lit( "zbindpartial" ),
+        "aType", "bType", "thunkA", "aToThunkB" ] ) ) {
+        
+        var typeOfThunkA = { env: expr.env, term:
+            [ "partialtype", em.val.get( "aType" ) ] };
+        if ( !checkIsType( typeOfThunkA ) )
+            return false;
+        var igno = fresh( "unused", expr.env );
+        var typeOfAToThunkB = { env: expr.env, term:
+            [ "tfa", igno, em.val.get( "aType" ),
+                [ "partialtype", em.val.get( "bType" ) ] ] };
+        if ( !checkIsType( typeOfAToThunkB ) )
+            return false;
+        if ( !checkInhabitsType(
+            eget( "thunkA" ), betaReduce( typeOfThunkA ) ) )
+            return false;
+        if ( !checkInhabitsType(
+            eget( "aToThunkB" ), betaReduce( typeOfAToThunkB ) ) )
+            return false;
+        return knownEqual(
+            betaReduce( { env: expr.env, term:
+                [ "partialtype", em.val.get( "bType" ) ] } ),
+            type );
+        
+    } else if ( em = getMatch( expr.term, [ lit( "zfixpartial" ),
+        "terminationType", "thunkToThunk" ] ) ) {
+        
+        var typeOfThunk = { env: expr.env, term:
+            [ "partialtype", em.val.get( "terminationType" ) ] };
+        if ( !checkIsType( typeOfThunk ) )
+            return false;
+        var reducedTypeOfThunk = betaReduce( typeOfThunk );
+        var igno = fresh( "unused", reducedTypeOfThunk.env );
+        if ( !checkInhabitsType( eget( "thunkToThunk" ),
+            betaReduce( { env: reducedTypeOfThunk.env, term:
+                [ "tfa", igno, reducedTypeOfThunk.term,
+                    reducedTypeOfThunk.term ] } ) ) )
+            return false;
+        return knownEqual( reducedTypeOfThunk, type );
         
     } else if ( em = getMatch( expr.term, [ lit( "impartialtype" ),
         str( "cmd" ), "commandType", "responseType",
@@ -2337,6 +2501,41 @@ function compileTermToSyncJs( expr ) {
         
         throw new Error();
         
+    } else if ( em = getMatch( expr.term,
+        [ lit( "zunitpartial" ), "terminationType", "result" ] ) ) {
+        
+        return instructions(
+            compileTermToSyncJs( eget( "result" ) ),
+            ""
+            + "var result = _.popRes();\n"
+            + "_.pushRes(\n"
+            + "    { partialTag: \"unit\", result: result } );\n"
+        );
+        
+    } else if ( em = getMatch( expr.term, [ lit( "zbindpartial" ),
+        "aType", "bType", "thunkA", "aToThunkB" ] ) ) {
+        
+        return instructions(
+            compileTermToSyncJs( eget( "thunkA" ) ),
+            compileTermToSyncJs( eget( "aToThunkB" ) ),
+            ""
+            + "var aToThunkB = _.popRes();\n"
+            + "var thunkA = _.popRes();\n"
+            + "_.pushRes( { partialTag: \"bind\",\n"
+            + "    thunkA: thunkA, aToThunkB: aToThunkB } );\n"
+        );
+        
+    } else if ( em = getMatch( expr.term, [ lit( "zfixpartial" ),
+        "terminationType", "thunkToThunk" ] ) ) {
+        
+        return instructions(
+            compileTermToSyncJs( eget( "thunkToThunk" ) ),
+            ""
+            + "var thunkToThunk = _.popRes();\n"
+            + "_.pushRes( { partialTag: \"fix\",\n"
+            + "    thunkToThunk: thunkToThunk } );\n"
+        );
+        
     } else if ( em = getMatch( expr.term, [ lit( "impartialtype" ),
         str( "cmd" ), "commandType", "responseType",
         "terminationType" ] ) ) {
@@ -2346,27 +2545,25 @@ function compileTermToSyncJs( expr ) {
     } else if ( em = getMatch( expr.term, [ lit( "unitimpartial" ),
         str( "cmd" ), "commandType", "responseType", "result" ] ) ) {
         
-        // TODO: For now, we automatically interpret the
-        // (impartialtype ...) effects. See if we should return boxed
-        // computations instead.
-        return compileTermToSyncJs( eget( "result" ) );
+        return instructions(
+            compileTermToSyncJs( eget( "result" ) ),
+            ""
+            + "var result = _.popRes();\n"
+            + "_.pushRes(\n"
+            + "    { impartialTag: \"unit\", result: result } );\n"
+        );
         
     } else if ( em = getMatch( expr.term, [ lit( "invkimpartial" ),
         str( "cmd" ), "commandType", "responseType",
         "terminationType", "pairOfCommandAndCallback" ] ) ) {
         
-        // TODO: For now, we automatically interpret the
-        // (impartialtype ...) effects. See if we should return boxed
-        // computations instead.
         return instructions(
             compileTermToSyncJs( eget( "pairOfCommandAndCallback" ) ),
             ""
-            + "var pair = _.popRes();\n"
-            + "var response = _.invk( pair[ 0 ] );\n"
-            + "var fn = pair[ 1 ];\n"
-            // TODO: Delete this entry once we're done with it.
-            + "(_.env = fn.lexEnv)[ fn.arg ] = response;\n"
-            + "fn.go( _ );\n"
+            + "var invocation = _.popRes();\n"
+            + "_.pushRes( { impartialTag: \"invk\",\n"
+            + "    command: invocation[ 0 ],\n"
+            + "    callback: invocation[ 1 ] } );\n"
         );
     } else if ( em = getMatch( expr.term, [ lit( "tokentype" ) ] ) ) {
         throw new Error();
@@ -2385,6 +2582,14 @@ function compileTermToSyncJsFull( expr ) {
     // we pass it along to compileTermToSyncJs(), which doesn't use it
     // either.
     if ( expr.env.any( function () { return true; } ) )
+        throw new Error();
+    
+    var igno = "_";
+    var unitType = [ "ttfa", "t", [ "tfa", igno, "t", "t" ] ];
+    if ( !checkInhabitsType( expr, { env: strMap(), term:
+        [ "partialtype",
+            [ "impartialtype", igno, unitType, unitType,
+                unitType ] ] } ) )
         throw new Error();
     
     // TODO: Deal with imports and such. Maybe we'll need to compile
@@ -2408,23 +2613,80 @@ function compileTermToSyncJsFull( expr ) {
         + "    instructions.push( instruction );\n"
         + "};\n"
         + "_.env = {};\n"
-        + "_.invk = function ( command ) {\n"
+        + "\n"
+        + compileTermToSyncJs( expr )
+        + "\n"
+        + "function invk( command ) {\n"
         // TODO: Support better side effects. For now, any and every
         // command increments a variable and responds with the command
         // value itself.
         + "    total++;\n"
         + "    return command;\n"
-        + "};\n"
-        + "\n"
-        + compileTermToSyncJs( expr )
-        + "\n"
-        + "while ( instructions.length )\n"
-        + "    instructions.pop()( _ );\n"
+        + "}\n"
+        + "function runInstructions() {\n"
+        + "    while ( instructions.length )\n"
+        + "        instructions.pop()( _ );\n"
         // TODO: Make sure this never happens. This check is here just
         // in case.
-        + "if ( results.length !== 1 )\n"
-        + "    throw new Error();\n"
-        + "return { total: total, result: results[ 0 ] };\n"
+        + "    if ( results.length !== 1 )\n"
+        + "        throw new Error();\n"
+        + "    return results.pop();\n"
+        + "}\n"
+        + "function callTfn( fn, arg ) {\n"
+        + "    _.pushInst( function ( _ ) {\n"
+        // TODO: Delete this entry once we're done with it.
+        + "        (_.env = fn.lexEnv)[ fn.arg ] = arg;\n"
+        + "        fn.go( _ );\n"
+        + "    } );\n"
+        + "    return runInstructions();\n"
+        + "}\n"
+        + "function runPartial( partialStep ) {\n"
+        + "    var bindContinuations = [];\n"
+        + "    while ( true ) {\n"
+        + "        if ( partialStep.partialTag === \"unit\" ) {\n"
+        + "            if ( bindContinuations.length === 0 )\n"
+        + "                return partialStep.result;\n"
+        + "            else\n"
+        + "                partialStep = callTfn(\n"
+        + "                    bindContinuations.pop(),\n"
+        + "                    partialStep.result );\n"
+        + "            \n"
+        + "        } else if (\n"
+        + "            partialStep.partialTag === \"bind\" ) {\n"
+        + "            \n"
+        + "            bindContinuations.push(\n"
+        + "                partialStep.aToThunkB );\n"
+        + "            partialStep = partialStep.thunkA;\n"
+        + "            \n"
+        + "        } else if (\n"
+        + "            partialStep.partialTag === \"fix\" ) {\n"
+        + "            \n"
+        + "            partialStep = callTfn(\n"
+        + "                partialStep.thunkToThunk, partialStep );\n"
+        + "        } else {\n"
+        + "            throw new Error();\n"
+        + "        }\n"
+        + "    }\n"
+        + "}\n"
+        + "function runImpartial( impartialStep ) {\n"
+        + "    while ( true ) {\n"
+        + "        if ( impartialStep.impartialTag === \"unit\" ) {\n"
+        + "            return impartialStep.result;\n"
+        + "            \n"
+        + "        } else if (\n"
+        + "            impartialStep.impartialTag === \"invk\" ) {\n"
+        + "            \n"
+        + "            impartialStep = runPartial( callTfn(\n"
+        + "                impartialStep.callback,\n"
+        + "                invk( impartialStep.command ) ) );\n"
+        + "        } else {\n"
+        + "            throw new Error();\n"
+        + "        }\n"
+        + "    }\n"
+        + "}\n"
+        + "\n"
+        + "runImpartial( runPartial( runInstructions() ) );\n"
+        + "return total;\n"
         + "\n"
         + "})()"
         + "\n"
@@ -2784,18 +3046,13 @@ addBuiltinEraSyntax( "localCollaborativeValueLevelDefinition",
     "witheach" );
 // TODO: Come up with a better name than "partiality".
 addBuiltinEraSyntax( "partiality", "partialtype" );
+addBuiltinEraSyntax( "partiality", "zunitpartial" );
+addBuiltinEraSyntax( "partiality", "zbindpartial" );
+addBuiltinEraSyntax( "partiality", "zfixpartial" );
 addBuiltinEraComputation( "partiality", "unitpartial",
     [ "ttfa", "a", [ "tfa", "_", "a", [ "partialtype", "a" ] ] ],
-    // TODO: For now, we automatically interpret the (partialtype ...)
-    // effects. Return boxed computations instead; we'll need them for
-    // `bindpartial` and `fixpartial`.
-    ""
-    + "_.pushRes( { lexEnv: {}, go: function ( _ ) {\n"
-    + "    _.pushRes( { arg: \"|x\", lexEnv: {\n"
-    + "    }, go: function ( _ ) {\n"
-    + "        _.pushRes( _.env[ \"|x\" ] );\n"
-    + "    } } );\n"
-    + "} } );\n"
+    // TODO: Implement this in terms of (zunitpartial ...).
+    "throw new Error();\n"
 );
 addBuiltinEraComputation( "partiality", "bindpartial",
     [ "ttfa", "a",
@@ -2804,9 +3061,7 @@ addBuiltinEraComputation( "partiality", "bindpartial",
                 [ "tfa", "_",
                     [ "tfa", "_", "a", [ "partialtype", "b" ] ],
                     [ "partialtype", "b" ] ] ] ] ],
-    // TODO: Implement this. It'll require revisions to
-    // compileTermToSyncJsFull() and `unitpartial` so they don't
-    // auto-execute every (partialtype ...) effect.
+    // TODO: Implement this in terms of (zbindpartial ...).
     "throw new Error();\n"
 );
 addBuiltinEraComputation( "partiality", "fixpartial",
@@ -2815,9 +3070,7 @@ addBuiltinEraComputation( "partiality", "fixpartial",
             [ "tfa", "_", [ "partialtype", "a" ],
                 [ "partialtype", "a" ] ],
             [ "partialtype", "a" ] ] ],
-    // TODO: Implement this. It'll require revisions to
-    // compileTermToSyncJsFull() and `unitpartial` so they don't
-    // auto-execute every (partialtype ...) effect.
+    // TODO: Implement this in terms of (zfixpartial ...).
     "throw new Error();\n"
 );
 // TODO: Come up with a shorter name than
@@ -2842,6 +3095,8 @@ addBuiltinEraComputation( "staticallyGeneratedDynamicToken",
             // option.
             [ "ttfa", "a",
                 [ "tfa", "_", "a", [ "tfa", "_", "a", "a" ] ] ] ] ],
+    // TODO: Implement (ztokenequals ...) using code like this, and
+    // then implement this in terms of it.
     // TODO: When we implement `withtoken`, make sure the JavaScript
     // values it uses to represent tokens are the outputs of
     // stringifyKey() so === will work.
@@ -2875,6 +3130,8 @@ function addSinkTag( tagName, type ) {
             "Sink tags can only contain lowercase letters." );
     addBuiltinEraComputation( "kitchenSinkUnType", tagName + "tosink",
         [ "tfa", "_", type, [ "sink" ] ],
+        // TODO: Implement (z<tagName>tosink ...) using code like
+        // this, and then implement this in terms of it.
         ""
         + "_.pushRes( { arg: \"|x\", lexEnv: {\n"
         + "}, go: function ( _ ) {\n"
@@ -2892,6 +3149,8 @@ function addSinkTag( tagName, type ) {
                 [ "tfa", "_", "a",
                     [ "tfa", "_", [ "tfn", "_", type, "a" ],
                         "a" ] ] ] ],
+        // TODO: Implement (zsinkto<tagName> ...) using code like
+        // this, and then implement this in terms of it.
         ""
         + "_.pushRes( { arg: \"|x\", lexEnv: {\n"
         + "}, go: function ( _ ) {\n"
@@ -2908,6 +3167,7 @@ function addSinkTag( tagName, type ) {
         + "                    _.pushInst( function ( _ ) {\n"
         + "                        var fn =\n"
         + "                            _.env[ \"|ifSuccess\" ];\n"
+        // TODO: Delete this entry once we're done with it.
         + "                        (_.env = fn.lexEnv)[ fn.arg ] =\n"
         + "                            x.val;\n"
         + "                        fn.go( _ );\n"
@@ -3010,7 +3270,17 @@ addSinkTag( "ipfn",
     add( [ "snd", "a", "a", "a", "sfn" ], [ "a", "sfn" ] );
     add( [ "snd", "a", "aType", "a", "a" ], [ "aType", "a" ] );
     
-    add( [ "partialtype", "a" ], [ "a" ] );
+    add( [ "partialtype", "terminationType" ],
+        [ "terminationType" ] );
+    
+    add( [ "zunitpartial", "terminationType", "result" ],
+        [ "terminationType", "result" ] );
+    
+    add( [ "zbindpartial", "aType", "bType", "thunkA", "aToThunkB" ],
+        [ "aType", "bType", "thunkA", "aToThunkB" ] );
+    
+    add( [ "zfixpartial", "terminationType", "thunkToThunk" ],
+        [ "terminationType", "thunkToThunk" ] );
     
     add( [ "impartialtype", "c", "cType", "rType", "tType" ],
         [ "cType", "rType", "tType" ] );
@@ -3118,6 +3388,15 @@ addShouldThrowUnitTest( function () {
         [ "snd", "x", "o", "x", "o" ] );
     add( xo, [ "partialtype", "x" ], [ "partialtype", "o" ] );
     add( xo,
+        [ "zunitpartial", "x", "x" ],
+        [ "zunitpartial", "o", "o" ] );
+    add( xo,
+        [ "zbindpartial", "x", "x", "x", "x" ],
+        [ "zbindpartial", "o", "o", "o", "o" ] );
+    add( xo,
+        [ "zfixpartial", "x", "x" ],
+        [ "zfixpartial", "o", "o" ] );
+    add( xo,
         [ "impartialtype", "x", "x", "x", "x" ],
         [ "impartialtype", "x", "o", "x", "o" ] );
     add( xo,
@@ -3216,6 +3495,11 @@ addShouldThrowUnitTest( function () {
         [ "snd", "x", "x", "x", "x" ],
         [ "snd", "o", "x", "o", "x" ] );
     add( [ "partialtype", "x" ], [ "partialtype", "x" ] );
+    add( [ "zunitpartial", "x", "x" ], [ "zunitpartial", "x", "x" ] );
+    add(
+        [ "zbindpartial", "x", "x", "x", "x" ],
+        [ "zbindpartial", "x", "x", "x", "x" ] );
+    add( [ "zfixpartial", "x", "x" ], [ "zfixpartial", "x", "x" ] );
     add(
         [ "impartialtype", "x", "x", "x", "x" ],
         [ "impartialtype", "o", "x", "o", "x" ] );
@@ -3342,6 +3626,20 @@ addShouldThrowUnitTest( function () {
     add( true, [ "partialtype", expr ] );
     add( false, [ "partialtype", true ] );
     
+    add( true, [ "zunitpartial", expr, expr ] );
+    add( false, [ "zunitpartial", true, expr ] );
+    add( false, [ "zunitpartial", expr, true ] );
+    
+    add( true, [ "zbindpartial", expr, expr, expr, expr ] );
+    add( false, [ "zbindpartial", true, expr, expr, expr ] );
+    add( false, [ "zbindpartial", expr, true, expr, expr ] );
+    add( false, [ "zbindpartial", expr, expr, true, expr ] );
+    add( false, [ "zbindpartial", expr, expr, expr, true ] );
+    
+    add( true, [ "zfixpartial", expr, expr ] );
+    add( false, [ "zfixpartial", true, expr ] );
+    add( false, [ "zfixpartial", expr, true ] );
+    
     add( true, [ "impartialtype", vari, expr, expr, expr ] );
     add( false, [ "impartialtype", true, expr, expr, expr ] );
     add( false, [ "impartialtype", vari, true, expr, expr ] );
@@ -3435,8 +3733,6 @@ addShouldThrowUnitTest( function () {
         [ "impartialtype", igno, unitType, unitType, unitType ];
     // NOTE: This stands for "imperative partial unit."
     var impu = [ "unitimpartial", igno, unitType, unitType, unit ];
-    var typeOfUnitpartialResult =
-        [ "tfa", igno, "a", [ "partialtype", "a" ] ];
     
     addTerm( true, _env, unitType, unit );
     addTerm( true, _env, [ "tfa", igno, unitType, unitType ],
@@ -3469,21 +3765,28 @@ addShouldThrowUnitTest( function () {
     addTerm( true, _env, unitType,
         [ "snd", igno, unitType, unitType, sfn ], unit );
     addType( true, _env, [ "partialtype", unitType ] );
+    addTerm( true, _env, [ "partialtype", unitType ],
+        [ "zunitpartial", unitType, unit ] );
+    addTerm( true, _env, [ "partialtype", unitType ],
+        [ "zbindpartial", unitType, unitType,
+            [ "zunitpartial", unitType, unit ],
+            [ "tfn", igno, unitType,
+                [ "zunitpartial", unitType, unit ] ] ] );
+    // NOTE: This version is an infinite loop.
+    addTerm( true, _env, [ "partialtype", unitType ],
+        [ "zfixpartial", unitType,
+            [ "tfn", "x", [ "partialtype", unitType ], "x" ] ] );
+    // NOTE: This version isn't an infinite loop.
+    addTerm( true, _env, [ "partialtype", unitType ],
+        [ "zfixpartial", unitType,
+            [ "tfn", igno, [ "partialtype", unitType ],
+                [ "zunitpartial", unitType, unit ] ] ] );
     addTerm( true, _env, impt, impu );
-    addTerm( true, _env,
-        [ "tfa", igno, [ "ttfa", "a", typeOfUnitpartialResult ],
-            impt ],
-        [ "tfn", "unitpartial",
-            [ "ttfa", "a",
-                [ "tfa", "x", "a", [ "partialtype", "a" ] ] ],
-            [ "invkimpartial", igno, unitType, unitType, unitType,
-                [ "sfn", igno, unitType, unit,
-                    [ "tfn", igno, unitType,
-                        [ "tcall", "a", impt, [ "partialtype", impt ],
-                            [ "ttcall", "a", typeOfUnitpartialResult,
-                                "unitpartial",
-                                impt ],
-                            impu ] ] ] ] ] );
+    addTerm( true, _env, impt,
+        [ "invkimpartial", igno, unitType, unitType, unitType,
+            [ "sfn", igno, unitType, unit,
+                [ "tfn", igno, unitType,
+                    [ "zunitpartial", impt, impu ] ] ] ] );
     addType( true, _env, [ "tokentype" ] );
     addType( true, _env, [ "sink" ] );
 })();
@@ -3530,8 +3833,6 @@ addShouldThrowUnitTest( function () {
         [ "impartialtype", igno, unitType, unitType, unitType ];
     // NOTE: This stands for "imperative partial unit."
     var impu = [ "unitimpartial", igno, unitType, unitType, unit ];
-    var typeOfUnitpartialResult =
-        [ "tfa", igno, "a", [ "partialtype", "a" ] ];
     
     function run( program ) {
         return Function( ""
@@ -3544,35 +3845,14 @@ addShouldThrowUnitTest( function () {
         )();
     }
     
-    // NOTE: This test is type safe, but it has no side effects.
-    var boringProgram =
-        [ "tfn", "unitpartial",
-            [ "ttfa", "a",
-                [ "tfa", "x", "a", [ "partialtype", "a" ] ] ],
+    var program =
+        [ "zunitpartial", impt,
             [ "invkimpartial", igno, unitType, unitType, unitType,
                 [ "sfn", igno, unitType, unit,
                     [ "tfn", igno, unitType,
-                        [ "tcall", "a", impt, [ "partialtype", impt ],
-                            [ "ttcall", "a", typeOfUnitpartialResult,
-                                "unitpartial",
-                                impt ],
-                            impu ] ] ] ] ];
+                        [ "zunitpartial", impt, impu ] ] ] ] ];
     addNaiveIsoUnitTest( function ( then ) {
-        then( run( boringProgram ).total, 0 );
-    } );
-    
-    // TODO: This test may display a working side effect, but it's
-    // not type safe since the occurrence of `impu` isn't inside a
-    // call to `unitpartial`. We should support built-in functions
-    // like `unitpartial` and use a type safe example instead of this
-    // one.
-    var bogusProgram =
-        [ "invkimpartial", igno, unitType, unitType, unitType,
-            [ "sfn", igno, unitType, unit,
-                [ "tfn", igno, unitType,
-                    impu ] ] ];
-    addNaiveIsoUnitTest( function ( then ) {
-        then( run( bogusProgram ).total, 1 );
+        then( run( program ), 1 );
     } );
 })();
 
@@ -3661,8 +3941,6 @@ addShouldThrowUnitTest( function () {
         [ "impartialtype", igno, unitType, unitType, unitType ];
     // NOTE: This stands for "imperative partial unit."
     var impu = [ "unitimpartial", igno, unitType, unitType, unit ];
-    var typeOfUnitpartialResult =
-        [ "tfa", igno, "a", [ "partialtype", "a" ] ];
     
     addTerm( unitType, unit );
     addTerm( [ "tfa", igno, unitType, unitType ],
@@ -3681,21 +3959,26 @@ addShouldThrowUnitTest( function () {
     addTerm( unitType, [ "fst", igno, unitType, unitType, sfn ] );
     addTerm( unitType, [ "snd", igno, unitType, unitType, sfn ] );
     addType( [ "partialtype", unitType ] );
+    addTerm( [ "partialtype", unitType ],
+        [ "zunitpartial", unitType, unit ] );
+    addTerm( [ "partialtype", unitType ],
+        [ "zbindpartial", unitType, unitType,
+            [ "zunitpartial", unitType, unit ],
+            [ "tfn", igno, unitType,
+                [ "zunitpartial", unitType, unit ] ] ] );
+    addTerm( [ "partialtype", unitType ],
+        [ "zfixpartial", unitType,
+            [ "tfn", "x", [ "partialtype", unitType ], "x" ] ] );
+    addTerm( [ "partialtype", unitType ],
+        [ "zfixpartial", unitType,
+            [ "tfn", igno, [ "partialtype", unitType ],
+                [ "zunitpartial", unitType, unit ] ] ] );
     addTerm( impt, impu );
-    addTerm(
-        [ "tfa", igno, [ "ttfa", "a", typeOfUnitpartialResult ],
-            impt ],
-        [ "tfn", "unitpartial",
-            [ "ttfa", "a",
-                [ "tfa", "x", "a", [ "partialtype", "a" ] ] ],
-            [ "invkimpartial", igno, unitType, unitType, unitType,
-                [ "sfn", igno, unitType, unit,
-                    [ "tfn", igno, unitType,
-                        [ "tcall", "a", impt, [ "partialtype", impt ],
-                            [ "ttcall", "a", typeOfUnitpartialResult,
-                                "unitpartial",
-                                impt ],
-                            impu ] ] ] ] ] );
+    addTerm( impt,
+        [ "invkimpartial", igno, unitType, unitType, unitType,
+            [ "sfn", igno, unitType, unit,
+                [ "tfn", igno, unitType,
+                    [ "zunitpartial", impt, impu ] ] ] ] );
     addType( [ "tokentype" ] );
     addType( [ "sink" ] );
 })();
