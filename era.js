@@ -735,8 +735,8 @@ addNaiveIsoUnitTest( function ( then ) {
 //   (tfa _ (tokentype)
 //     (tfa _ (tokentype)
 //       // TODO: This is meant to represent a boolean value, but it
-//       // may not be sufficient for type-level computation. Figure
-//       // out if there's a better option.
+//       // may not be sufficiently expressive for type-level
+//       // computation. Figure out if there's a better option.
 //       (ttfa a (tfa _ a (tfa _ a a)))))
 
 // NEW: The kitchen sink "un"-type fragment:
@@ -753,7 +753,6 @@ addNaiveIsoUnitTest( function ( then ) {
 // Term ::=| "(" "sink" ")"
 // // TODO: Make sure all syntaxes that begin with "z" are hidden from
 // // language users.
-// // TODO: Implement these syntaxes.
 // Term ::=| "(" "ztokentosink" Term ")"
 // Term ::=| "(" "zsinktotoken" Term ")"
 // Term ::=| "(" "zpfntosink" Term ")"
@@ -761,7 +760,12 @@ addNaiveIsoUnitTest( function ( then ) {
 // Term ::=| "(" "zipfntosink" Term ")"
 // Term ::=| "(" "zsinktoipfn" Term ")"
 //
-// Built-in module exports, with (maybe ...) as shorthand:
+// Built-in module exports:
+//
+// // We're using (maybe <inner>) as shorthand for this:
+// //   (ttfa a (tfa _ a (tfa _ (tfa <inner> a) a)))
+// // TODO: This may not be sufficiently expressive for type-level
+// // computation. Figure out if there's a better expansion option.
 //
 // tokentosink : (tfa _ (tokentype) (sink))
 // sinktotoken : (tfa _ (sink) (maybe (tokentype)))
@@ -1804,7 +1808,7 @@ function compileTermToSyncJs( expr ) {
             v = toKey( v );
             captures.push( "    " + v + ": _.env[ " + v + " ]" );
         } );
-        return instructions( ""
+        return (""
             + "_.pushRes( { arg: " + toKey( arg ) + ", lexEnv: {\n"
             + (captures.length === 0 ? "" :
                 captures.join( ",\n" ) + "\n")
@@ -1841,7 +1845,7 @@ function compileTermToSyncJs( expr ) {
             v = toKey( v );
             captures.push( "    " + v + ": _.env[ " + v + " ]" );
         } );
-        return instructions( ""
+        return (""
             + "_.pushRes( { lexEnv: {\n"
             + (captures.length === 0 ? "" :
                 captures.join( ",\n" ) + "\n")
@@ -2377,6 +2381,145 @@ function compileTermToSyncJsFull( expr ) {
         addEasy( name, args );
         addTerm( name, args );
     }
+    function addSinkTag( tagName, innerTypeTerm ) {
+        if ( !/^[a-z]+$/.test( tagName ) )
+            throw new Error(
+                "Sink tags can only contain lowercase letters." );
+        getFreeVarsOfTerm( innerTypeTerm ).each( function () {
+            throw new Error();
+        } );
+        var maybeInnerType = { env: strMap(), term:
+            [ "ttfa", "a",
+                [ "tfa", "_", "a",
+                    [ "tfa", "_", [ "tfa", "_", innerTypeTerm, "a" ],
+                        "a" ] ] ] };
+        var innerType = { env: strMap(), term: innerTypeTerm };
+        var sinkType = { env: strMap(), term: [ "sink" ] };
+        
+        var toSink = "z" + tagName + "tosink";
+        var fromSink = "zsinkto" + tagName;
+        var toSinkPat = makePat( toSink, [ "val" ] );
+        var fromSinkPat = makePat( fromSink, [ "sink" ] );
+        addEasyTerm( toSink, [ "val" ] );
+        addTerm( fromSink, [ "sink" ] );
+        rbBetaReduce.push( function ( expr ) {
+            var em = getMatch( expr.term, fromSinkPat );
+            if ( em === null )
+                return null;
+            
+            function eget( k ) {
+                return { env: expr.env, term: em.val.get( k ) };
+            }
+            function beget( k ) {
+                return betaReduce( eget( k ) );
+            }
+            
+            var reducedSink = beget( "sink" );
+            var matchedSink = getMatch( reducedSink.term, toSinkPat );
+            if ( !matchedSink )
+                return { val: { env: strMap(), term:
+                    [ "ttfn", "a",
+                        [ "tfn", "else", "a",
+                            [ "tfn", "then",
+                                [ "tfa", "_", innerTypeTerm, "a" ],
+                                "else" ] ] ] } };
+            var val = matchedSink.val.get( "val" );
+            var freeVars = getFreeVarsOfTerm( val );
+            var thenVar = fresh( "then", freeVars );
+            var elseVar = fresh( "else",
+                freeVars.plusTruth( thenVar ) );
+            var typeVar = fresh( "type", freeVars.plusArrTruth(
+                [ thenVar, elseVar, typeVar, "_" ] ) );
+            return { val: { env: reducedSink.env, term:
+                [ "ttfn", typeVar,
+                    [ "tfn", elseVar, typeVar,
+                        [ "tfn", thenVar,
+                            [ "tfa", "_", innerTypeTerm, typeVar ],
+                            [ "tcall", "_", innerTypeTerm, typeVar,
+                                thenVar, val ] ] ] ] } };
+        } );
+        rbCheckInhabitsType.push( function ( expr, type ) {
+            var em;
+            
+            function eget( k ) {
+                return { env: expr.env, term: em.val.get( k ) };
+            }
+            
+            if ( em = getMatch( expr.term, toSinkPat ) ) {
+                if ( !checkInhabitsType( eget( "val" ), innerType ) )
+                    return { val: false };
+                return { val: knownEqual( sinkType, type ) };
+            } else if ( em = getMatch( expr.term, fromSinkPat ) ) {
+                if ( !checkInhabitsType( eget( "sink" ), sinkType ) )
+                    return { val: false };
+                return { val: knownEqual( maybeInnerType, type ) };
+            } else {
+                return null;
+            }
+        } );
+        rbCompileTermToSyncJs.push( function ( expr ) {
+            var em;
+            
+            function eget( k ) {
+                return { env: expr.env, term: em.val.get( k ) };
+            }
+            
+            function instructions( var_args ) {
+                var reversed = [];
+                for ( var i = arguments.length - 1; 0 <= i; i-- )
+                    reversed.push( ""
+                        + "_.pushInst( function ( _ ) {\n"
+                        + "\n"
+                        + arguments[ i ]
+                        + "\n"
+                        + "} );\n"
+                    );
+                return reversed.join( "" );
+            }
+            
+            if ( em = getMatch( expr.term, toSinkPat ) ) {
+                return { val: instructions(
+                    compileTermToSyncJs( eget( "val" ) ),
+                    ""
+                    + "var val = _.popRes();\n"
+                    + "_.pushRes( { sinkTag: \"" + tagName + "\",\n"
+                    + "    val: val } );\n"
+                ) };
+            } else if ( em = getMatch( expr.term, fromSinkPat ) ) {
+                return { val: instructions(
+                    compileTermToSyncJs( eget( "sink" ) ),
+                    ""
+                    + "var sink = _.popRes();\n"
+                    + "_.pushRes( { lexEnv: {\n"
+                    + "}, go: function ( _ ) {\n"
+                    + "    _.pushRes( { arg: \"|else\", lexEnv: {\n"
+                    + "    }, go: function ( _ ) {\n"
+                    + "        var elseVal = _.env[ \"|else\" ];\n"
+                    + "        _.pushRes( { arg: \"|then\",\n"
+                    + "            lexEnv: {}, go: function ( _ ) {\n"
+                    + "            \n"
+                    + "            if ( sink.sinkTag !==\n"
+                    + "                \"" + tagName + "\" )\n"
+                    + "                _.pushRes( elseVal );\n"
+                    + "            else\n"
+                    + "                _.pushInst( function ( _ ) {\n"
+                    + "                    var fn =\n"
+                    + "                        _.env[ \"|then\" ];\n"
+                    // TODO: Delete this entry once we're done with
+                    // it.
+                    + "                    (_.env = fn.lexEnv)[\n" +
+                    + "                        fn.arg ] = sink.val;\n"
+                    + "                    fn.go( _ );\n"
+                    + "                } );\n"
+                    + "        } } );\n"
+                    + "    } } );\n"
+                    + "} } );\n"
+                ) };
+            } else {
+                return null;
+            }
+        } );
+    }
     
     // NOTE: Every time we add a syntax, we must add special cases to
     // the following functions:
@@ -2436,6 +2579,14 @@ function compileTermToSyncJsFull( expr ) {
     addEasyType( "tokentype", [] );
     addTerm( "ztokenequals", [ "a", "b" ] );
     addEasyType( "sink", [] );
+    addSinkTag( "token", [ "tokentype" ] );
+    addSinkTag( "pfn",
+        [ "tfa", "_", [ "sink" ], [ "partialtype", [ "sink" ] ] ] );
+    addSinkTag( "ipfn",
+        [ "tfa", "_", [ "sink" ],
+            [ "partialtype",
+                [ "impartialtype", "_", [ "sink" ], [ "sink" ],
+                    [ "sink" ] ] ] ] );
 })();
 
 
@@ -2842,52 +2993,17 @@ function addSinkTag( tagName, type ) {
             "Sink tags can only contain lowercase letters." );
     addBuiltinEraComputation( "kitchenSinkUnType", tagName + "tosink",
         [ "tfa", "_", type, [ "sink" ] ],
-        // TODO: Implement (z<tagName>tosink ...) using code like
-        // this, and then implement this in terms of it.
-        ""
-        + "_.pushRes( { arg: \"|x\", lexEnv: {\n"
-        + "}, go: function ( _ ) {\n"
-        + "    _.pushRes( { sinkTag: \"" + tagName + "\",\n"
-        + "        val: _.env[ \"|x\" ] } );\n"
-        + "} } );\n"
+        // TODO: Implement this in terms of (z<tagName>tosink ...).
+        "throw new Error();\n"
     );
     addBuiltinEraComputation( "kitchenSinkUnType", "sinkto" + tagName,
         [ "tfa", "_", [ "sink" ],
-            // TODO: This is an expansion of the (maybe ...) shorthand
-            // we use above, but it may not be sufficiently expressive
-            // for type-level computation. Figure out if there's a
-            // better expansion option.
             [ "ttfa", "a",
                 [ "tfa", "_", "a",
                     [ "tfa", "_", [ "tfn", "_", type, "a" ],
                         "a" ] ] ] ],
-        // TODO: Implement (zsinkto<tagName> ...) using code like
-        // this, and then implement this in terms of it.
-        ""
-        + "_.pushRes( { arg: \"|x\", lexEnv: {\n"
-        + "}, go: function ( _ ) {\n"
-        + "    _.pushRes( { lexEnv: {}, go: function ( _ ) {\n"
-        + "        _.pushRes( { arg: \"|ifFailure\", lexEnv: {\n"
-        + "        }, go: function ( _ ) {\n"
-        + "            _.pushRes( { arg: \"|ifSuccess\", lexEnv: {\n"
-        + "            }, go: function ( _ ) {\n"
-        + "                var x = _.env[ \"|x\" ];\n"
-        + "                if ( x.sinkTag !== \"" + tagName + "\" )\n"
-        + "                    _.pushRes(\n"
-        + "                        _.env[ \"|ifFailure\" ] );\n"
-        + "                else\n"
-        + "                    _.pushInst( function ( _ ) {\n"
-        + "                        var fn =\n"
-        + "                            _.env[ \"|ifSuccess\" ];\n"
-        // TODO: Delete this entry once we're done with it.
-        + "                        (_.env = fn.lexEnv)[ fn.arg ] =\n"
-        + "                            x.val;\n"
-        + "                        fn.go( _ );\n"
-        + "                    } );\n"
-        + "            } } );\n"
-        + "        } } );\n"
-        + "    } } );\n"
-        + "} } );\n"
+        // TODO: Implement this in terms of (zsinkto<tagName> ...).
+        "throw new Error();\n"
     );
 }
 addSinkTag( "token", [ "tokentype" ] );
@@ -3032,6 +3148,18 @@ addSinkTag( "ipfn",
     
     add( [ "sink" ], [] );
     
+    add( [ "ztokentosink", "val" ], [ "val" ] );
+    
+    add( [ "zsinktotoken", "sink" ], [ "sink" ] );
+    
+    add( [ "zpfntosink", "val" ], [ "val" ] );
+    
+    add( [ "zsinktopfn", "sink" ], [ "sink" ] );
+    
+    add( [ "zipfntosink", "val" ], [ "val" ] );
+    
+    add( [ "zsinktoipfn", "sink" ], [ "sink" ] );
+    
     
     // Just try something wacky with nesting and shadowing.
     // NOTE: Again, there should be no existing way to make this term
@@ -3124,6 +3252,12 @@ addShouldThrowUnitTest( function () {
         [ "ztokenequals", "x", "x" ],
         [ "ztokenequals", "o", "o" ] );
     add( xo, [ "sink" ], [ "sink" ] );
+    add( xo, [ "ztokentosink", "x" ], [ "ztokentosink", "o" ] );
+    add( xo, [ "zsinktotoken", "x" ], [ "zsinktotoken", "o" ] );
+    add( xo, [ "zpfntosink", "x" ], [ "zpfntosink", "o" ] );
+    add( xo, [ "zsinktopfn", "x" ], [ "zsinktopfn", "o" ] );
+    add( xo, [ "zipfntosink", "x" ], [ "zipfntosink", "o" ] );
+    add( xo, [ "zsinktoipfn", "x" ], [ "zsinktoipfn", "o" ] );
     
     // Just try something wacky with nesting and shadowing.
     // NOTE: Again, there should be no existing way to make this term
@@ -3229,6 +3363,12 @@ addShouldThrowUnitTest( function () {
     add( [ "tokentype" ], [ "tokentype" ] );
     add( [ "ztokenequals", "x", "x" ], [ "ztokenequals", "x", "x" ] );
     add( [ "sink" ], [ "sink" ] );
+    add( [ "ztokentosink", "x" ], [ "ztokentosink", "x" ] );
+    add( [ "zsinktotoken", "x" ], [ "zsinktotoken", "x" ] );
+    add( [ "zpfntosink", "x" ], [ "zpfntosink", "x" ] );
+    add( [ "zsinktopfn", "x" ], [ "zsinktopfn", "x" ] );
+    add( [ "zipfntosink", "x" ], [ "zipfntosink", "x" ] );
+    add( [ "zsinktoipfn", "x" ], [ "zsinktoipfn", "x" ] );
     
     // Just try something wacky with nesting and shadowing.
     // NOTE: Again, there should be no existing way to make this term
@@ -3388,6 +3528,24 @@ addShouldThrowUnitTest( function () {
     
     add( true, [ "sink" ] );
     
+    add( true, [ "ztokentosink", expr ] );
+    add( false, [ "ztokentosink", true ] );
+    
+    add( true, [ "zsinktotoken", expr ] );
+    add( false, [ "zsinktotoken", true ] );
+    
+    add( true, [ "zpfntosink", expr ] );
+    add( false, [ "zpfntosink", true ] );
+    
+    add( true, [ "zsinktopfn", expr ] );
+    add( false, [ "zsinktopfn", true ] );
+    
+    add( true, [ "zipfntosink", expr ] );
+    add( false, [ "zipfntosink", true ] );
+    
+    add( true, [ "zsinktoipfn", expr ] );
+    add( false, [ "zsinktoipfn", true ] );
+    
     
     // Just try something wacky with nesting and shadowing.
     add( true,
@@ -3405,8 +3563,9 @@ addShouldThrowUnitTest( function () {
             then( {
                 type: { env: env, term: type },
                 expr: { env: env, term: expr },
-                reduced: { env: env, term:
-                    opt_reduced !== void 0 ? opt_reduced : expr }
+                reduced: opt_reduced === null ? null :
+                    { env: env, term:
+                        opt_reduced !== void 0 ? opt_reduced : expr }
             }, function ( args ) {
                 if ( !checkIsType( args.type ) )
                     return false;
@@ -3414,7 +3573,7 @@ addShouldThrowUnitTest( function () {
                     checkInhabitsType( args.expr, args.type );
                 if ( checksOut !== expected )
                     return false;
-                if ( checksOut
+                if ( checksOut && args.reduced !== null
                     && !knownEqual(
                         betaReduce( args.expr ), args.reduced ) )
                     return false;
@@ -3426,13 +3585,14 @@ addShouldThrowUnitTest( function () {
         addPredicateUnitTest( function ( then ) {
             then( {
                 expr: { env: env, term: expr },
-                reduced: { env: env, term:
-                    opt_reduced !== void 0 ? opt_reduced : expr }
+                reduced: opt_reduced === null ? null :
+                    { env: env, term:
+                        opt_reduced !== void 0 ? opt_reduced : expr }
             }, function ( args ) {
                 var checksOut = checkIsType( args.expr );
                 if ( checksOut !== expected )
                     return false;
-                if ( checksOut
+                if ( checksOut && args.reduced !== null
                     && !knownEqual(
                         betaReduce( args.expr ), args.reduced ) )
                     return false;
@@ -3455,6 +3615,37 @@ addShouldThrowUnitTest( function () {
         [ "impartialtype", igno, unitType, unitType, unitType ];
     // NOTE: This stands for "imperative partial unit."
     var impu = [ "unitimpartial", igno, unitType, unitType, unit ];
+    var exampleSink =
+        [ "zpfntosink",
+            [ "tfn", "s", [ "sink" ],
+                [ "zunitpartial", [ "sink" ], "s" ] ] ];
+    
+    function testFromSink( fromSink, innerType ) {
+        addTerm( true, _env,
+            [ "ttfa", "a",
+                [ "tfa", igno, "a",
+                    [ "tfa", igno, [ "tfa", igno, innerType, "a" ],
+                        "a" ] ] ],
+            [ fromSink, exampleSink ],
+            null );
+        addTerm( true, _env, unitType,
+            [ "tcall",
+                igno, [ "tfa", igno, innerType, unitType ], unitType,
+                [ "tcall", igno, unitType,
+                    [ "tfa", igno,
+                        [ "tfa", igno, innerType, unitType ],
+                        unitType ],
+                    [ "ttcall", "a",
+                        [ "tfa", igno, "a",
+                            [ "tfa", igno,
+                                [ "tfa", igno, innerType, "a" ],
+                                "a" ] ],
+                        [ fromSink, exampleSink ],
+                        unitType ],
+                    unit ],
+                [ "tfn", igno, innerType, unit ] ],
+            unit );
+    }
     
     addTerm( true, _env, unitType, unit );
     addTerm( true, _env, [ "tfa", igno, unitType, unitType ],
@@ -3520,6 +3711,26 @@ addShouldThrowUnitTest( function () {
             [ "tfn", "b", [ "tokentype" ],
                 [ "ztokenequals", "a", "b" ] ] ] );
     addType( true, _env, [ "sink" ] );
+    addTerm( true, _env, [ "tfa", igno, [ "tokentype" ], [ "sink" ] ],
+        [ "tfn", "token", [ "tokentype" ],
+            [ "ztokentosink", "token" ] ] );
+    testFromSink( "zsinktotoken", [ "tokentype" ] );
+    addTerm( true, _env, [ "sink" ], exampleSink );
+    testFromSink( "zsinktopfn",
+        [ "tfa", igno, [ "sink" ], [ "partialtype", [ "sink" ] ] ] );
+    addTerm( true, _env, [ "sink" ],
+        [ "zipfntosink",
+            [ "tfn", "s", [ "sink" ],
+                [ "zunitpartial",
+                    [ "impartialtype", igno, [ "sink" ], [ "sink" ],
+                        [ "sink" ] ],
+                    [ "unitimpartial", igno, [ "sink" ], [ "sink" ],
+                        "s" ] ] ] ] );
+    testFromSink( "zsinktoipfn",
+        [ "tfa", igno, [ "sink" ],
+            [ "partialtype",
+                [ "impartialtype", igno, [ "sink" ], [ "sink" ],
+                    [ "sink" ] ] ] ] );
 })();
 addShouldThrowUnitTest( function () {
     return betaReduce( { env: strMap(),
@@ -3672,6 +3883,35 @@ addShouldThrowUnitTest( function () {
         [ "impartialtype", igno, unitType, unitType, unitType ];
     // NOTE: This stands for "imperative partial unit."
     var impu = [ "unitimpartial", igno, unitType, unitType, unit ];
+    var exampleSink =
+        [ "zpfntosink",
+            [ "tfn", "s", [ "sink" ],
+                [ "zunitpartial", [ "sink" ], "s" ] ] ];
+    
+    function testFromSink( fromSink, innerType ) {
+        addTerm(
+            [ "ttfa", "a",
+                [ "tfa", igno, "a",
+                    [ "tfa", igno, [ "tfa", igno, innerType, "a" ],
+                        "a" ] ] ],
+            [ fromSink, exampleSink ] );
+        addTerm( unitType,
+            [ "tcall",
+                igno, [ "tfa", igno, innerType, unitType ], unitType,
+                [ "tcall", igno, unitType,
+                    [ "tfa", igno,
+                        [ "tfa", igno, innerType, unitType ],
+                        unitType ],
+                    [ "ttcall", "a",
+                        [ "tfa", igno, "a",
+                            [ "tfa", igno,
+                                [ "tfa", igno, innerType, "a" ],
+                                "a" ] ],
+                        [ fromSink, exampleSink ],
+                        unitType ],
+                    unit ],
+                [ "tfn", igno, innerType, unit ] ] );
+    }
     
     addTerm( unitType, unit );
     addTerm( [ "tfa", igno, unitType, unitType ],
@@ -3721,6 +3961,26 @@ addShouldThrowUnitTest( function () {
             [ "tfn", "b", [ "tokentype" ],
                 [ "ztokenequals", "a", "b" ] ] ] );
     addType( [ "sink" ] );
+    addTerm( [ "tfa", igno, [ "tokentype" ], [ "sink" ] ],
+        [ "tfn", "token", [ "tokentype" ],
+            [ "ztokentosink", "token" ] ] );
+    testFromSink( "zsinktotoken", [ "tokentype" ] );
+    addTerm( [ "sink" ], exampleSink );
+    testFromSink( "zsinktopfn",
+        [ "tfa", igno, [ "sink" ], [ "partialtype", [ "sink" ] ] ] );
+    addTerm( [ "sink" ],
+        [ "zipfntosink",
+            [ "tfn", "s", [ "sink" ],
+                [ "zunitpartial",
+                    [ "impartialtype", igno, [ "sink" ], [ "sink" ],
+                        [ "sink" ] ],
+                    [ "unitimpartial", igno, [ "sink" ], [ "sink" ],
+                        "s" ] ] ] ] );
+    testFromSink( "zsinktoipfn",
+        [ "tfa", igno, [ "sink" ],
+            [ "partialtype",
+                [ "impartialtype", igno, [ "sink" ], [ "sink" ],
+                    [ "sink" ] ] ] ] );
 })();
 addShouldThrowUnitTest( function () {
     return checkUserKnowledge( strMap(), { env: strMap(),
