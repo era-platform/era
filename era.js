@@ -870,11 +870,11 @@ var patternLang = {};
 })();
 
 
+var rbGetFreeVarsOfTerm = [];
 function getFreeVarsOfTerm( term, opt_boundVars ) {
     
     var lit = patternLang.lit;
     var str = patternLang.str;
-    var pat = patternLang.pat;
     var getMatch = patternLang.getMatch;
     
     var boundVars =
@@ -897,135 +897,29 @@ function getFreeVarsOfTerm( term, opt_boundVars ) {
             return strMap();
         return strMap().plusTruth( term );
         
-    } else if ( em = getMatch( term,
-        [ lit( "tfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
-        
-        return recur( "argType" ).
-            plus( recurUnder( "resultType", "arg" ) );
-        
-    } else if ( em = getMatch( term,
-        [ lit( "tfn" ), str( "arg" ), "argType", "result" ] ) ) {
-        
-        return recur( "argType" ).
-            plus( recurUnder( "result", "arg" ) );
-        
-    } else if ( em = getMatch( term, [ lit( "tcall" ),
-        str( "argName" ), "argType", "resultType",
-        "fn", "argVal" ] ) ) {
-        
-        return recur( "argType" ).
-            plus( recurUnder( "resultType", "argName" ) ).
-            plus( recur( "fn" ) ).plus( recur( "argVal" ) );
-        
-    } else if ( em = getMatch( term,
-        [ lit( "ttfa" ), str( "arg" ), "resultType" ] ) ) {
-        
-        return recurUnder( "resultType", "arg" );
-        
-    } else if ( em = getMatch( term,
-        [ lit( "ttfn" ), str( "arg" ), "result" ] ) ) {
-        
-        return recurUnder( "result", "arg" );
-        
-    } else if ( em = getMatch( term, [ lit( "ttcall" ),
-        str( "argName" ), "resultType", "fn", "argVal" ] ) ) {
-        
-        return recurUnder( "resultType", "argName" ).
-            plus( recur( "fn" ) ).plus( recur( "argVal" ) );
-        
-    } else if ( em = getMatch( term,
-        [ lit( "sfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
-        
-        return recur( "argType" ).
-            plus( recurUnder( "resultType", "arg" ) );
-        
-    } else if ( em = getMatch( term, [ lit( "sfn" ),
-        str( "arg" ), "argType", "argVal", "resultVal" ] ) ) {
-        
-        return recur( "argType" ).plus( recur( "argVal" ) ).
-            plus( recurUnder( "resultVal", "arg" ) );
-        
-    } else if ( em = getMatch( term, [ lit( "fst" ),
-        str( "argName" ), "argType", "resultType", "fn" ] ) ) {
-        
-        return recur( "argType" ).
-            plus( recurUnder( "resultType", "argName" ) ).
-            plus( recur( "fn" ) );
-        
-    } else if ( em = getMatch( term, [ lit( "snd" ),
-        str( "argName" ), "argType", "resultType", "fn" ] ) ) {
-        
-        return recur( "argType" ).
-            plus( recurUnder( "resultType", "argName" ) ).
-            plus( recur( "fn" ) );
-        
-    } else if ( em = getMatch( term,
-        [ lit( "partialtype" ), "innerType" ] ) ) {
-        
-        return recur( "innerType" );
-        
-    } else if ( em = getMatch( term,
-        [ lit( "zunitpartial" ), "terminationType", "result" ] ) ) {
-        
-        return recur( "terminationType" ).plus( recur( "result" ) );
-        
-    } else if ( em = getMatch( term, [ lit( "zbindpartial" ),
-        "aType", "bType", "thunkA", "aToThunkB" ] ) ) {
-        
-        return recur( "aType" ).plus( recur( "bType" ) ).
-            plus( recur( "thunkA" ) ).plus( recur( "aToThunkB" ) );
-        
-    } else if ( em = getMatch( term, [ lit( "zfixpartial" ),
-        "terminationType", "thunkToThunk" ] ) ) {
-        
-        return recur( "terminationType" ).
-            plus( recur( "thunkToThunk" ) );
-        
-    } else if ( em = getMatch( term, [ lit( "impartialtype" ),
-        str( "cmd" ), "commandType", "responseType",
-        "terminationType" ] ) ) {
-        
-        return recur( "commandType" ).
-            plus( recurUnder( "responseType", "cmd" ) ).
-            plus( recur( "terminationType" ) );
-        
-    } else if ( em = getMatch( term, [ lit( "unitimpartial" ),
-        str( "cmd" ), "commandType", "responseType", "result" ] ) ) {
-        
-        return recur( "commandType" ).
-            plus( recurUnder( "responseType", "cmd" ) ).
-            plus( recur( "result" ) );
-        
-    } else if ( em = getMatch( term, [ lit( "invkimpartial" ),
-        str( "cmd" ), "commandType", "responseType",
-        "terminationType", "pairOfCommandAndCallback" ] ) ) {
-        
-        return recur( "commandType" ).
-            plus( recurUnder( "responseType", "cmd" ) ).
-            plus( recur( "terminationType" ) ).
-            plus( recur( "pairOfCommandAndCallback" ) );
-    } else if ( em = getMatch( term, [ lit( "tokentype" ) ] ) ) {
-        return strMap();
-        
-    } else if ( em = getMatch( term,
-        [ lit( "ztokenequals" ), "a", "b" ] ) ) {
-        
-        return recur( "a" ).plus( recur( "b" ) );
-    } else if ( em = getMatch( term, [ lit( "sink" ) ] ) ) {
-        return strMap();
+        // TODO: Until we started using rulebooks, we had individual
+        // cases for each syntax here. See if we'll ever need to do
+        // that again.
     } else {
+        for ( var i = 0, n = rbGetFreeVarsOfTerm.length;
+            i < n; i++ ) {
+            
+            var result = rbGetFreeVarsOfTerm[ i ]( term, boundVars );
+            if ( result !== null )
+                return result.val;
+        }
         // TODO: Handle more language fragments.
         throw new Error();
     }
 }
 
+var rbRenameVarsToVars = [];
 function renameVarsToVars( renameMap, expr ) {
     
     // NOTE: This takes an env-term pair, but it returns a term.
     
     var lit = patternLang.lit;
     var str = patternLang.str;
-    var pat = patternLang.pat;
     var getMatch = patternLang.getMatch;
     
     function recur( k ) {
@@ -1048,132 +942,21 @@ function renameVarsToVars( renameMap, expr ) {
         // TODO: Figure out if this is really what we should do here.
         return expr.term;
         
-    } else if ( em = getMatch( expr.term,
-        [ lit( "tfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
-        
-        return [ "tfa", em.val.get( "arg" ), recur( "argType" ),
-            recurUnder( "resultType", "arg" ) ];
-        
-    } else if ( em = getMatch( expr.term,
-        [ lit( "tfn" ), str( "arg" ), "argType", "result" ] ) ) {
-        
-        return [ "tfn", em.val.get( "arg" ), recur( "argType" ),
-            recurUnder( "result", "arg" ) ];
-        
-    } else if ( em = getMatch( expr.term, [ lit( "tcall" ),
-        str( "argName" ), "argType", "resultType",
-        "fn", "argVal" ] ) ) {
-        
-        return [ "tcall", em.val.get( "argName" ), recur( "argType" ),
-            recurUnder( "resultType", "argName" ),
-            recur( "fn" ), recur( "argVal" ) ];
-        
-    } else if ( em = getMatch( expr.term,
-        [ lit( "ttfa" ), str( "arg" ), "resultType" ] ) ) {
-        
-        return [ "ttfa", em.val.get( "arg" ),
-            recurUnder( "resultType", "arg" ) ];
-        
-    } else if ( em = getMatch( expr.term,
-        [ lit( "ttfn" ), str( "arg" ), "result" ] ) ) {
-        
-        return [ "ttfn", em.val.get( "arg" ),
-            recurUnder( "result", "arg" ) ];
-        
-    } else if ( em = getMatch( expr.term, [ lit( "ttcall" ),
-        str( "argName" ), "resultType", "fn", "argVal" ] ) ) {
-        
-        return [ "ttcall", em.val.get( "argName" ),
-            recurUnder( "resultType", "argName" ),
-            recur( "fn" ), recur( "argVal" ) ];
-        
-    } else if ( em = getMatch( expr.term,
-        [ lit( "sfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
-        
-        return [ "sfa", em.val.get( "arg" ), recur( "argType" ),
-            recurUnder( "resultType", "arg" ) ];
-        
-    } else if ( em = getMatch( expr.term, [ lit( "sfn" ),
-        str( "arg" ), "argType", "argVal", "resultVal" ] ) ) {
-        
-        return [ "sfn", em.val.get( "arg" ), recur( "argType" ),
-            recur( "argVal" ), recurUnder( "resultVal", "arg" ) ];
-        
-    } else if ( em = getMatch( expr.term, [ lit( "fst" ),
-        str( "argName" ), "argType", "resultType", "fn" ] ) ) {
-        
-        return [ "fst", em.val.get( "argName" ), recur( "argType" ),
-            recurUnder( "resultType", "argName" ), recur( "fn" ) ];
-        
-    } else if ( em = getMatch( expr.term, [ lit( "snd" ),
-        str( "argName" ), "argType", "resultType", "fn" ] ) ) {
-        
-        return [ "snd", em.val.get( "argName" ), recur( "argType" ),
-            recurUnder( "resultType", "argName" ), recur( "fn" ) ];
-        
-    } else if ( em = getMatch( expr.term,
-        [ lit( "partialtype" ), "innerType" ] ) ) {
-        
-        return [ "partialtype", recur( "innerType" ) ];
-        
-    } else if ( em = getMatch( expr.term,
-        [ lit( "zunitpartial" ), "terminationType", "result" ] ) ) {
-        
-        return [ "zunitpartial", recur( "terminationType" ),
-            recur( "result" ) ];
-        
-    } else if ( em = getMatch( expr.term, [ lit( "zbindpartial" ),
-        "aType", "bType", "thunkA", "aToThunkB" ] ) ) {
-        
-        return [ "zbindpartial", recur( "aType" ), recur( "bType" ),
-            recur( "thunkA" ), recur( "aToThunkB" ) ];
-        
-    } else if ( em = getMatch( expr.term, [ lit( "zfixpartial" ),
-        "terminationType", "thunkToThunk" ] ) ) {
-        
-        return [ "zfixpartial", recur( "terminationType" ),
-            recur( "thunkToThunk" ) ];
-        
-    } else if ( em = getMatch( expr.term, [ lit( "impartialtype" ),
-        str( "cmd" ), "commandType", "responseType",
-        "terminationType" ] ) ) {
-        
-        return [ "impartialtype", em.val.get( "cmd" ),
-            recur( "commandType" ),
-            recurUnder( "responseType", "cmd" ),
-            recur( "terminationType" ) ];
-        
-    } else if ( em = getMatch( expr.term, [ lit( "unitimpartial" ),
-        str( "cmd" ), "commandType", "responseType", "result" ] ) ) {
-        
-        return [ "unitimpartial", em.val.get( "cmd" ),
-            recur( "commandType" ),
-            recurUnder( "responseType", "cmd" ), recur( "result" ) ];
-        
-    } else if ( em = getMatch( expr.term, [ lit( "invkimpartial" ),
-        str( "cmd" ), "commandType", "responseType",
-        "terminationType", "pairOfCommandAndCallback" ] ) ) {
-        
-        return [ "invkimpartial", em.val.get( "cmd" ),
-            recur( "commandType" ),
-            recurUnder( "responseType", "cmd" ),
-            recur( "terminationType" ),
-            recur( "pairOfCommandAndCallback" ) ];
-    } else if ( em = getMatch( expr.term, [ lit( "tokentype" ) ] ) ) {
-        return [ "tokentype" ];
-        
-    } else if ( em = getMatch( expr.term,
-        [ lit( "ztokenequals" ), "a", "b" ] ) ) {
-        
-        return [ "ztokenequals", recur( "a" ), recur( "b" ) ];
-    } else if ( em = getMatch( expr.term, [ lit( "sink" ) ] ) ) {
-        return [ "sink" ];
+        // TODO: Until we started using rulebooks, we had individual
+        // cases for each syntax here. See if we'll ever need to do
+        // that again.
     } else {
+        for ( var i = 0, n = rbRenameVarsToVars.length; i < n; i++ ) {
+            var result = rbRenameVarsToVars[ i ]( renameMap, expr );
+            if ( result !== null )
+                return result.val;
+        }
         // TODO: Handle more language fragments.
         throw new Error();
     }
 }
 
+var rbKnownEqual = [];
 function knownEqual( exprA, exprB, opt_boundVars ) {
     // Do a test of intrinsic equality, respecting alpha-equivalence.
     //
@@ -1188,7 +971,6 @@ function knownEqual( exprA, exprB, opt_boundVars ) {
     
     var lit = patternLang.lit;
     var str = patternLang.str;
-    var pat = patternLang.pat;
     var getMatch = patternLang.getMatch;
     
     var am, bm;
@@ -1254,179 +1036,23 @@ function knownEqual( exprA, exprB, opt_boundVars ) {
         // name.
         return exprA.term === exprB.term;
         
-    } else if ( aSucceeds(
-        [ lit( "tfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
-        
-        if ( !bm )
-            return false;
-        
-        return recur( "argType" ) &&
-            recurUnder( "resultType", "arg" );
-        
-    } else if ( aSucceeds(
-        [ lit( "tfn" ), str( "arg" ), "argType", "result" ] ) ) {
-        
-        if ( !bm )
-            return false;
-        
-        return recur( "argType" ) && recurUnder( "result", "arg" );
-        
-    } else if ( aSucceeds( [ lit( "tcall" ),
-        str( "argName" ), "argType", "resultType",
-        "fn", "argVal" ] ) ) {
-        
-        if ( !bm )
-            return false;
-        
-        return recur( "argType" ) &&
-            recurUnder( "resultType", "argName" ) &&
-            recur( "fn" ) && recur( "argVal" );
-        
-    } else if ( aSucceeds(
-        [ lit( "ttfa" ), str( "arg" ), "resultType" ] ) ) {
-        
-        if ( !bm )
-            return false;
-        
-        return recurUnder( "resultType", "arg" );
-        
-    } else if ( aSucceeds(
-        [ lit( "ttfn" ), str( "arg" ), "result" ] ) ) {
-        
-        if ( !bm )
-            return false;
-        
-        return recurUnder( "result", "arg" );
-        
-    } else if ( aSucceeds( [ lit( "ttcall" ),
-        str( "argName" ), "resultType", "fn", "argVal" ] ) ) {
-        
-        if ( !bm )
-            return false;
-        
-        return recurUnder( "resultType", "argName" ) &&
-            recur( "fn" ) && recur( "argVal" );
-        
-    } else if ( aSucceeds(
-        [ lit( "sfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
-        
-        if ( !bm )
-            return false;
-        
-        return recur( "argType" ) &&
-            recurUnder( "resultType", "arg" );
-        
-    } else if ( aSucceeds( [ lit( "sfn" ),
-        str( "arg" ), "argType", "argVal", "resultVal" ] ) ) {
-        
-        if ( !bm )
-            return false;
-        
-        return recur( "argType" ) && recur( "argVal" ) &&
-            recurUnder( "resultVal", "arg" );
-        
-    } else if ( aSucceeds( [ lit( "fst" ),
-        str( "argName" ), "argType", "resultType", "fn" ] ) ) {
-        
-        if ( !bm )
-            return false;
-        
-        return recur( "argType" ) &&
-            recurUnder( "resultType", "argName" ) && recur( "fn" );
-        
-    } else if ( aSucceeds( [ lit( "snd" ),
-        str( "argName" ), "argType", "resultType", "fn" ] ) ) {
-        
-        if ( !bm )
-            return false;
-        
-        return recur( "argType" ) &&
-            recurUnder( "resultType", "argName" ) && recur( "fn" );
-        
-    } else if ( aSucceeds( [ lit( "partialtype" ), "innerType" ] ) ) {
-        
-        if ( !bm )
-            return false;
-        
-        return recur( "innerType" );
-        
-    } else if ( aSucceeds(
-        [ lit( "zunitpartial" ), "terminationType", "result" ] ) ) {
-        
-        if ( !bm )
-            return false;
-        
-        return recur( "terminationType" ) && recur( "result" );
-        
-    } else if ( aSucceeds( [ lit( "zbindpartial" ),
-        "aType", "bType", "thunkA", "aToThunkB" ] ) ) {
-        
-        if ( !bm )
-            return false;
-        
-        return recur( "aType" ) && recur( "bType" ) &&
-            recur( "thunkA" ) && recur( "aToThunkB" );
-        
-    } else if ( aSucceeds( [ lit( "zfixpartial" ),
-        "terminationType", "thunkToThunk" ] ) ) {
-        
-        if ( !bm )
-            return false;
-        
-        return recur( "terminationType" ) && recur( "thunkToThunk" );
-        
-    } else if ( aSucceeds( [ lit( "impartialtype" ),
-        str( "cmd" ), "commandType", "responseType",
-        "terminationType" ] ) ) {
-        
-        if ( !bm )
-            return false;
-        
-        return recur( "commandType" ) &&
-            recurUnder( "responseType", "cmd" ) &&
-            recur( "terminationType" );
-        
-    } else if ( aSucceeds( [ lit( "unitimpartial" ),
-        str( "cmd" ), "commandType", "responseType", "result" ] ) ) {
-        
-        if ( !bm )
-            return false;
-        
-        return recur( "commandType" ) &&
-            recurUnder( "responseType", "cmd" ) && recur( "result" );
-        
-    } else if ( aSucceeds( [ lit( "invkimpartial" ),
-        str( "cmd" ), "commandType", "responseType",
-        "terminationType", "pairOfCommandAndCallback" ] ) ) {
-        
-        if ( !bm )
-            return false;
-        
-        return recur( "commandType" ) &&
-            recurUnder( "responseType", "cmd" ) &&
-            recur( "terminationType" ) &&
-            recur( "pairOfCommandAndCallback" );
-    } else if ( aSucceeds( [ lit( "tokentype" ) ] ) ) {
-        if ( !bm )
-            return false;
-        
-        return true;
-    } else if ( aSucceeds( [ lit( "ztokenequals" ), "a", "b" ] ) ) {
-        if ( !bm )
-            return false;
-        
-        return recur( "a" ) && recur( "b" );
-    } else if ( aSucceeds( [ lit( "sink" ) ] ) ) {
-        if ( !bm )
-            return false;
-        
-        return true;
+        // TODO: Until we started using rulebooks, we had individual
+        // cases for each syntax here. See if we'll ever need to do
+        // that again. (We don't have any syntaxes with
+        // proof-irrelevant equality yet, but maybe we could handle
+        // that in the code we already use to populate the rulebook.)
     } else {
+        for ( var i = 0, n = rbKnownEqual.length; i < n; i++ ) {
+            var result = rbKnownEqual[ i ]( exprA, exprB, boundVars );
+            if ( result !== null )
+                return result.val;
+        }
         // TODO: Handle more language fragments.
         throw new Error();
     }
 }
 
+var rbBetaReduce = [];
 function betaReduce( expr ) {
     // NOTE: Pretty much every time we call betaReduce(), we call
     // checkIsType() or checkInhabitsType() first, so that we know
@@ -1438,7 +1064,6 @@ function betaReduce( expr ) {
     
     var lit = patternLang.lit;
     var str = patternLang.str;
-    var pat = patternLang.pat;
     var getMatch = patternLang.getMatch;
     
     function eget( k ) {
@@ -1512,19 +1137,6 @@ function betaReduce( expr ) {
         // environment.
         
         return exprVal.val;
-    } else if ( em = getMatch( expr.term,
-        [ lit( "tfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
-        
-        var term = [ "tfa", em.val.get( "arg" ),
-            rename( "argType" ), em.val.get( "resultType" ) ];
-        return { env: env, term: term };
-        
-    } else if ( em = getMatch( expr.term,
-        [ lit( "tfn" ), str( "arg" ), "argType", "result" ] ) ) {
-        
-        var term = [ "tfn", em.val.get( "arg" ),
-            rename( "argType" ), em.val.get( "result" ) ];
-        return { env: env, term: term };
         
     } else if ( em = getMatch( expr.term, [ lit( "tcall" ),
         str( "argName" ), "argType", "resultType",
@@ -1547,16 +1159,6 @@ function betaReduce( expr ) {
             term: matchedFn.val.get( "result" )
         } );
         
-    } else if ( em = getMatch( expr.term,
-        [ lit( "ttfa" ), str( "arg" ), "resultType" ] ) ) {
-        
-        return expr;
-        
-    } else if ( em = getMatch( expr.term,
-        [ lit( "ttfn" ), str( "arg" ), "result" ] ) ) {
-        
-        return expr;
-        
     } else if ( em = getMatch( expr.term, [ lit( "ttcall" ),
         str( "argName" ), "resultType", "fn", "argVal" ] ) ) {
         
@@ -1574,13 +1176,6 @@ function betaReduce( expr ) {
             } ),
             term: matchedFn.val.get( "result" )
         } );
-        
-    } else if ( em = getMatch( expr.term,
-        [ lit( "sfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
-        
-        var term = [ "sfa", em.val.get( "arg" ),
-            rename( "argType" ), em.val.get( "resultType" ) ];
-        return { env: env, term: term };
         
     } else if ( em = getMatch( expr.term, [ lit( "sfn" ),
         str( "arg" ), "argType", "argVal", "resultVal" ] ) ) {
@@ -1637,63 +1232,6 @@ function betaReduce( expr ) {
         };
         
     } else if ( em = getMatch( expr.term,
-        [ lit( "partialtype" ), "innerType" ] ) ) {
-        
-        var term = [ "partialtype", rename( "innerType" ) ];
-        return { env: env, term: term };
-        
-    } else if ( em = getMatch( expr.term,
-        [ lit( "zunitpartial" ), "terminationType", "result" ] ) ) {
-        
-        var term = [ "zunitpartial", rename( "terminationType" ),
-            rename( "result" ) ];
-        return { env: env, term: term };
-        
-    } else if ( em = getMatch( expr.term, [ lit( "zbindpartial" ),
-        "aType", "bType", "thunkA", "aToThunkB" ] ) ) {
-        
-        var term = [ "zbindpartial",
-            rename( "aType" ), rename( "bType" ),
-            rename( "thunkA" ), rename( "aToThunkB" ) ];
-        return { env: env, term: term };
-        
-    } else if ( em = getMatch( expr.term, [ lit( "zfixpartial" ),
-        "terminationType", "thunkToThunk" ] ) ) {
-        
-        var term = [ "zfixpartial", rename( "terminationType" ),
-            rename( "thunkToThunk" ) ];
-        return { env: env, term: term };
-        
-    } else if ( em = getMatch( expr.term, [ lit( "impartialtype" ),
-        str( "cmd" ), "commandType", "responseType",
-        "terminationType" ] ) ) {
-        
-        var term = [ "impartialtype", em.val.get( "cmd" ),
-            rename( "commandType" ), em.val.get( "responseType" ),
-            rename( "terminationType" ) ];
-        return { env: env, term: term };
-        
-    } else if ( em = getMatch( expr.term, [ lit( "unitimpartial" ),
-        str( "cmd" ), "commandType", "responseType", "result" ] ) ) {
-        
-        var term = [ "unitimpartial", em.val.get( "cmd" ),
-            rename( "commandType" ), em.val.get( "responseType" ),
-            rename( "result" ) ];
-        return { env: env, term: term };
-        
-    } else if ( em = getMatch( expr.term, [ lit( "invkimpartial" ),
-        str( "cmd" ), "commandType", "responseType",
-        "terminationType", "pairOfCommandAndCallback" ] ) ) {
-        
-        var term = [ "invkimpartial", em.val.get( "cmd" ),
-            rename( "commandType" ), em.val.get( "responseType" ),
-            rename( "terminationType" ),
-            rename( "pairOfCommandAndCallback" ) ];
-        return { env: env, term: term };
-    } else if ( em = getMatch( expr.term, [ lit( "tokentype" ) ] ) ) {
-        return expr;
-        
-    } else if ( em = getMatch( expr.term,
         [ lit( "ztokenequals" ), "a", "b" ] ) ) {
         
         var a = beget( "a" );
@@ -1717,20 +1255,23 @@ function betaReduce( expr ) {
                 [ "tfn", "then", "a",
                     [ "tfn", "else", "a",
                         boolVal ? "then" : "else" ] ] ] };
-    } else if ( em = getMatch( expr.term, [ lit( "sink" ) ] ) ) {
-        return expr;
     } else {
+        for ( var i = 0, n = rbBetaReduce.length; i < n; i++ ) {
+            var result = rbBetaReduce[ i ]( expr );
+            if ( result !== null )
+                return result.val;
+        }
         // TODO: Handle more language fragments.
         throw new Error();
     }
 }
 
 // NOTE: The "wf" stands for "well-formed."
+var rbIsWfTerm = [];
 function isWfTerm( term ) {
     
     var lit = patternLang.lit;
     var str = patternLang.str;
-    var pat = patternLang.pat;
     var getMatch = patternLang.getMatch;
     
     function recur( k ) {
@@ -1741,123 +1282,25 @@ function isWfTerm( term ) {
     if ( isPrimString( term ) ) {
         return true;
         
-    } else if ( em = getMatch( term,
-        [ lit( "tfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
-        
-        return recur( "argType" ) && recur( "resultType" );
-        
-    } else if ( em = getMatch( term,
-        [ lit( "tfn" ), str( "arg" ), "argType", "result" ] ) ) {
-        
-        return recur( "argType" ) && recur( "result" );
-        
-    } else if ( em = getMatch( term, [ lit( "tcall" ),
-        str( "argName" ), "argType", "resultType",
-        "fn", "argVal" ] ) ) {
-        
-        return recur( "argType" ) && recur( "resultType" ) &&
-            recur( "fn" ) && recur( "argVal" );
-        
-    } else if ( em = getMatch( term,
-        [ lit( "ttfa" ), str( "arg" ), "resultType" ] ) ) {
-        
-        return recur( "resultType" );
-        
-    } else if ( em = getMatch( term,
-        [ lit( "ttfn" ), str( "arg" ), "result" ] ) ) {
-        
-        return recur( "result" );
-        
-    } else if ( em = getMatch( term, [ lit( "ttcall" ),
-        str( "argName" ), "resultType", "fn", "argVal" ] ) ) {
-        
-        return recur( "resultType" ) && recur( "fn" ) &&
-            recur( "argVal" );
-        
-    } else if ( em = getMatch( term,
-        [ lit( "sfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
-        
-        return recur( "argType" ) && recur( "resultType" );
-        
-    } else if ( em = getMatch( term, [ lit( "sfn" ),
-        str( "arg" ), "argType", "argVal", "resultVal" ] ) ) {
-        
-        return recur( "argType" ) && recur( "argVal" ) &&
-            recur( "resultVal" );
-        
-    } else if ( em = getMatch( term, [ lit( "fst" ),
-        str( "argName" ), "argType", "resultType", "fn" ] ) ) {
-        
-        return recur( "argType" ) && recur( "resultType" ) &&
-            recur( "fn" );
-        
-    } else if ( em = getMatch( term, [ lit( "snd" ),
-        str( "argName" ), "argType", "resultType", "fn" ] ) ) {
-        
-        return recur( "argType" ) && recur( "resultType" ) &&
-            recur( "fn" );
-        
-    } else if ( em = getMatch( term,
-        [ lit( "partialtype" ), "innerType" ] ) ) {
-        
-        return recur( "innerType" );
-        
-    } else if ( em = getMatch( term,
-        [ lit( "zunitpartial" ), "terminationType", "result" ] ) ) {
-        
-        return recur( "terminationType" ) && recur( "result" );
-        
-    } else if ( em = getMatch( term, [ lit( "zbindpartial" ),
-        "aType", "bType", "thunkA", "aToThunkB" ] ) ) {
-        
-        return recur( "aType" ) && recur( "bType" ) &&
-            recur( "thunkA" ) && recur( "aToThunkB" );
-        
-    } else if ( em = getMatch( term, [ lit( "zfixpartial" ),
-        "terminationType", "thunkToThunk" ] ) ) {
-        
-        return recur( "terminationType" ) && recur( "thunkToThunk" );
-        
-    } else if ( em = getMatch( term, [ lit( "impartialtype" ),
-        str( "cmd" ), "commandType", "responseType",
-        "terminationType" ] ) ) {
-        
-        return recur( "commandType" ) && recur( "responseType" ) &&
-            recur( "terminationType" );
-        
-    } else if ( em = getMatch( term, [ lit( "unitimpartial" ),
-        str( "cmd" ), "commandType", "responseType", "result" ] ) ) {
-        
-        return recur( "commandType" ) && recur( "responseType" ) &&
-            recur( "result" );
-        
-    } else if ( em = getMatch( term, [ lit( "invkimpartial" ),
-        str( "cmd" ), "commandType", "responseType",
-        "terminationType", "pairOfCommandAndCallback" ] ) ) {
-        
-        return recur( "commandType" ) && recur( "responseType" ) &&
-            recur( "terminationType" ) &&
-            recur( "pairOfCommandAndCallback" );
-    } else if ( em = getMatch( term, [ lit( "tokentype" ) ] ) ) {
-        return true;
-        
-    } else if ( em = getMatch( term,
-        [ lit( "ztokenequals" ), "a", "b" ] ) ) {
-        
-        return recur( "a" ) && recur( "b" );
-    } else if ( em = getMatch( term, [ lit( "sink" ) ] ) ) {
-        return true;
+        // TODO: Until we started using rulebooks, we had individual
+        // cases for each syntax here. See if we'll ever need to do
+        // that again.
     } else {
+        for ( var i = 0, n = rbIsWfTerm.length; i < n; i++ ) {
+            var result = rbIsWfTerm[ i ]( term );
+            if ( result !== null )
+                return result.val;
+        }
         // TODO: Handle more language fragments.
         return false;
     }
 }
 
+var rbCheckIsType = [];
 function checkIsType( expr ) {
     
     var lit = patternLang.lit;
     var str = patternLang.str;
-    var pat = patternLang.pat;
     var getMatch = patternLang.getMatch;
     
     function eget( k ) {
@@ -1889,17 +1332,6 @@ function checkIsType( expr ) {
         } );
         
     } else if ( em = getMatch( expr.term,
-        [ lit( "tfn" ), str( "arg" ), "argType", "result" ] ) ) {
-        
-        return false;
-        
-    } else if ( em = getMatch( expr.term, [ lit( "tcall" ),
-        str( "argName" ), "argType", "resultType",
-        "fn", "argVal" ] ) ) {
-        
-        return false;
-        
-    } else if ( em = getMatch( expr.term,
         [ lit( "ttfa" ), str( "arg" ), "resultType" ] ) ) {
         
         return checkIsType( {
@@ -1908,16 +1340,6 @@ function checkIsType( expr ) {
             } ),
             term: em.val.get( "resultType" )
         } );
-        
-    } else if ( em = getMatch( expr.term,
-        [ lit( "ttfn" ), str( "arg" ), "result" ] ) ) {
-        
-        return false;
-        
-    } else if ( em = getMatch( expr.term, [ lit( "ttcall" ),
-        str( "argName" ), "resultType", "fn", "argVal" ] ) ) {
-        
-        return false;
         
     } else if ( em = getMatch( expr.term,
         [ lit( "sfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
@@ -1931,40 +1353,10 @@ function checkIsType( expr ) {
             term: em.val.get( "resultType" )
         } );
         
-    } else if ( em = getMatch( expr.term, [ lit( "sfn" ),
-        str( "arg" ), "argType", "argVal", "resultVal" ] ) ) {
-        
-        return false;
-        
-    } else if ( em = getMatch( expr.term, [ lit( "fst" ),
-        str( "argName" ), "argType", "resultType", "fn" ] ) ) {
-        
-        return false;
-        
-    } else if ( em = getMatch( expr.term, [ lit( "snd" ),
-        str( "argName" ), "argType", "resultType", "fn" ] ) ) {
-        
-        return false;
-        
     } else if ( em = getMatch( expr.term,
         [ lit( "partialtype" ), "innerType" ] ) ) {
         
         return checkIsType( eget( "innerType" ) );
-        
-    } else if ( em = getMatch( expr.term,
-        [ lit( "zunitpartial" ), "terminationType", "result" ] ) ) {
-        
-        return false;
-        
-    } else if ( em = getMatch( expr.term, [ lit( "zbindpartial" ),
-        "aType", "bType", "thunkA", "aToThunkB" ] ) ) {
-        
-        return false;
-        
-    } else if ( em = getMatch( expr.term, [ lit( "zfixpartial" ),
-        "terminationType", "thunkToThunk" ] ) ) {
-        
-        return false;
         
     } else if ( em = getMatch( expr.term, [ lit( "impartialtype" ),
         str( "cmd" ), "commandType", "responseType",
@@ -1980,38 +1372,27 @@ function checkIsType( expr ) {
         } ) )
             return false;
         return checkIsType( eget( "terminationType" ) );
-        
-    } else if ( em = getMatch( expr.term, [ lit( "unitimpartial" ),
-        str( "cmd" ), "commandType", "responseType", "result" ] ) ) {
-        
-        return false;
-        
-    } else if ( em = getMatch( expr.term, [ lit( "invkimpartial" ),
-        str( "cmd" ), "commandType", "responseType",
-        "terminationType", "pairOfCommandAndCallback" ] ) ) {
-        
-        return false;
     } else if ( em = getMatch( expr.term, [ lit( "tokentype" ) ] ) ) {
         return true;
-        
-    } else if ( em = getMatch( expr.term,
-        [ lit( "ztokenequals" ), "a", "b" ] ) ) {
-        
-        return false;
     } else if ( em = getMatch( expr.term, [ lit( "sink" ) ] ) ) {
         return true;
     } else {
+        for ( var i = 0, n = rbCheckIsType.length; i < n; i++ ) {
+            var result = rbCheckIsType[ i ]( expr );
+            if ( result !== null )
+                return result.val;
+        }
         // TODO: Handle more language fragments.
         throw new Error();
     }
 }
 
+var rbCheckInhabitsType = [];
 function checkInhabitsType( expr, type ) {
     // NOTE: The type is assumed to be beta-reduced already.
     
     var lit = patternLang.lit;
     var str = patternLang.str;
-    var pat = patternLang.pat;
     var getMatch = patternLang.getMatch;
     
     // NOTE: Var hoisting is so convenient!
@@ -2033,11 +1414,6 @@ function checkInhabitsType( expr, type ) {
         if ( exprType === null )
             return false;
         return knownEqual( exprType.val, type );
-        
-    } else if ( em = getMatch( expr.term,
-        [ lit( "tfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
-        
-        return false;
         
     } else if ( em = getMatch( expr.term,
         [ lit( "tfn" ), str( "arg" ), "argType", "result" ] ) ) {
@@ -2089,11 +1465,6 @@ function checkInhabitsType( expr, type ) {
             type );
         
     } else if ( em = getMatch( expr.term,
-        [ lit( "ttfa" ), str( "arg" ), "resultType" ] ) ) {
-        
-        return false;
-        
-    } else if ( em = getMatch( expr.term,
         [ lit( "ttfn" ), str( "arg" ), "result" ] ) ) {
         
         var tm = getMatch( type.term,
@@ -2135,11 +1506,6 @@ function checkInhabitsType( expr, type ) {
                 term: em.val.get( "resultType" )
             } ),
             type );
-        
-    } else if ( em = getMatch( expr.term,
-        [ lit( "sfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
-        
-        return false;
         
     } else if ( em = getMatch( expr.term, [ lit( "sfn" ),
         str( "arg" ), "argType", "argVal", "resultVal" ] ) ) {
@@ -2216,11 +1582,6 @@ function checkInhabitsType( expr, type ) {
         }, type );
         
     } else if ( em = getMatch( expr.term,
-        [ lit( "partialtype" ), "innerType" ] ) ) {
-        
-        return false;
-        
-    } else if ( em = getMatch( expr.term,
         [ lit( "zunitpartial" ), "terminationType", "result" ] ) ) {
         
         var thunkType = { env: expr.env, term:
@@ -2271,12 +1632,6 @@ function checkInhabitsType( expr, type ) {
                     reducedTypeOfThunk.term ] } ) ) )
             return false;
         return knownEqual( reducedTypeOfThunk, type );
-        
-    } else if ( em = getMatch( expr.term, [ lit( "impartialtype" ),
-        str( "cmd" ), "commandType", "responseType",
-        "terminationType" ] ) ) {
-        
-        return false;
         
     } else if ( em = getMatch( expr.term, [ lit( "unitimpartial" ),
         str( "cmd" ), "commandType", "responseType", "result" ] ) ) {
@@ -2369,8 +1724,6 @@ function checkInhabitsType( expr, type ) {
                     tm.val.get( "commandType" ),
                     [ "tfa", ignoVar, tm.val.get( "responseType" ),
                         [ "partialtype", type.term ] ] ] } );
-    } else if ( em = getMatch( expr.term, [ lit( "tokentype" ) ] ) ) {
-        return false;
         
     } else if ( em = getMatch( expr.term,
         [ lit( "ztokenequals" ), "a", "b" ] ) ) {
@@ -2386,9 +1739,14 @@ function checkInhabitsType( expr, type ) {
                 [ "ttfa", "a",
                     [ "tfa", "_", "a", [ "tfa", "_", "a", "a" ] ] ] },
             type );
-    } else if ( em = getMatch( expr.term, [ lit( "sink" ) ] ) ) {
-        return false;
     } else {
+        for ( var i = 0, n = rbCheckInhabitsType.length;
+            i < n; i++ ) {
+            
+            var result = rbCheckInhabitsType[ i ]( expr, type );
+            if ( result !== null )
+                return result.val;
+        }
         // TODO: Handle more language fragments.
         throw new Error();
     }
@@ -2396,6 +1754,7 @@ function checkInhabitsType( expr, type ) {
 
 // TODO: Change this so it only accepts terms with this type:
 // (partialtype (impartialtype _ (unit) (unit) (unit)))
+var rbCompileTermToSyncJs = [];
 function compileTermToSyncJs( expr ) {
     
     // TODO: Even though the input is an env-term pair, we only use
@@ -2405,7 +1764,6 @@ function compileTermToSyncJs( expr ) {
     
     var lit = patternLang.lit;
     var str = patternLang.str;
-    var pat = patternLang.pat;
     var getMatch = patternLang.getMatch;
     
     function eget( k ) {
@@ -2434,11 +1792,6 @@ function compileTermToSyncJs( expr ) {
     var em;
     if ( isPrimString( expr.term ) ) {
         return  "_.pushRes( _.env[ " + toKey( expr.term ) + " ] );\n";
-        
-    } else if ( em = getMatch( expr.term,
-        [ lit( "tfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
-        
-        throw new Error();
         
     } else if ( em = getMatch( expr.term,
         [ lit( "tfn" ), str( "arg" ), "argType", "result" ] ) ) {
@@ -2478,11 +1831,6 @@ function compileTermToSyncJs( expr ) {
         );
         
     } else if ( em = getMatch( expr.term,
-        [ lit( "ttfa" ), str( "arg" ), "resultType" ] ) ) {
-        
-        throw new Error();
-        
-    } else if ( em = getMatch( expr.term,
         [ lit( "ttfn" ), str( "arg" ), "result" ] ) ) {
         
         var arg = em.val.get( "arg" );
@@ -2514,11 +1862,6 @@ function compileTermToSyncJs( expr ) {
             + "_.env = fn.lexEnv;\n"
             + "fn.go( _ );\n"
         );
-        
-    } else if ( em = getMatch( expr.term,
-        [ lit( "sfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
-        
-        throw new Error();
         
     } else if ( em = getMatch( expr.term, [ lit( "sfn" ),
         str( "arg" ), "argType", "argVal", "resultVal" ] ) ) {
@@ -2570,11 +1913,6 @@ function compileTermToSyncJs( expr ) {
         );
         
     } else if ( em = getMatch( expr.term,
-        [ lit( "partialtype" ), "innerType" ] ) ) {
-        
-        throw new Error();
-        
-    } else if ( em = getMatch( expr.term,
         [ lit( "zunitpartial" ), "terminationType", "result" ] ) ) {
         
         return instructions(
@@ -2609,12 +1947,6 @@ function compileTermToSyncJs( expr ) {
             + "    thunkToThunk: thunkToThunk } );\n"
         );
         
-    } else if ( em = getMatch( expr.term, [ lit( "impartialtype" ),
-        str( "cmd" ), "commandType", "responseType",
-        "terminationType" ] ) ) {
-        
-        throw new Error();
-        
     } else if ( em = getMatch( expr.term, [ lit( "unitimpartial" ),
         str( "cmd" ), "commandType", "responseType", "result" ] ) ) {
         
@@ -2638,8 +1970,6 @@ function compileTermToSyncJs( expr ) {
             + "    command: invocation[ 0 ],\n"
             + "    callback: invocation[ 1 ] } );\n"
         );
-    } else if ( em = getMatch( expr.term, [ lit( "tokentype" ) ] ) ) {
-        throw new Error();
         
     } else if ( em = getMatch( expr.term,
         [ lit( "ztokenequals" ), "a", "b" ] ) ) {
@@ -2666,9 +1996,14 @@ function compileTermToSyncJs( expr ) {
             + "    } } );\n"
             + "} } );\n"
         );
-    } else if ( em = getMatch( expr.term, [ lit( "sink" ) ] ) ) {
-        throw new Error();
     } else {
+        for ( var i = 0, n = rbCompileTermToSyncJs.length;
+            i < n; i++ ) {
+            
+            var result = rbCompileTermToSyncJs[ i ]( expr );
+            if ( result !== null )
+                return result.val;
+        }
         // TODO: Handle more language fragments.
         throw new Error();
     }
@@ -2793,12 +2128,322 @@ function compileTermToSyncJsFull( expr ) {
     );
 }
 
+
+(function () {
+    var lit = patternLang.lit;
+    var str = patternLang.str;
+    var pat = patternLang.pat;
+    var getMatch = patternLang.getMatch;
+    
+    function SubStx() {}
+    SubStx.prototype.init = function ( name, subName ) {
+        this.name = name;
+        this.subName = subName;
+        return this;
+    };
+    function sub( name, subName ) {
+        return new SubStx().init( name, subName );
+    }
+    
+    function makePat( name, args ) {
+        return pat( [ lit( name ) ].concat(
+            arrMap( args, function ( arg ) {
+                if ( arg instanceof SubStx )
+                    return arg.name;
+                else
+                    return arg;
+            } ) ) );
+    }
+    function add( name, args ) {
+        var pat = makePat( name, args );
+        rbGetFreeVarsOfTerm.push( function ( term, boundVars ) {
+            var em = getMatch( term, pat );
+            if ( em === null )
+                return null;
+            
+            function recurWith( k, boundVars ) {
+                return getFreeVarsOfTerm(
+                    em.val.get( k ), boundVars );
+            }
+            function recur( k ) {
+                return recurWith( k, boundVars );
+            }
+            function recurUnder( termK, argK ) {
+                return recurWith( termK,
+                    boundVars.plusTruth( em.val.get( argK ) ) );
+            }
+            
+            var result = strMap();
+            for ( var i = 0, n = args.length; i < n; i++ ) {
+                var arg = args[ i ];
+                if ( arg instanceof SubStx )
+                    result = result.plus(
+                        recurUnder( arg.name, arg.subName ) );
+                else if ( isPrimString( arg ) )
+                    result = result.plus( recur( arg ) );
+            }
+            return { val: result };
+        } );
+        rbRenameVarsToVars.push( function ( renameMap, expr ) {
+            var em = getMatch( expr.term, pat );
+            if ( em === null )
+                return null;
+            
+            function recur( k ) {
+                return renameVarsToVars( renameMap,
+                    { env: expr.env, term: em.val.get( k ) } );
+            }
+            function recurUnder( termK, argK ) {
+                return renameVarsToVars( renameMap, {
+                    env: envWith( expr.env, em.val.get( argK ), {} ),
+                    term: em.val.get( termK )
+                } );
+            }
+            
+            var result = [ name ];
+            for ( var i = 0, n = args.length; i < n; i++ ) {
+                var arg = args[ i ];
+                if ( arg instanceof SubStx )
+                    result.push(
+                        recurUnder( arg.name, arg.subName ) );
+                else if ( isPrimString( arg ) )
+                    result.push( recur( arg ) );
+                else
+                    result.push( expr.term[ i + 1 ] );
+            }
+            return { val: result };
+        } );
+        rbKnownEqual.push( function ( exprA, exprB, boundVars ) {
+            var am = getMatch( exprA.term, pat );
+            if ( am === null )
+                return null;
+            
+            var bm = getMatch( exprB.term, pat );
+            if ( bm === null )
+                return { val: false };
+            
+            function aget( k ) {
+                return { env: exprA.env, term: am.val.get( k ) };
+            }
+            function bget( k ) {
+                return { env: exprB.env, term: bm.val.get( k ) };
+            }
+            function recur( k ) {
+                return knownEqual( aget( k ), bget( k ), boundVars );
+            }
+            function recurUnder( termK, argK ) {
+                var a = am.val.get( argK );
+                var b = bm.val.get( argK );
+                return knownEqual( {
+                    env: envWith( exprA.env, a, {} ),
+                    term: am.val.get( termK )
+                }, {
+                    env: envWith( exprB.env, b, {} ),
+                    term: bm.val.get( termK )
+                }, {
+                    ab: boundVars.ab.plusEntry( a, b ),
+                    ba: boundVars.ba.plusEntry( b, a )
+                } );
+            }
+            
+            for ( var i = 0, n = args.length; i < n; i++ ) {
+                var arg = args[ i ];
+                if ( arg instanceof SubStx ) {
+                    if ( !recurUnder( arg.name, arg.subName ) )
+                        return { val: false };
+                } else if ( isPrimString( arg ) ) {
+                    if ( !recur( arg ) )
+                        return { val: false };
+                }
+            }
+            return { val: true };
+        } );
+        rbIsWfTerm.push( function ( term ) {
+            var em = getMatch( term, pat );
+            if ( em === null )
+                return null;
+            
+            function recur( k ) {
+                return isWfTerm( em.val.get( k ) );
+            }
+            
+            for ( var i = 0, n = args.length; i < n; i++ ) {
+                var arg = args[ i ];
+                if ( arg instanceof SubStx ) {
+                    if ( !recur( arg.name ) )
+                        return { val: false };
+                } else if ( isPrimString( arg ) ) {
+                    if ( !recur( arg ) )
+                        return { val: false };
+                }
+            }
+            return { val: true };
+        } );
+    }
+    function addEasy( name, args ) {
+        var pat = makePat( name, args );
+        rbBetaReduce.push( function ( expr ) {
+            var em = getMatch( expr.term, pat );
+            if ( em === null )
+                return null;
+            
+            function eget( k ) {
+                return { env: expr.env, term: em.val.get( k ) };
+            }
+            function beget( k ) {
+                return betaReduce( eget( k ) );
+            }
+            
+            var env = expr.env;
+            
+            // NOTE: These have side effects (changing the binding of
+            // `env`), even if we use them in a way that makes them
+            // look pure.
+            //
+            // TODO: For the moment, we don't end up renaming anything
+            // in practice, and if and when we do, we might run across
+            // a bug: The implementation of knownEqual() for free
+            // variables depends on the exact names of those
+            // variables. See if this will come up as an issue.
+            //
+            function renameExpr( expr ) {
+                var reduced = betaReduce( expr );
+                var freeVars = getFreeVarsOfTerm( reduced.term );
+                
+                var renameForward = strMap();
+                var renameBackward = strMap();
+                freeVars.each( function ( origName, truth ) {
+                    var newName = fresh( origName, renameForward );
+                    renameForward.set( origName, newName );
+                    renameBackward.set( newName, origName );
+                } );
+                
+                var result =
+                    renameVarsToVars( renameForward, reduced );
+                env = env.plus(
+                    renameBackward.map( function ( origName ) {
+                        return env.get( origName );
+                    } ) );
+                return result;
+            }
+            function rename( k ) {
+                return renameExpr( eget( k ) );
+            }
+            
+            // TODO: Figure out if it's really important to do
+            // rename( "argType" ) or beget( "argType" ) when the
+            // overall value isn't a type. There might be some
+            // static-versus-dynamic confusion here.
+            
+            var term = [ name ];
+            for ( var i = 0, n = args.length; i < n; i++ ) {
+                var arg = args[ i ];
+                if ( isPrimString( arg ) )
+                    term.push( rename( arg ) );
+                else
+                    term.push( expr.term[ i + 1 ] );
+            }
+            return { val: { env: env, term: term } };
+        } );
+    }
+    function addType( name, args ) {
+        add( name, args );
+        var pat = makePat( name, args );
+        rbCheckInhabitsType.push( function ( expr, type ) {
+            if ( getMatch( expr, pat ) )
+                return { val: false };
+            return null;
+        } );
+        rbCompileTermToSyncJs.push( function ( expr ) {
+            if ( getMatch( expr, pat ) )
+                throw new Error();
+            return null;
+        } );
+    }
+    function addTerm( name, args ) {
+        add( name, args );
+        var pat = makePat( name, args );
+        rbCheckIsType.push( function ( expr ) {
+            if ( getMatch( expr, pat ) )
+                return { val: false };
+            return null;
+        } );
+    }
+    function addEasyType( name, args ) {
+        addEasy( name, args );
+        addType( name, args );
+    }
+    function addEasyTerm( name, args ) {
+        addEasy( name, args );
+        addTerm( name, args );
+    }
+    
+    // NOTE: Every time we add a syntax, we must add special cases to
+    // the following functions:
+    //
+    // betaReduce (unless the syntax fits addEasyType or addEasyTerm)
+    // checkIsType (for types)
+    // checkInhabitsType (for terms)
+    // compileTermToSyncJs (for terms)
+    //
+    addEasyType( "tfa",
+        [ str( "arg" ), "argType", sub( "resultType", "arg" ) ] );
+    addEasyTerm( "tfn",
+        [ str( "arg" ), "argType", sub( "result", "arg" ) ] );
+    addTerm( "tcall", [
+        str( "argName" ), "argType", sub( "resultType", "argName" ),
+        "fn", "argVal"
+    ] );
+    addEasyType( "ttfa",
+        [ str( "arg" ), sub( "resultType", "arg" ) ] );
+    addEasyTerm( "ttfn",
+        [ str( "arg" ), sub( "result", "arg" ) ] );
+    addTerm( "ttcall", [
+        str( "argName" ), sub( "resultType", "argName" ),
+        "fn", "argVal"
+    ] );
+    addEasyType( "sfa",
+        [ str( "arg" ), "argType", sub( "resultType", "arg" ) ] );
+    addTerm( "sfn", [
+        str( "arg" ), "argType", "argVal", sub( "resultVal", "arg" )
+    ] );
+    addTerm( "fst", [
+        str( "argName" ), "argType", sub( "resultType", "argName" ),
+        "fn"
+    ] );
+    addTerm( "snd", [
+        str( "argName" ), "argType", sub( "resultType", "argName" ),
+        "fn"
+    ] );
+    addEasyType( "partialtype", [ "innerType" ] );
+    addEasyTerm( "zunitpartial", [ "terminationType", "result" ] );
+    addEasyTerm( "zbindpartial",
+        [ "aType", "bType", "thunkA", "aToThunkB" ] );
+    addEasyTerm( "zfixpartial",
+        [ "terminationType", "thunkToThunk" ] );
+    addEasyType( "impartialtype", [
+        str( "cmd" ), "commandType", sub( "responseType", "cmd" ),
+        "terminationType"
+    ] );
+    addEasyTerm( "unitimpartial", [
+        str( "cmd" ), "commandType", sub( "responseType", "cmd" ),
+        "result"
+    ] );
+    addEasyTerm( "invkimpartial", [
+        str( "cmd" ), "commandType", sub( "responseType", "cmd" ),
+        "terminationType", "pairOfCommandAndCallback"
+    ] );
+    addEasyType( "tokentype", [] );
+    addTerm( "ztokenequals", [ "a", "b" ] );
+    addEasyType( "sink", [] );
+})();
+
+
 // NOTE: The "wf" stands for "well-formed."
 function isWfUserKnowledge( term ) {
     
     var lit = patternLang.lit;
     var str = patternLang.str;
-    var pat = patternLang.pat;
     var getMatch = patternLang.getMatch;
     
     var em;
@@ -2829,7 +2474,6 @@ function checkUserKnowledge( keyring, expr ) {
     
     var lit = patternLang.lit;
     var str = patternLang.str;
-    var pat = patternLang.pat;
     var getMatch = patternLang.getMatch;
     
     function eget( k ) {
@@ -2876,7 +2520,6 @@ function isWfExternallyVisibleWord( term ) {
     
     var lit = patternLang.lit;
     var str = patternLang.str;
-    var pat = patternLang.pat;
     var getMatch = patternLang.getMatch;
     
     var em;
@@ -2893,7 +2536,6 @@ function isWfKey( term ) {
     
     var lit = patternLang.lit;
     var str = patternLang.str;
-    var pat = patternLang.pat;
     var getMatch = patternLang.getMatch;
     
     var em;
@@ -2921,7 +2563,6 @@ function checkKey( keyring, term ) {
     
     var lit = patternLang.lit;
     var str = patternLang.str;
-    var pat = patternLang.pat;
     var getMatch = patternLang.getMatch;
     
     var em;
@@ -2943,7 +2584,6 @@ function isWfUserAction( term ) {
     
     var lit = patternLang.lit;
     var str = patternLang.str;
-    var pat = patternLang.pat;
     var getMatch = patternLang.getMatch;
     
     var em;
@@ -2995,7 +2635,6 @@ function checkUserAction( keyring, expr ) {
     
     var lit = patternLang.lit;
     var str = patternLang.str;
-    var pat = patternLang.pat;
     var getMatch = patternLang.getMatch;
     
     function eget( k ) {
