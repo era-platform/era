@@ -81,6 +81,24 @@ function sameTwo( a, b ) {
         a !== a ? b !== b :  // NaN
         a === b;
 }
+function jsStr( string ) {
+    // NOTE: Unlike JSON.stringify(), this will limit its output to
+    // ASCII characters, and it will be a valid JavaScript string
+    // (whereas a JSON string can contain U+2028 LINE SEPARATOR and
+    // U+2029 PARAGRAPH SEPARATOR).
+    return "\"" + arrMap( string.split( /\\/ ), function ( part ) {
+        return part.replace( /\"/g, "\\\"" ).replace( /\n/g, "\\n" ).
+            replace( /\r/g, "\\r" ).replace( /\t/g, "\\t" ).
+            replace( /\x08/g, "\\b" ).replace( /\f/g, "\\f" ).
+            replace( /\0/g, "\\0" ).replace( /\v/g, "\\v" ).
+            replace( /[^\u0020-\u008F]/g, function ( cha ) {
+                var code =
+                    cha.charCodeAt( 0 ).toString( 16 ).toUpperCase();
+                return "\\u" +
+                    ("0000" + code).substring( 4 - code.length );
+            } );
+    } ).join( "\\\\" ) + "\"";
+}
 
 // TODO: Come up with something better than this.
 var naiveIsoCases = [];
@@ -205,6 +223,11 @@ StrMap.prototype.any = function ( body ) {
     var self = this;
     return objOwnAny( this.contents_, function ( v, k ) {
         return body( v, self.unmangle_( k ) );
+    } );
+};
+StrMap.prototype.hasAny = function () {
+    return this.any( function ( v, k ) {
+        return true;
     } );
 };
 // NOTE: This body takes its args as ( k, v ).
@@ -787,10 +810,6 @@ addNaiveIsoUnitTest( function ( then ) {
 //     (maybe
 //       (tfa _ (sink)
 //         (partialtype (impartialtype _ (sink) (sink) (sink))))))
-
-// TODO: Define built-in module exports straightforwardly in terms of
-// their corresponding syntaxes. We won't end up using raw JavaScript
-// code after all.
 
 
 function envWith( env, varName, varSpecifics ) {
@@ -1756,8 +1775,6 @@ function checkInhabitsType( expr, type ) {
     }
 }
 
-// TODO: Change this so it only accepts terms with this type:
-// (partialtype (impartialtype _ (unit) (unit) (unit)))
 var rbCompileTermToSyncJs = [];
 function compileTermToSyncJs( expr ) {
     
@@ -1775,9 +1792,7 @@ function compileTermToSyncJs( expr ) {
     }
     
     function toKey( name ) {
-        // TODO: Escape line break characters that are valid in JSON
-        // string literals but not in JS string literals.
-        return JSON.stringify( "|" + name );
+        return jsStr( "|" + name );
     }
     
     function instructions( var_args ) {
@@ -1829,9 +1844,7 @@ function compileTermToSyncJs( expr ) {
             ""
             + "var argVal = _.popRes();\n"
             + "var fn = _.popRes();\n"
-            // TODO: Delete this entry once we're done with it.
-            + "(_.env = fn.lexEnv)[ fn.arg ] = argVal;\n"
-            + "fn.go( _ );\n"
+            + "_.pushTfn( fn, argVal );\n"
         );
         
     } else if ( em = getMatch( expr.term,
@@ -1863,8 +1876,7 @@ function compileTermToSyncJs( expr ) {
             compileTermToSyncJs( eget( "fn" ) ),
             ""
             + "var fn = _.popRes();\n"
-            + "_.env = fn.lexEnv;\n"
-            + "fn.go( _ );\n"
+            + "_.pushTtfn( fn );\n"
         );
         
     } else if ( em = getMatch( expr.term, [ lit( "sfn" ),
@@ -2019,7 +2031,7 @@ function compileTermToSyncJsFull( expr ) {
     // now we just do a sanity check to make sure it's empty, and then
     // we pass it along to compileTermToSyncJs(), which doesn't use it
     // either.
-    if ( expr.env.any( function () { return true; } ) )
+    if ( expr.env.hasAny() )
         throw new Error();
     
     var igno = "_";
@@ -2052,13 +2064,34 @@ function compileTermToSyncJsFull( expr ) {
         + "    instructions.push( instruction );\n"
         + "};\n"
         + "_.env = {};\n"
+        + "_.pushTfn = function ( fn, arg ) {\n"
+        + "    var newEnv = fn.lexEnv;\n"
+        + "    var oldEnv = _.env;\n"
+        + "    _.env = newEnv;\n"
+        + "    newEnv[ fn.arg ] = arg;\n"
+        + "    _.pushInst( function ( _ ) {\n"
+        + "        newEnv[ fn.arg ] = null;\n"
+        + "        _.env = oldEnv;\n"
+        + "    } );\n"
+        + "    fn.go( _ );\n"
+        + "};\n"
+        + "_.pushTtfn = function ( fn ) {\n"
+        + "    var newEnv = fn.lexEnv;\n"
+        + "    var oldEnv = _.env;\n"
+        + "    _.env = newEnv;\n"
+        + "    _.pushInst( function ( _ ) {\n"
+        + "        _.env = oldEnv;\n"
+        + "    } );\n"
+        + "    fn.go( _ );\n"
+        + "};\n"
         + "\n"
         + compileTermToSyncJs( expr )
         + "\n"
         + "function invk( command ) {\n"
         // TODO: Support better side effects. For now, any and every
         // command increments a variable and responds with the command
-        // value itself.
+        // value itself. Still, this is as much as we can do as long
+        // as the commands and responses are of the unit type.
         + "    total++;\n"
         + "    return command;\n"
         + "}\n"
@@ -2072,11 +2105,7 @@ function compileTermToSyncJsFull( expr ) {
         + "    return results.pop();\n"
         + "}\n"
         + "function callTfn( fn, arg ) {\n"
-        + "    _.pushInst( function ( _ ) {\n"
-        // TODO: Delete this entry once we're done with it.
-        + "        (_.env = fn.lexEnv)[ fn.arg ] = arg;\n"
-        + "        fn.go( _ );\n"
-        + "    } );\n"
+        + "    _.pushTfn( fn, arg );\n"
         + "    return runInstructions();\n"
         + "}\n"
         + "function runPartial( partialStep ) {\n"
@@ -2386,9 +2415,8 @@ function compileTermToSyncJsFull( expr ) {
         if ( !/^[a-z]+$/.test( tagName ) )
             throw new Error(
                 "Sink tags can only contain lowercase letters." );
-        getFreeVarsOfTerm( innerTypeTerm ).each( function () {
+        if ( getFreeVarsOfTerm( innerTypeTerm ).hasAny() )
             throw new Error();
-        } );
         var maybeInnerType = { env: strMap(), term:
             [ "ttfa", "a",
                 [ "tfa", "_", "a",
@@ -2504,13 +2532,9 @@ function compileTermToSyncJsFull( expr ) {
                     + "                _.pushRes( elseVal );\n"
                     + "            else\n"
                     + "                _.pushInst( function ( _ ) {\n"
-                    + "                    var fn =\n"
-                    + "                        _.env[ \"|then\" ];\n"
-                    // TODO: Delete this entry once we're done with
-                    // it.
-                    + "                    (_.env = fn.lexEnv)[\n" +
-                    + "                        fn.arg ] = sink.val;\n"
-                    + "                    fn.go( _ );\n"
+                    + "                    _.pushTfn(\n"
+                    + "                        _.env[ \"|then\" ],\n"
+                    + "                        sink.val );\n"
                     + "                } );\n"
                     + "        } } );\n"
                     + "    } } );\n"
