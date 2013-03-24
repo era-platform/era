@@ -2024,10 +2024,11 @@ function compileTermToSyncJsFull( expr ) {
     
     var igno = "_";
     var unitType = [ "ttfa", "t", [ "tfa", igno, "t", "t" ] ];
-    if ( !checkInhabitsType( expr, { env: strMap(), term:
-        [ "partialtype",
-            [ "impartialtype", igno, unitType, unitType,
-                unitType ] ] } ) )
+    if ( !(isWfTerm( expr.term )
+        && checkInhabitsType( expr, { env: strMap(), term:
+            [ "partialtype",
+                [ "impartialtype", igno, unitType, unitType,
+                    unitType ] ] } )) )
         throw new Error();
     
     // TODO: Deal with imports and such. Maybe we'll need to compile
@@ -2876,39 +2877,43 @@ function addBuiltinSyntax( key, nickname ) {
         knownIsSyntax: { val: true },
         knownNickname: nickname === null ? null : { val: nickname },
         knownType: null,
-        knownJsCode: null
+        knownVal: null
     } );
 }
-function addBuiltinComputation( key, type, jsCode ) {
+function addBuiltinComputation( key, type, val ) {
+    if ( !(isWfKey( key )
+        && isWfTerm( type.term ) && checkIsType( type )
+        && isWfTerm( val.term ) && checkInhabitsType( val, type )) )
+        throw new Error();
     builtins.set( stringifyKey( key ), {
         knownIsSyntax: null,
         knownNickname: null,
         knownType: { val: type },
-        knownJsCode: { val: jsCode }
+        knownVal: { val: val }
     } );
 }
 // TODO: Use a real identity rather than [ "everyone" ].
 function addBuiltinEraSyntax( fragmentName, nickname ) {
     addBuiltinSyntax(
         [ "subkey", [ "everyone" ],
-            "era_" + fragmentName + "_stx_" + nickname ],
+            [ "sym", "era_" + fragmentName + "_stx_" + nickname ] ],
         nickname );
 }
 function addBuiltinEraComputation(
-    fragmentName, nickname, typeTerm, jsCode ) {
+    fragmentName, nickname, typeTerm, valTerm ) {
     
     addBuiltinComputation(
         [ "subkey", [ "everyone" ],
-            "era_" + fragmentName + "_stx_" + nickname ],
+            [ "sym", "era_" + fragmentName + "_stx_" + nickname ] ],
         { env: strMap(), term: typeTerm },
-        jsCode );
+        { env: strMap(), term: valTerm } );
 }
 addBuiltinEraSyntax( "deductive", "istype" );
 addBuiltinEraSyntax( "deductive", "describes" );
 // TODO: Come up with a shorter name than "variableReference".
 addBuiltinSyntax(
     [ "subkey", [ "everyone" ],
-        "era_deductive_stx_variableReference" ],
+        [ "sym", "era_deductive_stx_variableReference" ] ],
     null );
 addBuiltinEraSyntax( "deductive", "tfa" );
 addBuiltinEraSyntax( "deductive", "tfn" );
@@ -2940,8 +2945,8 @@ addBuiltinEraSyntax( "partiality", "zbindpartial" );
 addBuiltinEraSyntax( "partiality", "zfixpartial" );
 addBuiltinEraComputation( "partiality", "unitpartial",
     [ "ttfa", "a", [ "tfa", "_", "a", [ "partialtype", "a" ] ] ],
-    // TODO: Implement this in terms of (zunitpartial ...).
-    "throw new Error();\n"
+    [ "ttfn", "a",
+        [ "tfn", "result", "a", [ "zunitpartial", "a", "result" ] ] ]
 );
 addBuiltinEraComputation( "partiality", "bindpartial",
     [ "ttfa", "a",
@@ -2950,8 +2955,13 @@ addBuiltinEraComputation( "partiality", "bindpartial",
                 [ "tfa", "_",
                     [ "tfa", "_", "a", [ "partialtype", "b" ] ],
                     [ "partialtype", "b" ] ] ] ] ],
-    // TODO: Implement this in terms of (zbindpartial ...).
-    "throw new Error();\n"
+    [ "ttfn", "a",
+        [ "ttfn", "b",
+            [ "tfn", "thunkA", [ "partialtype", "a" ],
+                [ "tfn", "aToThunkB",
+                    [ "tfa", "_", "a", [ "partialtype", "b" ] ],
+                    [ "zbindpartial", "a", "b",
+                        "thunkA", "aToThunkB" ] ] ] ] ]
 );
 addBuiltinEraComputation( "partiality", "fixpartial",
     [ "ttfa", "a",
@@ -2959,8 +2969,11 @@ addBuiltinEraComputation( "partiality", "fixpartial",
             [ "tfa", "_", [ "partialtype", "a" ],
                 [ "partialtype", "a" ] ],
             [ "partialtype", "a" ] ] ],
-    // TODO: Implement this in terms of (zfixpartial ...).
-    "throw new Error();\n"
+    [ "ttfn", "a",
+        [ "tfn", "thunkToThunk",
+            [ "tfa", "_", [ "partialtype", "a" ],
+                [ "partialtype", "a" ] ],
+            [ "zfixpartial", "a", "thunkToThunk" ] ] ]
 );
 // TODO: Come up with a shorter name than
 // "imperativePartialComputation".
@@ -2982,28 +2995,29 @@ addBuiltinEraComputation( "staticallyGeneratedDynamicToken",
         [ "tfa", "_", [ "tokentype" ],
             [ "ttfa", "a",
                 [ "tfa", "_", "a", [ "tfa", "_", "a", "a" ] ] ] ] ],
-    // TODO: Implement this in terms of (ztokenequals ...).
-    "throw new Error();\n"
+    [ "tfn", "a", [ "tokentype" ],
+        [ "tfn", "b", [ "tokentype" ],
+            [ "ztokenequals", "a", "b" ] ] ]
 );
 // TODO: Come up with a better name than "kitchenSinkUnType".
 addBuiltinEraSyntax( "kitchenSinkUnType", "sink" );
-function addSinkTag( tagName, type ) {
+function addSinkTag( tagName, innerType ) {
     if ( !/^[a-z]+$/.test( tagName ) )
         throw new Error(
             "Sink tags can only contain lowercase letters." );
     addBuiltinEraComputation( "kitchenSinkUnType", tagName + "tosink",
-        [ "tfa", "_", type, [ "sink" ] ],
-        // TODO: Implement this in terms of (z<tagName>tosink ...).
-        "throw new Error();\n"
+        [ "tfa", "_", innerType, [ "sink" ] ],
+        [ "tfn", "val", innerType,
+            [ "z" + tagName + "tosink", "val" ] ]
     );
     addBuiltinEraComputation( "kitchenSinkUnType", "sinkto" + tagName,
         [ "tfa", "_", [ "sink" ],
             [ "ttfa", "a",
                 [ "tfa", "_", "a",
-                    [ "tfa", "_", [ "tfn", "_", type, "a" ],
+                    [ "tfa", "_", [ "tfa", "_", innerType, "a" ],
                         "a" ] ] ] ],
-        // TODO: Implement this in terms of (zsinkto<tagName> ...).
-        "throw new Error();\n"
+        [ "tfn", "sink", [ "sink" ],
+            [ "zsinkto" + tagName, "sink" ] ]
     );
 }
 addSinkTag( "token", [ "tokentype" ] );
