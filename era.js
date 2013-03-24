@@ -2163,6 +2163,9 @@ function compileTermToSyncJsFull( expr ) {
 }
 
 
+// TODO: Actually use this. Test it, too.
+var builtins = strMap();
+
 (function () {
     var lit = patternLang.lit;
     var str = patternLang.str;
@@ -2179,6 +2182,45 @@ function compileTermToSyncJsFull( expr ) {
         return new SubStx().init( name, subName );
     }
     
+    function addBuiltinSyntax( key, nickname ) {
+        builtins.set( stringifyKey( key ), {
+            knownIsSyntax: { val: true },
+            knownNickname:
+                nickname === null ? null : { val: nickname },
+            knownType: null,
+            knownVal: null
+        } );
+    }
+    function addBuiltinVal( key, type, val ) {
+        if ( !(isWfKey( key )
+            && isWfTerm( type.term ) && checkIsType( type )
+            && isWfTerm( val.term )
+            && checkInhabitsType( val, type )) )
+            throw new Error();
+        builtins.set( stringifyKey( key ), {
+            knownIsSyntax: null,
+            knownNickname: null,
+            knownType: { val: type },
+            knownVal: { val: val }
+        } );
+    }
+    // TODO: Use a real identity rather than [ "everyone" ].
+    function addEraSyntax( fragmentName, nickname ) {
+        addBuiltinSyntax(
+            [ "subkey", [ "everyone" ],
+                [ "sym",
+                    "era_" + fragmentName + "_stx_" + nickname ] ],
+            nickname );
+    }
+    function addEraVal( fragmentName, nickname, typeTerm, valTerm ) {
+        addBuiltinVal(
+            [ "subkey", [ "everyone" ],
+                [ "sym",
+                    "era_" + fragmentName + "_stx_" + nickname ] ],
+            { env: strMap(), term: typeTerm },
+            { env: strMap(), term: valTerm } );
+    }
+    
     function makePat( name, args ) {
         return pat( [ lit( name ) ].concat(
             arrMap( args, function ( arg ) {
@@ -2188,7 +2230,8 @@ function compileTermToSyncJsFull( expr ) {
                     return arg;
             } ) ) );
     }
-    function add( name, args ) {
+    function addTypeOrTerm( fragmentName, name, args ) {
+        addEraSyntax( fragmentName, name );
         var pat = makePat( name, args );
         rbGetFreeVarsOfTerm.push( function ( term, boundVars ) {
             var em = getMatch( term, pat );
@@ -2380,36 +2423,36 @@ function compileTermToSyncJsFull( expr ) {
             return { val: { env: env, term: term } };
         } );
     }
-    function addType( name, args ) {
-        add( name, args );
+    function addType( fragmentName, name, args ) {
+        addTypeOrTerm( fragmentName, name, args );
         var pat = makePat( name, args );
         rbCheckInhabitsType.push( function ( expr, type ) {
-            if ( getMatch( expr, pat ) )
+            if ( getMatch( expr.term, pat ) )
                 return { val: false };
             return null;
         } );
         rbCompileTermToSyncJs.push( function ( expr ) {
-            if ( getMatch( expr, pat ) )
+            if ( getMatch( expr.term, pat ) )
                 throw new Error();
             return null;
         } );
     }
-    function addTerm( name, args ) {
-        add( name, args );
+    function addTerm( fragmentName, name, args ) {
+        addTypeOrTerm( fragmentName, name, args );
         var pat = makePat( name, args );
         rbCheckIsType.push( function ( expr ) {
-            if ( getMatch( expr, pat ) )
+            if ( getMatch( expr.term, pat ) )
                 return { val: false };
             return null;
         } );
     }
-    function addEasyType( name, args ) {
+    function addEasyType( fragmentName, name, args ) {
         addEasy( name, args );
-        addType( name, args );
+        addType( fragmentName, name, args );
     }
-    function addEasyTerm( name, args ) {
+    function addEasyTerm( fragmentName, name, args ) {
         addEasy( name, args );
-        addTerm( name, args );
+        addTerm( fragmentName, name, args );
     }
     function addSinkTag( tagName, innerTypeTerm ) {
         if ( !/^[a-z]+$/.test( tagName ) )
@@ -2429,8 +2472,8 @@ function compileTermToSyncJsFull( expr ) {
         var fromSink = "zsinkto" + tagName;
         var toSinkPat = makePat( toSink, [ "val" ] );
         var fromSinkPat = makePat( fromSink, [ "sink" ] );
-        addEasyTerm( toSink, [ "val" ] );
-        addTerm( fromSink, [ "sink" ] );
+        addEasyTerm( "kitchenSinkUnType", toSink, [ "val" ] );
+        addTerm( "kitchenSinkUnType", fromSink, [ "sink" ] );
         rbBetaReduce.push( function ( expr ) {
             var em = getMatch( expr.term, fromSinkPat );
             if ( em === null )
@@ -2544,66 +2587,151 @@ function compileTermToSyncJsFull( expr ) {
                 return null;
             }
         } );
+        addEraVal( "kitchenSinkUnType", tagName + "tosink",
+            [ "tfa", "_", innerTypeTerm, [ "sink" ] ],
+            [ "tfn", "val", innerTypeTerm, [ toSink, "val" ] ] );
+        addEraVal( "kitchenSinkUnType", "sinkto" + tagName,
+            [ "tfa", "_", [ "sink" ],
+                [ "ttfa", "a",
+                    [ "tfa", "_", "a",
+                        [ "tfa", "_",
+                            [ "tfa", "_", innerTypeTerm, "a" ],
+                            "a" ] ] ] ],
+            [ "tfn", "sink", [ "sink" ], [ fromSink, "sink" ] ] );
     }
     
-    // NOTE: Every time we add a syntax, we must add special cases to
-    // the following functions:
+    
+    // NOTE: The order matters a little here. We do a sanity typecheck
+    // of every addEraVal() at the moment it appears, at which point
+    // only the earlier-defined syntaxes exist.
+    
+    // NOTE: Every time we add a term syntax (using addType, addTerm,
+    // addEasyType, or addEasyTerm), we must add special cases to the
+    // following functions:
     //
     // betaReduce (unless the syntax fits addEasyType or addEasyTerm)
     // checkIsType (for types)
     // checkInhabitsType (for terms)
     // compileTermToSyncJs (for terms)
     //
-    addEasyType( "tfa",
+    addEraSyntax( "deductive", "istype" );
+    addEraSyntax( "deductive", "describes" );
+    // TODO: Come up with a shorter name than "variableReference".
+    addBuiltinSyntax(
+        [ "subkey", [ "everyone" ],
+            [ "sym", "era_deductive_stx_variableReference" ] ],
+        null );
+    addEasyType( "deductive", "tfa",
         [ str( "arg" ), "argType", sub( "resultType", "arg" ) ] );
-    addEasyTerm( "tfn",
+    addEasyTerm( "deductive", "tfn",
         [ str( "arg" ), "argType", sub( "result", "arg" ) ] );
-    addTerm( "tcall", [
+    addTerm( "deductive", "tcall", [
         str( "argName" ), "argType", sub( "resultType", "argName" ),
         "fn", "argVal"
     ] );
-    addEasyType( "ttfa",
+    addEasyType( "deductive", "ttfa",
         [ str( "arg" ), sub( "resultType", "arg" ) ] );
-    addEasyTerm( "ttfn",
+    addEasyTerm( "deductive", "ttfn",
         [ str( "arg" ), sub( "result", "arg" ) ] );
-    addTerm( "ttcall", [
+    addTerm( "deductive", "ttcall", [
         str( "argName" ), sub( "resultType", "argName" ),
         "fn", "argVal"
     ] );
-    addEasyType( "sfa",
+    addEasyType( "deductive", "sfa",
         [ str( "arg" ), "argType", sub( "resultType", "arg" ) ] );
-    addTerm( "sfn", [
+    addTerm( "deductive", "sfn", [
         str( "arg" ), "argType", "argVal", sub( "resultVal", "arg" )
     ] );
-    addTerm( "fst", [
+    addTerm( "deductive", "fst", [
         str( "argName" ), "argType", sub( "resultType", "argName" ),
         "fn"
     ] );
-    addTerm( "snd", [
+    addTerm( "deductive", "snd", [
         str( "argName" ), "argType", sub( "resultType", "argName" ),
         "fn"
     ] );
-    addEasyType( "partialtype", [ "innerType" ] );
-    addEasyTerm( "zunitpartial", [ "terminationType", "result" ] );
-    addEasyTerm( "zbindpartial",
+    addEraSyntax( "active", "can" );
+    addEraSyntax( "localCollaboration", "secret" );
+    addEraSyntax( "localCollaboration", "public" );
+    addEraSyntax( "localCollaboration", "withsecret" );
+    addEraSyntax( "localCollaboration", "everyone" );
+    addEraSyntax( "localCollaboration", "subkey" );
+    addEraSyntax( "localCollaboration", "sym" );
+    // TODO: Come up with a shorter name than
+    // "localCollaborativeValueLevelDefinition".
+    addEraSyntax( "localCollaborativeValueLevelDefinition",
+        "define" );
+    addEraSyntax( "localCollaborativeValueLevelDefinition",
+        "witheach" );
+    // TODO: Come up with a better name than "partiality".
+    addEasyType( "partiality", "partialtype", [ "innerType" ] );
+    addEasyTerm( "partiality", "zunitpartial",
+        [ "terminationType", "result" ] );
+    addEasyTerm( "partiality", "zbindpartial",
         [ "aType", "bType", "thunkA", "aToThunkB" ] );
-    addEasyTerm( "zfixpartial",
+    addEasyTerm( "partiality", "zfixpartial",
         [ "terminationType", "thunkToThunk" ] );
-    addEasyType( "impartialtype", [
+    addEraVal( "partiality", "unitpartial",
+        [ "ttfa", "a", [ "tfa", "_", "a", [ "partialtype", "a" ] ] ],
+        [ "ttfn", "a",
+            [ "tfn", "result", "a",
+                [ "zunitpartial", "a", "result" ] ] ] );
+    addEraVal( "partiality", "bindpartial",
+        [ "ttfa", "a",
+            [ "ttfa", "b",
+                [ "tfa", "_", [ "partialtype", "a" ],
+                    [ "tfa", "_",
+                        [ "tfa", "_", "a", [ "partialtype", "b" ] ],
+                        [ "partialtype", "b" ] ] ] ] ],
+        [ "ttfn", "a",
+            [ "ttfn", "b",
+                [ "tfn", "thunkA", [ "partialtype", "a" ],
+                    [ "tfn", "aToThunkB",
+                        [ "tfa", "_", "a", [ "partialtype", "b" ] ],
+                        [ "zbindpartial", "a", "b",
+                            "thunkA", "aToThunkB" ] ] ] ] ] );
+    addEraVal( "partiality", "fixpartial",
+        [ "ttfa", "a",
+            [ "tfa", "_",
+                [ "tfa", "_", [ "partialtype", "a" ],
+                    [ "partialtype", "a" ] ],
+                [ "partialtype", "a" ] ] ],
+        [ "ttfn", "a",
+            [ "tfn", "thunkToThunk",
+                [ "tfa", "_", [ "partialtype", "a" ],
+                    [ "partialtype", "a" ] ],
+                [ "zfixpartial", "a", "thunkToThunk" ] ] ] );
+    // TODO: Come up with a shorter name than
+    // "imperativePartialComputation".
+    addEasyType( "imperativePartialComputation", "impartialtype", [
         str( "cmd" ), "commandType", sub( "responseType", "cmd" ),
         "terminationType"
     ] );
-    addEasyTerm( "unitimpartial", [
+    addEasyTerm( "imperativePartialComputation", "unitimpartial", [
         str( "cmd" ), "commandType", sub( "responseType", "cmd" ),
         "result"
     ] );
-    addEasyTerm( "invkimpartial", [
+    addEasyTerm( "imperativePartialComputation", "invkimpartial", [
         str( "cmd" ), "commandType", sub( "responseType", "cmd" ),
         "terminationType", "pairOfCommandAndCallback"
     ] );
-    addEasyType( "tokentype", [] );
-    addTerm( "ztokenequals", [ "a", "b" ] );
-    addEasyType( "sink", [] );
+    // TODO: Come up with a shorter name than
+    // "staticallyGeneratedDynamicToken".
+    addEasyType( "staticallyGeneratedDynamicToken", "tokentype", [] );
+    addEraSyntax( "staticallyGeneratedDynamicToken", "withtoken" );
+    addTerm( "staticallyGeneratedDynamicToken", "ztokenequals",
+        [ "a", "b" ] );
+    addEraVal( "staticallyGeneratedDynamicToken", "tokenequals",
+        [ "tfa", "_", [ "tokentype" ],
+            [ "tfa", "_", [ "tokentype" ],
+                [ "ttfa", "a",
+                    [ "tfa", "_", "a",
+                        [ "tfa", "_", "a", "a" ] ] ] ] ],
+        [ "tfn", "a", [ "tokentype" ],
+            [ "tfn", "b", [ "tokentype" ],
+                [ "ztokenequals", "a", "b" ] ] ] );
+    // TODO: Come up with a better name than "kitchenSinkUnType".
+    addEasyType( "kitchenSinkUnType", "sink", [] );
     addSinkTag( "token", [ "tokentype" ] );
     addSinkTag( "pfn",
         [ "tfa", "_", [ "sink" ], [ "partialtype", [ "sink" ] ] ] );
@@ -2893,165 +3021,6 @@ function checkUserAction( keyring, expr ) {
         throw new Error();
     }
 }
-
-// TODO: Actually use this. Test it, too.
-var builtins = strMap();
-function addBuiltinSyntax( key, nickname ) {
-    builtins.set( stringifyKey( key ), {
-        knownIsSyntax: { val: true },
-        knownNickname: nickname === null ? null : { val: nickname },
-        knownType: null,
-        knownVal: null
-    } );
-}
-function addBuiltinComputation( key, type, val ) {
-    if ( !(isWfKey( key )
-        && isWfTerm( type.term ) && checkIsType( type )
-        && isWfTerm( val.term ) && checkInhabitsType( val, type )) )
-        throw new Error();
-    builtins.set( stringifyKey( key ), {
-        knownIsSyntax: null,
-        knownNickname: null,
-        knownType: { val: type },
-        knownVal: { val: val }
-    } );
-}
-// TODO: Use a real identity rather than [ "everyone" ].
-function addBuiltinEraSyntax( fragmentName, nickname ) {
-    addBuiltinSyntax(
-        [ "subkey", [ "everyone" ],
-            [ "sym", "era_" + fragmentName + "_stx_" + nickname ] ],
-        nickname );
-}
-function addBuiltinEraComputation(
-    fragmentName, nickname, typeTerm, valTerm ) {
-    
-    addBuiltinComputation(
-        [ "subkey", [ "everyone" ],
-            [ "sym", "era_" + fragmentName + "_stx_" + nickname ] ],
-        { env: strMap(), term: typeTerm },
-        { env: strMap(), term: valTerm } );
-}
-addBuiltinEraSyntax( "deductive", "istype" );
-addBuiltinEraSyntax( "deductive", "describes" );
-// TODO: Come up with a shorter name than "variableReference".
-addBuiltinSyntax(
-    [ "subkey", [ "everyone" ],
-        [ "sym", "era_deductive_stx_variableReference" ] ],
-    null );
-addBuiltinEraSyntax( "deductive", "tfa" );
-addBuiltinEraSyntax( "deductive", "tfn" );
-addBuiltinEraSyntax( "deductive", "tcall" );
-addBuiltinEraSyntax( "deductive", "ttfa" );
-addBuiltinEraSyntax( "deductive", "ttfn" );
-addBuiltinEraSyntax( "deductive", "ttcall" );
-addBuiltinEraSyntax( "deductive", "sfa" );
-addBuiltinEraSyntax( "deductive", "sfn" );
-addBuiltinEraSyntax( "deductive", "fst" );
-addBuiltinEraSyntax( "deductive", "snd" );
-addBuiltinEraSyntax( "active", "can" );
-addBuiltinEraSyntax( "localCollaboration", "secret" );
-addBuiltinEraSyntax( "localCollaboration", "public" );
-addBuiltinEraSyntax( "localCollaboration", "withsecret" );
-addBuiltinEraSyntax( "localCollaboration", "everyone" );
-addBuiltinEraSyntax( "localCollaboration", "subkey" );
-addBuiltinEraSyntax( "localCollaboration", "sym" );
-// TODO: Come up with a shorter name than
-// "localCollaborativeValueLevelDefinition".
-addBuiltinEraSyntax( "localCollaborativeValueLevelDefinition",
-    "define" );
-addBuiltinEraSyntax( "localCollaborativeValueLevelDefinition",
-    "witheach" );
-// TODO: Come up with a better name than "partiality".
-addBuiltinEraSyntax( "partiality", "partialtype" );
-addBuiltinEraSyntax( "partiality", "zunitpartial" );
-addBuiltinEraSyntax( "partiality", "zbindpartial" );
-addBuiltinEraSyntax( "partiality", "zfixpartial" );
-addBuiltinEraComputation( "partiality", "unitpartial",
-    [ "ttfa", "a", [ "tfa", "_", "a", [ "partialtype", "a" ] ] ],
-    [ "ttfn", "a",
-        [ "tfn", "result", "a", [ "zunitpartial", "a", "result" ] ] ]
-);
-addBuiltinEraComputation( "partiality", "bindpartial",
-    [ "ttfa", "a",
-        [ "ttfa", "b",
-            [ "tfa", "_", [ "partialtype", "a" ],
-                [ "tfa", "_",
-                    [ "tfa", "_", "a", [ "partialtype", "b" ] ],
-                    [ "partialtype", "b" ] ] ] ] ],
-    [ "ttfn", "a",
-        [ "ttfn", "b",
-            [ "tfn", "thunkA", [ "partialtype", "a" ],
-                [ "tfn", "aToThunkB",
-                    [ "tfa", "_", "a", [ "partialtype", "b" ] ],
-                    [ "zbindpartial", "a", "b",
-                        "thunkA", "aToThunkB" ] ] ] ] ]
-);
-addBuiltinEraComputation( "partiality", "fixpartial",
-    [ "ttfa", "a",
-        [ "tfa", "_",
-            [ "tfa", "_", [ "partialtype", "a" ],
-                [ "partialtype", "a" ] ],
-            [ "partialtype", "a" ] ] ],
-    [ "ttfn", "a",
-        [ "tfn", "thunkToThunk",
-            [ "tfa", "_", [ "partialtype", "a" ],
-                [ "partialtype", "a" ] ],
-            [ "zfixpartial", "a", "thunkToThunk" ] ] ]
-);
-// TODO: Come up with a shorter name than
-// "imperativePartialComputation".
-addBuiltinEraSyntax( "imperativePartialComputation",
-    "impartialtype" );
-addBuiltinEraSyntax( "imperativePartialComputation",
-    "unitimpartial" );
-addBuiltinEraSyntax( "imperativePartialComputation",
-    "invkimpartial" );
-// TODO: Come up with a shorter name than
-// "staticallyGeneratedDynamicToken".
-addBuiltinEraSyntax( "staticallyGeneratedDynamicToken", "tokentype" );
-addBuiltinEraSyntax( "staticallyGeneratedDynamicToken", "withtoken" );
-addBuiltinEraSyntax( "staticallyGeneratedDynamicToken",
-    "ztokenequals" );
-addBuiltinEraComputation( "staticallyGeneratedDynamicToken",
-    "tokenequals",
-    [ "tfa", "_", [ "tokentype" ],
-        [ "tfa", "_", [ "tokentype" ],
-            [ "ttfa", "a",
-                [ "tfa", "_", "a", [ "tfa", "_", "a", "a" ] ] ] ] ],
-    [ "tfn", "a", [ "tokentype" ],
-        [ "tfn", "b", [ "tokentype" ],
-            [ "ztokenequals", "a", "b" ] ] ]
-);
-// TODO: Come up with a better name than "kitchenSinkUnType".
-addBuiltinEraSyntax( "kitchenSinkUnType", "sink" );
-function addSinkTag( tagName, innerType ) {
-    if ( !/^[a-z]+$/.test( tagName ) )
-        throw new Error(
-            "Sink tags can only contain lowercase letters." );
-    addBuiltinEraComputation( "kitchenSinkUnType", tagName + "tosink",
-        [ "tfa", "_", innerType, [ "sink" ] ],
-        [ "tfn", "val", innerType,
-            [ "z" + tagName + "tosink", "val" ] ]
-    );
-    addBuiltinEraComputation( "kitchenSinkUnType", "sinkto" + tagName,
-        [ "tfa", "_", [ "sink" ],
-            [ "ttfa", "a",
-                [ "tfa", "_", "a",
-                    [ "tfa", "_", [ "tfa", "_", innerType, "a" ],
-                        "a" ] ] ] ],
-        [ "tfn", "sink", [ "sink" ],
-            [ "zsinkto" + tagName, "sink" ] ]
-    );
-}
-addSinkTag( "token", [ "tokentype" ] );
-addSinkTag( "pfn",
-    [ "tfa", "_", [ "sink" ], [ "partialtype", [ "sink" ] ] ] );
-addSinkTag( "ipfn",
-    [ "tfa", "_", [ "sink" ],
-        [ "partialtype",
-            [ "impartialtype", "_", [ "sink" ], [ "sink" ],
-                [ "sink" ] ] ] ] );
 
 
 (function () {
