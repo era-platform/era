@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<!--
+index.html (part of Era)
+Copyright 2013 Ross Angle. Released under the MIT License.
+-->
+<title>Era</title>
+</head>
+<body>
+<p>(Check the debug console for unit test information.)</p>
+
+<script type="text/javascript">"use strict";
+// TODO: Use these.
+var debug = true;
+function debugLog( var_args ) {
+    console.log.apply( console, arguments );
+}
+</script>
+<script type="text/javascript" defer src="src/era-misc.js"></script>
+<script type="text/javascript" defer
+    src="test/harness-first.js"></script>
+<script type="text/javascript" defer src="src/era-reader.js"></script>
+<script type="text/javascript" defer src=
+    "test/test-reader.js"></script>
+<script type="text/javascript" defer src=
+    "src/era-modules.js"></script>
+<script type="text/javascript" defer src=
+    "test/test-modules.js"></script>
+<script type="text/javascript" defer src=
+    "test/harness-last.js"></script>
+</body>
+</html>
