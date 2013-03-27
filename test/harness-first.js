@@ -3,8 +3,13 @@
 "use strict";
 
 
+if ( debugLog === void 0 )
+    var debugLog = function ( var_args ) {
+        console.log.apply( console, arguments );
+    };
+
 function logJson( x ) {
-    console.log( JSON.stringify( x ) );
+    debugLog( JSON.stringify( x ) );
     return x;
 }
 

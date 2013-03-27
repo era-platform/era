@@ -9,14 +9,28 @@ Copyright 2013 Ross Angle. Released under the MIT License.
 <title>Era</title>
 </head>
 <body>
-<p>(Check the debug console for unit test information.)</p>
+<p>Unit test results...</p>
+<textarea id="test-result" disabled cols="80" rows="24"></textarea>
 
 <script type="text/javascript">"use strict";
-// TODO: Use these.
-var debug = true;
-function debugLog( var_args ) {
-    console.log.apply( console, arguments );
-}
+var debugLog = (function () {
+    var testResult = document.getElementById( "test-result" );
+    var contentsSoFar = "";
+    return function ( var_args ) {
+        console.log.apply( console, arguments );
+        for ( var i = 0, n = arguments.length; i < n; i++ ) {
+            var arg = arguments[ i ];
+            var stringArg = "[error]";
+            try { stringArg = "" + arg } catch ( e ) {}
+            contentsSoFar += stringArg;
+        }
+        contentsSoFar += "\n";
+        while ( testResult.hasChildNodes() )
+            testResult.removeChild( testResult.firstChild );
+        testResult.appendChild(
+            document.createTextNode( contentsSoFar ) );
+    }
+})();
 </script>
 <script type="text/javascript" defer src="src/era-misc.js"></script>
 <script type="text/javascript" defer

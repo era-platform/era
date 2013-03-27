@@ -7,7 +7,7 @@
     var testsPassedInARow = 0;
     function resetTestsPassedInARow() {
         if ( testsPassedInARow !== 0 )
-            console.log(
+            debugLog(
                 "A streak of " + testsPassedInARow + " tests " +
                 "passed." );
         testsPassedInARow = 0;
@@ -23,7 +23,7 @@
                 testsPassedInARow++;
             } else {
                 resetTestsPassedInARow();
-                console.log( errorMessage );
+                debugLog( errorMessage );
             }
             run( i + 1 );
         } )
