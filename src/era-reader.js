@@ -1,5 +1,6 @@
 // era-reader.js
 // Copyright 2013 Ross Angle. Released under the MIT License.
+"use strict";
 
 
 // TODO: This reader is currently entangled with JavaScript's notion

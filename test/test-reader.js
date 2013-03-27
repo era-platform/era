@@ -1,5 +1,6 @@
 // test-reader.js (part of Era)
 // Copyright 2013 Ross Angle. Released under the MIT License.
+"use strict";
 
 
 addNaiveIsoUnitTest( function ( then ) {

@@ -1,5 +1,6 @@
 // era-misc.js
 // Copyright 2013 Ross Angle. Released under the MIT License.
+"use strict";
 
 
 // TODO: Decide whether to introduce a dependency on Lathe.js just for

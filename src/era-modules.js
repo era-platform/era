@@ -1,5 +1,6 @@
 // era-modules.js
 // Copyright 2013 Ross Angle. Released under the MIT License.
+"use strict";
 
 
 // For now, we implement the deductive fragment, almost all the action

@@ -1,17 +1,19 @@
 #!/bin/env node
 // node-test.js (part of Era)
 // Copyright 2013 Ross Angle. Released under the MIT License.
+"use strict";
 
 process.chdir( __dirname );
 var fs = require( "fs" );
 
-function file( filename ) {
+Function( [
+    "src/era-misc.js",
+    "test/harness-first.js",
+    "src/era-reader.js",
+    "test/test-reader.js",
+    "src/era-modules.js",
+    "test/test-modules.js",
+    "test/harness-last.js"
+].map( function ( filename ) {
     return fs.readFileSync( filename, "UTF-8" );
-}
-eval( file( "src/era-misc.js" ) );
-eval( file( "test/harness-first.js" ) );
-eval( file( "src/era-reader.js" ) );
-eval( file( "test/test-reader.js" ) );
-eval( file( "src/era-modules.js" ) );
-eval( file( "test/test-modules.js" ) );
-eval( file( "test/harness-last.js" ) );
+} ).join( "\n\n\n" ) )();
