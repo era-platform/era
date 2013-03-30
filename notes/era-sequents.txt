@@ -50,8 +50,6 @@
 // that general "for all types..." quantification is a particularly
 // valuable abstraction tool (even though we use it here).
 
-// TODO: Include the let_in_ syntax in these grammar rules.
-
 // A root node:
 INFERENCE_RULES ::= Rule*
 
@@ -62,20 +60,21 @@ Fact ::=| "(" Fact ")"
 Fact ::=| UserVar "@" UserKnowledge
 UserKnowledge ::=| "(" "istype" Term ")"
 UserKnowledge ::=| "(" "describes" Term Term ")"
+Arg ::= "^" TermVar
 Term ::=| TermVar
 // Total functions from value to value
-Term ::=| "(" "tfa" TermVar Term Term ")"
-Term ::=| "(" "tfn" TermVar Term Term ")"
-Term ::=| "(" "tcall" TermVar Term Term Term Term ")"
+Term ::=| "(" "tfa" Arg Term Term ")"
+Term ::=| "(" "tfn" Arg Term Term ")"
+Term ::=| "(" "tcall" Arg Term Term Term Term ")"
 // Total functions from type to value
-Term ::=| "(" "ttfa" TermVar Term ")"
-Term ::=| "(" "ttfn" TermVar Term ")"
-Term ::=| "(" "ttcall" TermVar Term Term Term ")"
+Term ::=| "(" "ttfa" Arg Term ")"
+Term ::=| "(" "ttfn" Arg Term ")"
+Term ::=| "(" "ttcall" Arg Term Term Term ")"
 // Large Sigma type
-Term ::=| "(" "sfa" TermVar Term Term ")"
-Term ::=| "(" "sfn" TermVar Term Term Term ")"
-Term ::=| "(" "fst" TermVar Term Term Term ")"
-Term ::=| "(" "snd" TermVar Term Term Term ")"
+Term ::=| "(" "sfa" Arg Term Term ")"
+Term ::=| "(" "sfn" Arg Term Term Term ")"
+Term ::=| "(" "fst" Arg Term Term Term ")"
+Term ::=| "(" "snd" Arg Term Term Term ")"
 UserVar ::= Word | "me" | "you"
 TermVar ::= Word
 // NOTE: This is the grammar of nonempty sequences of case-insensitive
@@ -90,27 +89,29 @@ Term ::=| TermVar ("[" Term "]")+
 // Shorthands:
 Entailment ::=| Fact  // short for |- (fact)
 Fact ::=| UserKnowledge  // short for "me @ userKnowledge"
+Term ::=| "let" (Term "=" Term)* "in" Term
+  // introduces other abbreviations
 Term ::=| "(" "bottom" ")"  // short for (ttfa ^r r)
 Term ::=| "(" "unittype" ")"  // short for (ttfa ^r (tfa ^_ r r))
 Term ::=| "(" "unit" ")"  // short for (ttfn ^rType (tfn ^r rType r))
 Term ::=| "(" "either" Term Term ")"
-    // short for
-    // (ttfa ^r (tfa ^_ (tfa ^_ term1 r) (tfa ^_ (tfa ^_ term2 r) r)))
+  // short for
+  // (ttfa ^r (tfa ^_ (tfa ^_ term1 r) (tfa ^_ (tfa ^_ term2 r) r)))
 Term ::=| "(" "left" Term Term Term ")"
-    // short for
-    // (ttfn ^r
-    //   (tfn ^a (tfa ^_ term1 r)
-    //     (tfn ^b (tfn ^_ term2 r) (tcall ^_ term1 r a term3))))
+  // short for
+  // (ttfn ^r
+  //   (tfn ^a (tfa ^_ term1 r)
+  //     (tfn ^b (tfn ^_ term2 r) (tcall ^_ term1 r a term3))))
 Term ::=| "(" "right" Term Term Term ")"
-    // short for
-    // (ttfn ^r
-    //   (tfn ^a (tfa ^_ term1 r)
-    //     (tfn ^b (tfn ^_ term2 r) (tcall ^_ term2 r b term3))))
+  // short for
+  // (ttfn ^r
+  //   (tfn ^a (tfa ^_ term1 r)
+  //     (tfn ^b (tfn ^_ term2 r) (tcall ^_ term2 r b term3))))
 Term ::=| "(" "bool" ")"  // short for (either (unittype) (unittype))
 Term ::=| "(" "true" ")"
-    // short for (left (unittype) (unittype) (unit))
+  // short for (left (unittype) (unittype) (unit))
 Term ::=| "(" "false" ")"
-    // short for (right (unittype) (unittype) (unit))
+  // short for (right (unittype) (unittype) (unit))
 
 
 // == Inference rules ==
@@ -120,7 +121,7 @@ Term ::=| "(" "false" ")"
 // Introduce (tfn ...) and (tfa ...).
 (istype xType)
 (describes xType x)
-    |- (istype yType[ x ]), (describes yType[ x ] y[ x ])
+  |- (istype yType[ x ]), (describes yType[ x ] y[ x ])
 ---
 (istype (tfa ^x xType yType[ x ]))
 (describes (tfa ^x xType yType[ x ]) (tfn x ^xType y[ x ]))
@@ -193,7 +194,7 @@ y[ xVal ]
 
 Term ::=| "(" "subtype" Term Term ")"
 Term ::=| "(" "subval" Term Term Term Term ")"
-    // value equivalence across a subtype coercion
+  // value equivalence across a subtype coercion
 Term ::=| "(" "coerce" Term Term Term Term ")"
 Term ::=| "(" "coherent" Term Term ")"
 // NOTE: We need (typerefl ...) and (valrefl ...) in order to prove
@@ -365,7 +366,7 @@ UserKnowledge ::=| "(" "secret" Term ")"
 UserKnowledge ::=| "(" "public" Key ")"
 Key ::=| "(" "everyone" ")"
 Key ::=| "(" "subkey" Key ExternallyVisibleWord ")"
-// UserAction ::=| "(" "withsecret" TermVar Key UserAction ")"
+// UserAction ::=| "(" "withsecret" Arg Key UserAction ")"
 // NOTE: In any place this grammar is used, an actual programming
 // language implementation is very likely to use a different format.
 // Sequences of ASCII letters aren't a very conscientious
@@ -405,7 +406,7 @@ WordVar ::= Word | "word"
 // == Grammar ==
 
 UserAction ::=| "(" "define" Term Key Term Term ")"
-UserAction ::=| "(" "witheach" TermVar Key Term Term UserAction ")"
+UserAction ::=| "(" "witheach" Arg Key Term Term UserAction ")"
 
 
 // == Inference rules ==
@@ -440,8 +441,7 @@ you @ (can (witheach ^x myKey yourKey xType act[ x ]))
 // == Grammar ==
 
 UserAction ::=| "(" "definewrapper" Term Term ")"
-UserAction ::=|
-    "(" "witheachwrapper" TermVar TermVar Term Term UserAction ")"
+UserAction ::=| "(" "witheachwrapper" Arg Arg Term Term UserAction ")"
 Term ::=| "(" "wrapper" Term ")"
 // TODO: Figure out what else we might need in order to reason about
 // equality of wrapped values.
@@ -503,13 +503,13 @@ me @! (definewrapper by innerType)
 // == Grammar ==
 
 UserKnowledge ::=| "(" "extensible" Term ")"
-UserAction ::=| "(" "startsum" Term TermVar Term Term TermVar Term ")"
-UserAction ::=| "(" "witheachstartsum" TermVar TermVar TermVar
-  Term TermVar Term Term TermVar Term UserAction ")"
-UserAction ::=| "(" "youcanextendsum" Term Key TermVar Term ")"
-UserAction ::=| "(" "extendsum" Key Term Term TermVar Term ")"
+UserAction ::=| "(" "startsum" Term Arg Term Term Arg Term ")"
+UserAction ::=| "(" "witheachstartsum"
+  Arg Arg Arg Term Arg Term Term Arg Term UserAction ")"
+UserAction ::=| "(" "youcanextendsum" Term Key Arg Term ")"
+UserAction ::=| "(" "extendsum" Key Term Term Arg Term ")"
 UserAction ::=|
-  "(" "witheachextendsum" TermVar TermVar Key Term Term UserAction ")"
+  "(" "witheachextendsum" Arg Arg Key Term Term UserAction ")"
 Term ::=| "(" "sumpart" Key ")"
 Term ::=| "(" "extendtype" Term Term ")"
 Term ::=| "(" "stoe" Term Term ")"
@@ -587,11 +587,11 @@ you @ (secret yourKey)
 you @ (istype myParts)
 (you @ (istype x2)) |- (you @ (istype accum[ x2 ]))
 (you @ (istype e1)), (you @ (extensible e1)) |-
-let
-  xParts = (extendtype (sumpart myKey) e1)
-  yParts = (extendtype myParts xParts)
-in
   (you @
+    let
+      xParts = (extendtype (sumpart myKey) e1)
+      yParts = (extendtype myParts xParts)
+    in
     (describes
       (tfa ^x accum[ xParts ]
         (sfa ^y accum[ yParts ]
@@ -644,8 +644,8 @@ you @
 //
 // Term ::=| "(" "k" Term ")"
 // Term ::=| "(" "defined" Key Term Term ")"
-// Term ::=| "(" "leteachknownexpr" TermVar Term Term ")"
-// UserAction ::=| "(" "leteachknown" TermVar Term UserAction ")"
+// Term ::=| "(" "leteachknownexpr" Arg Term Term ")"
+// UserAction ::=| "(" "leteachknown" Arg Term UserAction ")"
 //
 // A judgment (describes (k t) x) says x would terminate as evidence
 // for a collection of values of t whose size is monotonic with the
@@ -655,8 +655,9 @@ you @
 // that has it as a subexpression.
 //
 // The (leteachknownexpr ...) and (leteachknown ...) syntaxes perform
-// knowledge queries. Instead of saying (witheach x from to type ...),
-// we say (leteachknown x (defined from to type) ...).
+// knowledge queries. Instead of saying
+// (witheach ^x from to type ...),  we say
+// (leteachknown ^x (defined from to type) ...).
 //
 // Term ::=| "(" "mysterytype" ")"
 // Term ::=| "(" "mystery" Term Term Term ")"
@@ -670,7 +671,7 @@ you @
 // (extendDispatcher from to func), with each "func" of type
 // (tfa ^_ inputType (k resultType)), then the person who started the
 // dispatcher can access those methods using a value (dispatcher to)
-// of type (k (tfa (mysterytype) (k resultType))). Values of type
+// of type (k (tfa ^_ (mysterytype) (k resultType))). Values of type
 // (mysterytype), created using (mystery from inputType inputVal),
 // will dispatch to the method defined on the same "from" key that
 // created them.
