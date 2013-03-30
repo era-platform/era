@@ -1,12 +1,16 @@
-// Meaning-preserving modularity in a propositions-as-types style.
+// era-sequents.txt
+// Copyright 2013 Ross Angle. Released under the MIT License.
 
-// I've now posted about this code sample on my blog, and I'll leave
-// this Gist the way it is (har har).
+
+// This originally used a much less lispy syntax. The original version
+// is still available as a GitHub Gist, linked to by a blog post.
 //
 // This Gist: https://gist.github.com/4559120
 //
 // The blog post:
 // http://rocketnia.wordpress.com/2013/01/29/an-extensible-type-system-for-meaning-preserving-modularity/
+
+// TODO: Add the "NEW:" fragments implemented in Era.
 
 
 // Start of a bibliography:
@@ -38,34 +42,40 @@
 // preexisting facts, and their entailments always assume those facts.
 
 // NOTE: (by Ross Angle) Currently I'm bending over backwards to avoid
-// defining a term "#Type" that represents the type of a type. It's my
-// way to avoid the intuition that the logic should support
-// "#Type : #Type" and become inconsistent. Besides, I'm not yet
-// convinced that "here's a type" is the most interesting theorem a
-// type object demonstrates, nor that general "for all types..."
-// quantification is a particularly valuable abstraction tool.
+// defining a term "(type)" that represents the type of a type. It's
+// my way to avoid the intuition that the logic should support
+// (describes (type) (type)), aka "Type : Type", and become
+// inconsistent. Besides, I'm not yet convinced that "here's a type"
+// is the most interesting theorem a type object demonstrates, nor
+// that general "for all types..." quantification is a particularly
+// valuable abstraction tool (even though we use it here).
+
+// TODO: Include the let_in_ syntax in these grammar rules.
 
 // A root node:
 INFERENCE_RULES ::= Rule*
 
 Rule ::=| Entailment* "---" Entailment*  // deduction
 Rule ::=| Term "~~>" Term  // beta reduction
-Entailment ::=| ("(" Fact ")")*"," "|-" ("(" Fact ")")*","
+Entailment ::=| Fact*"," "|-" Fact*","
+Fact ::=| "(" Fact ")"
 Fact ::=| UserVar "@" UserKnowledge
-UserKnowledge ::=| "##type" Term
-UserKnowledge ::=| Term ":" Term
+UserKnowledge ::=| "(" "istype" Term ")"
+UserKnowledge ::=| "(" "describes" Term Term ")"
 Term ::=| TermVar
-Term ::=| "(" Term ")"
-Term ::=| "(" TermVar ":" Term ")" "->" Term
-Term ::=| "\" TermVar ":" Term "->" Term
-Term ::=| Term Term
-Term ::=| "(" "##type" TermVar ")" "->" Term
-Term ::=| "\" "##type" TermVar "->" Term
-Term ::=| Term "#\t" Term
-Term ::=| "(=#Sigma" TermVar ":" Term ")" "*" Term
-Term ::=| "\#sigma" "(" Term ":" Term ")" "*" Term
-Term ::=| "#fst" Term
-Term ::=| "#snd" Term
+// Total functions from value to value
+Term ::=| "(" "tfa" TermVar Term Term ")"
+Term ::=| "(" "tfn" TermVar Term Term ")"
+Term ::=| "(" "tcall" TermVar Term Term Term Term ")"
+// Total functions from type to value
+Term ::=| "(" "ttfa" TermVar Term ")"
+Term ::=| "(" "ttfn" TermVar Term ")"
+Term ::=| "(" "ttcall" TermVar Term Term Term ")"
+// Large Sigma type
+Term ::=| "(" "sfa" TermVar Term Term ")"
+Term ::=| "(" "sfn" TermVar Term Term Term ")"
+Term ::=| "(" "fst" TermVar Term Term Term ")"
+Term ::=| "(" "snd" TermVar Term Term Term ")"
 UserVar ::= Word | "me" | "you"
 TermVar ::= Word
 // NOTE: This is the grammar of nonempty sequences of case-insensitive
@@ -79,92 +89,94 @@ Term ::=| TermVar ("[" Term "]")+
 
 // Shorthands:
 Entailment ::=| Fact  // short for |- (fact)
-Term ::=| Term "->" Term  // short for ((x : term1) -> term2)
-Term ::=| Term "*" Term  // short for ((=#Sigma x : term1) * term2)
-Term ::=| "#Bottom"  // short for ((##type r) -> r)
-Term ::=| "#Unit"  // short for ((##type r) -> r -> r)
-Term ::=| "#unit"  // short for (\##type rType -> \r : rType -> r)
-Term ::=| Term "||" Term
-    // short for ((##type r) -> (term1 -> r) -> (term2 -> r) -> r)
-Term ::=| "#left" Term Term Term
+Fact ::=| UserKnowledge  // short for "me @ userKnowledge"
+Term ::=| "(" "bottom" ")"  // short for (ttfa ^r r)
+Term ::=| "(" "unittype" ")"  // short for (ttfa ^r (tfa ^_ r r))
+Term ::=| "(" "unit" ")"  // short for (ttfn ^rType (tfn ^r rType r))
+Term ::=| "(" "either" Term Term ")"
     // short for
-    // (\##type r -> \a : (term1 -> r) -> \b : (term2 -> r) ->
-    //     a term3)
-Term ::=| "#right" Term Term Term
+    // (ttfa ^r (tfa ^_ (tfa ^_ term1 r) (tfa ^_ (tfa ^_ term2 r) r)))
+Term ::=| "(" "left" Term Term Term ")"
     // short for
-    // (\##type r -> \a : (term1 -> r) -> \b : (term2 -> r) ->
-    //     b term3)
-Term ::=| "#Bool"  // short for (#Unit || #Unit)
-Term ::=| "#true"  // short for (#left #Unit #Unit #unit)
-Term ::=| "#false"  // short for (#right #Unit #Unit #unit)
+    // (ttfn ^r
+    //   (tfn ^a (tfa ^_ term1 r)
+    //     (tfn ^b (tfn ^_ term2 r) (tcall ^_ term1 r a term3))))
+Term ::=| "(" "right" Term Term Term ")"
+    // short for
+    // (ttfn ^r
+    //   (tfn ^a (tfa ^_ term1 r)
+    //     (tfn ^b (tfn ^_ term2 r) (tcall ^_ term2 r b term3))))
+Term ::=| "(" "bool" ")"  // short for (either (unittype) (unittype))
+Term ::=| "(" "true" ")"
+    // short for (left (unittype) (unittype) (unit))
+Term ::=| "(" "false" ")"
+    // short for (right (unittype) (unittype) (unit))
 
 
 // == Inference rules ==
 
 // TODO: Prove a cut elimination theorem or something for all of this.
 
-// Introduce \_:_->_ and (_:_)->_.
-me @ ##type xType
-(me @ x1 : xType)
-    |- (me @ ##type yType[ x1 ]), (me @ y[ x1 ] : yType[ x1 ])
+// Introduce (tfn ...) and (tfa ...).
+(istype xType)
+(describes xType x)
+    |- (istype yType[ x ]), (describes yType[ x ] y[ x ])
 ---
-me @ ##type ((x2 : xType) -> yType[ x2 ])
-me @ (\x3 : xType -> y[ x3 ]) : ((x4 : xType) -> yType[ x4 ])
+(istype (tfa ^x xType yType[ x ]))
+(describes (tfa ^x xType yType[ x ]) (tfn x ^xType y[ x ]))
 
-// Eliminate (_:_)->_ and introduce _ _.
-me @ f : ((x : xType) -> yType[ x ])
-me @ xExample : xType
+// Eliminate (tfa ...) and introduce (tcall ...).
+(describes (tfa ^x xType yType[ x ]) f)
+(describes xType xExample)
 ---
-me @ f xExample : yType[ xExample ]
+(describes yType[ xExample ] (ttcall ^x xType yType[ x ] f xExample))
 
-// Eliminate \_:_->_ and _ _.
-(\x : xType -> y[ x ]) xExample
+// Eliminate (tfn ...) and (tcall ...).
+(tcall ^x xType yType[ x ] (tfn ^x xType y[ x ]) xExample)
 ~~>
 y[ xExample ]
 
-// Introduce \##type_->_ and (##type_)->_.
-(me @ ##type x1)
-    |- (me @ ##type yType[ x1 ]), (me @ y[ x1 ] : yType[ x1 ])
+// Introduce (ttfn ...) and (ttfa ...).
+(istype x) |- (istype yType[ x ]), (describes yType[ x ] y[ x ])
 ---
-me @ ##type ((##type x2) -> yType[ x2 ])
-me @ (\##type x3 -> y[ x3 ]) : ((##type x4) -> yType[ x4 ])
+(istype (ttfa ^x yType[ x ]))
+(describes (ttfa ^x yType[ x ]) (ttfn ^x y[ x ]))
 
-// Eliminate (##type_)->_ and introduce _#\t_.
-me @ f : ((##type x) -> yType[ x ])
-me @ ##type xExample
+// Eliminate (ttfa ...) and introduce (ttcall ...).
+(describes (ttfa ^x yType[ x ]))
+(istype xExample)
 ---
-me @ f #\t xExample : yType[ xExample ]
+(describes yType[ xExample ] (ttcall ^x yType[ x ] f xExample))
 
-// Eliminate \##type_->_ and _#\t_.
-(\##type x -> y[ x ]) #\t xExample
+// Eliminate (ttfn ...) and (ttcall ...).
+(ttcall ^x yType[ x ] (ttfn ^x y[ x ]) xExample)
 ~~>
 y[ xExample ]
 
-// Introduce (=#Sigma_:_)*_ and #sigma_:_*_.
-me @ ##type xType
-(me @ x1 : xType) |- (me @ ##type yType[ x1 ])
-me @ x2 : xType
-me @ y[ x2 ] : yType[ x2 ]
+// Introduce (sfa ...) and (sfn ...).
+(istype x1) |- (istype yType[ x1 ])
+(describes xType xVal)
+(describes yType[ xVal ] y[ xVal ])
 ---
-me @ ##type ((=#Sigma x3 : xType) * yType[ x3 ])
-me @ (\#sigma x2 : xType * y[ x2 ]) :
-    ((=#Sigma x4 : xType) * yType[ x4 ])
+(istype (sfa ^x xType yType[ x ]))
+(describes (sfa ^x xType yType[ x ]) (sfn ^x xType xVal y[ x ]))
 
-// Eliminate (=#Sigma_:_)*_.
-me @ s : ((=#Sigma x : xType) * yType[ x ])
+// Eliminate (sfa ...).
+(describes (sfa ^x xType yType[ x ]) s)
 ---
-me @ #fst s : xType
-me @ #snd s : yType[ #fst s ]
+(describes xType (fst ^x xType yType[ ^x ] s))
+(describes yType[ (fst ^x xType yType[ ^x ] s) ]
+  (snd ^x xType yType[ ^x ] s))
 
-// Eliminate \#sigma(_:_)*_ and #fst_.
-#fst (\#sigma (x : xType) * y[ x ])
+// Eliminate (sfn ...) and (fst ...).
+(fst ^x xType yType[ x ] (sfn ^x xType xVal y[ x ]))
 ~~>
-x
+xVal
 
-// Eliminate \#sigma(_:_)*_ and #snd_.
-#snd (\#sigma (x : xType) * y[ x ])
+// Eliminate (sfn ...) and (snd ...).
+(snd ^x xType yType[ x ] (sfn ^x xType xVal y[ x ]))
 ~~>
-y[ x ]
+y[ xVal ]
 
 
 
@@ -179,100 +191,142 @@ y[ x ]
 
 // == Grammar ==
 
-Term ::=| Term "<==" Term  // subtype
-Term ::=| "(" Term ":" Term ")" "<=" "(" Term ":" Term ")"
+Term ::=| "(" "subtype" Term Term ")"
+Term ::=| "(" "subval" Term Term Term Term ")"
     // value equivalence across a subtype coercion
-Term ::=| "#coerce" Term Term Term Term
-Term ::=| "#coherent" Term Term
-// NOTE: We need #typeRefl and #valRefl in order to prove
+Term ::=| "(" "coerce" Term Term Term Term ")"
+Term ::=| "(" "coherent" Term Term ")"
+// NOTE: We need (typerefl ...) and (valrefl ...) in order to prove
 // self-equality of encapsulated or otherwise non-deductive types and
 // values.
 // TODO: Figure out what else we need. Maybe we need to know that
 // equal values passed to equal functions yield equal results.
-Term ::=| "#typeRefl" Term
-Term ::=| "#valRefl" Term
+Term ::=| "(" "typerefl" Term ")"
+Term ::=| "(" "valrefl" Term Term ")"
 
 
 // == Inference rules ==
 
-me @ ##type a
-me @ ##type b
+(istype a)
+(istype b)
 ---
-me @ ##type (a <== b)
+(istype (subtype a b))
 
-me @ a : aType
-me @ b : bType
+(describes aType a)
+(describes bType b)
 ---
-me @ ##type ((a : aType) <= (b : bType))
+(istype (subval aType a bType b))
 
-me @ pf : (a <== b)
-me @ x : a
+(describes (subtype a b) pf)
+(describes a x)
 ---
-me @ #coerce a b pf x : b
-me @ #coherent pf x : ((x : a) <= (#coerce a b pf x : b))
+(describes b (coerce a b pf x))
+(describes (subval a x b (coerce a b pf x)) (coherent pf x))
 
-me @ ##type a
+(istype a)
 ---
-me @ #typeRefl a : (a <== a)
+(describes (subtype a a) (typerefl a))
 
-me @ x : a
+(describes a x)
 ---
-me @ #valRefl x : ((x : a) <= (x : a))
+(describes (subval a x a x) (valrefl a x))
 
-#coerce ((ax1 : ai) -> ao[ ax1 ]) ((bx1 : bi) -> bo[ bx1 ]) pf orig
+(coerce (tfa ^x ai ao[ x ]) (tfa ^x bi bo[ x ]) pf orig)
 ~~>
-\bx2 : bi ->
-    (#coerce ao[ #coerce bi ai (#fst pf) bx2 ]
-        bo[ bx2 ]
-        (#snd pf bx2 (#coerce bi ai (#fst pf) bx2)
-            (#coherent (#fst pf) bx2))
-        (orig (#coerce bi ai (#fst pf) bx2)))
+let
+  convertypftype4[ bx ][ ax ] = (subtype ao[ ax ] bo[ bx ])
+  convertypftype3[ bx ][ ax ] =
+    (tfa ^_ (subval bi bx ai ax) convertypftype4[ bx ][ ax ])
+  convertypftype2[ bx ] = (tfa ^ax ai convertypftype3[ bx ][ ax ])
+  convertypftype1 = (tfa ^bx bi convertypftype2[ bx ])
+  convertxpf = (fst ^_ (subtype bi ai) convertypftype1 pf)
+  convertx[ bx ] = (coerce bi ai convertxpf bx)
+  convertypf[ bx ][ ax ][ pf ] =
+    (tcall ^_ (subval bi bx ai ax) convertypftype4[ bx ][ ax ]
+      (tcall ^ax2 ai convertypftype3[ bx ][ ax2 ]
+        (tcall ^bx2 bi convertypftype2[ bx2 ][ ax2 ]
+          (snd ^_ (subtype bi ai) convertypftype1 pf)
+          bx)
+        ax)
+      pf)
+in
+(tfn ^bx bi
+  (coerce ao[ convertx[ bx ] ] bo[ bx ]
+    convertypf[ bx ][ convertx[ bx ] ][ (coherent convertxpf bx) ]
+    (tcall ^ax ai ao[ ax ] orig convertx[ bx ])))
 
-((ax1 : ai) -> ao[ ax1 ]) <== ((bx1 : bi) -> bo[ bx1 ])
+(subtype (tfa ^x ai ao[ x ]) (tfa ^x bi bo[ x ]))
 ~~>
-(bi <== ai) *
-    ((bx2 : bi) -> (ax2 : ai) -> ((bx2 : bi) <= (ax2 : ai)) ->
-        (ao[ ax2 ] <== bo[ bx2 ]))
+(sfn ^_ (subtype bi ai)
+  (tfa ^bx bi
+    (tfa ^ax ai
+      (tfa ^_ (subval bi bx ai ax) (subtype ao[ ax ] bo[ bx ])))))
 
-(a : ((ax1 : ai) -> ao[ ax1 ])) <= (b : ((bx1 : bi) -> bo[ bx1 ]))
+(subval (tfa ^x ai ao[ x ]) a (tfa ^x bi bo[ x ]) b)
 ~~>
-(ax2 : ai) -> (bx2 : bi) -> ((ax2 : ai) <= (bx2 : bi)) ->
-    ((a ax2 : ao[ ax2 ]) <= (b bx2 : bo[ bx2 ]))
+(tfa ^ax ai
+  (tfa ^bx bi
+    (tfa ^_ (subval ai ax bi bx)
+      (subval
+        ao[ ax ] (tcall ^x ai ao[ x ] a ax)
+        bo[ bx ] (tcall ^x bi bo[ x ] b bx)))))
 
-#coerce ((##type ax) -> ao[ ax ]) ((##type bx) -> bo[ bx ]) pf orig
+(coerce (ttfa ^x ao[ x ]) (ttfa ^x bo[ x ]) pf orig)
 ~~>
-\##type x -> (#coerce ao[ x ] bo[ x ] (pf #\t x) (orig #\t x))
+(ttfn ^x (coerce ao[ x ] bo[ x ]
+  (ttcall ^x2 (subtype ao[ x2 ] bo[ x2 ]) pf x)
+  (ttcall ^x2 ao[ x2 ] orig x))
 
-((##type ax) -> ao[ ax ]) <== ((##type bx) -> bo[ bx ])
+(subtype (ttfa ^x ao[ x ]) (ttfa ^x bo[ x ]))
 ~~>
-(##type x) -> (ao[ x ] <== bo[ x ])
+(ttfa ^x (subtype ao[ x ] bo[ x ]))
 
-(a : ((##type ax) -> ao[ ax ])) <= (b : ((##type bx) -> bo[ bx ]))
+(subval (ttfa ^x ao[ x ]) a (ttfa ^x bo[ x ]) b)
 ~~>
-(##type x) -> ((a #\t x : ao[ x ]) <= (b #\t x : bo[ x ]))
+(ttfa ^x
+  (subval
+    ao[ x ] (ttcall ^x2 ao[ x2 ] a x)
+    bo[ x ] (ttcall ^x2 bo[ x2 ] b x)))
 
-#coerce ((=#Sigma ax1 : ai) * ao[ ax1 ])
-    ((=#Sigma bx1 : bi) * bo[ bx1 ])
-    pf orig
+(coerce (sfa ^x ai ao[ x ]) (sfa ^x bi bo[ x ]) pf orig)
 ~~>
-\#sigma (#coerce ai bi (#fst pf) (#fst orig) : bi) *
-    (#coerce ao[ #fst orig ]
-        bo[ #coerce ai bi (#fst pf) (#fst orig) ]
-        (#snd pf (#fst orig) (#coerce ai bi (#fst pf) (#fst orig))
-            (#coherent (#fst pf) (#fst orig)))
-        (#snd orig))
+let
+  convertypffntype4[ ax ][ bx ] = (subtype ao[ ax ] bo[ bx ])
+  convertypffntype3[ ax ][ bx ] =
+    (tfa ^_ (subval bi bx ai ax) convertypffntype4[ bx ][ ax ])
+  convertypffntype2[ bx ] = (tfa ^ax ai convertypffntype3[ bx ][ ax ])
+  convertypffntype1 = (tfa ^bx bi convertypffntype2[ bx ])
+  convertxpf = (fst ^_ (subtype bi ai) convertypffntype1 pf)
+  convertypf[ bx ][ ax ][ pf ] =
+    (tcall ^_ (subval ai ax bi bx) convertypffntype4[ ax ][ bx ]
+      (tcall ^bx2 bi convertypffntype3[ ax ][ bx2 ]
+        (tcall ^ax2 ai convertypffntype2[ ax2 ][ bx2 ]
+          (snd ^_ (subtype bi ai) convertypffntype1 pf)
+          bx)
+        ax)
+      pf)
+  ax = (fst ^x ai ao[ x ] orig)
+  ay = (snd ^x ai ao[ x ] orig)
+in
+(sfn ^bx bi (coerce bi ai convertxpf x)
+  (coerce ao[ ax ] bo[ bx ]
+    convertypf[ ax ][ bx ][ (coherent convertxpf ax) ]
+    ay))
 
-((=#Sigma ax1 : ai) * ao[ ax1 ]) <== ((=#Sigma bx1 : bi) * bo[ bx1 ])
+(subtype (sfa ^x ai ao[ x ]) (sfa ^x bi bo[ x ]))
 ~~>
-(ai <== bi) *
-    ((ax2 : ai) -> (bx2 : bi) -> ((ax2 : ai) <= (bx2 : bi)) ->
-        (ao[ ax2 ] <== bo[ bx2 ]))
+(sfn ^_ (subtype ai bi)
+  (tfa ^ax ai
+    (tfa ^bx bi
+      (tfa ^_ (subval ai ax bi bx)
+        (subtype ao[ ax ] bo[ bx ])))))
 
-(a : ((=#Sigma ax1 : ai) * ao[ ax1 ])) <=
-    (b : ((=#Sigma bx1 : bi) * bo[ bx1 ]))
+(subval (sfa ^x ai ao[ x ]) a (sfa ^x bi bo[ x ]) b)
 ~~>
-((#fst a : ai) <= (#fst b : bi)) *
-    ((#snd a : ao[ #fst a ]) <= (#snd b : bo[ #fst b ]))
+(sfn ^_ (subval ai a bi b)
+  (subval
+    ao[ (fst ^x ai ao[ x ] a) ] (snd ^x ai ao[ x ] a)
+    bo[ (fst ^x bi bo[ x ] b) ] (snd ^x bi bo[ x ] b)))
 
 
 
@@ -287,11 +341,11 @@ MODULE ::= UserAction*
 Fact ::=| UserVar "@!" UserAction
 // NOTE: This is a user's knowledge that they have the choice to
 // perform an action.
-UserKnowledge ::=| UserAction
+UserKnowledge ::=| "(" "can" UserAction ")"
 
 // Only for depictions of external modules, not inference rules or
 // actionable module code:
-Term ::=| "#<hiddenCode>"
+Term ::=| "<hiddenCode>"
 
 
 // == Inference rules ==
@@ -307,27 +361,39 @@ Term ::=| "#<hiddenCode>"
 
 // == Grammar ==
 
-UserKnowledge ::=| "##secret" Key
-UserKnowledge ::=| "##public" Key
-Key ::=| KeyVar
-KeyVar ::= Word | "myKey" | "yourKey" | "from" | "to" | "by" | "key"
-
-// Only for code, not inference rules:
-Key ::=| "$" ## CryptographicKeyName
-Key ::=| "$$everyone"
-Key ::=| Key ## "/" ## SubName
-CryptographicKeyName ::= ExternallyVisibleWord
-SubName ::= ExternallyVisibleWord
+UserKnowledge ::=| "(" "secret" Term ")"
+UserKnowledge ::=| "(" "public" Key ")"
+Key ::=| "(" "everyone" ")"
+Key ::=| "(" "subkey" Key ExternallyVisibleWord ")"
+// UserAction ::=| "(" "withsecret" TermVar Key UserAction ")"
 // NOTE: In any place this grammar is used, an actual programming
 // language implementation is very likely to use a different format.
 // Sequences of ASCII letters aren't a very conscientious
 // international standard.
-ExternallyVisibleWord ::= Word
+ExternallyVisibleWord ::= "(" "sym" Word ")"
+
+// Only for inference rules, not code:
+Key ::=| "<language>"
+Key ::=| KeyVar
+KeyVar ::= Word | "myKey" | "yourKey" | "from" | "to" | "by" | "key"
+ExternallyVisibleWord ::=| WordVar
+WordVar ::= Word | "word"
 
 
 // == Inference rules ==
 
-// (none)
+|-  // Tautology
+---
+(public (everyone))
+
+(public key)
+---
+(public (subkey key word))
+
+(public key)
+(secret x) |- (can act[ x ])
+---
+(can (withsecret x key act[ x ]))
 
 
 
@@ -338,71 +404,72 @@ ExternallyVisibleWord ::= Word
 
 // == Grammar ==
 
-UserAction ::=| "!!define" Key Key Term Term
-Term ::=| "#the" Key Key Term
+UserAction ::=| "(" "define" Term Key Term Term ")"
+UserAction ::=| "(" "witheach" TermVar Key Term Term UserAction ")"
 
 
 // == Inference rules ==
 
-// Introduce !!define.
-me @ ##secret myKey
-me @ ##public yourKey
-me @ ##type xType
-me @ x : xType
+// Introduce (define ...).
+(secret myKey)
+(public yourKey)
+(describes xType x)
 ---
-me @ !!define myKey yourKey xType x
+(can (define myKey yourKey xType x))
 
-// Eliminate !!define and introduce #the.
-me @! !!define myKey yourKey xType x
-you @ ##public myKey
-you @ ##secret yourKey
-you @ ##type xType
+// Eliminate (define ...) and introduce (witheach ...).
+me @! (define myKey yourKey xType x)
+you @ (public myKey)
+you @ (secret yourKey)
+you @ (istype xType)
+(you @ (describes xType x)) |- (you @ (can act[ x ]))
 ---
-you @ #the myKey yourKey xType : xType
+you @ (can (witheach ^x myKey yourKey xType act[ x ]))
 
 
 
 // ===== Local collaborative phantom type fragment ===================
 //
 // Depends on the local collaboration fragment.
+//
+// TODO: If this wraps a (tfa ...), we can get nontermination! We
+// should either stop using that impredicative type, abandon this
+// fragment idea, or think outside the box some more.
 
 
 // == Grammar ==
 
-UserAction ::=| "!!defineWrapper" Key Term
-Term ::=| "#Wrapper" Key
-Term ::=| "#wrap" Key Term
-Term ::=| "#unwrap" Key Term
+UserAction ::=| "(" "definewrapper" Term Term ")"
+UserAction ::=|
+    "(" "witheachwrapper" TermVar TermVar Term Term UserAction ")"
+Term ::=| "(" "wrapper" Term ")"
 // TODO: Figure out what else we might need in order to reason about
 // equality of wrapped values.
 
 
 // == Inference rules ==
 
-// Introduce #Wrapper.
-me @ ##public by
+// Introduce (wrapper ...).
+(public by)
 ---
-me @ ##type (#Wrapper by)
+(istype (wrapper by))
 
-// Introduce !!defineWrapper.
-me @ ##secret by
-me @ ##type innerType
+// Introduce (definewrapper ...).
+(secret by)
+(istype innerType)
 ---
-me @ !!defineWrapper by yourKey innerType
+(can (definewrapper by innerType))
 
-// Eliminate !!defineWrapper and introduce #wrap.
-me @! !!defineWrapper by innerType
-me @ ##secret by
-me @ ##type innerType
+// Eliminate (definewrapper ...) and introduce (witheachwrapper ...).
+me @! (definewrapper by innerType)
+(secret by)
+(istype innerType)
+(describes (tfa ^_ innerType (wrapper by)) wrap),
+  (describes (tfa ^_ (wrapper by) innerType) unwrap),
+  |- (can act[ wrap ][ unwrap ])
 ---
-me @ #wrap by innerType : innerType -> #Wrapper by
-
-// Eliminate !!defineWrapper and introduce #unwrap.
-me @! !!defineWrapper by innerType
-me @ ##secret by
-me @ ##type innerType
----
-me @ #unwrap by innerType : #Wrapper by -> innerType
+(can
+  (witheachwrapper ^wrap ^unwrap by innerType act[ wrap ][ unwrap ]))
 
 
 
@@ -423,10 +490,10 @@ me @ #unwrap by innerType : #Wrapper by -> innerType
 // top of this single-sum, single-policy system.
 //
 // This system introduces a certain kind of infinity: Say one user
-// starts a new extensible sum type (#SumPart myKey). Another user
+// starts a new extensible sum type (sumpart myKey). Another user
 // extends it, but their extension family's index (i.e. newParts) is
-// of type (#SumPart myKey) itself, or of some related type, so now
-// the inhabitants (#SumPart myKey) go into an infinite regress.
+// of type (sumpart myKey) itself, or of some related type, so now the
+// inhabitants of (sumpart myKey) go into an infinite regress.
 //
 // TODO: See if that infinite regress leads to an embedding of
 // inductive and/or coinductive definitions, or if it even leads to
@@ -435,48 +502,56 @@ me @ #unwrap by innerType : #Wrapper by -> innerType
 
 // == Grammar ==
 
-UserKnowledge ::=| "##extensible" Term
-UserAction ::=| "!!startSum" Term TermVar Term Term TermVar Term
-UserAction ::=| "!!youCanExtendSum" Key Key TermVar Term
-UserAction ::=| "!!extendSum" Key Key Term TermVar Term
-Term ::=| "#SumPart" Key
-Term ::=| "#sumExt" Key Key
-Term ::=| "#sumExtElim" Key Key
-Term ::=| "#Extend" Term Term
-Term ::=| "#stoe" Term Term
-Term ::=| "#etos" Term Term
-Term ::=| "#extend" Term Term
+UserKnowledge ::=| "(" "extensible" Term ")"
+UserAction ::=| "(" "startsum" Term TermVar Term Term TermVar Term ")"
+UserAction ::=| "(" "witheachstartsum" TermVar TermVar TermVar
+  Term TermVar Term Term TermVar Term UserAction ")"
+UserAction ::=| "(" "youcanextendsum" Term Key TermVar Term ")"
+UserAction ::=| "(" "extendsum" Key Term Term TermVar Term ")"
+UserAction ::=|
+  "(" "witheachextendsum" TermVar TermVar Key Term Term UserAction ")"
+Term ::=| "(" "sumpart" Key ")"
+Term ::=| "(" "extendtype" Term Term ")"
+Term ::=| "(" "stoe" Term Term ")"
+Term ::=| "(" "etos" Term Term ")"
+Term ::=| "(" "extend" Term Term ")"
 // TODO: Figure out what else we might need in order to reason about
 // equality of these values.
 
 
 // == Inference rules ==
 
-// Introduce #SumPart.
-me @ ##public by
+// Introduce (sumpart ...).
+(public by)
 ---
-me @ ##type (#SumPart by)
+(istype (sumpart by))
 
-// Introduce !!startSum.
-me @ ##secret myKey
-me @ ##type seedParts
-(me @ ##type x1) |- (me @ ##type accum[ x1 ])
-(me @ ##type e1), (me @ ##extensible e1) |-
-    (me @ seedImplementation[ e1 ] : accum[ #Extend seedParts e1 ])
+// Introduce (startsum ...).
+(secret myKey)
+(istype seedParts)
+(istype x1) |- (istype accum[ x1 ])
+(istype e1), (extensible e1)
+  |- (describes accum[ (extendtype seedParts e1) ]
+       seedImplementation[ e1 ])
 ---
-me @ !!startSum
-    myKey x2 accum[ x2 ] seedParts e2 seedImplementation[ e2 ]
+(can
+  (startsum myKey ^x accum[ x ] seedParts ^e seedImplementation[ e ]))
 
-// Eliminate !!startSum and introduce #sumExt, #sumExtElim, and
-// #sumOut.
+// Eliminate (startsum ...) and introduce (witheachstartsum ...).
 me @!
-    !!startSum myKey x accum[ x ] seedParts e seedImplementation[ e ]
+  (startsum myKey ^x accum[ x ] seedParts ^e seedImplementation[ e ])
+(describes (tfa ^_ seedParts (sumpart myKey)) sumExt),
+  (describes (tfa ^_ (sumpart myKey) (either seedParts (unittype)))
+    sumExtElim),
+  (describes accum[ (sumpart mykey) ] sumOut)
+  |- (can act[ sumExt ][ sumExtElim ][ sumOut ])
 ---
-me @ #sumExt myKey myKey : seedParts -> #SumPart myKey
-me @ #sumExtElim myKey myKey : #SumPart myKey -> (seedParts || #Unit)
-me @ #sumOut myKey : accum[ #SumPart myKey ]
+(can
+  (witheachstartsum ^sumExt ^sumExtElim ^sumOut
+    myKey ^x accum[ x ] seedParts ^e seedImplementation[ e ]
+    act[ sumExt ][ sumExtElim ][ sumOut ]))
 
-// Eliminate !!startSum and introduce !!youCanExtendSum.
+// Eliminate (startsum ...) and introduce (youcanextendsum ...).
 //
 // TODO: See if we actually need to share accum[ x ] itself or if we
 // can share less information while still making it just as possible
@@ -486,60 +561,80 @@ me @ #sumOut myKey : accum[ #SumPart myKey ]
 // order to make certain kinds of extension invariants possible to
 // enforce.
 //
-me @! !!startSum
-    myKey x1 accum[ x1 ] seedParts e seedImplementation[ e ]
-me @ ##public yourKey
+me @!
+  (startsum myKey ^x accum[ x ] seedParts ^e seedImplementation[ e ])
+(public yourKey)
 ---
-me @ !!youCanExtendSum myKey yourKey x2 accum[ x2 ]
+(can (youcanextendsum myKey yourKey ^x accum[ x ]))
 
-// Eliminate !!youCanExtendSum and introduce !!extendSum.
+// Eliminate (youcanextendsum ...) and introduce (extendsum ...).
 //
-// TODO: The point of incorporating "#SumPart myKey" is so we can take
+// TODO: The point of incorporating (sumpart myKey) is so we can take
 // full advantage of preexisting definitions related to this sum when
 // making an extension. See if this approach fully accomplishes this
 // goal, and see if its circularity somehow leads to inconsistency.
 //
-// NOTE: We're having <== indicate a proof that there's exactly one
-// way to coerce, so that it stays proof-irrelevant. However, we're
-// using <= to indicate that a value of one type supports no more
-// observations than another value of another type. If we let <== be
-// computationally relevant, extend[ e ] could just be a <== proof.
+// NOTE: We're having (subtype ...) indicate a proof that there's
+// exactly one way to coerce, so that it stays proof-irrelevant.
+// However, we're using (subval ...) to indicate that a value of one
+// type supports no more observations than another value of another
+// type. If we let (subtype ...) be computationally relevant,
+// extend[ e ] could just be a (subtype ...) proof.
 //
-me @! !!youCanExtendSum myKey yourKey x1 accum[ x1 ]
-you @ ##public myKey
-you @ ##secret yourKey
-you @ ##type myParts
-(you @ ##type x2) |- (you @ ##type accum[ x2 ])
-(you @ ##type e1), (you @ ##extensible e1) |-
-    (you @ extend[ e1 ] :
-        ((x : accum[ #Extend (#SumPart myKey) e1 ]) ->
-            (=#Sigma y : accum[ #Extend myParts
-                (#Extend (#SumPart myKey) e1) ]) *
-                ((x : accum[ #Extend (#SumPart myKey) e1 ]) <=
-                    (y : accum[ #Extend myParts
-                        (#Extend (#SumPart myKey) e1) ]))))
+me @! (youcanextendsum myKey yourKey x1 accum[ x1 ])
+you @ (public myKey)
+you @ (secret yourKey)
+you @ (istype myParts)
+(you @ (istype x2)) |- (you @ (istype accum[ x2 ]))
+(you @ (istype e1)), (you @ (extensible e1)) |-
+let
+  xParts = (extendtype (sumpart myKey) e1)
+  yParts = (extendtype myParts xParts)
+in
+  (you @
+    (describes
+      (tfa ^x accum[ xParts ]
+        (sfa ^y accum[ yParts ]
+          (subval accum[ xParts ] x accum[ yParts ] y)))
+      extend[ e1 ]))
 ---
-you @ !!extendSum myKey yourKey myParts e2 extend[ e2 ]
+you @ (can (extendsum myKey yourKey myParts ^e extend[ e ]))
 
-// Eliminate !!extendSum and introduce #sumExt and #sumExtElim.
-you @! !!extendSum myKey yourKey myParts e extend[ e ]
+// Eliminate (extendsum ...) and introduce (witheachextendsum ...).
+you @! (extendsum myKey yourKey myParts ^e extend[ e ])
+you @ (public myKey)
+you @ (secret yourKey)
+you @ (istype myParts)
+(you @ (describes (tfa ^_ myParts (sumpart myKey)) sumExt)),
+  (you @
+    (describes (tfa ^_ (sumpart myKey) (either myParts (unittype)))
+      sumExtElim)),
+  |- (you @ (can act[ sumExt ][ sumExtElim ]))
 ---
-you @ #sumExt myKey yourKey : myParts -> #SumPart myKey
-you @ #sumExtElim myKey yourKey : #SumPart myKey -> (myParts || #Unit)
+you @
+  (can
+    (witheachextendsum ^sumExt ^sumExtElim myKey yourKey myParts
+      act[ sumExt ][ sumExtElim ]))
 
 // Introduce #Extend, #stoe, #etos, and #extend.
-me @ ##type myParts
-me @ ##extensible e
+(istype myParts)
+(extensible e)
 ---
-me @ ##type (#Extend myParts e)
-me @ #stoe myParts e : ((myParts || e) -> #Extend myParts e)
-me @ #etos myParts e : (#Extend myParts e -> (myParts || s))
-me @ #extend myParts e : ((x : e) -> (#=Sigma y : #Extend myParts e) *
-    ((x : e) <= (y : #Extend myParts e)))
+(istype (extendtype myParts e))
+(extensible (extendtype myParts e))
+(describes (tfa ^_ (either myParts e) (extendtype myParts e))
+  (stoe myParts e))
+(describes (tfa ^_ (extendtype myParts e) (either myParts e))
+  (etos myParts e))
+(describes
+  (tfa ^x e
+    (sfa ^y (extendtype myParts e)
+      (subval e x (extendtype myParts e) y)))
+  (extend myParts e))
 
-// TODO: See if #extend is enough to actually prove the things we need
-// to prove for !!extendSum. We might not have transitivity of <= yet,
-// or something.
+// TODO: See if (extend ...) is enough to actually prove the things we
+// need to prove for (extendsum ...). We might not have transitivity
+// of (subval ...) yet, or something.
 
 
 
@@ -547,52 +642,53 @@ me @ #extend myParts e : ((x : e) -> (#=Sigma y : #Extend myParts e) *
 // which would be well integrated with the idea of knowledge queries,
 // but not so well integrated with the deductive system:
 //
-// Term ::=| "#K" Term
-// Term ::=| "#defined" Key Key
-// Term ::=| "#letKnown" TermVar Term Term
-// UserAction ::=| "!!letKnown" TermVar Term UserAction
+// Term ::=| "(" "k" Term ")"
+// Term ::=| "(" "defined" Key Term Term ")"
+// Term ::=| "(" "leteachknownexpr" TermVar Term Term ")"
+// UserAction ::=| "(" "leteachknown" TermVar Term UserAction ")"
 //
-// A judgment "x : #K t" says x would terminate as evidence for t if
-// all possible knowledge were available for query purposes and all
-// queries generated during execution of x turned out to be
-// well-defined. The #K type constructor may syntactically be a monad,
-// but it works more like an effect type, tainting the type of any
-// function call that has it as a subexpression.
+// A judgment (describes (k t) x) says x would terminate as evidence
+// for a collection of values of t whose size is monotonic with the
+// quantity of knowledge that's available for query purposes. The
+// (k t) type constructor may syntactically be a monad, but it works
+// more like an effect type, tainting the type of any function call
+// that has it as a subexpression.
 //
-// The #letKnown and !!letKnown syntaxes perform knowledge queries.
-// Instead of saying "#the from to type", we say
-// "!!letKnown x (#defined from to type) (...)" around the
-// top-level user action, and it will be fully resolved before the
-// action is admitted into the network--or it will fail to complete,
-// and the action won't take place. (Or should it be possible to
-// publish this incompletely defined action and then do the knowledge
-// queries on the observing user's side?)
+// The (leteachknownexpr ...) and (leteachknown ...) syntaxes perform
+// knowledge queries. Instead of saying (witheach x from to type ...),
+// we say (leteachknown x (defined from to type) ...).
 //
-// Term ::=| "#Mystery"
-// Term ::=| "#mystery" Key Term
-// Term ::=| "#dispatcher" Key
-// UserAction ::=| "!!decideMysteryType" Key Term
-// UserAction ::=| "!!startDispatcher" Key Term
-// UserAction ::=| "!!extendDispatcher" Key Key Term
+// Term ::=| "(" "mysterytype" ")"
+// Term ::=| "(" "mystery" Term Term Term ")"
+// Term ::=| "(" "dispatcher" Key ")"
+// UserAction ::=| "(" "decidemysterytype" Term Term ")"
+// UserAction ::=| "(" "startdispatcher" Term Term ")"
+// UserAction ::=| "(" "extenddispatcher" Term Key Term ")"
 //
-// If one person does "!!startDispatcher to resultType" and others do
-// "!!decideMysteryType from inputType" and
-// "!!extendDispatcher from to func", with each "func" of type
-// (inputType -> #K resultType), then the person who started the
-// dispatcher has access to a value "#dispatcher to" of type
-// (#Mystery -> #K resultType). Values of type #Mystery will dispatch
-// to the method defined on the same key that created them.
+// If one person does (startdispatcher to resultType) and others do
+// (decideMysteryType from inputType) and
+// (extendDispatcher from to func), with each "func" of type
+// (tfa ^_ inputType (k resultType)), then the person who started the
+// dispatcher can access those methods using a value (dispatcher to)
+// of type (k (tfa (mysterytype) (k resultType))). Values of type
+// (mysterytype), created using (mystery from inputType inputVal),
+// will dispatch to the method defined on the same "from" key that
+// created them.
 
 
 
 // ===== Example built-in module: Natural numbers ====================
 
-!!define $language/natZero $$everyone
-    (#Wrapper $language/nat)
-    #<hiddenCode>
-!!define $language/natSucc $$everyone
-    (#Wrapper $language/nat -> #Wrapper $language/nat)
-    #<hiddenCode>
-!!define $language/natElim $$everyone
-    ((##type a) -> #Wrapper $language/nat -> a -> (a -> a) -> a)
-    #<hiddenCode>
+(withsecret nat (subkey <language> (sym nat))
+  (define (subkey <language> (sym natZero)) (everyone)
+    (wrappertype nat)
+    <hiddenCode>))
+(withsecret nat (subkey <language> (sym nat))
+  (define (subkey <language> (sym natSucc)) (everyone)
+    (tfa ^_ (wrappertype nat) (wrappertype nat))
+    <hiddenCode>))
+(withsecret nat (subkey <language> (sym nat))
+  (define (subkey <language> (sym natElim)) (everyone)
+    (ttfa ^_ a
+      (tfa ^_ (wrappertype nat) (tfa ^_ a (tfa ^_ (tfa ^_ a a) a))))
+    <hiddenCode>))
