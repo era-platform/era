@@ -2,6 +2,35 @@
 // Copyright 2013 Ross Angle. Released under the MIT License.
 
 
+// Here's a map of the dependencies among the eleven language
+// fragments, with "[ ]" showing which ones we haven't implemented:
+//
+// Local collaboration
+//   Deductive
+//   Action
+// Local collaborative value-level definition
+//   Local collaboration
+//     ...
+// [ ] Local collaborative phantom type
+//   Local collaboration
+//     ...
+// [ ] Local collaborative extensible sum
+//   Local collaboration
+//     ...
+//   [ ] Observational subtyping
+//     Deductive
+// Kitchen sink "un"-type
+//   Imperative partial computation
+//     Partiality monad
+//       Deductive
+//   Statically generated dynamic token
+//     Deductive
+//     Action
+//
+// At this point, we're not aiming to implement the other three
+// fragments yet. We'll use these features with a surface syntax layer
+// to make a relatively unambitious Scheme-like programming language.
+
 // This originally used a much less lispy syntax. The original version
 // is still available as a GitHub Gist, linked to by a blog post.
 //
@@ -9,8 +38,22 @@
 //
 // The blog post:
 // http://rocketnia.wordpress.com/2013/01/29/an-extensible-type-system-for-meaning-preserving-modularity/
-
-// TODO: Add the "NEW:" fragments implemented in Era.
+//
+// For this version, we're taking the original grammar design and
+// filling it out with lots of extra annotations to make the checker
+// easy to write. For one thing, every function call expression must
+// come with a full description of the function type it's calling. For
+// another, when the original inference rules would have allowed
+// certain expressions on the grounds that an observed action
+// ambiently enabled them, for now we instead force those dependencies
+// to the top level. For instance, we use (withsecret ...) and
+// (witheach ...).
+//
+// That original Gist didn't tackle the problem of what to do if an
+// an author publishes two definitions with the same key and the same
+// same type. We don't prevent that scenario from happening, but we do
+// do settle on a consistent interpretation. Instead of saying "the
+// definition," we say "each definition."
 
 
 // Start of a bibliography:
@@ -49,6 +92,17 @@
 // is the most interesting theorem a type object demonstrates, nor
 // that general "for all types..." quantification is a particularly
 // valuable abstraction tool (even though we use it here).
+
+// tfa: total for-all
+// tfn: total function
+// tcall: total call
+// ttfa: total type for-all
+// ttfn: total type function (a function that takes types to values)
+// ttcall: total type call
+// sfa: sigma for-all
+// sfn: sigma function (i.e. a dependent pair)
+// fst: first (of an sfn)
+// snd: second (of an sfn)
 
 // A root node:
 INFERENCE_RULES ::= Rule*
@@ -107,11 +161,20 @@ Term ::=| "(" "right" Term Term Term ")"
   // (ttfn ^r
   //   (tfn ^a (tfa ^_ term1 r)
   //     (tfn ^b (tfn ^_ term2 r) (tcall ^_ term2 r b term3))))
-Term ::=| "(" "bool" ")"  // short for (either (unittype) (unittype))
+// TODO: This is meant to represent a boolean value, but it may not be
+// sufficiently expressive for type-level computation. Figure out if
+// there's a better option.
+// NOTE: We could also use (either (unittype) (unittype)).
+Term ::=| "(" "bool" ")"
+  // short for (ttfa ^a (tfa ^_ a (tfa ^_ a a)))
 Term ::=| "(" "true" ")"
-  // short for (left (unittype) (unittype) (unit))
+  // short for (ttfn ^a (tfn ^then a (tfa ^else a then)))
 Term ::=| "(" "false" ")"
-  // short for (right (unittype) (unittype) (unit))
+  // short for (ttfn ^a (tfn ^then a (tfa ^else a else)))
+// TODO: This may not be sufficiently expressive for type-level
+// computation. Figure out if there's a better expansion option.
+Term ::=| "(" "maybe" Term ")"
+  // short for (ttfa ^a (tfa ^_ a (tfa ^_ (tfa ^_ term1 a) a)))
 
 
 // == Inference rules ==
@@ -359,6 +422,8 @@ Term ::=| "<hiddenCode>"
 //
 // Depends on the deductive fragment and the action fragment.
 
+// TODO: Make at least one cryptographic key syntax.
+
 
 // == Grammar ==
 
@@ -383,14 +448,17 @@ WordVar ::= Word | "word"
 
 // == Inference rules ==
 
+// Introduce (everyone).
 |-  // Tautology
 ---
 (public (everyone))
 
+// Introduce (subkey ...).
 (public key)
 ---
 (public (subkey key word))
 
+// Introduce (withsecret ...).
 (public key)
 (secret x) |- (can act[ x ])
 ---
@@ -675,6 +743,291 @@ you @
 // (mysterytype), created using (mystery from inputType inputVal),
 // will dispatch to the method defined on the same "from" key that
 // created them.
+
+
+
+// ===== Partiality monad fragment ===================================
+//
+// Depends on the deductive fragment.
+//
+// TODO: Come up with a better fragment name.
+
+
+// == Grammar ==
+
+Term ::=| "(" "partialtype" Term ")"
+// TODO: Make sure all syntaxes that begin with "z" are hidden from
+// language users.
+Term ::=| "(" "zunitpartial" Term Term ")"
+Term ::=| "(" "zbindpartial" Term Term Term Term ")"
+Term ::=| "(" "zfixpartial" Term Term ")"
+// TODO: Figure out what else we might need in order to reason about
+// equality of these values.
+
+
+// == Inference rules ==
+
+// Introduce (partialtype ...).
+(istype a)
+---
+(istype (partialtype a))
+
+// Introduce (zunitpartial ...).
+(describes a x)
+---
+(describes (partialtype a) (zunitpartial a x))
+
+// Introduce (zbindpartial ...).
+(describes (partialtype aType) thunkA)
+(describes (tfa ^_ aType (partialtype bType)) aToThunkB)
+---
+(describes (partialtype bType)
+  (zbindpartial aType bType thunkA aToThunkB))
+
+// Introduce (zfixpartial ...).
+(describes (tfa ^_ (partialtype a) (partialtype a)) thunkToThunk)
+---
+(describes (partialtype a) (zfixpartial a thunkToThunk))
+
+
+// == Built-in module exports ==
+
+unitpartial : (ttfa ^a (tfa ^_ a (partialtype a)))
+
+bindpartial :
+  (ttfa ^a
+    (ttfa ^b
+      (tfa ^_ (partialtype a)
+        (tfa ^_ (tfa ^_ a (partialtype b)) (partialtype b)))))
+
+fixpartial :
+  (ttfa ^a
+    (tfa ^_ (tfa ^_ (partialtype a) (partialtype a))
+      (partialtype a)))
+
+
+
+// ===== Imperative partial computation fragment =====================
+//
+// Depends on the partiality monad fragment.
+//
+// This takes primary inspiration from [1]. The original formulation
+// of this idea is in [2], whose authors continued their analysis in
+// [3].
+//
+// [1] "A new paradigm for component-based development,"
+//     Johan G. Granstrom, 2012.
+// [2] "Interactive Programs in Dependent Type Theory,"
+//     Peter Hancock and Anton Setzer, 2000.
+// [3] "Interactive Programs and Weakly Final Coalgebras in Dependent
+//     Type Theory (Extended Version),"
+//     Anton Setzer and Peter Hancock, 2005.
+//
+// This representation of imperative computation has some accidental
+// complexity, a meaningful use case we don't necessarily intend to
+// support: It's possible for the execution harness to manipulate
+// continuations and thereby perform branching, reentrant, and/or
+// early termination effects as in Haskell Monads. If we had linear
+// types, we could restrict this. The approach in "A new paradigm..."
+// might mitigate this in practice since a "world map" doesn't seem
+// like it would introduce these features in the target world unless
+// they already exist in the source world.
+
+// NOTE: Occurrences of "impartial" here are short for "imperative
+// partial," and they distinguish this kind of imperative computation
+// from at least two other possibilities: One where the computation
+// must terminate after a finite number of commands, and one where
+// each stage of computation must terminate in full termination or a
+// command, but where infinite regresses of commands are permitted.
+//
+// TODO: See if there's a better term than "impartial."
+
+
+// == Grammar ==
+
+Term ::=| "(" "impartialtype" Arg Term Term Term ")"
+Term ::=| "(" "unitimpartial" Arg Term Term Term ")"
+Term ::=| "(" "invkimpartial" Arg Term Term Term Term ")"
+// TODO: Figure out what else we might need in order to reason about
+// equality of these values.
+
+
+// == Inference rules ==
+
+// Introduce (impartialtype ...).
+(istype commandType)
+(describes commandType cmd) |- (istype responseType[ cmd ])
+(istype terminationType)
+---
+(istype
+  (impartialtype ^cmd commandType responseType[ cmd ]
+    terminationType))
+
+// Introduce (unitimpartial ...).
+(istype commandType)
+(describes commandType cmd) |- (istype responseType[ cmd ])
+(describes terminationType result)
+---
+(describes
+  (impartialtype ^cmd commandType responseType[ cmd ] terminationType)
+  (unitimpartial ^cmd commandType responseType[ cmd ] result))
+
+// Introduce (invkimpartial ...).
+(istype commandType)
+(describes commandType cmd) |- (istype responseType[ cmd ])
+(describes terminationType result)
+(describes
+  (sfa ^cmd commandType
+    (tfa ^_ responseType[ cmd ]
+      (partialtype
+        (impartialtype ^cmd commandType responseType[ cmd ]
+          terminationType))))
+  pairOfCommandAndCallback)
+---
+(describes
+  (impartialtype ^cmd commandType responseType[ cmd ] terminationType)
+  (invkimpartial ^cmd commandType responseType[ cmd ] terminationType
+    pairOfCommandAndCallback))
+
+
+
+// ===== Statically generated dynamic token fragment =================
+//
+// Depends on the deductive fragment and the action fragment.
+
+
+// == Grammar ==
+
+Term ::=| "(" "tokentype" ")"
+UserAction ::=| "(" "withtoken" Arg Term UserAction ")"
+// TODO: Make sure all syntaxes that begin with "z" are hidden from
+// language users.
+Term ::=| "(" "ztokenequals" Term Term ")"
+// TODO: Figure out what else we might need in order to reason about
+// equality of these values.
+
+
+// == Inference rules ==
+
+// Introduce (tokentype ...).
+|-  // Tautology
+---
+(istype (tokentype))
+
+// Introduce (withtoken ...).
+(private by)
+(describes (tokentype) t) |- (can act[ t ])
+---
+(can (withtoken ^t by act[ t ]))
+
+// Introduce (ztokenequals ...).
+(describes (tokentype) a)
+(describes (tokentype) b)
+---
+(describes (bool) (ztokenequals a b))
+
+
+// == Built-in module exports ==
+
+tokenequals : (tfa ^_ (tokentype) (tfa ^_ (tokentype) (bool)))
+
+
+
+// ===== Kitchen sink "un"-type fragment =============================
+//
+// Depends on the imperative partial computation fragment and the
+// statically generated dynamic token fragment.
+//
+// TODO: Come up with a better fragment name.
+
+// TODO: Use the phantom type fragment or extensible sum fragment for
+// this. Note that we can't just handle all types at once: If the type
+// (tfa _ (sink) (sink)) can be contained in a sink, then we can
+// formulate the Y combinator and we lose the "total" property of our
+// total functions. Moreover, not all types can necessarily be
+// programmatically compared for observational equality (in order to
+// check whether the sink destruction type matches the construction
+// type), and not all types will necessarily be able to survive past
+// compile time.
+
+
+// == Grammar ==
+
+Term ::=| "(" "sink" ")"
+// TODO: Make sure all syntaxes that begin with "z" are hidden from
+// language users.
+Term ::=| "(" "ztokentosink" Term ")"
+Term ::=| "(" "zsinktotoken" Term ")"
+Term ::=| "(" "zpfntosink" Term ")"
+Term ::=| "(" "zsinktopfn" Term ")"
+Term ::=| "(" "zipfntosink" Term ")"
+Term ::=| "(" "zsinktoipfn" Term ")"
+// TODO: Figure out what else we might need in order to reason about
+// equality of these values.
+
+
+// == Inference rules ==
+
+// Introduce (ztokentosink ...).
+(istype (tokentype) x)
+---
+(istype (sink) (ztokentosink x))
+
+// Introduce (zsinktotoken ...).
+(istype (sink) x)
+---
+(istype (maybe (tokentype)) (zsinktotoken x))
+
+// Introduce (zpfntosink ...).
+(istype (tfa ^_ (sink) (partialtype (sink))) x)
+---
+(istype (sink) (zpfntosink x))
+
+// Introduce (zsinktopfn ...).
+(istype (sink) x)
+---
+(istype (maybe (tfa ^_ (sink) (partialtype (sink)))) (zsinktopfn x))
+
+// Introduce (zipfntosink ...).
+(istype
+  (tfa ^_ (sink)
+    (partialtype (impartialtype ^_ (sink) (sink) (sink))))
+  x)
+---
+(istype (sink) (zipfntosink x))
+
+// Introduce (zsinktoipfn ...).
+(istype (sink) x)
+---
+(istype
+  (maybe
+    (tfa ^_ (sink)
+      (partialtype (impartialtype ^_ (sink) (sink) (sink)))))
+  (zsinktoipfn x))
+
+
+// == Built-in module exports ==
+
+tokentosink : (tfa ^_ (tokentype) (sink))
+sinktotoken : (tfa ^_ (sink) (maybe (tokentype)))
+
+// TODO: See if we need this.
+// NOTE: "pfn" = "partial function"
+pfntosink : (tfa ^_ (tfa ^_ (sink) (partialtype (sink))) (sink))
+sinktopfn :
+  (tfa ^_ (sink) (maybe (tfa ^_ (sink) (partialtype (sink)))))
+
+// NOTE: "ipfn" = "imperative partial function"
+ipfntosink :
+  (tfa ^_
+    (tfa ^_ (sink)
+      (partialtype (impartialtype ^_ (sink) (sink) (sink))))
+    (sink))
+sinktoipfn :
+  (tfa ^_ (sink)
+    (maybe
+      (tfa ^_ (sink)
+        (partialtype (impartialtype ^_ (sink) (sink) (sink))))))
 
 
 

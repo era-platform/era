@@ -3,57 +3,14 @@
 "use strict";
 
 
-// For now, we implement the deductive fragment, almost all the action
-// fragment, the local collaboration fragment, and the local
-// collaborative value-level definition fragment. A more complete
-// version of the grammar is available at
-// <https://gist.github.com/4559120>. Also, it's worth noting that
-// we're using s-expressions for the grammar.
-//
-// Here's a map of the dependencies among the seven language fragments
-// in that Gist, with "[ ]" showing which ones we haven't implemented:
-//
-// Local collaboration
-//   Deductive
-//   Action
-// Local collaborative value-level definition
-//   Local collaboration
-//     ...
-// [ ] Local collaborative phantom type
-//   Local collaboration
-//     ...
-// [ ] Local collaborative extensible sum
-//   Local collaboration
-//     ...
-//   [ ] Observational subtyping
-//     Deductive
-//
-// At this point, we're not aiming to implement the other three
-// fragments in the Gist yet. For now, we're going to implement
-// another fragment or two for imperative state models and
-// possibly-nonterminating lambdas with imperative effects. We'll use
-// these features with a surface syntax layer to make a relatively
-// unambitious Scheme-like programming language.
-
-
-// NOTE: For this version, we're taking the original grammar design
-// and filling it out with lots of extra annotations to make the
-// checker easy to write. For one thing, every function call
-// expression must come with a full description of the function type
-// it's calling. For another, when the original inference rules would
-// have allowed certain expressions on the grounds that an observed
-// action ambiently enabled them, for now we instead force those
-// dependencies to the top level. For instance, we use
-// (withsecret ...) and (witheach ...).
-
 // NOTE: The deductive fragment actually has no way to construct a
 // type that depends on a term! It doesn't even provide a type
 // signature for built-in utilities to fill this void, since no
 // function can return a type. This makes the term variable in each
 // type constructor a bit silly. However, the observational subtyping
-// fragment does define one operator, ((a : aType) <= (b : bType)),
-// that makes a dependent type, so fragments like that can justify
-// this infrastructure.
+// fragment does define one operator, (subval aType a bType b), that
+// makes a dependent type, so fragments like that can justify this
+// infrastructure.
 //
 // TODO: See if we should include the capitalized
 // (If <term> Then <type> Else <type>) operator from
@@ -62,254 +19,10 @@
 // particular use for it. We might approach type-level computation in
 // a different way.
 
-// Deductive fragment grammar notes:
-//
-// Fact ::=| UserVar "@" UserKnowledge
-// UserKnowledge ::=| "##type" Term
-// UserKnowledge ::=| Term ":" Term
-// Term ::=| TermVar
-// Term ::=| "(" Term ")"
-// Term ::=| "(" TermVar ":" Term ")" "->" Term
-// Term ::=| "\" TermVar ":" Term "->" Term
-// Term ::=| Term Term
-// Term ::=| "(" "##type" TermVar ")" "->" Term
-// Term ::=| "\" "##type" TermVar "->" Term
-// Term ::=| Term "#\t" Term
-// Term ::=| "(=#Sigma" TermVar ":" Term ")" "*" Term
-// Term ::=| "\#sigma" "(" Term ":" Term ")" "*" Term
-// Term ::=| "#fst" Term
-// Term ::=| "#snd" Term
-//
-// UserKnowledge ::=| "(" "istype" Term ")"
-// UserKnowledge ::=| "(" "describes" Term Term ")"
-// Term ::=| TermVar
-// Term ::=| "(" "tfa" TermVar Term Term ")"
-// Term ::=| "(" "tfn" TermVar Term Term ")"
-// Term ::=| "(" "tcall" TermVar Term Term Term Term ")"
-// Term ::=| "(" "ttfa" TermVar Term ")"
-// Term ::=| "(" "ttfn" TermVar Term ")"
-// Term ::=| "(" "ttcall" TermVar Term Term Term ")"
-// Term ::=| "(" "sfa" TermVar Term Term ")"
-// Term ::=| "(" "sfn" TermVar Term Term Term ")"
-// Term ::=| "(" "fst" TermVar Term Term Term ")"
-// Term ::=| "(" "snd" TermVar Term Term Term ")"
-//
-// istype: is type
-// describes: describes
-// tfa: total for-all
-// tfn: total function
-// tcall: total call
-// ttfa: total type for-all
-// ttfn: total type function (a function that takes types to values)
-// ttcall: total type call
-// sfa: sigma for-all
-// sfn: sigma function (i.e. a dependent pair)
-// fst: first (of an sfn)
-// snd: second (of an sfn)
-
-// Action fragment grammar notes:
-//
-// MODULE ::= UserAction*
-// Fact ::=| UserVar "@!" UserAction
-// UserKnowledge ::=| UserAction
-//
-// // TODO: Figure out how to account for the signatures and timestamp
-// // information in the pre-build module grammar.
-// //
-// // TODO: Figure out if there needs to be a separate grammar for
-// // post-build shared modules.
-// //
-// MODULE ::= "(" "era" "1" UserAction ")"
-// UserKnowledge ::=| "(" "can" UserAction ")"
-
-// Local collaboration fragment grammar notes:
-//
-// UserKnowledge ::=| "##secret" Key
-// UserKnowledge ::=| "##public" Key
-// Key ::=| KeyVar
-// Key ::=| "$" ## CryptographicKeyName
-// Key ::=| "$$everyone"
-// Key ::=| Key ## "/" ## SubName
-//
-// UserKnowledge ::=| "(" "secret" Key ")"
-// UserKnowledge ::=| "(" "public" Key ")"
-// UserAction ::=| "(" "withsecret" TermVar Key UserAction ")"
-// // NOTE: There is no "KeyVar" production here because there is no
-// // program syntax that binds a KeyVar. It was just used for
-// // specifying inference rules in the Gist.
-// // NOTE: There is no "CryptographicKey" production here because it
-// // was just a suggestive way to specify what other key syntaxes
-// // should exist in the future.
-// // TODO: Make at least one cryptographic key syntax.
-// Key ::=| "(" "everyone" ")"
-// Key ::=| "(" "subkey" Key ExternallyVisibleWord ")"
-// ExternallyVisibleWord ::=| "(" "sym" Symbol ")"
-
-// Local collaborative value-level definition fragment grammar notes:
-//
-// UserAction ::=| "!!define" Key Key Term Term
-// Term ::=| "#the" Key Key Term
-//
-// UserAction ::=| "(" "define" Term Key Term Term ")"
-// // NOTE: The original Gist didn't tackle the problem of what to do
-// // if an author publishes two definitions with the same key and the
-// // same type. We don't prevent that scenario from happening, but we
-// // do settle on a consistent interpretation. Instead of saying
-// // "the definition," we say "each definition."
-// UserAction ::=| "(" "witheach" TermVar Key Term Term UserAction ")"
-
-// TODO: For everything marked with "NEW:", write a more
-// implementation-agnostic description, as with the original Gist.
-
-// NEW: The partiality monad fragment:
-//
-// Term ::=| "(" "partialtype" Term ")"
-// // TODO: Make sure all syntaxes that begin with "z" are hidden from
-// // language users.
-// Term ::=| "(" "zunitpartial" Term Term ")"
-// Term ::=| "(" "zbindpartial" Term Term Term Term ")"
-// Term ::=| "(" "zfixpartial" Term Term ")"
-//
-// Built-in module exports:
-//
-// unitpartial : (ttfa a (tfa _ a (partialtype a)))
-//
-// bindpartial :
-//   (ttfa a
-//     (ttfa b
-//       (tfa _ (partialtype a)
-//         (tfa _ (tfa _ a (partialtype b)) (partialtype b)))))
-//
-// fixpartial :
-//   (ttfa a
-//     (tfa _ (tfa _ (partialtype a) (partialtype a))
-//       (partialtype a)))
-
-// NEW: The imperative partial computation fragment:
-//
-// // NOTE: This takes primary inspiration from [1]. The original
-// // formulation of this idea is in [2], whose authors continued
-// // their analysis in [3].
-// //
-// // [1] "A new paradigm for component-based development,"
-// //     Johan G. Granstrom, 2012.
-// // [2] "Interactive Programs in Dependent Type Theory,"
-// //     Peter Hancock and Anton Setzer, 2000.
-// // [3] "Interactive Programs and Weakly Final Coalgebras in
-// //     Dependent Type Theory (Extended Version)," Anton Setzer and
-// //     Peter Hancock, 2005.
-//
-// // NOTE: Occurrences of "impartial" here are short for "imperative
-// // partial," and they distinguish this kind of imperative
-// // computation from at least two other possibilities: One where the
-// // computation must terminate after a finite number of commands,
-// // and one where each stage of computation must terminate in full
-// // termination or a command, but where infinite regresses of
-// // commands are permitted.
-// // TODO: See if there's a better term than "impartial."
-//
-// // NOTE: This representation of imperative computation has some
-// // accidental complexity, a meaningful use case we don't
-// // necessarily intend to support: It's possible for the execution
-// // harness to manipulate continuations and thereby perform
-// // branching, reentrant, and/or early termination effects as in
-// // Haskell Monads. If we had linear types, we could restrict this.
-// // The approach in "A new paradigm..." might mitigate this in
-// // practice since a "world map" doesn't seem like it would
-// // introduce these features in the target world unless they already
-// // exist in the source world.
-//
-// // (impartialtype cmd commandType responseType[ cmd ]
-// //   terminationType)
-// Term ::=| "(" "impartialtype" TermVar Term Term Term ")"
-//
-// // (unitimpartial cmd commandType responseType[ cmd ] result)
-// Term ::=| "(" "unitimpartial" TermVar Term Term Term ")"
-//
-// // (invkimpartial cmd1 commandType responseType[ cmd1 ]
-// //   terminationType
-// //   pairOfCommandAndCallback)
-// // where pairOfCommandAndCallback :
-// //   (sfa cmd2 commandType
-// //     (tfa _ responseType[ cmd2 ]
-// //       (partialtype
-// //         (impartialtype cmd3 commandType responseType[ cmd3 ]
-// //           terminationType))))
-// Term ::=| "(" "invkimpartial" TermVar Term Term Term Term ")"
-
-// NEW: The statically generated dynamic token fragment:
-//
-// // TODO: See if there are better names for this fragment and its
-// // definitions.
-//
-// Term ::=| "(" "tokentype" ")"
-//
-// // Convert a known private key into a corresponding dynamically
-// // comparable value.
-// UserAction ::=| "(" "withtoken" TermVar Term UserAction ")"
-//
-// // TODO: Make sure all syntaxes that begin with "z" are hidden from
-// // language users.
-// Term ::=| "(" "ztokenequals" Term Term ")"
-//
-// Built-in module exports:
-//
-// tokenequals :
-//   (tfa _ (tokentype)
-//     (tfa _ (tokentype)
-//       // TODO: This is meant to represent a boolean value, but it
-//       // may not be sufficiently expressive for type-level
-//       // computation. Figure out if there's a better option.
-//       (ttfa a (tfa _ a (tfa _ a a)))))
-
-// NEW: The kitchen sink "un"-type fragment:
-//
-// // TODO: Use the phantom type fragment or extensible sum fragment
-// // for this. Note that we can't just handle all types at once:
-// // If the type (tfa _ (sink) (sink)) can be contained in a sink,
-// // then we can formulate the Y combinator and we lose the "total"
-// // property of our total functions. Moreover, not all types can
-// // necessarily be programmatically compared for observational
-// // equality (in order to check whether the sink destruction type
-// // matches the construction type), and not all types will
-// // necessarily be able to survive past compile time.
-// Term ::=| "(" "sink" ")"
-// // TODO: Make sure all syntaxes that begin with "z" are hidden from
-// // language users.
-// Term ::=| "(" "ztokentosink" Term ")"
-// Term ::=| "(" "zsinktotoken" Term ")"
-// Term ::=| "(" "zpfntosink" Term ")"
-// Term ::=| "(" "zsinktopfn" Term ")"
-// Term ::=| "(" "zipfntosink" Term ")"
-// Term ::=| "(" "zsinktoipfn" Term ")"
-//
-// Built-in module exports:
-//
-// // We're using (maybe <inner>) as shorthand for this:
-// //   (ttfa a (tfa _ a (tfa _ (tfa <inner> a) a)))
-// // TODO: This may not be sufficiently expressive for type-level
-// // computation. Figure out if there's a better expansion option.
-//
-// tokentosink : (tfa _ (tokentype) (sink))
-// sinktotoken : (tfa _ (sink) (maybe (tokentype)))
-//
-// // TODO: See if we need this.
-// // NOTE: "pfn" = "partial function"
-// pfntosink : (tfa _ (tfa _ (sink) (partialtype (sink))) (sink))
-// sinktopfn :
-//   (tfa _ (sink) (maybe (tfa _ (sink) (partialtype (sink)))))
-//
-// // NOTE: "ipfn" = "imperative partial function"
-// ipfntosink :
-//   (tfa _
-//     (tfa _ (sink)
-//       (partialtype (impartialtype _ (sink) (sink) (sink))))
-//     (sink))
-// sinktoipfn :
-//   (tfa _ (sink)
-//     (maybe
-//       (tfa _ (sink)
-//         (partialtype (impartialtype _ (sink) (sink) (sink))))))
+// TODO: Figure out how to account for the signatures and timestamp
+// information in the pre-build module grammar.
+// TODO: Figure out if there needs to be a separate grammar for
+// post-build shared modules.
 
 
 function envWith( env, varName, varSpecifics ) {
@@ -2163,7 +1876,6 @@ var builtins = strMap();
         "define" );
     addEraSyntax( "localCollaborativeValueLevelDefinition",
         "witheach" );
-    // TODO: Come up with a better name than "partiality".
     addEasyType( "partiality", "partialtype", [ "innerType" ] );
     addEasyTerm( "partiality", "zunitpartial",
         [ "terminationType", "result" ] );
@@ -2230,7 +1942,6 @@ var builtins = strMap();
         [ "tfn", "a", [ "tokentype" ],
             [ "tfn", "b", [ "tokentype" ],
                 [ "ztokenequals", "a", "b" ] ] ] );
-    // TODO: Come up with a better name than "kitchenSinkUnType".
     addEasyType( "kitchenSinkUnType", "sink", [] );
     addSinkTag( "token", [ "tokentype" ] );
     addSinkTag( "pfn",
