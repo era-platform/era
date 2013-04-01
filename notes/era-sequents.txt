@@ -193,7 +193,7 @@ Term ::=| "(" "maybe" Term ")"
 (describes (tfa ^x xType yType[ x ]) f)
 (describes xType xExample)
 ---
-(describes yType[ xExample ] (ttcall ^x xType yType[ x ] f xExample))
+(describes yType[ xExample ] (tcall ^x xType yType[ x ] f xExample))
 
 // Eliminate (tfn ...) and (tcall ...).
 (tcall ^x xType yType[ x ] (tfn ^x xType y[ x ]) xExample)
@@ -337,7 +337,7 @@ in
 
 (coerce (ttfa ^x ao[ x ]) (ttfa ^x bo[ x ]) pf orig)
 ~~>
-(ttfn ^x (coerce ao[ x ] bo[ x ]
+(ttfn ^x
   (ttcall ^x2 (subtype ao[ x2 ] bo[ x2 ]) pf x)
   (ttcall ^x2 ao[ x2 ] orig x))
 
