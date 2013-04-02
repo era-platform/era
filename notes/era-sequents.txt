@@ -2,15 +2,22 @@
 // Copyright 2013 Ross Angle. Released under the MIT License.
 
 
-// Here's a map of the dependencies among the eleven language
+// TODO: Currently, we have an implemented version of the local
+// collaborative value-level definition fragment, but it isn't up to
+// date with this design. Implement the knowledge query fragment
+// first, and then update that fragment to use it.
+
+// Here's a map of the dependencies among the twelve language
 // fragments, with "[ ]" showing which ones we haven't implemented:
 //
 // Local collaboration
 //   Deductive
 //   Action
-// Local collaborative value-level definition
+// [ ] Local collaborative value-level definition
 //   Local collaboration
 //     ...
+//   [ ] Knowledge query
+//     Action
 // [ ] Local collaborative phantom type
 //   Local collaboration
 //     ...
@@ -418,6 +425,88 @@ Term ::=| "<hiddenCode>"
 
 
 
+// ===== Knowledge query fragment ====================================
+//
+// Depends on the action fragment.
+
+// NOTE: Right now, the (ttfa ...) type provides impredicative
+// polymorphism, and it's difficult to add phantom types or other
+// type-hiding tools without introducing the potential for
+// nontermination. So we're going to drop (ttfa ...) and handle type
+// parameters as a feature of exports and imports (knowledge queries),
+// rather than as a feature of types.
+
+
+// == Grammar ==
+
+PolyTerm ::=| "(" "polytermunit" Term ")"
+PolyTerm ::=| "(" "polytermforall" Arg PolyTerm ")"
+PolyInst ::=| "(" "polyinstunit" ")"
+PolyInst ::=| "(" "polyinstforall" Term PolyInst ")"
+UserKnowledge ::=| "(" "polyistype" PolyTerm ")"
+UserKnowledge ::=| "(" "polydescribes" PolyTerm PolyTerm ")"
+UserKnowledge ::=| "(" "describesinst" PolyTerm PolyInst Term ")"
+UserKnowledge ::=| "(" "describesquery" PolyTerm KnolQuery ")"
+UserAction ::=| "(" "witheachknol"
+  Arg PolyTerm PolyInst Term KnolQuery UserAction ")"
+
+// Only for inference rules, not code:
+PolyTerm ::=| Word ("[" Term "]")*
+PolyInst ::=| Word ("[" Term "]")*
+KnolQuery ::=| Word ("[" Term "]")*
+
+// Only for depictions of external modules, not inference rules or
+// actionable module code:
+Term ::=| "<hiddenCode>"
+
+
+// == Inference rules ==
+
+// Introduce (polytermunit ...) for types.
+(istype a)
+---
+(polyistype (polytermunit a))
+
+// Introduce (polytermunit ...) for values.
+(describes aType a)
+---
+(polydescribes (polytermunit aType) (polytermunit a))
+
+// Introduce (polytermforall ...) for types.
+(istype x) |- (polyistype a[ x ])
+---
+(polyistype (polytermforall ^x a[ x ]))
+
+// Introduce (polytermforall ...) for values.
+(istype x) |- (polydescribes aType[ x ] a[ x ])
+---
+(polydescribes
+  (polytermforall ^x aType[ x ]) (polytermforall ^x a[ x ]))
+
+// Introduce (polyinstunit).
+(istype x)
+---
+(describesinst (polytermunit x) (polyinstunit) r)
+
+// Introduce (polyinstforall ...).
+(istype x) |- (ispolytype nextType[ x ])
+(istype xExample)
+(describesinst nextType[ xExample ] nextInst r)
+---
+(describesinst (polytermforall ^x nextType[ x ])
+  (polyinstforall xExample nextInst)
+  r)
+
+// Introduce (witheachknol ...).
+(istype xType)
+(describesinst polyType polyInst xType)
+(describesquery polyType query)
+(describes xType x) |- (can act[ x ])
+---
+(can (witheachknol ^x polyType polyInst xType query act[ x ]))
+
+
+
 // ===== Local collaboration fragment ================================
 //
 // Depends on the deductive fragment and the action fragment.
@@ -431,7 +520,7 @@ UserKnowledge ::=| "(" "secret" Term ")"
 UserKnowledge ::=| "(" "public" Key ")"
 Key ::=| "(" "everyone" ")"
 Key ::=| "(" "subkey" Key ExternallyVisibleWord ")"
-// UserAction ::=| "(" "withsecret" Arg Key UserAction ")"
+UserAction ::=| "(" "withsecret" Arg Key UserAction ")"
 // NOTE: In any place this grammar is used, an actual programming
 // language implementation is very likely to use a different format.
 // Sequences of ASCII letters aren't a very conscientious
@@ -468,13 +557,14 @@ WordVar ::= Word | "word"
 
 // ===== Local collaborative value-level definition fragment =========
 //
-// Depends on the local collaboration fragment.
+// Depends on the local collaboration fragment and the knowledge query
+// fragment.
 
 
 // == Grammar ==
 
-UserAction ::=| "(" "define" Term Key Term Term ")"
-UserAction ::=| "(" "witheach" Arg Key Term Term UserAction ")"
+UserAction ::=| "(" "define" Term Key PolyTerm PolyTerm ")"
+KnolQuery ::=| "(" "defined" Key Term ")"
 
 
 // == Inference rules ==
@@ -482,18 +572,16 @@ UserAction ::=| "(" "witheach" Arg Key Term Term UserAction ")"
 // Introduce (define ...).
 (secret myKey)
 (public yourKey)
-(describes xType x)
+(polydescribes xType x)
 ---
 (can (define myKey yourKey xType x))
 
-// Eliminate (define ...) and introduce (witheach ...).
-me @! (define myKey yourKey xType x)
+// Introduce (defined ...).
 you @ (public myKey)
 you @ (secret yourKey)
-you @ (istype xType)
-(you @ (describes xType x)) |- (you @ (can act[ x ]))
+you @ (polyistype xType)
 ---
-you @ (can (witheach ^x myKey yourKey xType act[ x ]))
+you @ (describesquery xType (defined myKey yourKey xType))
 
 
 
@@ -706,43 +794,26 @@ you @
 
 
 
-// TODO: Consider adding another approach to extensible sum types,
-// which would be well integrated with the idea of knowledge queries,
-// but not so well integrated with the deductive system:
+// TODO: Consider adding another approach to extensible sum types.
 //
-// Term ::=| "(" "k" Term ")"
-// Term ::=| "(" "defined" Key Term Term ")"
-// Term ::=| "(" "leteachknownexpr" Arg Term Term ")"
-// UserAction ::=| "(" "leteachknown" Arg Term UserAction ")"
-//
-// A judgment (describes (k t) x) says x would terminate as evidence
-// for a collection of values of t whose size is monotonic with the
-// quantity of knowledge that's available for query purposes. The
-// (k t) type constructor may syntactically be a monad, but it works
-// more like an effect type, tainting the type of any function call
-// that has it as a subexpression.
-//
-// The (leteachknownexpr ...) and (leteachknown ...) syntaxes perform
-// knowledge queries. Instead of saying
-// (witheach ^x from to type ...),  we say
-// (leteachknown ^x (defined from to type) ...).
-//
+// Term ::=| "(" "knolset" Term ")"
 // Term ::=| "(" "mysterytype" ")"
 // Term ::=| "(" "mystery" Term Term Term ")"
-// Term ::=| "(" "dispatcher" Key ")"
-// UserAction ::=| "(" "decidemysterytype" Term Term ")"
-// UserAction ::=| "(" "startdispatcher" Term Term ")"
-// UserAction ::=| "(" "extenddispatcher" Term Key Term ")"
+// Term ::=| "(" "dispatcher" Term Term ")"
+// UserAction ::=| "(" "extenddispatcher" Term Key Term Term Term ")"
 //
-// If one person does (startdispatcher to resultType) and others do
-// (decideMysteryType from inputType) and
-// (extendDispatcher from to func), with each "func" of type
-// (tfa ^_ inputType (k resultType)), then the person who started the
-// dispatcher can access those methods using a value (dispatcher to)
-// of type (k (tfa ^_ (mysterytype) (k resultType))). Values of type
+// If some people do
+// (extenddispatcher from to inputType resultType func), with each
+// "func" of type (tfa ^_ inputType (k resultType)), then a person
+// with access to "to" can use those methods via
+// (dispatcher to resultType), which has type
+// (tfa ^_ (mysterytype) (knolset resultType)). Values of type
 // (mysterytype), created using (mystery from inputType inputVal),
-// will dispatch to the method defined on the same "from" key that
-// created them.
+// will dispatch to the method defined on the same "from" key and type
+// that created them.
+//
+// It's not clear yet what we should be able to do with values of type
+// (knolset ...).
 
 
 
@@ -1035,14 +1106,16 @@ sinktoipfn :
 
 (withsecret nat (subkey <language> (sym nat))
   (define (subkey <language> (sym natZero)) (everyone)
-    (wrappertype nat)
-    <hiddenCode>))
+    (polytermunit (wrappertype nat))
+    (polytermunit <hiddenCode>)))
 (withsecret nat (subkey <language> (sym nat))
   (define (subkey <language> (sym natSucc)) (everyone)
-    (tfa ^_ (wrappertype nat) (wrappertype nat))
-    <hiddenCode>))
+    (polytermunit (tfa ^_ (wrappertype nat) (wrappertype nat)))
+    (polytermunit <hiddenCode>)))
 (withsecret nat (subkey <language> (sym nat))
   (define (subkey <language> (sym natElim)) (everyone)
-    (ttfa ^_ a
-      (tfa ^_ (wrappertype nat) (tfa ^_ a (tfa ^_ (tfa ^_ a a) a))))
-    <hiddenCode>))
+    (polytermforall ^a
+      (polytermunit
+        (tfa ^_ (wrappertype nat)
+          (tfa ^_ a (tfa ^_ (tfa ^_ a a) a)))))
+    (polytermforall ^a (polytermunit <hiddenCode>))))
