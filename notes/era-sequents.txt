@@ -4,8 +4,7 @@
 
 // TODO: Currently, we have an implemented version of the local
 // collaborative value-level definition fragment, but it isn't up to
-// date with this design. Implement the knowledge query fragment
-// first, and then update that fragment to use it.
+// date with this design. Update it.
 
 // Here's a map of the dependencies among the twelve language
 // fragments, with "[ ]" showing which ones we haven't implemented:
@@ -16,7 +15,7 @@
 // [ ] Local collaborative value-level definition
 //   Local collaboration
 //     ...
-//   [ ] Knowledge query
+//   Knowledge query
 //     Action
 // [ ] Local collaborative phantom type
 //   Local collaboration

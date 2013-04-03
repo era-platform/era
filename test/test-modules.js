@@ -795,6 +795,8 @@ addShouldThrowUnitTest( function () {
     }
     
     var vari = "x";
+    var polyTerm = [ "polytermunit", vari ];
+    var polyInst = [ "polyinstunit" ];
     
     add( false, vari );
     add( false, true );
@@ -806,6 +808,22 @@ addShouldThrowUnitTest( function () {
     add( false, [ "describes", true, vari ] );
     add( false, [ "describes", vari, true ] );
     
+    add( true, [ "polyistype", polyTerm ] );
+    add( false, [ "polyistype", true ] );
+    
+    add( true, [ "polydescribes", polyTerm, polyTerm ] );
+    add( false, [ "polydescribes", true, polyTerm ] );
+    add( false, [ "polydescribes", polyTerm, true ] );
+    
+    add( true, [ "describesinst", polyTerm, polyInst, vari ] );
+    add( false, [ "describesinst", true, polyInst, vari ] );
+    add( false, [ "describesinst", polyTerm, true, vari ] );
+    add( false, [ "describesinst", polyTerm, polyInst, true ] );
+    
+    // TODO: Add other tests for this once we have at least one
+    // knolQuery syntax to put here.
+    add( false, [ "describesquery", polyTerm, true ] );
+    
     add( true, [ "public", [ "everyone" ] ] );
     add( false, [ "public", true ] );
     
@@ -814,6 +832,222 @@ addShouldThrowUnitTest( function () {
     
     add( false, [ "nonexistentSyntax", "a", "b", "c" ] );
 })();
+
+(function () {
+    function add( expected, term ) {
+        addPredicateUnitTest( function ( then ) {
+            then( term, function ( term ) {
+                return expected === isWfPolyTerm( term );
+            } );
+        } );
+    }
+    
+    var vari = "x";
+    var polyTerm = [ "polytermunit", vari ];
+    
+    add( false, vari );
+    add( false, true );
+    
+    add( true, [ "polytermunit", vari ] );
+    add( false, [ "polytermunit", true ] );
+    
+    add( true, [ "polytermforall", vari, polyTerm ] );
+    add( false, [ "polytermforall", true, polyTerm ] );
+    add( false, [ "polytermforall", vari, true ] );
+    
+    add( false, [ "nonexistentSyntax", "a", "b", "c" ] );
+})();
+
+(function () {
+    function addTerm( expected, env, type, expr ) {
+        addPredicateUnitTest( function ( then ) {
+            then( {
+                isType: { env: env, term: [ "polyistype", type ] },
+                inhabits: { env: env,
+                    term: [ "polydescribes", type, expr ] },
+                type: { env: env, term: type },
+                expr: { env: env, term: expr }
+            }, function ( args ) {
+                if ( !checkIsPolyType( args.type ) )
+                    return false;
+                if ( !checkUserKnowledge( strMap(), args.isType ) )
+                    return false;
+                var checksOut =
+                    checkInhabitsPolyType( args.expr, args.type );
+                if ( checksOut !== expected )
+                    return false;
+                if ( expected !==
+                    checkUserKnowledge( strMap(), args.inhabits ) )
+                    return false;
+                return true;
+            } );
+        } );
+    }
+    function addType( expected, env, expr ) {
+        addPredicateUnitTest( function ( then ) {
+            then( {
+                knol: { env: env, term: [ "polyistype", expr ] },
+                expr: { env: env, term: expr }
+            }, function ( args ) {
+                var checksOut = checkIsPolyType( args.expr );
+                if ( checksOut !== expected )
+                    return false;
+                if ( expected !== checkUserKnowledge( args.knol ) )
+                    return false;
+                return true;
+            } );
+        } );
+    }
+    
+    
+    // TODO: Add more thorough unit tests, exploring the impact of
+    // non-empty environments, unsuccessful typechecks, and such.
+    
+    var _env = strMap();  // NOTE: The "_" stands for "empty."
+    var igno = "_";
+    var unitType = [ "ttfa", "t", [ "tfa", igno, "t", "t" ] ];
+    var unit = [ "ttfn", "t", [ "tfn", "x", "t", "x" ] ];
+    
+    addTerm( true, _env, [ "polytermunit", unitType ],
+        [ "polytermunit", unit ] );
+    addTerm( true, _env,
+        [ "polytermforall", igno, [ "polytermunit", unitType ] ],
+        [ "polytermforall", igno, [ "polytermunit", unit ] ] );
+    addTerm( true, _env,
+        [ "polytermforall", "t",
+            [ "polytermunit", [ "tfa", igno, "t", "t" ] ] ],
+        [ "polytermforall", "t",
+            [ "polytermunit", [ "tfn", "x", "t", "x" ] ] ] );
+    
+    addShouldThrowUnitTest( function () {
+        return checkIsPolyType( { env: _env, term:
+            [ "nonexistentSyntax", "a", "b", "c" ] } );
+    } );
+    addShouldThrowUnitTest( function () {
+        return checkIsPolyType( { env: _env, term:
+            !"a boolean rather than a nested Array of strings" } );
+    } );
+    addShouldThrowUnitTest( function () {
+        return checkInhabitsType(
+            { env: _env, term:
+                [ "nonexistentSyntax", "a", "b", "c" ] },
+            { env: _env, term: [ "polytermunit", unitType ] }
+        );
+    } );
+    addShouldThrowUnitTest( function () {
+        return checkInhabitsType(
+            { env: _env, term:
+                !"a boolean rather than a nested Array of strings" },
+            { env: _env, term: [ "polytermunit", unitType ] }
+        );
+    } );
+})();
+
+(function () {
+    function add( expected, term ) {
+        addPredicateUnitTest( function ( then ) {
+            then( term, function ( term ) {
+                return expected === isWfPolyInst( term );
+            } );
+        } );
+    }
+    
+    var vari = "x";
+    var polyInst = [ "polyinstunit" ];
+    
+    add( false, vari );
+    add( false, true );
+    
+    add( true, [ "polyinstunit" ] );
+    
+    add( true, [ "polyinstforall", vari, polyInst ] );
+    add( false, [ "polyinstforall", true, polyInst ] );
+    add( false, [ "polyinstforall", vari, true ] );
+    
+    add( false, [ "nonexistentSyntax", "a", "b", "c" ] );
+})();
+
+(function () {
+    function add( expected, env, polyType, inst, endType ) {
+        addPredicateUnitTest( function ( then ) {
+            then( {
+                knol: { env: env, term:
+                    [ "describesinst", polyType, inst, endType ] },
+                polyType: { env: env, term: polyType },
+                inst: { env: env, term: inst },
+                endType: { env: env, term: endType }
+            }, function ( args ) {
+                if ( expected !== checkDescribesInst(
+                    args.polyType, args.inst, args.endType ) )
+                    return false;
+                if ( expected !==
+                    checkUserKnowledge( strMap(), args.knol ) )
+                    return false;
+                return true;
+            } );
+        } );
+    }
+    
+    
+    // TODO: Add more thorough unit tests, exploring the impact of
+    // non-empty environments, unsuccessful typechecks, and such.
+    
+    var _env = strMap();  // NOTE: The "_" stands for "empty."
+    var igno = "_";
+    var unitType = [ "ttfa", "t", [ "tfa", igno, "t", "t" ] ];
+    var unit = [ "ttfn", "t", [ "tfn", "x", "t", "x" ] ];
+    var ptut = [ "polytermunit", unitType ];
+    
+    add( true, _env, ptut, [ "polyinstunit" ], unitType );
+    add( true, _env,
+        [ "polytermforall", igno, ptut ],
+        [ "polyinstforall", unitType, [ "polyinstunit" ] ],
+        unitType );
+    add( true, _env,
+        [ "polytermforall", "t",
+            [ "polytermunit", [ "tfa", igno, "t", "t" ] ] ],
+        [ "polyinstforall", unitType, [ "polyinstunit" ] ],
+        [ "tfa", igno, unitType, unitType ] );
+    
+    addShouldThrowUnitTest( function () {
+        return checkDescribesInst(
+            { env: _env, term: ptut },
+            { env: _env, term:
+                [ "nonexistentSyntax", "a", "b", "c" ] },
+            { env: _env, term: unitType } );
+    } );
+    addShouldThrowUnitTest( function () {
+        return checkDescribesInst(
+            { env: _env, term: ptut },
+            { env: _env, term:
+                !"a boolean rather than a nested Array of strings" },
+            { env: _env, term: unitType } );
+    } );
+})();
+
+(function () {
+    function add( expected, term ) {
+        addPredicateUnitTest( function ( then ) {
+            then( term, function ( term ) {
+                return expected === isWfKnolQuery( term );
+            } );
+        } );
+    }
+    
+    var vari = "x";
+    
+    add( false, vari );
+    add( false, true );
+    
+    // TODO: Write tests of valid knowledge queries here, once we
+    // actually have at least one valid knowledge query syntax.
+    
+    add( false, [ "nonexistentSyntax", "a", "b", "c" ] );
+})();
+
+// TODO: Write tests for checkDescribesQuery( polyType, knolQuery )
+// and (describesquery ...) once we actually have at least one valid
+// knowledge query syntax.
 
 (function () {
     function addTerm( type, expr ) {
@@ -876,6 +1110,8 @@ addShouldThrowUnitTest( function () {
                 [ "zunitpartial", [ "sink" ], "s" ] ] ];
     
     function testFromSink( fromSink, innerType ) {
+        // TODO: Count each testFromSink() call as one unit test, not
+        // two.
         addTerm(
             [ "ttfa", "a",
                 [ "tfa", igno, "a",
@@ -1082,6 +1318,8 @@ addShouldThrowUnitTest( function () {
         return [ "subkey", [ "everyone" ], [ "sym", name ] ];
     }
     
+    // TODO: Write a test for "witheachknol" once we actually have a
+    // valid knowledge query syntax to use it with.
     add( true,
         [ "withsecret", "theUnit", everyoneVar( "theOneAndOnlyUnit" ),
             [ "define", "theUnit", [ "everyone" ],

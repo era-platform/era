@@ -1864,6 +1864,15 @@ var builtins = strMap();
         "fn"
     ] );
     addEraSyntax( "active", "can" );
+    addEraSyntax( "knowledgeQuery", "polytermunit" );
+    addEraSyntax( "knowledgeQuery", "polytermforall" );
+    addEraSyntax( "knowledgeQuery", "polyinstunit" );
+    addEraSyntax( "knowledgeQuery", "polyinstforall" );
+    addEraSyntax( "knowledgeQuery", "polyistype" );
+    addEraSyntax( "knowledgeQuery", "polydescribes" );
+    addEraSyntax( "knowledgeQuery", "describesinst" );
+    addEraSyntax( "knowledgeQuery", "describesquery" );
+    addEraSyntax( "knowledgeQuery", "witheachknol" );
     addEraSyntax( "localCollaboration", "secret" );
     addEraSyntax( "localCollaboration", "public" );
     addEraSyntax( "localCollaboration", "withsecret" );
@@ -1975,6 +1984,31 @@ function isWfUserKnowledge( term ) {
         
     } else if ( em = getMatch( term, [ lit( "can" ), "action" ] ) ) {
         return isWfUserAction( em.val.get( "action" ) );
+        
+    } else if ( em = getMatch( term,
+        [ lit( "polyistype" ), "polyTerm" ] ) ) {
+        
+        return isWfPolyTerm( em.val.get( "polyTerm" ) );
+        
+    } else if ( em = getMatch( term,
+        [ lit( "polydescribes" ), "polyType", "polyVal" ] ) ) {
+        
+        return isWfPolyTerm( em.val.get( "polyType" ) ) &&
+            isWfPolyTerm( em.val.get( "polyVal" ) );
+        
+    } else if ( em = getMatch( term, [ lit( "describesinst" ),
+        "polyTerm", "polyInst", "type" ] ) ) {
+        
+        return isWfPolyTerm( em.val.get( "polyTerm" ) ) &&
+            isWfPolyInst( em.val.get( "polyInst" ) ) &&
+            isWfTerm( em.val.get( "type" ) );
+        
+    } else if ( em = getMatch( term,
+        [ lit( "describesquery" ), "polyType", "knolQuery" ] ) ) {
+        
+        return isWfPolyTerm( em.val.get( "polyType" ) ) &&
+            isWfKnolQuery( em.val.get( "knolQuery" ) );
+        
     } else if ( em = getMatch( term, [ lit( "public" ), "key" ] ) ) {
         return isWfKey( em.val.get( "key" ) );
     } else if ( em = getMatch( term, [ lit( "secret" ), "key" ] ) ) {
@@ -2016,6 +2050,29 @@ function checkUserKnowledge( keyring, expr ) {
         return checkUserAction( keyring, eget( "action" ) );
         
     } else if ( em = getMatch( expr.term,
+        [ lit( "polyistype" ), "polyTerm" ] ) ) {
+        
+        return checkIsPolyType( eget( "polyTerm" ) );
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "polydescribes" ), "polyType", "polyVal" ] ) ) {
+        
+        return checkInhabitsPolyType(
+            eget( "polyVal" ), eget( "polyType" ) );
+        
+    } else if ( em = getMatch( expr.term, [ lit( "describesinst" ),
+        "polyTerm", "polyInst", "type" ] ) ) {
+        
+        return checkDescribesInst(
+            eget( "polyTerm" ), eget( "polyInst" ), eget( "type" ) );
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "describesquery" ), "polyType", "knolQuery" ] ) ) {
+        
+        return checkDescribesQuery(
+            eget( "polyType" ), eget( "knolQuery" ) );
+        
+    } else if ( em = getMatch( expr.term,
         [ lit( "public" ), "key" ] ) ) {
         
         return true;
@@ -2024,6 +2081,210 @@ function checkUserKnowledge( keyring, expr ) {
         [ lit( "secret" ), "key" ] ) ) {
         
         return checkKey( keyring, em.val.get( "key" ) );
+    } else {
+        // TODO: Handle more language fragments.
+        throw new Error();
+    }
+}
+
+// NOTE: The "wf" stands for "well-formed."
+function isWfPolyTerm( term ) {
+    
+    var lit = patternLang.lit;
+    var str = patternLang.str;
+    var getMatch = patternLang.getMatch;
+    
+    var em;
+    if ( em = getMatch( term,
+        [ lit( "polytermunit" ), "term" ] ) ) {
+        
+        return isWfTerm( em.val.get( "term" ) );
+        
+    } else if ( em = getMatch( term,
+        [ lit( "polytermforall" ), str( "type" ), "next" ] ) ) {
+        
+        return isWfPolyTerm( em.val.get( "next" ) );
+    } else {
+        // TODO: Handle more language fragments.
+        return false;
+    }
+}
+
+function checkIsPolyType( expr ) {
+    
+    var lit = patternLang.lit;
+    var str = patternLang.str;
+    var getMatch = patternLang.getMatch;
+    
+    function eget( k ) {
+        return { env: expr.env, term: em.val.get( k ) };
+    }
+    
+    var em;
+    if ( em = getMatch( expr.term,
+        [ lit( "polytermunit" ), "term" ] ) ) {
+        
+        return checkIsType( eget( "term" ) );
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "polytermforall" ), str( "type" ), "next" ] ) ) {
+        
+        return checkIsPolyType( {
+            env: envWith( expr.env, em.val.get( "type" ), {
+                knownIsType: { val: true }
+            } ),
+            term: em.val.get( "next" )
+        } );
+    } else {
+        // TODO: Handle more language fragments.
+        throw new Error();
+    }
+}
+
+function checkInhabitsPolyType( expr, type ) {
+    // NOTE: The term in the type's (polytermunit ...) is assumed to
+    // be beta-reduced already.
+    
+    var lit = patternLang.lit;
+    var str = patternLang.str;
+    var getMatch = patternLang.getMatch;
+    
+    function eget( k ) {
+        return { env: expr.env, term: em.val.get( k ) };
+    }
+    function tget( k ) {
+        return { env: type.env, term: tm.val.get( k ) };
+    }
+    
+    var em;
+    if ( em = getMatch( expr.term,
+        [ lit( "polytermunit" ), "term" ] ) ) {
+        
+        var tm = getMatch( type.term,
+            [ lit( "polytermunit" ), "term" ] );
+        if ( tm === null )
+            return false;
+        return checkInhabitsType( eget( "term" ), tget( "term" ) );
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "polytermforall" ), str( "type" ), "next" ] ) ) {
+        
+        var tm = getMatch( type.term,
+            [ lit( "polytermforall" ), str( "type" ), "next" ] );
+        if ( tm === null )
+            return false;
+        return checkInhabitsPolyType( {
+            env: envWith( expr.env, em.val.get( "type" ), {
+                knownIsType: { val: true }
+            } ),
+            term: em.val.get( "next" )
+        }, {
+            env: envWith( type.env, tm.val.get( "type" ), {
+                knownIsType: { val: true }
+            } ),
+            term: tm.val.get( "next" )
+        } );
+    } else {
+        // TODO: Handle more language fragments.
+        throw new Error();
+    }
+}
+
+// NOTE: The "wf" stands for "well-formed."
+function isWfPolyInst( term ) {
+    
+    var lit = patternLang.lit;
+    var str = patternLang.str;
+    var getMatch = patternLang.getMatch;
+    
+    var em;
+    if ( em = getMatch( term, [ lit( "polyinstunit" ) ] ) ) {
+        
+        return true;
+        
+    } else if ( em = getMatch( term,
+        [ lit( "polyinstforall" ), "type", "next" ] ) ) {
+        
+        return isWfTerm( em.val.get( "type" ) ) &&
+            isWfPolyInst( em.val.get( "next" ) );
+    } else {
+        // TODO: Handle more language fragments.
+        return false;
+    }
+}
+
+function checkDescribesInst( polyType, inst, endType ) {
+    // NOTE: It's assumed that polyType has been put through
+    // checkIsPolyType(), that inst has been put through
+    // isWfPolyInst(), that endType has been put through
+    // checkIsType(), and that endType is fully beta-reduced.
+    
+    var lit = patternLang.lit;
+    var str = patternLang.str;
+    var getMatch = patternLang.getMatch;
+    
+    var ptm;
+    function ptget( k ) {
+        return { env: polyType.env, term: ptm.val.get( k ) };
+    }
+    var im;
+    function iget( k ) {
+        return { env: inst.env, term: im.val.get( k ) };
+    }
+    var etm;
+    function etget( k ) {
+        return { env: endType.env, term: etm.val.get( k ) };
+    }
+    
+    if ( im = getMatch( inst.term, [ lit( "polyinstunit" ) ] ) ) {
+        
+        ptm = getMatch( polyType.term,
+            [ lit( "polytermunit" ), "term" ] );
+        if ( ptm === null )
+            return false;
+        return knownEqual( betaReduce( ptget( "term" ) ), endType );
+        
+    } else if ( im = getMatch( inst.term,
+        [ lit( "polyinstforall" ), "arg", "next" ] ) ) {
+        
+        ptm = getMatch( polyType.term,
+            [ lit( "polytermforall" ), str( "type" ), "next" ] );
+        if ( ptm === null )
+            return false;
+        return checkDescribesInst( {
+            env: envWith( polyType.env, ptm.val.get( "type" ), {
+                knownIsType: { val: true },
+                knownVal: { val: iget( "arg" ) }
+            } ),
+            term: ptm.val.get( "next" )
+        }, iget( "next" ), endType );
+    } else {
+        // TODO: Handle more language fragments.
+        throw new Error();
+    }
+}
+
+function isWfKnolQuery( term ) {
+    
+    var lit = patternLang.lit;
+    var str = patternLang.str;
+    var getMatch = patternLang.getMatch;
+    
+    var em;
+    if ( false ) {
+    } else {
+        // TODO: Handle more language fragments.
+        return false;
+    }
+}
+
+function checkDescribesQuery( polyType, knolQuery ) {
+    var lit = patternLang.lit;
+    var str = patternLang.str;
+    var getMatch = patternLang.getMatch;
+    
+    var kqm;
+    if ( false ) {
     } else {
         // TODO: Handle more language fragments.
         throw new Error();
@@ -2103,6 +2364,16 @@ function isWfUserAction( term ) {
     
     var em;
     if ( em = getMatch( term,
+        [ lit( "witheachknol" ), str( "x" ),
+            "polyType", "polyInst", "xType", "query", "action" ] ) ) {
+        
+        return isWfPolyTerm( em.val.get( "polyType" ) ) &&
+            isWfPolyInst( em.val.get( "polyInst" ) ) &&
+            isWfTerm( em.val.get( "xType" ) ) &&
+            isWfKnolQuery( em.val.get( "query" ) ) &&
+            isWfUserAction( em.val.get( "action" ) );
+        
+    } else if ( em = getMatch( term,
         [ lit( "withsecret" ), str( "var" ), "key", "action" ] ) ) {
         
         return isWfKey( em.val.get( "key" ) ) &&
@@ -2168,6 +2439,26 @@ function checkUserAction( keyring, expr ) {
     
     var em;
     if ( em = getMatch( expr.term,
+        [ lit( "witheachknol" ), str( "x" ),
+            "polyType", "polyInst", "xType", "query", "action" ] ) ) {
+        
+        // TODO: See if we should beta-reduce polyType and xType.
+        // (Note that we can't just call betaReduce() on polyType
+        // since it isn't a term.)
+        return checkIsPolyType( eget( "polyType" ) ) &&
+            checkIsType( eget( "xType" ) ) &&
+            checkDescribesInst( eget( "polyType" ),
+                eget( "polyInst" ), eget( "xType" ) ) &&
+            checkDescribesQuery(
+                eget( "polyType" ), eget( "query" ) ) &&
+            checkUserAction( keyring, {
+                env: envWith( expr.env, em.val.get( "x" ), {
+                    knownType: { val: eget( "xType" ) }
+                } ),
+                term: em.val.get( "action" )
+            } );
+        
+    } else if ( em = getMatch( expr.term,
         [ lit( "withsecret" ), str( "var" ), "key", "action" ] ) ) {
         
         return checkKey( keyring, em.val.get( "key" ) ) &&
