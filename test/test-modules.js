@@ -305,8 +305,7 @@ addShouldThrowUnitTest( function () {
         [ "sfn", "o", "x", "x", "x" ] );
     
     // Systematically verify the variable binding behavior of all
-    // expression syntaxes, at least for the purposes of
-    // renameVarsToVars().
+    // expression syntaxes, at least for the purposes of knownEqual().
     add( "x", "x" );
     // NOTE: Again, there should be no existing way to make this term
     // typecheck.
@@ -795,8 +794,10 @@ addShouldThrowUnitTest( function () {
     }
     
     var vari = "x";
+    var pubk = [ "everyone" ];
     var polyTerm = [ "polytermunit", vari ];
     var polyInst = [ "polyinstunit" ];
+    var query = [ "defined", pubk, vari, polyTerm ];
     
     add( false, vari );
     add( false, true );
@@ -820,8 +821,8 @@ addShouldThrowUnitTest( function () {
     add( false, [ "describesinst", polyTerm, true, vari ] );
     add( false, [ "describesinst", polyTerm, polyInst, true ] );
     
-    // TODO: Add other tests for this once we have at least one
-    // knolQuery syntax to put here.
+    add( true, [ "describesquery", polyTerm, query ] );
+    add( false, [ "describesquery", true, query ] );
     add( false, [ "describesquery", polyTerm, true ] );
     
     add( true, [ "public", [ "everyone" ] ] );
@@ -944,6 +945,63 @@ addShouldThrowUnitTest( function () {
 })();
 
 (function () {
+    function add( a, b ) {
+        addPredicateUnitTest( function ( then ) {
+            then( {
+                a: { env: strMap(), term: a },
+                b: { env: strMap(), term: b }
+            }, function ( aAndB ) {
+                var a = aAndB.a, b = aAndB.b;
+                return ( true
+                    && knownEqualPoly( a, a )
+                    && knownEqualPoly( a, b )
+                    && knownEqualPoly( b, a )
+                    && knownEqualPoly( b, b )
+                );
+            } );
+        } );
+    }
+    function addNegative( a, b ) {
+        addPredicateUnitTest( function ( then ) {
+            then( {
+                a: { env: strMap(), term: a },
+                b: { env: strMap(), term: b }
+            }, function ( aAndB ) {
+                var a = aAndB.a, b = aAndB.b;
+                return ( true
+                    && knownEqualPoly( a, a )
+                    && !knownEqualPoly( a, b )
+                    && !knownEqualPoly( b, a )
+                    && knownEqualPoly( b, b )
+                );
+            } );
+        } );
+    }
+    
+    addNegative(
+        [ "polytermforall", "x", [ "polytermunit", "x" ] ],
+        [ "polytermforall", "o", [ "polytermunit", "x" ] ] );
+    
+    // Systematically verify the variable binding behavior of all
+    // PolyTerm syntaxes, at least for the purposes of
+    // knownEqualPoly().
+    add( [ "polytermunit", "x" ], [ "polytermunit", "x" ] );
+    add(
+        [ "polytermforall", "x", [ "polytermunit", "x" ] ],
+        [ "polytermforall", "o", [ "polytermunit", "o" ] ] );
+})();
+addShouldThrowUnitTest( function () {
+    var expr = { env: strMap(),
+        term: [ "nonexistentSyntax", "a", "b", "c" ] };
+    return knownEqualPoly( expr, expr );
+} );
+addShouldThrowUnitTest( function () {
+    var expr = { env: strMap(),
+        term: !"a boolean rather than a nested Array of strings" };
+    return knownEqualPoly( expr, expr );
+} );
+
+(function () {
     function add( expected, term ) {
         addPredicateUnitTest( function ( then ) {
             then( term, function ( term ) {
@@ -1035,19 +1093,67 @@ addShouldThrowUnitTest( function () {
     }
     
     var vari = "x";
+    var pubk = [ "everyone" ];
+    var polyTerm = [ "polytermunit", vari ];
     
     add( false, vari );
     add( false, true );
     
-    // TODO: Write tests of valid knowledge queries here, once we
-    // actually have at least one valid knowledge query syntax.
+    add( true, [ "defined", pubk, vari, polyTerm ] );
+    add( false, [ "defined", true, vari, polyTerm ] );
+    add( false, [ "defined", pubk, true, polyTerm ] );
+    add( false, [ "defined", pubk, vari, true ] );
     
     add( false, [ "nonexistentSyntax", "a", "b", "c" ] );
 })();
 
-// TODO: Write tests for checkDescribesQuery( polyType, knolQuery )
-// and (describesquery ...) once we actually have at least one valid
-// knowledge query syntax.
+(function () {
+    function add( expected, env, polyType, knolQuery ) {
+        addPredicateUnitTest( function ( then ) {
+            then( {
+                knol: { env: env, term:
+                    [ "describesquery", polyType, knolQuery ] },
+                polyType: { env: env, term: polyType },
+                knolQuery: { env: env, term: knolQuery }
+            }, function ( args ) {
+                if ( expected !== checkDescribesQuery(
+                    args.polyType, args.knolQuery ) )
+                    return false;
+                if ( expected !==
+                    checkUserKnowledge( strMap(), args.knol ) )
+                    return false;
+                return true;
+            } );
+        } );
+    }
+    
+    
+    // TODO: Add more thorough unit tests, exploring the impact of
+    // non-empty environments, unsuccessful typechecks, and such.
+    
+    var env = envWith( strMap(), "me", {
+        knownIsPrivateKey: { val: true }
+    } );
+    var igno = "_";
+    var unitType = [ "ttfa", "t", [ "tfa", igno, "t", "t" ] ];
+    var unit = [ "ttfn", "t", [ "tfn", "x", "t", "x" ] ];
+    var ptut = [ "polytermunit", unitType ];
+    
+    add( true, env, ptut, [ "defined", [ "everyone" ], "me", ptut ] );
+    
+    addShouldThrowUnitTest( function () {
+        return checkDescribesQuery( { env: _env, term: ptut }, {
+            env: _env,
+            term: [ "nonexistentSyntax", "a", "b", "c" ]
+        } );
+    } );
+    addShouldThrowUnitTest( function () {
+        return checkDescribesInst( { env: _env, term: ptut }, {
+            env: _env,
+            term: !"a boolean rather than a nested Array of strings"
+        } );
+    } );
+})();
 
 (function () {
     function addTerm( type, expr ) {
@@ -1317,38 +1423,46 @@ addShouldThrowUnitTest( function () {
     function everyoneVar( name ) {
         return [ "subkey", [ "everyone" ], [ "sym", name ] ];
     }
+    function defineMono( fromKey, type, val ) {
+        return [ "define", fromKey, [ "everyone" ],
+            [ "polytermunit", type ], [ "polytermunit", val ] ];
+    }
+    function withEachDefinedMono(
+        vari, fromKey, toKey, type, action ) {
+        
+        return [ "witheachknol", vari,
+            [ "polytermunit", type ], [ "polyinstunit" ], type,
+            [ "defined", fromKey, toKey, [ "polytermunit", type ] ],
+            action ];
+    }
     
-    // TODO: Write a test for "witheachknol" once we actually have a
-    // valid knowledge query syntax to use it with.
     add( true,
         [ "withsecret", "theUnit", everyoneVar( "theOneAndOnlyUnit" ),
-            [ "define", "theUnit", [ "everyone" ],
-                unitType, unit ] ] );
+            defineMono( "theUnit", unitType, unit ) ] );
     add( true,
         [ "withsecret", "theReturn", everyoneVar( "returnOfTheUnit" ),
             [ "withsecret", "all", [ "everyone" ],
-                [ "witheach", "theUnit",
+                withEachDefinedMono( "theUnit",
                     everyoneVar( "theOneAndOnlyUnit" ), "all",
                     unitType,
-                    [ "define", "theReturn", [ "everyone" ],
-                        unitType, "theUnit" ] ] ] ] );
+                    defineMono(
+                        "theReturn", unitType, "theUnit" ) ) ] ] );
     add( true,
         [ "withsecret", "theTokenDefined",
             everyoneVar( "theTokenDefined" ),
             [ "withsecret", "theTokenSource",
                 everyoneVar( "theTokenSource" ),
                 [ "withtoken", "t", "theTokenSource",
-                    [ "define", "theTokenDefined", [ "everyone" ],
-                        [ "tokentype" ], "t" ] ] ] ] );
+                    defineMono( "theTokenDefined", [ "tokentype" ],
+                        "t" ) ] ] ] );
     
     // Free variables aren't allowed.
     add( false,
         [ "withsecret", "all", [ "everyone" ],
-            [ "witheach", "theUnit",
+            withEachDefinedMono( "theUnit",
                 everyoneVar( "theOneAndOnlyUnit" ), "all",
                 unitType,
-                [ "define", "theReturn", [ "everyone" ],
-                    unitType, "theUnit" ] ] ] );
+                defineMono( "theReturn", unitType, "theUnit" ) ) ] );
 })();
 addShouldThrowUnitTest( function () {
     return checkUserAction( strMap(),

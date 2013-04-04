@@ -2,17 +2,13 @@
 // Copyright 2013 Ross Angle. Released under the MIT License.
 
 
-// TODO: Currently, we have an implemented version of the local
-// collaborative value-level definition fragment, but it isn't up to
-// date with this design. Update it.
-
 // Here's a map of the dependencies among the twelve language
 // fragments, with "[ ]" showing which ones we haven't implemented:
 //
 // Local collaboration
 //   Deductive
 //   Action
-// [ ] Local collaborative value-level definition
+// Local collaborative value-level definition
 //   Local collaboration
 //     ...
 //   Knowledge query
@@ -563,7 +559,7 @@ WordVar ::= Word | "word"
 // == Grammar ==
 
 UserAction ::=| "(" "define" Term Key PolyTerm PolyTerm ")"
-KnolQuery ::=| "(" "defined" Key Term ")"
+KnolQuery ::=| "(" "defined" Key Term PolyTerm ")"
 
 
 // == Inference rules ==

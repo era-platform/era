@@ -1884,7 +1884,7 @@ var builtins = strMap();
     addEraSyntax( "localCollaborativeValueLevelDefinition",
         "define" );
     addEraSyntax( "localCollaborativeValueLevelDefinition",
-        "witheach" );
+        "defined" );
     addEasyType( "partiality", "partialtype", [ "innerType" ] );
     addEasyTerm( "partiality", "zunitpartial",
         [ "terminationType", "result" ] );
@@ -2190,6 +2190,75 @@ function checkInhabitsPolyType( expr, type ) {
     }
 }
 
+function knownEqualPoly( polyExprA, polyExprB, opt_boundVars ) {
+    // Do a test of intrinsic equality, respecting alpha-equivalence.
+    //
+    // NOTE: When we support the observational subtyping fragment,
+    // this should also respect proof-irrelevance, as described in
+    // "Observational Equality, Now!"
+    
+    // NOTE: We assume the underlying terms in polyExprA and polyExprB
+    // have already been beta-reduced.
+    
+    var boundVars = opt_boundVars !== void 0 ? opt_boundVars :
+        { ab: strMap(), ba: strMap() };
+    
+    var lit = patternLang.lit;
+    var str = patternLang.str;
+    var getMatch = patternLang.getMatch;
+    
+    var am, bm;
+    function aget( k ) {
+        return { env: polyExprA.env, term: am.val.get( k ) };
+    }
+    function bget( k ) {
+        return { env: polyExprB.env, term: bm.val.get( k ) };
+    }
+    function recurUnder( termK, argK ) {
+        var a = am.val.get( argK );
+        var b = bm.val.get( argK );
+        return knownEqualPoly( {
+            env: envWith( polyExprA.env, a, {} ),
+            term: am.val.get( termK )
+        }, {
+            env: envWith( polyExprB.env, b, {} ),
+            term: bm.val.get( termK )
+        }, {
+            ab: boundVars.ab.plusEntry( a, b ),
+            ba: boundVars.ba.plusEntry( b, a )
+        } );
+    }
+    
+    function aSucceeds( pattern ) {
+        am = getMatch( polyExprA.term, pattern );
+        if ( !am )
+            return false;
+        bm = getMatch( polyExprB.term, pattern );
+        return true;
+    }
+    
+    if ( aSucceeds(
+        [ lit( "polytermunit" ), "term" ] ) ) {
+        
+        if ( bm === null )
+            return false;
+        
+        return knownEqual(
+            aget( "term" ), bget( "term" ), boundVars );
+        
+    } else if ( aSucceeds(
+        [ lit( "polytermforall" ), str( "type" ), "next" ] ) ) {
+        
+        if ( bm === null )
+            return false;
+        
+        return recurUnder( "next", "type" );
+    } else {
+        // TODO: Handle more language fragments.
+        throw new Error();
+    }
+}
+
 // NOTE: The "wf" stands for "well-formed."
 function isWfPolyInst( term ) {
     
@@ -2271,7 +2340,15 @@ function isWfKnolQuery( term ) {
     var getMatch = patternLang.getMatch;
     
     var em;
-    if ( false ) {
+    if ( em = getMatch( term, [ lit( "defined" ),
+        "yourPubKey", "myPrivKey", "polyType" ] ) ) {
+        
+        // TODO: While `myPrivKey` is a term, it also can't be
+        // anything but a variable reference. See if we should check
+        // that here or just leave it to checkDescribesQuery().
+        return isWfKey( em.val.get( "yourPubKey" ) ) &&
+            isWfTerm( em.val.get( "myPrivKey" ) ) &&
+            isWfPolyTerm( em.val.get( "polyType" ) );
     } else {
         // TODO: Handle more language fragments.
         return false;
@@ -2283,8 +2360,33 @@ function checkDescribesQuery( polyType, knolQuery ) {
     var str = patternLang.str;
     var getMatch = patternLang.getMatch;
     
-    var kqm;
-    if ( false ) {
+    var em;
+    function eget( k ) {
+        return { env: knolQuery.env, term: em.val.get( k ) };
+    }
+    
+    function checkPrivKey( k ) {
+        var term = em.val.get( k );
+        return (true
+            && isPrimString( term )
+            && knolQuery.env.has( term )
+            && knolQuery.env.get( term ).knownIsPrivateKey !== null
+            && knolQuery.env.get( term ).knownIsPrivateKey.val
+        );
+    }
+    
+    if ( em = getMatch( knolQuery.term, [ lit( "defined" ),
+        "yourPubKey", "myPrivKey", "polyType" ] ) ) {
+        
+        return (true
+            // TODO: See if we should write a global checkPublicKey()
+            // function. For the moment, it would always return true,
+            // so we just call isWfKey().
+            && isWfKey( em.val.get( "yourPubKey" ) )
+            && checkPrivKey( "myPrivKey" )
+            && checkIsPolyType( eget( "polyType" ) )
+            && knownEqualPoly( eget( "polyType" ), polyType )
+        );
     } else {
         // TODO: Handle more language fragments.
         throw new Error();
@@ -2380,27 +2482,15 @@ function isWfUserAction( term ) {
             isWfUserAction( em.val.get( "action" ) );
         
     } else if ( em = getMatch( term, [ lit( "define" ),
-        "myPrivKey", "yourPubKey", "type", "expr" ] ) ) {
+        "myPrivKey", "yourPubKey", "polyType", "polyVal" ] ) ) {
         
         // TODO: While `myPrivKey` is a term, it also can't be
         // anything but a variable reference. See if we should check
         // that here or just leave it to checkUserAction().
         return isWfTerm( em.val.get( "myPrivKey" ) ) &&
             isWfKey( em.val.get( "yourPubKey" ) ) &&
-            isWfTerm( em.val.get( "type" ) ) &&
-            isWfTerm( em.val.get( "expr" ) );
-        
-    } else if ( em = getMatch( term, [ lit( "witheach" ),
-        str( "var" ), "yourPubKey", "myPrivKey", "type",
-        "action" ] ) ) {
-        
-        // TODO: While `myPrivKey` is a term, it also can't be
-        // anything but a variable reference. See if we should check
-        // that here or just leave it to checkUserAction().
-        return isWfKey( em.val.get( "yourPubKey" ) ) &&
-            isWfTerm( em.val.get( "myPrivKey" ) ) &&
-            isWfTerm( em.val.get( "type" ) ) &&
-            isWfUserAction( em.val.get( "action" ) );
+            isWfPolyTerm( em.val.get( "polyType" ) ) &&
+            isWfPolyTerm( em.val.get( "polyVal" ) );
         
     } else if ( em = getMatch( term, [ lit( "withtoken" ),
         str( "var" ), "privKey", "action" ] ) ) {
@@ -2470,7 +2560,7 @@ function checkUserAction( keyring, expr ) {
             } );
         
     } else if ( em = getMatch( expr.term, [ lit( "define" ),
-        "myPrivKey", "yourPubKey", "type", "expr" ] ) ) {
+        "myPrivKey", "yourPubKey", "polyType", "polyVal" ] ) ) {
         
         return (true
             && checkPrivKey( "myPrivKey" )
@@ -2478,27 +2568,9 @@ function checkUserAction( keyring, expr ) {
             // function. For the moment, it would always return true,
             // so we just call isWfKey().
             && isWfKey( em.val.get( "yourPubKey" ) )
-            && checkIsType( eget( "type" ) )
-            && checkInhabitsType( eget( "expr" ), eget( "type" ) )
-        );
-        
-    } else if ( em = getMatch( expr.term, [ lit( "witheach" ),
-        str( "var" ), "yourPubKey", "myPrivKey", "type",
-        "action" ] ) ) {
-        
-        return (true
-            // TODO: See if we should write a global checkPublicKey()
-            // function. For the moment, it would always return true,
-            // so we just call isWfKey().
-            && isWfKey( em.val.get( "yourPubKey" ) )
-            && checkPrivKey( "myPrivKey" )
-            && checkIsType( eget( "type" ) )
-            && checkUserAction( keyring, {
-                env: envWith( expr.env, em.val.get( "var" ), {
-                    knownType: { val: betaReduce( eget( "type" ) ) }
-                } ),
-                term: em.val.get( "action" )
-            } )
+            && checkIsPolyType( eget( "polyType" ) )
+            && checkInhabitsPolyType(
+                eget( "polyVal" ), eget( "polyType" ) )
         );
         
     } else if ( em = getMatch( expr.term, [ lit( "withtoken" ),
