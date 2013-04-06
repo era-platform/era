@@ -13,12 +13,25 @@ function logJson( x ) {
     return x;
 }
 
+// To set a breakpoint on a unit test, write "breakOnThisTest = true;"
+// just before adding it.
+var breakOnThisTest = false;
+
 var unitTests = [];
+function pushTest( body ) {
+    var breakHere = breakOnThisTest;
+    breakOnThisTest = false;
+    unitTests.push( function ( then ) {
+        if ( breakHere )
+            debugger;
+        body( then );
+    } );
+}
 function addNaiveIsoUnitTest( body ) {
     // TODO: Stop using JSON.stringify() here. It might be good to
     // have a naiveStringify() function or something for custom
     // stringification.
-    unitTests.push( function ( then ) {
+    pushTest( function ( then ) {
         body( function ( calculated, expected ) {
             if ( naiveIso( calculated, expected ) )
                 then( null );
@@ -35,7 +48,7 @@ function addPredicateUnitTest( body ) {
     // TODO: Stop using JSON.stringify() here. It might be good to
     // have a naiveStringify() function or something for custom
     // stringification.
-    unitTests.push( function ( then ) {
+    pushTest( function ( then ) {
         body( function ( calculated, predicate ) {
             if ( predicate( calculated ) )
                 then( null );
@@ -50,7 +63,7 @@ function addShouldThrowUnitTest( body ) {
     // TODO: Stop using JSON.stringify() here. It might be good to
     // have a naiveStringify() function or something for custom
     // stringification.
-    unitTests.push( function ( then ) {
+    pushTest( function ( then ) {
         try { var calculated = body(), success = true; }
         catch ( e ) {}
         defer( function () {

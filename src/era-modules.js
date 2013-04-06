@@ -3,22 +3,6 @@
 "use strict";
 
 
-// NOTE: The deductive fragment actually has no way to construct a
-// type that depends on a term! It doesn't even provide a type
-// signature for built-in utilities to fill this void, since no
-// function can return a type. This makes the term variable in each
-// type constructor a bit silly. However, the observational subtyping
-// fragment does define one operator, (subval aType a bType b), that
-// makes a dependent type, so fragments like that can justify this
-// infrastructure.
-//
-// TODO: See if we should include the capitalized
-// (If <term> Then <type> Else <type>) operator from
-// "Observational Equality, Now!" This would be a second (or first)
-// constructor of dependent types, but for the moment we don't have a
-// particular use for it. We might approach type-level computation in
-// a different way.
-
 // TODO: Figure out how to account for the signatures and timestamp
 // information in the pre-build module grammar.
 // TODO: Figure out if there needs to be a separate grammar for
@@ -45,6 +29,7 @@ function fresh( desiredName, strMapWhoseKeysToAvoid ) {
     }
     return result;
 }
+
 
 var patternLang = {};
 (function () {
@@ -288,6 +273,55 @@ function knownEqual( exprA, exprB, opt_boundVars ) {
     }
 }
 
+// NOTE: The EnvBuilder#renameExpr() and EnvBuilder#rename() methods
+// have side effects (changing the binding of `this.env_`), even if we
+// use them in a way that makes them look pure.
+//
+// TODO: For the moment, we don't end up renaming anything in
+// practice, and if and when we do, we might run across a bug: The
+// implementation of knownEqual() for free variables depends on
+// the exact names of those variables. See if this will come up as
+// an issue.
+// TODO: Actually, we might use renaming in practice during the
+// checkInhabitsType of (if ...). Figure out if that's true.
+//
+function EnvBuilder() {}
+EnvBuilder.prototype.init = function ( env, opt_getKey ) {
+    this.env_ = env;
+    this.getKey_ = opt_getKey;
+    return this;
+};
+EnvBuilder.prototype.justRenameExpr = function ( expr ) {
+    var freeVars = getFreeVarsOfTerm( expr.term );
+    
+    var renameForward = strMap();
+    var renameBackward = strMap();
+    freeVars.each( function ( origName, truth ) {
+        var newName = fresh( origName, renameForward );
+        renameForward.set( origName, newName );
+        renameBackward.set( newName, origName );
+    } );
+    
+    var result = renameVarsToVars( renameForward, expr );
+    var env = this.env_;
+    env.setAll( renameBackward.map( function ( origName ) {
+        return env.get( origName );
+    } ) );
+    return result;
+};
+EnvBuilder.prototype.renameExpr = function ( expr ) {
+    return this.justRenameExpr( betaReduce( expr ) );
+};
+EnvBuilder.prototype.rename = function ( k ) {
+    return this.renameExpr( this.getKey_( k ) );
+};
+EnvBuilder.prototype.getEnv = function () {
+    return this.env_.copy();
+};
+EnvBuilder.prototype.wrap = function ( term ) {
+    return { env: this.getEnv(), term: term };
+};
+
 var rbBetaReduce = [];
 function betaReduce( expr ) {
     // NOTE: Pretty much every time we call betaReduce(), we call
@@ -309,42 +343,10 @@ function betaReduce( expr ) {
         return betaReduce( eget( k ) );
     }
     
-    var env = expr.env;
-    
-    // NOTE: These have side effects (changing the binding of `env`),
-    // even if we use them in a way that makes them look pure.
-    //
-    // TODO: For the moment, we don't end up renaming anything in
-    // practice, and if and when we do, we might run across a bug: The
-    // implementation of knownEqual() for free variables depends on
-    // the exact names of those variables. See if this will come up as
-    // an issue.
-    //
-    function renameExpr( expr ) {
-        var reduced = betaReduce( expr );
-        var freeVars = getFreeVarsOfTerm( reduced.term );
-        
-        var renameForward = strMap();
-        var renameBackward = strMap();
-        freeVars.each( function ( origName, truth ) {
-            var newName = fresh( origName, renameForward );
-            renameForward.set( origName, newName );
-            renameBackward.set( newName, origName );
-        } );
-        
-        var result = renameVarsToVars( renameForward, reduced );
-        env = env.plus( renameBackward.map( function ( origName ) {
-            return env.get( origName );
-        } ) );
-        return result;
-    }
-    function rename( k ) {
-        return renameExpr( eget( k ) );
-    }
-    
+    var envb = new EnvBuilder().init( expr.env, eget );
     
     // TODO: Figure out if it's really important to do
-    // rename( "argType" ) or beget( "argType" ) when the overall
+    // envb.rename( "argType" ) or beget( "argType" ) when the overall
     // value isn't a type. There might be some static-versus-dynamic
     // confusion here.
     
@@ -373,6 +375,28 @@ function betaReduce( expr ) {
         // environment.
         
         return exprVal.val;
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "ift" ), "condition", "then", "else" ] ) ) {
+        
+        var reducedCond = beget( "condition" );
+        if ( getMatch( reducedCond.term, [ lit( "true" ) ] ) )
+            return beget( "then" );
+        else if ( getMatch( reducedCond.term, [ lit( "false" ) ] ) )
+            return beget( "else" );
+        else
+            throw new Error();
+        
+    } else if ( em = getMatch( expr.term, [ lit( "if" ),
+        "condition", str( "c" ), "resultType", "then", "else" ] ) ) {
+        
+        var reducedCond = beget( "condition" );
+        if ( getMatch( reducedCond.term, [ lit( "true" ) ] ) )
+            return beget( "then" );
+        else if ( getMatch( reducedCond.term, [ lit( "false" ) ] ) )
+            return beget( "else" );
+        else
+            throw new Error();
         
     } else if ( em = getMatch( expr.term, [ lit( "tcall" ),
         str( "argName" ), "argType", "resultType",
@@ -416,24 +440,23 @@ function betaReduce( expr ) {
     } else if ( em = getMatch( expr.term, [ lit( "sfn" ),
         str( "arg" ), "argType", "argVal", "resultVal" ] ) ) {
         
-        var argTypeTerm = rename( "argType" );
-        var argTypeExpr = { env: env, term: argTypeTerm };
+        var argTypeTerm = envb.rename( "argType" );
+        var argTypeExpr = envb.wrap( argTypeTerm );
         
-        var argValTerm = rename( "argVal" );
-        var argValExpr = { env: env, term: argValTerm };
+        var argValTerm = envb.rename( "argVal" );
+        var argValExpr = envb.wrap( argValTerm );
         
-        var term = [ "sfn", em.val.get( "arg" ), argTypeTerm,
+        return envb.wrap( [ "sfn", em.val.get( "arg" ), argTypeTerm,
             argValTerm,
-            renameExpr( {
-                env: envWith( env, em.val.get( "arg" ), {
+            envb.renameExpr( {
+                env: envWith( envb.getEnv(), em.val.get( "arg" ), {
                     // TODO: Figure out if we actually need this
                     // knownType here.
                     knownType: { val: argTypeExpr },
                     knownVal: { val: argValExpr }
                 } ),
                 term: em.val.get( "resultVal" )
-            } ) ];
-        return { env: env, term: term };
+            } ) ] );
         
     } else if ( em = getMatch( expr.term, [ lit( "fst" ),
         str( "argName" ), "argType", "resultType", "fn" ] ) ) {
@@ -443,7 +466,8 @@ function betaReduce( expr ) {
             str( "arg" ), "argType", "argVal", "resultVal" ] );
         if ( !matchedFn )
             throw new Error();
-        return { env: env, term: matchedFn.val.get( "argVal" ) };
+        return { env: reducedFn.env,
+            term: matchedFn.val.get( "argVal" ) };
         
     } else if ( em = getMatch( expr.term, [ lit( "snd" ),
         str( "argName" ), "argType", "resultType", "fn" ] ) ) {
@@ -487,10 +511,7 @@ function betaReduce( expr ) {
         var boolVal = a.env.get( a.term ).knownTokenStringifiedKey ===
             b.env.get( b.term ).knownTokenStringifiedKey;
         return { env: strMap(), term:
-            [ "ttfn", "a",
-                [ "tfn", "then", "a",
-                    [ "tfn", "else", "a",
-                        boolVal ? "then" : "else" ] ] ] };
+            [ boolVal ? "true" : "false" ] };
     } else {
         for ( var i = 0, n = rbBetaReduce.length; i < n; i++ ) {
             var result = rbBetaReduce[ i ]( expr );
@@ -554,6 +575,24 @@ function checkIsType( expr ) {
         if ( exprIsType === null )
             return false;
         return exprIsType.val;
+    } else if ( em = getMatch( expr.term, [ lit( "bottom" ) ] ) ) {
+        return true;
+    } else if ( em = getMatch( expr.term, [ lit( "unittype" ) ] ) ) {
+        return true;
+    } else if ( em = getMatch( expr.term, [ lit( "bool" ) ] ) ) {
+        return true;
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "ift" ), "condition", "then", "else" ] ) ) {
+        
+        if ( !checkInhabitsType( eget( "condition" ),
+            { env: strMap(), term: [ "bool" ] } ) )
+            return false;
+        if ( !checkIsType( eget( "then" ) ) )
+            return false;
+        if ( !checkIsType( eget( "else" ) ) )
+            return false;
+        return true;
         
     } else if ( em = getMatch( expr.term,
         [ lit( "tfa" ), str( "arg" ), "argType", "resultType" ] ) ) {
@@ -650,6 +689,56 @@ function checkInhabitsType( expr, type ) {
         if ( exprType === null )
             return false;
         return knownEqual( exprType.val, type );
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "absurd" ), "contradiction", "mightAsWellType" ] ) ) {
+        
+        if ( !checkInhabitsType( eget( "contradiction" ),
+            { env: strMap(), term: [ "bottom" ] } ) )
+            return false;
+        return knownEqual( eget( "mightAsWellType" ), type );
+    } else if ( em = getMatch( expr.term, [ lit( "unit" ) ] ) ) {
+        return knownEqual(
+            { env: strMap(), term: [ "unittype" ] }, type );
+    } else if ( em = getMatch( expr.term, [ lit( "true" ) ] ) ) {
+        return knownEqual(
+            { env: strMap(), term: [ "bool" ] }, type );
+    } else if ( em = getMatch( expr.term, [ lit( "false" ) ] ) ) {
+        return knownEqual(
+            { env: strMap(), term: [ "bool" ] }, type );
+        
+    } else if ( em = getMatch( expr.term, [ lit( "if" ),
+        "condition", str( "c" ), "resultType", "then", "else" ] ) ) {
+        
+        if ( !checkInhabitsType( eget( "condition" ),
+            { env: strMap(), term: [ "bool" ] } ) )
+            return false;
+        var resultTypeWith = function ( maybeKnownVal ) {
+            return {
+                env: envWith( expr.env, em.val.get( "c" ), {
+                    knownType:
+                        { val: { env: strMap(), term: [ "bool" ] } },
+                    knownVal: maybeKnownVal
+                } ),
+                term: em.val.get( "resultType" )
+            };
+        };
+        if ( !checkIsType( resultTypeWith( null ) ) )
+            return false;
+        var thenType = betaReduce( resultTypeWith(
+            { val: { env: strMap(), term: [ "true" ] } } ) );
+        if ( !checkInhabitsType( eget( "then" ), thenType ) )
+            return false;
+        var elseType = betaReduce( resultTypeWith(
+            { val: { env: strMap(), term: [ "false" ] } } ) );
+        if ( !checkInhabitsType( eget( "else" ), elseType ) )
+            return false;
+        var envb = new EnvBuilder().init( strMap() );
+        return knownEqual( betaReduce( envb.wrap(
+            [ "ift", envb.justRenameExpr( eget( "condition" ) ),
+                envb.justRenameExpr( thenType ),
+                envb.justRenameExpr( elseType ) ]
+        ) ), type );
         
     } else if ( em = getMatch( expr.term,
         [ lit( "tfn" ), str( "arg" ), "argType", "result" ] ) ) {
@@ -971,10 +1060,7 @@ function checkInhabitsType( expr, type ) {
             { env: strMap(), term: [ "tokentype" ] } ) )
             return false;
         return knownEqual(
-            { env: strMap(), term:
-                [ "ttfa", "a",
-                    [ "tfa", "_", "a", [ "tfa", "_", "a", "a" ] ] ] },
-            type );
+            { env: strMap(), term: [ "bool" ] }, type );
     } else {
         for ( var i = 0, n = rbCheckInhabitsType.length;
             i < n; i++ ) {
@@ -1024,6 +1110,37 @@ function compileTermToSyncJs( expr ) {
     var em;
     if ( isPrimString( expr.term ) ) {
         return  "_.pushRes( _.env[ " + toKey( expr.term ) + " ] );\n";
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "absurd" ), "contradiction", "mightAsWellType" ] ) ) {
+        
+        return "throw new Error()\n";
+    } else if ( em = getMatch( expr.term, [ lit( "unit" ) ] ) ) {
+        return "_.pushRes( null );\n";
+    } else if ( em = getMatch( expr.term, [ lit( "true" ) ] ) ) {
+        return "_.pushRes( true );\n";
+    } else if ( em = getMatch( expr.term, [ lit( "false" ) ] ) ) {
+        return "_.pushRes( false );\n";
+        
+    } else if ( em = getMatch( expr.term, [ lit( "if" ),
+        "condition", str( "c" ), "resultType", "then", "else" ] ) ) {
+        
+        // NOTE: We evaluate both branches eagerly.
+        
+        // TODO: See if it's possible to construct selective
+        // evaluation on top of this by using thunks for "then" and
+        // "else".
+        
+        return instructions(
+            compileTermToSyncJs( eget( "condition" ) ),
+            compileTermToSyncJs( eget( "then" ) ),
+            compileTermToSyncJs( eget( "else" ) ),
+            ""
+            + "var els = _.popRes();\n"
+            + "var then = _.popRes();\n"
+            + "var condition = _.popRes();\n"
+            + "_.pushRes( condition ? then : els );\n"
+        );
         
     } else if ( em = getMatch( expr.term,
         [ lit( "tfn" ), str( "arg" ), "argType", "result" ] ) ) {
@@ -1212,18 +1329,7 @@ function compileTermToSyncJs( expr ) {
             ""
             + "var b = _.popRes();\n"
             + "var a = _.popRes();\n"
-            + "var boolVal = a === b;\n"
-            + "_.pushRes( { lexEnv: {}, go: function ( _ ) {\n"
-            + "    _.pushRes( { arg: \"|then\", lexEnv: {\n"
-            + "    }, go: function ( _ ) {\n"
-            + "        _.pushRes( { arg: \"|else\", lexEnv: {\n"
-            + "        }, go: function ( _ ) {\n"
-            + "            _.pushRes( boolVal ?\n"
-            + "                _.env[ \"|then\" ] :\n"
-            + "                _.env[ \"|else\" ] );\n"
-            + "        } } );\n"
-            + "    } } );\n"
-            + "} } );\n"
+            + "_.pushRes( a === b );\n"
         );
     } else {
         for ( var i = 0, n = rbCompileTermToSyncJs.length;
@@ -1248,7 +1354,7 @@ function compileTermToSyncJsFull( expr ) {
         throw new Error();
     
     var igno = "_";
-    var unitType = [ "ttfa", "t", [ "tfa", igno, "t", "t" ] ];
+    var unitType = [ "unittype" ];
     if ( !(isWfTerm( expr.term )
         && checkInhabitsType( expr, { env: strMap(), term:
             [ "partialtype",
@@ -1584,44 +1690,10 @@ var builtins = strMap();
                 return betaReduce( eget( k ) );
             }
             
-            var env = expr.env;
-            
-            // NOTE: These have side effects (changing the binding of
-            // `env`), even if we use them in a way that makes them
-            // look pure.
-            //
-            // TODO: For the moment, we don't end up renaming anything
-            // in practice, and if and when we do, we might run across
-            // a bug: The implementation of knownEqual() for free
-            // variables depends on the exact names of those
-            // variables. See if this will come up as an issue.
-            //
-            function renameExpr( expr ) {
-                var reduced = betaReduce( expr );
-                var freeVars = getFreeVarsOfTerm( reduced.term );
-                
-                var renameForward = strMap();
-                var renameBackward = strMap();
-                freeVars.each( function ( origName, truth ) {
-                    var newName = fresh( origName, renameForward );
-                    renameForward.set( origName, newName );
-                    renameBackward.set( newName, origName );
-                } );
-                
-                var result =
-                    renameVarsToVars( renameForward, reduced );
-                env = env.plus(
-                    renameBackward.map( function ( origName ) {
-                        return env.get( origName );
-                    } ) );
-                return result;
-            }
-            function rename( k ) {
-                return renameExpr( eget( k ) );
-            }
+            var envb = new EnvBuilder().init( expr.env, eget );
             
             // TODO: Figure out if it's really important to do
-            // rename( "argType" ) or beget( "argType" ) when the
+            // envb.rename( "argType" ) or beget( "argType" ) when the
             // overall value isn't a type. There might be some
             // static-versus-dynamic confusion here.
             
@@ -1629,11 +1701,11 @@ var builtins = strMap();
             for ( var i = 0, n = args.length; i < n; i++ ) {
                 var arg = args[ i ];
                 if ( isPrimString( arg ) )
-                    term.push( rename( arg ) );
+                    term.push( envb.rename( arg ) );
                 else
                     term.push( expr.term[ i + 1 ] );
             }
-            return { val: { env: env, term: term } };
+            return { val: envb.wrap( term ) };
         } );
     }
     function addType( fragmentName, name, args ) {
@@ -1674,10 +1746,8 @@ var builtins = strMap();
         if ( getFreeVarsOfTerm( innerTypeTerm ).hasAny() )
             throw new Error();
         var maybeInnerType = { env: strMap(), term:
-            [ "ttfa", "a",
-                [ "tfa", "_", "a",
-                    [ "tfa", "_", [ "tfa", "_", innerTypeTerm, "a" ],
-                        "a" ] ] ] };
+            [ "sfa", "case", [ "bool" ],
+                [ "ift", "case", innerTypeTerm, [ "unittype" ] ] ] };
         var innerType = { env: strMap(), term: innerTypeTerm };
         var sinkType = { env: strMap(), term: [ "sink" ] };
         
@@ -1703,25 +1773,13 @@ var builtins = strMap();
             var matchedSink = getMatch( reducedSink.term, toSinkPat );
             if ( !matchedSink )
                 return { val: { env: strMap(), term:
-                    [ "ttfn", "a",
-                        [ "tfn", "else", "a",
-                            [ "tfn", "then",
-                                [ "tfa", "_", innerTypeTerm, "a" ],
-                                "else" ] ] ] } };
+                    [ "sfn", "_", [ "bool" ], [ "false" ],
+                        [ "unit" ] ] } };
             var val = matchedSink.val.get( "val" );
             var freeVars = getFreeVarsOfTerm( val );
-            var thenVar = fresh( "then", freeVars );
-            var elseVar = fresh( "else",
-                freeVars.plusTruth( thenVar ) );
-            var typeVar = fresh( "type", freeVars.plusArrTruth(
-                [ thenVar, elseVar, typeVar, "_" ] ) );
+            var igno = fresh( "unused", freeVars );
             return { val: { env: reducedSink.env, term:
-                [ "ttfn", typeVar,
-                    [ "tfn", elseVar, typeVar,
-                        [ "tfn", thenVar,
-                            [ "tfa", "_", innerTypeTerm, typeVar ],
-                            [ "tcall", "_", innerTypeTerm, typeVar,
-                                thenVar, val ] ] ] ] } };
+                [ "sfn", igno, [ "bool" ], [ "true" ], val ] } };
         } );
         rbCheckInhabitsType.push( function ( expr, type ) {
             var em;
@@ -1775,26 +1833,9 @@ var builtins = strMap();
                     compileTermToSyncJs( eget( "sink" ) ),
                     ""
                     + "var sink = _.popRes();\n"
-                    + "_.pushRes( { lexEnv: {\n"
-                    + "}, go: function ( _ ) {\n"
-                    + "    _.pushRes( { arg: \"|else\", lexEnv: {\n"
-                    + "    }, go: function ( _ ) {\n"
-                    + "        var elseVal = _.env[ \"|else\" ];\n"
-                    + "        _.pushRes( { arg: \"|then\",\n"
-                    + "            lexEnv: {}, go: function ( _ ) {\n"
-                    + "            \n"
-                    + "            if ( sink.sinkTag !==\n"
-                    + "                \"" + tagName + "\" )\n"
-                    + "                _.pushRes( elseVal );\n"
-                    + "            else\n"
-                    + "                _.pushInst( function ( _ ) {\n"
-                    + "                    _.pushTfn(\n"
-                    + "                        _.env[ \"|then\" ],\n"
-                    + "                        sink.val );\n"
-                    + "                } );\n"
-                    + "        } } );\n"
-                    + "    } } );\n"
-                    + "} } );\n"
+                    + "_.pushRes(\n"
+                    + "    sink.sinkTag === \"" + tagName + "\" ?\n"
+                    + "        sink.val : null );\n"
                 ) };
             } else {
                 return null;
@@ -1805,11 +1846,10 @@ var builtins = strMap();
             [ "tfn", "val", innerTypeTerm, [ toSink, "val" ] ] );
         addEraVal( "kitchenSinkUnType", "sinkto" + tagName,
             [ "tfa", "_", [ "sink" ],
-                [ "ttfa", "a",
-                    [ "tfa", "_", "a",
-                        [ "tfa", "_",
-                            [ "tfa", "_", innerTypeTerm, "a" ],
-                            "a" ] ] ] ],
+                [ "sfa", "case", [ "bool" ],
+                    [ "ift", "case",
+                        innerTypeTerm,
+                        [ "unittype" ] ] ] ],
             [ "tfn", "sink", [ "sink" ], [ fromSink, "sink" ] ] );
     }
     
@@ -1834,6 +1874,17 @@ var builtins = strMap();
         [ "subkey", [ "everyone" ],
             [ "sym", "era_deductive_stx_variableReference" ] ],
         null );
+    addEasyType( "deductive", "bottom", [] );
+    addEasyTerm( "deductive", "absurd",
+        [ "contradiction", "mightAsWellType" ] );
+    addEasyType( "deductive", "unittype", [] );
+    addEasyTerm( "deductive", "unit", [] );
+    addEasyType( "deductive", "bool", [] );
+    addEasyTerm( "deductive", "true", [] );
+    addEasyTerm( "deductive", "false", [] );
+    addType( "deductive", "ift", [ "condition", "then", "else" ] );
+    addTerm( "deductive", "if", [ "condition",
+        str( "c" ), sub( "resultType", "c" ), "then", "else" ] );
     addEasyType( "deductive", "tfa",
         [ str( "arg" ), "argType", sub( "resultType", "arg" ) ] );
     addEasyTerm( "deductive", "tfn",
@@ -1944,10 +1995,7 @@ var builtins = strMap();
         [ "a", "b" ] );
     addEraVal( "staticallyGeneratedDynamicToken", "tokenequals",
         [ "tfa", "_", [ "tokentype" ],
-            [ "tfa", "_", [ "tokentype" ],
-                [ "ttfa", "a",
-                    [ "tfa", "_", "a",
-                        [ "tfa", "_", "a", "a" ] ] ] ] ],
+            [ "tfa", "_", [ "tokentype" ], [ "bool" ] ] ],
         [ "tfn", "a", [ "tokentype" ],
             [ "tfn", "b", [ "tokentype" ],
                 [ "ztokenequals", "a", "b" ] ] ] );

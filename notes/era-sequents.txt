@@ -95,6 +95,7 @@
 // that general "for all types..." quantification is a particularly
 // valuable abstraction tool (even though we use it here).
 
+// ift: if type
 // tfa: total for-all
 // tfn: total function
 // tcall: total call
@@ -118,6 +119,19 @@ UserKnowledge ::=| "(" "istype" Term ")"
 UserKnowledge ::=| "(" "describes" Term Term ")"
 Arg ::= "^" TermVar
 Term ::=| TermVar
+Term ::=| "(" "bottom" ")"
+Term ::=| "(" "absurd" Term Term ")"
+// TODO: See if we should provide a way to make (subval ...) proofs
+// equating any two units.
+Term ::=| "(" "unittype" ")"
+Term ::=| "(" "unit" ")"
+Term ::=| "(" "bool" ")"
+Term ::=| "(" "true" ")"
+Term ::=| "(" "false" ")"
+Term ::=| "(" "ift" Term Term Term ")"
+// TODO: See if we should make this provide (subval ...) proofs in
+// each of its branches.
+Term ::=| "(" "if" Term Arg Term Term Term ")"
 // Total functions from value to value
 Term ::=| "(" "tfa" Arg Term Term ")"
 Term ::=| "(" "tfn" Arg Term Term ")"
@@ -126,7 +140,7 @@ Term ::=| "(" "tcall" Arg Term Term Term Term ")"
 Term ::=| "(" "ttfa" Arg Term ")"
 Term ::=| "(" "ttfn" Arg Term ")"
 Term ::=| "(" "ttcall" Arg Term Term Term ")"
-// Large Sigma type
+// Strong Sigma type
 Term ::=| "(" "sfa" Arg Term Term ")"
 Term ::=| "(" "sfn" Arg Term Term Term ")"
 Term ::=| "(" "fst" Arg Term Term Term ")"
@@ -147,41 +161,40 @@ Entailment ::=| Fact  // short for |- (fact)
 Fact ::=| UserKnowledge  // short for "me @ userKnowledge"
 Term ::=| "let" (Term "=" Term)* "in" Term
   // introduces other abbreviations
-Term ::=| "(" "bottom" ")"  // short for (ttfa ^r r)
-Term ::=| "(" "unittype" ")"  // short for (ttfa ^r (tfa ^_ r r))
-Term ::=| "(" "unit" ")"  // short for (ttfn ^rType (tfn ^r rType r))
 Term ::=| "(" "either" Term Term ")"
-  // short for
-  // (ttfa ^r (tfa ^_ (tfa ^_ term1 r) (tfa ^_ (tfa ^_ term2 r) r)))
-Term ::=| "(" "left" Term Term Term ")"
-  // short for
-  // (ttfn ^r
-  //   (tfn ^a (tfa ^_ term1 r)
-  //     (tfn ^b (tfn ^_ term2 r) (tcall ^_ term1 r a term3))))
-Term ::=| "(" "right" Term Term Term ")"
-  // short for
-  // (ttfn ^r
-  //   (tfn ^a (tfa ^_ term1 r)
-  //     (tfn ^b (tfn ^_ term2 r) (tcall ^_ term2 r b term3))))
-// TODO: This is meant to represent a boolean value, but it may not be
-// sufficiently expressive for type-level computation. Figure out if
-// there's a better option.
-// NOTE: We could also use (either (unittype) (unittype)).
-Term ::=| "(" "bool" ")"
-  // short for (ttfa ^a (tfa ^_ a (tfa ^_ a a)))
-Term ::=| "(" "true" ")"
-  // short for (ttfn ^a (tfn ^then a (tfa ^else a then)))
-Term ::=| "(" "false" ")"
-  // short for (ttfn ^a (tfn ^then a (tfa ^else a else)))
-// TODO: This may not be sufficiently expressive for type-level
-// computation. Figure out if there's a better expansion option.
-Term ::=| "(" "maybe" Term ")"
-  // short for (ttfa ^a (tfa ^_ a (tfa ^_ (tfa ^_ term1 a) a)))
+  // short for (sfa ^tag (bool) (ift tag term1 term2))
+Term ::=| "(" "maybe" Term ")"  // short for (either term (unittype))
 
 
 // == Inference rules ==
 
 // TODO: Prove a cut elimination theorem or something for all of this.
+
+// Introduce (bottom), (unittype), (unit), (bool), (true), and
+// (false).
+|-  // Tautology
+---
+(istype (bottom))
+(istype (unittype))
+(describes (unittype) (unit))
+(istype (bool))
+(describes (bool) (true))
+(describes (bool) (false))
+
+// Eliminate (bottom) and introduce (absurd ...).
+(describes (bottom) contradiction)
+(istype mightAsWellType)
+---
+(describes mightAsWellType (absurd contradiction mightAsWellType))
+
+// Eliminate (bool) and introduce (if ...) and (ift ...).
+(describes (bool) condition)
+(describes (bool) c) |- (istype resultType[ c ])
+(describes resultType[ (true) ] then)
+(describes resultType[ (false) ] else)
+---
+(describes (ift condition thenType elseType)
+  (if condition ^c resultType[ c ] then else))
 
 // Introduce (tfn ...) and (tfa ...).
 (istype xType)
@@ -213,6 +226,26 @@ y[ xExample ]
 (istype xExample)
 ---
 (describes yType[ xExample ] (ttcall ^x yType[ x ] f xExample))
+
+// Eliminate (ift ...) and (true).
+(ift (true) then else)
+~~>
+then
+
+// Eliminate (ift ...) and (false).
+(ift (false) then else)
+~~>
+else
+
+// Eliminate (if ...) and (true).
+(if (true) ^c resultType[ c ] then else)
+~~>
+then
+
+// Eliminate (if ...) and (false).
+(if (false) ^c resultType[ c ] then else)
+~~>
+else
 
 // Eliminate (ttfn ...) and (ttcall ...).
 (ttcall ^x yType[ x ] (ttfn ^x y[ x ]) xExample)
@@ -297,6 +330,44 @@ Term ::=| "(" "valrefl" Term Term ")"
 ---
 (describes (subval a x a x) (valrefl a x))
 
+(coerce (bottom) (bottom) pf orig)
+~~>
+orig
+
+(subtype (bottom) (bottom))
+~~>
+(unittype)
+
+(subval (bottom) a (bottom) b)
+~~>
+(unittype)
+
+(coerce (unittype) (unittype) pf orig)
+~~>
+orig
+
+(subtype (unittype) (unittype))
+~~>
+(unittype)
+
+(subval (unittype) a (unittype) b)
+~~>
+(unittype)
+
+(coerce (bool) (bool) pf orig)
+~~>
+orig
+
+(subtype (bool) (bool))
+~~>
+(unittype)
+
+(subval (bool) a (bool) b)
+~~>
+(ift a
+  (ift b (unittype) (bottom))
+  (ift b (bottom) (unittype)))
+
 (coerce (tfa ^x ai ao[ x ]) (tfa ^x bi bo[ x ]) pf orig)
 ~~>
 let
@@ -323,7 +394,7 @@ in
 
 (subtype (tfa ^x ai ao[ x ]) (tfa ^x bi bo[ x ]))
 ~~>
-(sfn ^_ (subtype bi ai)
+(sfa ^_ (subtype bi ai)
   (tfa ^bx bi
     (tfa ^ax ai
       (tfa ^_ (subval bi bx ai ax) (subtype ao[ ax ] bo[ bx ])))))
@@ -381,7 +452,7 @@ in
 
 (subtype (sfa ^x ai ao[ x ]) (sfa ^x bi bo[ x ]))
 ~~>
-(sfn ^_ (subtype ai bi)
+(sfa ^_ (subtype ai bi)
   (tfa ^ax ai
     (tfa ^bx bi
       (tfa ^_ (subval ai ax bi bx)
@@ -389,7 +460,7 @@ in
 
 (subval (sfa ^x ai ao[ x ]) a (sfa ^x bi bo[ x ]) b)
 ~~>
-(sfn ^_ (subval ai a bi b)
+(sfa ^_ (subval ai a bi b)
   (subval
     ao[ (fst ^x ai ao[ x ] a) ] (snd ^x ai ao[ x ] a)
     bo[ (fst ^x bi bo[ x ] b) ] (snd ^x bi bo[ x ] b)))
@@ -692,8 +763,7 @@ Term ::=| "(" "extend" Term Term ")"
 me @!
   (startsum myKey ^x accum[ x ] seedParts ^e seedImplementation[ e ])
 (describes (tfa ^_ seedParts (sumpart myKey)) sumExt),
-  (describes (tfa ^_ (sumpart myKey) (either seedParts (unittype)))
-    sumExtElim),
+  (describes (tfa ^_ (sumpart myKey) (maybe seedParts)) sumExtElim),
   (describes accum[ (sumpart mykey) ] sumOut)
   |- (can act[ sumExt ][ sumExtElim ][ sumOut ])
 ---
@@ -758,8 +828,7 @@ you @ (secret yourKey)
 you @ (istype myParts)
 (you @ (describes (tfa ^_ myParts (sumpart myKey)) sumExt)),
   (you @
-    (describes (tfa ^_ (sumpart myKey) (either myParts (unittype)))
-      sumExtElim)),
+    (describes (tfa ^_ (sumpart myKey) (maybe myParts)) sumExtElim))
   |- (you @ (can act[ sumExt ][ sumExtElim ]))
 ---
 you @

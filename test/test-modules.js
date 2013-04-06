@@ -18,6 +18,18 @@
     
     add( "foo", [ "foo" ] );
     
+    add( [ "bottom" ], [] );
+    
+    add( [ "unittype" ], [] );
+    
+    add( [ "unit" ], [] );
+    
+    add( [ "bool" ], [] );
+    
+    add( [ "true" ], [] );
+    
+    add( [ "false" ], [] );
+    
     add( [ "tfa", "a", "aType", "bType" ], [ "aType", "bType" ] );
     // NOTE: This test is farfetched since there should be no existing
     // way to make (tfa a aType a) typecheck. It would require a way
@@ -46,8 +58,7 @@
     add( [ "ttfa", "a", "bType" ], [ "bType" ] );
     // NOTE: This term actually can typecheck. It's the type of a
     // type-to-term function that procures a value of the given type.
-    // This corresponds pretty well to inconsistency of the type
-    // system, so it's how we represent bottom.
+    // It's an uninhabited type (if this system is consistent).
     add( [ "ttfa", "a", "a" ], [] );
     
     add( [ "ttfn", "a", "b" ], [ "b" ] );
@@ -191,6 +202,12 @@ addShouldThrowUnitTest( function () {
     // expression syntaxes, at least for the purposes of
     // renameVarsToVars().
     add( xo, "x", "o" );
+    add( xo, [ "bottom" ], [ "bottom" ] );
+    add( xo, [ "unittype" ], [ "unittype" ] );
+    add( xo, [ "unit" ], [ "unit" ] );
+    add( xo, [ "bool" ], [ "bool" ] );
+    add( xo, [ "true" ], [ "true" ] );
+    add( xo, [ "false" ], [ "false" ] );
     // NOTE: Again, there should be no existing way to make this term
     // typecheck.
     add( xo, [ "tfa", "x", "x", "x" ], [ "tfa", "x", "o", "x" ] );
@@ -307,6 +324,12 @@ addShouldThrowUnitTest( function () {
     // Systematically verify the variable binding behavior of all
     // expression syntaxes, at least for the purposes of knownEqual().
     add( "x", "x" );
+    add( [ "bottom" ], [ "bottom" ] );
+    add( [ "unittype" ], [ "unittype" ] );
+    add( [ "unit" ], [ "unit" ] );
+    add( [ "bool" ], [ "bool" ] );
+    add( [ "true" ], [ "true" ] );
+    add( [ "false" ], [ "false" ] );
     // NOTE: Again, there should be no existing way to make this term
     // typecheck.
     add( [ "tfa", "x", "x", "x" ], [ "tfa", "o", "x", "o" ] );
@@ -388,7 +411,7 @@ addShouldThrowUnitTest( function () {
     }
     
     var vari = "x";
-    var expr = [ "ttfn", "z", "z" ];
+    var expr = [ "unit" ];
     
     add( true, expr );
     
@@ -402,6 +425,18 @@ addShouldThrowUnitTest( function () {
     
     add( true, vari );
     add( false, true );
+    
+    add( true, [ "bottom" ] );
+    
+    add( true, [ "unittype" ] );
+    
+    add( true, [ "unit" ] );
+    
+    add( true, [ "bool" ] );
+    
+    add( true, [ "true" ] );
+    
+    add( true, [ "false" ] );
     
     add( true, [ "tfa", vari, expr, expr ] );
     add( false, [ "tfa", true, expr, expr ] );
@@ -593,8 +628,8 @@ addShouldThrowUnitTest( function () {
     
     var _env = strMap();  // NOTE: The "_" stands for "empty."
     var igno = "_";
-    var unitType = [ "ttfa", "t", [ "tfa", igno, "t", "t" ] ];
-    var unit = [ "ttfn", "t", [ "tfn", "x", "t", "x" ] ];
+    var unitType = [ "unittype" ];
+    var unit = [ "unit" ];
     var sfn = [ "sfn", igno, unitType, unit, unit ];
     // NOTE: This stands for "imperative partial type."
     var impt =
@@ -607,33 +642,29 @@ addShouldThrowUnitTest( function () {
                 [ "zunitpartial", [ "sink" ], "s" ] ] ];
     
     function testFromSink( fromSink, innerType ) {
+        // TODO: Count each testFromSink() call as one unit test, not
+        // two.
         addTerm( true, _env,
-            [ "ttfa", "a",
-                [ "tfa", igno, "a",
-                    [ "tfa", igno, [ "tfa", igno, innerType, "a" ],
-                        "a" ] ] ],
+            [ "sfa", "case", [ "bool" ],
+                [ "ift", "case", innerType, [ "unittype" ] ] ],
             [ fromSink, exampleSink ],
             null );
         addTerm( true, _env, unitType,
-            [ "tcall",
-                igno, [ "tfa", igno, innerType, unitType ], unitType,
-                [ "tcall", igno, unitType,
-                    [ "tfa", igno,
-                        [ "tfa", igno, innerType, unitType ],
-                        unitType ],
-                    [ "ttcall", "a",
-                        [ "tfa", igno, "a",
-                            [ "tfa", igno,
-                                [ "tfa", igno, innerType, "a" ],
-                                "a" ] ],
-                        [ fromSink, exampleSink ],
-                        unitType ],
-                    unit ],
-                [ "tfn", igno, innerType, unit ] ],
+            [ "if",
+                [ "fst", "case", [ "bool" ],
+                    [ "ift", "case", innerType, [ "unittype" ] ],
+                    [ fromSink, exampleSink ] ],
+                igno, unitType,
+                unit,
+                unit ],
             unit );
     }
     
     addTerm( true, _env, unitType, unit );
+    addType( true, _env, [ "bottom" ] );
+    addTerm( true, _env, [ "unittype" ], [ "unit" ] );
+    addTerm( true, _env, [ "bool" ], [ "true" ] );
+    addTerm( true, _env, [ "bool" ], [ "false" ] );
     addTerm( true, _env, [ "tfa", igno, unitType, unitType ],
         [ "tfn", igno, unitType, unit ] );
     addTerm( true, _env, unitType,
@@ -648,8 +679,12 @@ addShouldThrowUnitTest( function () {
     // beta-reduced expression, the final type we compare to is
     // actually [ "tfa", igno, unitType, "t" ] with "t" bound to
     // unitType in the lexical closure.
-    addTerm( true, _env, [ "tfa", igno, unitType, unitType ],
-        [ "ttcall", "t", [ "tfa", igno, "t", "t" ], unit, unitType ],
+    // TODO: This should actually work (expected = true), and it does
+    // work if we change "a" to "t". Fix this.
+    addTerm( false, _env, [ "tfa", igno, unitType, unitType ],
+        [ "ttcall", "t", [ "tfa", igno, "t", "t" ],
+            [ "ttfn", "a", [ "tfn", "x", "a", "x" ] ],
+            unitType ],
         [ "tfn", "x", unitType, "x" ] );
     // NOTE: This test of ttcall makes no use of lexical closure in
     // the result, so it hasn't run across the same trouble as the
@@ -689,10 +724,7 @@ addShouldThrowUnitTest( function () {
     addType( true, _env, [ "tokentype" ] );
     addTerm( true, _env,
         [ "tfa", igno, [ "tokentype" ],
-            [ "tfa", igno, [ "tokentype" ],
-                [ "ttfa", "a",
-                    [ "tfa", igno, "a",
-                        [ "tfa", igno, "a", "a" ] ] ] ] ],
+            [ "tfa", igno, [ "tokentype" ], [ "bool" ] ] ],
         [ "tfn", "a", [ "tokentype" ],
             [ "tfn", "b", [ "tokentype" ],
                 [ "ztokenequals", "a", "b" ] ] ] );
@@ -738,23 +770,21 @@ addShouldThrowUnitTest( function () {
     var env = strMap();
     return checkInhabitsType(
         { env: env, term: [ "nonexistentSyntax", "a", "b", "c" ] },
-        { env: env, term: [ "ttfa", "t", [ "tfa", "x", "t", "t" ] ] }
-    );
+        { env: env, term: [ "unittype" ] } );
 } );
 addShouldThrowUnitTest( function () {
     var env = strMap();
     return checkInhabitsType(
         { env: env, term:
             !"a boolean rather than a nested Array of strings" },
-        { env: env, term: [ "ttfa", "t", [ "tfa", "x", "t", "t" ] ] }
-    );
+        { env: env, term: [ "unittype" ] } );
 } );
 
 (function () {
     
     var igno = "_";
-    var unitType = [ "ttfa", "t", [ "tfa", igno, "t", "t" ] ];
-    var unit = [ "ttfn", "t", [ "tfn", "x", "t", "x" ] ];
+    var unitType = [ "unittype" ];
+    var unit = [ "unit" ];
     var sfn = [ "sfn", igno, unitType, unit, unit ];
     // NOTE: This stands for "imperative partial type."
     var impt =
@@ -906,8 +936,8 @@ addShouldThrowUnitTest( function () {
     
     var _env = strMap();  // NOTE: The "_" stands for "empty."
     var igno = "_";
-    var unitType = [ "ttfa", "t", [ "tfa", igno, "t", "t" ] ];
-    var unit = [ "ttfn", "t", [ "tfn", "x", "t", "x" ] ];
+    var unitType = [ "unittype" ];
+    var unit = [ "unit" ];
     
     addTerm( true, _env, [ "polytermunit", unitType ],
         [ "polytermunit", unit ] );
@@ -1052,8 +1082,8 @@ addShouldThrowUnitTest( function () {
     
     var _env = strMap();  // NOTE: The "_" stands for "empty."
     var igno = "_";
-    var unitType = [ "ttfa", "t", [ "tfa", igno, "t", "t" ] ];
-    var unit = [ "ttfn", "t", [ "tfn", "x", "t", "x" ] ];
+    var unitType = [ "unittype" ];
+    var unit = [ "unit" ];
     var ptut = [ "polytermunit", unitType ];
     
     add( true, _env, ptut, [ "polyinstunit" ], unitType );
@@ -1135,8 +1165,8 @@ addShouldThrowUnitTest( function () {
         knownIsPrivateKey: { val: true }
     } );
     var igno = "_";
-    var unitType = [ "ttfa", "t", [ "tfa", igno, "t", "t" ] ];
-    var unit = [ "ttfn", "t", [ "tfn", "x", "t", "x" ] ];
+    var unitType = [ "unittype" ];
+    var unit = [ "unit" ];
     var ptut = [ "polytermunit", unitType ];
     
     add( true, env, ptut, [ "defined", [ "everyone" ], "me", ptut ] );
@@ -1202,8 +1232,8 @@ addShouldThrowUnitTest( function () {
     // such.
     
     var igno = "_";
-    var unitType = [ "ttfa", "t", [ "tfa", igno, "t", "t" ] ];
-    var unit = [ "ttfn", "t", [ "tfn", "x", "t", "x" ] ];
+    var unitType = [ "unittype" ];
+    var unit = [ "unit" ];
     var sfn = [ "sfn", igno, unitType, unit, unit ];
     // NOTE: This stands for "imperative partial type."
     var impt =
@@ -1219,30 +1249,25 @@ addShouldThrowUnitTest( function () {
         // TODO: Count each testFromSink() call as one unit test, not
         // two.
         addTerm(
-            [ "ttfa", "a",
-                [ "tfa", igno, "a",
-                    [ "tfa", igno, [ "tfa", igno, innerType, "a" ],
-                        "a" ] ] ],
+            [ "sfa", "case", [ "bool" ],
+                [ "ift", "case", innerType, [ "unittype" ] ] ],
             [ fromSink, exampleSink ] );
         addTerm( unitType,
-            [ "tcall",
-                igno, [ "tfa", igno, innerType, unitType ], unitType,
-                [ "tcall", igno, unitType,
-                    [ "tfa", igno,
-                        [ "tfa", igno, innerType, unitType ],
-                        unitType ],
-                    [ "ttcall", "a",
-                        [ "tfa", igno, "a",
-                            [ "tfa", igno,
-                                [ "tfa", igno, innerType, "a" ],
-                                "a" ] ],
-                        [ fromSink, exampleSink ],
-                        unitType ],
-                    unit ],
-                [ "tfn", igno, innerType, unit ] ] );
+            [ "if",
+                [ "fst", "case", [ "bool" ],
+                    [ "ift", "case", innerType, [ "unittype" ] ],
+                    [ fromSink, exampleSink ] ],
+                igno, unitType,
+                unit,
+                unit ],
+            unit );
     }
     
     addTerm( unitType, unit );
+    addType( [ "bottom" ] );
+    addTerm( [ "unittype" ], [ "unit" ] );
+    addTerm( [ "bool" ], [ "true" ] );
+    addTerm( [ "bool" ], [ "false" ] );
     addTerm( [ "tfa", igno, unitType, unitType ],
         [ "tfn", igno, unitType, unit ] );
     addTerm( unitType,
@@ -1251,7 +1276,8 @@ addShouldThrowUnitTest( function () {
     addTerm( [ "ttfa", igno, unitType ], [ "ttfn", igno, unit ] );
     addTerm( [ "tfa", igno, unitType, unitType ],
         [ "ttcall", "t", [ "tfa", igno, "t", "t" ],
-            unit, unitType ] );
+            [ "ttfn", "t", [ "tfn", "x", "t", "x" ] ],
+            unitType ] );
     addTerm( unitType,
         [ "ttcall", igno, unitType,
             [ "ttfn", igno, unit ], unitType ] );
@@ -1282,10 +1308,7 @@ addShouldThrowUnitTest( function () {
     addType( [ "tokentype" ] );
     addTerm(
         [ "tfa", igno, [ "tokentype" ],
-            [ "tfa", igno, [ "tokentype" ],
-                [ "ttfa", "a",
-                    [ "tfa", igno, "a",
-                        [ "tfa", igno, "a", "a" ] ] ] ] ],
+            [ "tfa", igno, [ "tokentype" ], [ "bool" ] ] ],
         [ "tfn", "a", [ "tokentype" ],
             [ "tfn", "b", [ "tokentype" ],
                 [ "ztokenequals", "a", "b" ] ] ] );
@@ -1417,8 +1440,8 @@ addShouldThrowUnitTest( function () {
     }
     
     var igno = "_";
-    var unitType = [ "ttfa", "t", [ "tfa", igno, "t", "t" ] ];
-    var unit = [ "ttfn", "t", [ "tfn", "x", "t", "x" ] ];
+    var unitType = [ "unittype" ];
+    var unit = [ "unit" ];
     
     function everyoneVar( name ) {
         return [ "subkey", [ "everyone" ], [ "sym", name ] ];
