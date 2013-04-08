@@ -1446,9 +1446,8 @@ addShouldThrowUnitTest( function () {
     function everyoneVar( name ) {
         return [ "subkey", [ "everyone" ], [ "sym", name ] ];
     }
-    function defineMono( fromKey, type, val ) {
-        return [ "define", fromKey, [ "everyone" ],
-            [ "polytermunit", type ], [ "polytermunit", val ] ];
+    function define( fromKey, type, val ) {
+        return [ "define", fromKey, [ "everyone" ], type, val ];
     }
     function withEachDefinedMono(
         vari, fromKey, toKey, type, action ) {
@@ -1461,14 +1460,14 @@ addShouldThrowUnitTest( function () {
     
     add( true,
         [ "withsecret", "theUnit", everyoneVar( "theOneAndOnlyUnit" ),
-            defineMono( "theUnit", unitType, unit ) ] );
+            define( "theUnit", unitType, unit ) ] );
     add( true,
         [ "withsecret", "theReturn", everyoneVar( "returnOfTheUnit" ),
             [ "withsecret", "all", [ "everyone" ],
                 withEachDefinedMono( "theUnit",
                     everyoneVar( "theOneAndOnlyUnit" ), "all",
                     unitType,
-                    defineMono(
+                    define(
                         "theReturn", unitType, "theUnit" ) ) ] ] );
     add( true,
         [ "withsecret", "theTokenDefined",
@@ -1476,8 +1475,13 @@ addShouldThrowUnitTest( function () {
             [ "withsecret", "theTokenSource",
                 everyoneVar( "theTokenSource" ),
                 [ "withtoken", "t", "theTokenSource",
-                    defineMono( "theTokenDefined", [ "tokentype" ],
+                    define( "theTokenDefined", [ "tokentype" ],
                         "t" ) ] ] ] );
+    add( true,
+        [ "withsecret", "idfn", everyoneVar( "idfn" ),
+            [ "witheachtype", "t",
+                define( "idfn", [ "tfa", igno, "t", "t" ],
+                    [ "tfn", "x", "t", "x" ] ) ] ] );
     
     // Free variables aren't allowed.
     add( false,
@@ -1485,7 +1489,7 @@ addShouldThrowUnitTest( function () {
             withEachDefinedMono( "theUnit",
                 everyoneVar( "theOneAndOnlyUnit" ), "all",
                 unitType,
-                defineMono( "theReturn", unitType, "theUnit" ) ) ] );
+                define( "theReturn", unitType, "theUnit" ) ) ] );
 })();
 addShouldThrowUnitTest( function () {
     return checkUserAction( strMap(),

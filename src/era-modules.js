@@ -1923,6 +1923,7 @@ var builtins = strMap();
     addEraSyntax( "knowledgeQuery", "polydescribes" );
     addEraSyntax( "knowledgeQuery", "describesinst" );
     addEraSyntax( "knowledgeQuery", "describesquery" );
+    addEraSyntax( "knowledgeQuery", "witheachtype" );
     addEraSyntax( "knowledgeQuery", "witheachknol" );
     addEraSyntax( "localCollaboration", "secret" );
     addEraSyntax( "localCollaboration", "public" );
@@ -2514,6 +2515,11 @@ function isWfUserAction( term ) {
     
     var em;
     if ( em = getMatch( term,
+        [ lit( "witheachtype" ), str( "t" ), "action" ] ) ) {
+        
+        return isWfUserAction( em.val.get( "action" ) );
+        
+    } else if ( em = getMatch( term,
         [ lit( "witheachknol" ), str( "x" ),
             "polyType", "polyInst", "xType", "query", "action" ] ) ) {
         
@@ -2530,15 +2536,15 @@ function isWfUserAction( term ) {
             isWfUserAction( em.val.get( "action" ) );
         
     } else if ( em = getMatch( term, [ lit( "define" ),
-        "myPrivKey", "yourPubKey", "polyType", "polyVal" ] ) ) {
+        "myPrivKey", "yourPubKey", "type", "val" ] ) ) {
         
         // TODO: While `myPrivKey` is a term, it also can't be
         // anything but a variable reference. See if we should check
         // that here or just leave it to checkUserAction().
         return isWfTerm( em.val.get( "myPrivKey" ) ) &&
             isWfKey( em.val.get( "yourPubKey" ) ) &&
-            isWfPolyTerm( em.val.get( "polyType" ) ) &&
-            isWfPolyTerm( em.val.get( "polyVal" ) );
+            isWfTerm( em.val.get( "type" ) ) &&
+            isWfTerm( em.val.get( "val" ) );
         
     } else if ( em = getMatch( term, [ lit( "withtoken" ),
         str( "var" ), "privKey", "action" ] ) ) {
@@ -2577,6 +2583,16 @@ function checkUserAction( keyring, expr ) {
     
     var em;
     if ( em = getMatch( expr.term,
+        [ lit( "witheachtype" ), str( "t" ), "action" ] ) ) {
+        
+        return checkUserAction( keyring, {
+            env: envWith( expr.env, em.val.get( "t" ), {
+                knownIsType: { val: true }
+            } ),
+            term: em.val.get( "action" )
+        } );
+        
+    } else if ( em = getMatch( expr.term,
         [ lit( "witheachknol" ), str( "x" ),
             "polyType", "polyInst", "xType", "query", "action" ] ) ) {
         
@@ -2608,7 +2624,7 @@ function checkUserAction( keyring, expr ) {
             } );
         
     } else if ( em = getMatch( expr.term, [ lit( "define" ),
-        "myPrivKey", "yourPubKey", "polyType", "polyVal" ] ) ) {
+        "myPrivKey", "yourPubKey", "type", "val" ] ) ) {
         
         return (true
             && checkPrivKey( "myPrivKey" )
@@ -2616,9 +2632,8 @@ function checkUserAction( keyring, expr ) {
             // function. For the moment, it would always return true,
             // so we just call isWfKey().
             && isWfKey( em.val.get( "yourPubKey" ) )
-            && checkIsPolyType( eget( "polyType" ) )
-            && checkInhabitsPolyType(
-                eget( "polyVal" ), eget( "polyType" ) )
+            && checkIsType( eget( "type" ) )
+            && checkInhabitsType( eget( "val" ), eget( "type" ) )
         );
         
     } else if ( em = getMatch( expr.term, [ lit( "withtoken" ),

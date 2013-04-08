@@ -513,6 +513,7 @@ UserKnowledge ::=| "(" "polyistype" PolyTerm ")"
 UserKnowledge ::=| "(" "polydescribes" PolyTerm PolyTerm ")"
 UserKnowledge ::=| "(" "describesinst" PolyTerm PolyInst Term ")"
 UserKnowledge ::=| "(" "describesquery" PolyTerm KnolQuery ")"
+UserAction ::=| "(" "witheachtype" Arg UserAction ")"
 UserAction ::=| "(" "witheachknol"
   Arg PolyTerm PolyInst Term KnolQuery UserAction ")"
 
@@ -562,6 +563,11 @@ Term ::=| "<hiddenCode>"
 (describesinst (polytermforall ^x nextType[ x ])
   (polyinstforall xExample nextInst)
   r)
+
+// Introduce (witheachtype ...).
+(istype t) |- (can act[ t ])
+---
+(can (witheachtype ^t act[ t ]))
 
 // Introduce (witheachknol ...).
 (istype xType)
@@ -629,7 +635,7 @@ WordVar ::= Word | "word"
 
 // == Grammar ==
 
-UserAction ::=| "(" "define" Term Key PolyTerm PolyTerm ")"
+UserAction ::=| "(" "define" Term Key Term Term ")"
 KnolQuery ::=| "(" "defined" Key Term PolyTerm ")"
 
 
@@ -638,7 +644,7 @@ KnolQuery ::=| "(" "defined" Key Term PolyTerm ")"
 // Introduce (define ...).
 (secret myKey)
 (public yourKey)
-(polydescribes xType x)
+(describes xType x)
 ---
 (can (define myKey yourKey xType x))
 
