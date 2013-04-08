@@ -55,21 +55,6 @@
     add( [ "tcall", "a", "aType", "a", "fn", "a" ],
         [ "aType", "fn", "a" ] );
     
-    add( [ "ttfa", "a", "bType" ], [ "bType" ] );
-    // NOTE: This term actually can typecheck. It's the type of a
-    // type-to-term function that procures a value of the given type.
-    // It's an uninhabited type (if this system is consistent).
-    add( [ "ttfa", "a", "a" ], [] );
-    
-    add( [ "ttfn", "a", "b" ], [ "b" ] );
-    add( [ "ttfn", "a", "a" ], [] );
-    
-    add( [ "ttcall", "a", "bType", "fn", "arg" ],
-        [ "bType", "fn", "arg" ] );
-    add( [ "ttcall", "a", "a", "fn", "arg" ], [ "fn", "arg" ] );
-    add( [ "ttcall", "a", "a", "a", "arg" ], [ "a", "arg" ] );
-    add( [ "ttcall", "a", "a", "fn", "a" ], [ "fn", "a" ] );
-    
     add( [ "sfa", "a", "aType", "bType" ], [ "aType", "bType" ] );
     // NOTE: Again, there should be no existing way to make this term
     // typecheck.
@@ -195,8 +180,9 @@ addShouldThrowUnitTest( function () {
     add( xo, "o", "o" );
     add( xo, "f", "f" );
     add( strMap().setObj( { "x1": "o1", "x2": "o2" } ),
-        [ "ttcall", "a", "a", "x1", "x2" ],
-        [ "ttcall", "a", "a", "o1", "o2" ] );
+        [ "tcall", "_", [ "unittype" ], [ "unittype" ], "x1", "x2" ],
+        [ "tcall", "_", [ "unittype" ], [ "unittype" ], "o1", "o2" ]
+        );
     
     // Systematically verify the variable binding behavior of all
     // expression syntaxes, at least for the purposes of
@@ -215,11 +201,6 @@ addShouldThrowUnitTest( function () {
     add( xo,
         [ "tcall", "x", "x", "x", "x", "x" ],
         [ "tcall", "x", "o", "x", "o", "o" ] );
-    add( xo, [ "ttfa", "x", "x" ], [ "ttfa", "x", "x" ] );
-    add( xo, [ "ttfn", "x", "x" ], [ "ttfn", "x", "x" ] );
-    add( xo,
-        [ "ttcall", "x", "x", "x", "x" ],
-        [ "ttcall", "x", "x", "o", "o" ] );
     // NOTE: Again, there should be no existing way to make this term
     // typecheck.
     add( xo, [ "sfa", "x", "x", "x" ], [ "sfa", "x", "o", "x" ] );
@@ -337,11 +318,6 @@ addShouldThrowUnitTest( function () {
     add(
         [ "tcall", "x", "x", "x", "x", "x" ],
         [ "tcall", "o", "x", "o", "x", "x" ] );
-    add( [ "ttfa", "x", "x" ], [ "ttfa", "o", "o" ] );
-    add( [ "ttfn", "x", "x" ], [ "ttfn", "o", "o" ] );
-    add(
-        [ "ttcall", "x", "x", "x", "x" ],
-        [ "ttcall", "o", "o", "x", "x" ] );
     // NOTE: Again, there should be no existing way to make this term
     // typecheck.
     add( [ "sfa", "x", "x", "x" ], [ "sfa", "o", "x", "o" ] );
@@ -457,23 +433,6 @@ addShouldThrowUnitTest( function () {
     add( false, [ "tcall", vari, expr, expr, true, expr ] );
     add( false, [ "tcall", vari, expr, expr, expr, true ] );
     add( false, [ "tcall", expr, expr, expr, expr, expr ] );
-    
-    add( true, [ "ttfa", vari, expr ] );
-    add( false, [ "ttfa", true, expr ] );
-    add( false, [ "ttfa", vari, true ] );
-    add( false, [ "ttfa", expr, expr ] );
-    
-    add( true, [ "ttfn", vari, expr ] );
-    add( false, [ "ttfn", true, expr ] );
-    add( false, [ "ttfn", vari, true ] );
-    add( false, [ "ttfn", expr, expr ] );
-    
-    add( true, [ "ttcall", vari, expr, expr, expr ] );
-    add( false, [ "ttcall", true, expr, expr, expr ] );
-    add( false, [ "ttcall", vari, true, expr, expr ] );
-    add( false, [ "ttcall", vari, expr, true, expr ] );
-    add( false, [ "ttcall", vari, expr, expr, true ] );
-    add( false, [ "ttcall", expr, expr, expr, expr ] );
     
     add( true, [ "sfa", vari, expr, expr ] );
     add( false, [ "sfa", true, expr, expr ] );
@@ -667,31 +626,27 @@ addShouldThrowUnitTest( function () {
     addTerm( true, _env, [ "bool" ], [ "false" ] );
     addTerm( true, _env, [ "tfa", igno, unitType, unitType ],
         [ "tfn", igno, unitType, unit ] );
+    // TODO: Figure out what was causing this test to fail. We no
+    // longer have the syntaxes (ttcall ...) and (ttfn ...), so it may
+    // be easier to investigate this using an earlier Git commit
+    // (namely, commit f713ba1629630a77a9f446f438bc840760a98cc2 on
+    // April 7, 2013).
+//    // NOTE: This test encounters the case where one of the arguments
+//    // to knownEqual() is a variable reference and it's bound in its
+//    // environment. This happens because during type checking of the
+//    // beta-reduced expression, the final type we compare to is
+//    // actually [ "tfa", igno, unitType, "t" ] with "t" bound to
+//    // unitType in the lexical closure.
+//    // TODO: This should actually work (expected = true), and it does
+//    // work if we change "a" to "t". Fix this.
+//    addTerm( false, _env, [ "tfa", igno, unitType, unitType ],
+//        [ "ttcall", "t", [ "tfa", igno, "t", "t" ],
+//            [ "ttfn", "a", [ "tfn", "x", "a", "x" ] ],
+//            unitType ],
+//        [ "tfn", "x", unitType, "x" ] );
     addTerm( true, _env, unitType,
         [ "tcall", igno, unitType, unitType,
             [ "tfn", "x", unitType, "x" ], unit ],
-        unit );
-    addTerm( true, _env, [ "ttfa", igno, unitType ],
-        [ "ttfn", igno, unit ] );
-    // NOTE: This test encounters the case where one of the arguments
-    // to knownEqual() is a variable reference and it's bound in its
-    // environment. This happens because during type checking of the
-    // beta-reduced expression, the final type we compare to is
-    // actually [ "tfa", igno, unitType, "t" ] with "t" bound to
-    // unitType in the lexical closure.
-    // TODO: This should actually work (expected = true), and it does
-    // work if we change "a" to "t". Fix this.
-    addTerm( false, _env, [ "tfa", igno, unitType, unitType ],
-        [ "ttcall", "t", [ "tfa", igno, "t", "t" ],
-            [ "ttfn", "a", [ "tfn", "x", "a", "x" ] ],
-            unitType ],
-        [ "tfn", "x", unitType, "x" ] );
-    // NOTE: This test of ttcall makes no use of lexical closure in
-    // the result, so it hasn't run across the same trouble as the
-    // previous test.
-    addTerm( true, _env, unitType,
-        [ "ttcall", igno, unitType,
-            [ "ttfn", igno, unit ], unitType ],
         unit );
     addTerm( true, _env, [ "sfa", igno, unitType, unitType ], sfn );
     addTerm( true, _env, unitType,
@@ -1273,14 +1228,6 @@ addShouldThrowUnitTest( function () {
     addTerm( unitType,
         [ "tcall", igno, unitType, unitType,
             [ "tfn", "x", unitType, "x" ], unit ] );
-    addTerm( [ "ttfa", igno, unitType ], [ "ttfn", igno, unit ] );
-    addTerm( [ "tfa", igno, unitType, unitType ],
-        [ "ttcall", "t", [ "tfa", igno, "t", "t" ],
-            [ "ttfn", "t", [ "tfn", "x", "t", "x" ] ],
-            unitType ] );
-    addTerm( unitType,
-        [ "ttcall", igno, unitType,
-            [ "ttfn", igno, unit ], unitType ] );
     addTerm( [ "sfa", igno, unitType, unitType ], sfn );
     addTerm( unitType, [ "fst", igno, unitType, unitType, sfn ] );
     addTerm( unitType, [ "snd", igno, unitType, unitType, sfn ] );

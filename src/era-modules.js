@@ -419,24 +419,6 @@ function betaReduce( expr ) {
             term: matchedFn.val.get( "result" )
         } );
         
-    } else if ( em = getMatch( expr.term, [ lit( "ttcall" ),
-        str( "argName" ), "resultType", "fn", "argVal" ] ) ) {
-        
-        var reducedFn = beget( "fn" );
-        var matchedFn = getMatch( reducedFn.term,
-            [ lit( "ttfn" ), str( "arg" ), "result" ] );
-        if ( !matchedFn )
-            throw new Error();
-        return betaReduce( {
-            env: envWith( reducedFn.env, matchedFn.val.get( "arg" ), {
-                // TODO: Figure out if we actually need this
-                // knownIsType here.
-                knownIsType: { val: true },
-                knownVal: { val: beget( "argVal" ) }
-            } ),
-            term: matchedFn.val.get( "result" )
-        } );
-        
     } else if ( em = getMatch( expr.term, [ lit( "sfn" ),
         str( "arg" ), "argType", "argVal", "resultVal" ] ) ) {
         
@@ -602,16 +584,6 @@ function checkIsType( expr ) {
         return checkIsType( {
             env: envWith( expr.env, em.val.get( "arg" ), {
                 knownType: { val: beget( "argType" ) }
-            } ),
-            term: em.val.get( "resultType" )
-        } );
-        
-    } else if ( em = getMatch( expr.term,
-        [ lit( "ttfa" ), str( "arg" ), "resultType" ] ) ) {
-        
-        return checkIsType( {
-            env: envWith( expr.env, em.val.get( "arg" ), {
-                knownIsType: { val: true }
             } ),
             term: em.val.get( "resultType" )
         } );
@@ -783,49 +755,6 @@ function checkInhabitsType( expr, type ) {
             betaReduce( {
                 env: envWith( expr.env, em.val.get( "argName" ), {
                     knownType: { val: argType },
-                    knownVal: { val: beget( "argVal" ) }
-                } ),
-                term: em.val.get( "resultType" )
-            } ),
-            type );
-        
-    } else if ( em = getMatch( expr.term,
-        [ lit( "ttfn" ), str( "arg" ), "result" ] ) ) {
-        
-        var tm = getMatch( type.term,
-            [ lit( "ttfa" ), str( "arg" ), "resultType" ] );
-        if ( tm === null )
-            return false;
-        
-        return checkInhabitsType( {
-            env: envWith( expr.env, em.val.get( "arg" ), {
-                knownIsType: { val: true }
-            } ),
-            term: em.val.get( "result" ),
-        }, betaReduce( {
-            env: envWith( type.env, tm.val.get( "arg" ), {
-                knownIsType: { val: true }
-            } ),
-            term: tm.val.get( "resultType" )
-        } ) );
-        
-    } else if ( em = getMatch( expr.term, [ lit( "ttcall" ),
-        str( "argName" ), "resultType", "fn", "argVal" ] ) ) {
-        
-        var fnType = { env: expr.env, term:
-            [ "ttfa", em.val.get( "argName" ),
-                em.val.get( "resultType" ) ] };
-        if ( !checkIsType( fnType ) )
-            return false;
-        if ( !checkInhabitsType(
-            eget( "fn" ), betaReduce( fnType ) ) )
-            return false;
-        if ( !checkIsType( eget( "argVal" ) ) )
-            return false;
-        return knownEqual(
-            betaReduce( {
-                env: envWith( expr.env, em.val.get( "argName" ), {
-                    knownIsType: { val: true },
                     knownVal: { val: beget( "argVal" ) }
                 } ),
                 term: em.val.get( "resultType" )
@@ -1177,38 +1106,6 @@ function compileTermToSyncJs( expr ) {
             + "_.pushTfn( fn, argVal );\n"
         );
         
-    } else if ( em = getMatch( expr.term,
-        [ lit( "ttfn" ), str( "arg" ), "result" ] ) ) {
-        
-        var arg = em.val.get( "arg" );
-        var captures = [];
-        getFreeVarsOfTerm( expr.term ).minusEntry( arg ).each(
-            function ( v ) {
-            
-            v = toKey( v );
-            captures.push( "    " + v + ": _.env[ " + v + " ]" );
-        } );
-        return (""
-            + "_.pushRes( { lexEnv: {\n"
-            + (captures.length === 0 ? "" :
-                captures.join( ",\n" ) + "\n")
-            + "}, go: function ( _ ) {\n"
-            + "\n"
-            + compileTermToSyncJs( eget( "result" ) )
-            + "\n"
-            + "} } );\n"
-        );
-        
-    } else if ( em = getMatch( expr.term, [ lit( "ttcall" ),
-        str( "argName" ), "resultType", "fn", "argVal" ] ) ) {
-        
-        return instructions(
-            compileTermToSyncJs( eget( "fn" ) ),
-            ""
-            + "var fn = _.popRes();\n"
-            + "_.pushTtfn( fn );\n"
-        );
-        
     } else if ( em = getMatch( expr.term, [ lit( "sfn" ),
         str( "arg" ), "argType", "argVal", "resultVal" ] ) ) {
         
@@ -1394,15 +1291,6 @@ function compileTermToSyncJsFull( expr ) {
         + "    } );\n"
         + "    fn.go( _ );\n"
         + "};\n"
-        + "_.pushTtfn = function ( fn ) {\n"
-        + "    var newEnv = fn.lexEnv;\n"
-        + "    var oldEnv = _.env;\n"
-        + "    _.env = newEnv;\n"
-        + "    _.pushInst( function ( _ ) {\n"
-        + "        _.env = oldEnv;\n"
-        + "    } );\n"
-        + "    fn.go( _ );\n"
-        + "};\n"
         + "\n"
         + compileTermToSyncJs( expr )
         + "\n"
@@ -1506,21 +1394,21 @@ var builtins = strMap();
             knownIsSyntax: { val: true },
             knownNickname:
                 nickname === null ? null : { val: nickname },
-            knownType: null,
-            knownVal: null
+            knownPolyType: null,
+            knownPolyVal: null
         } );
     }
     function addBuiltinVal( key, type, val ) {
         if ( !(isWfKey( key )
-            && isWfTerm( type.term ) && checkIsType( type )
-            && isWfTerm( val.term )
-            && checkInhabitsType( val, type )) )
+            && isWfPolyTerm( type.term ) && checkIsPolyType( type )
+            && isWfPolyTerm( val.term )
+            && checkInhabitsPolyType( val, type )) )
             throw new Error();
         builtins.set( stringifyKey( key ), {
             knownIsSyntax: null,
             knownNickname: null,
-            knownType: { val: type },
-            knownVal: { val: val }
+            knownPolyType: { val: type },
+            knownPolyVal: { val: val }
         } );
     }
     // TODO: Use a real identity rather than [ "everyone" ].
@@ -1842,15 +1730,21 @@ var builtins = strMap();
             }
         } );
         addEraVal( "kitchenSinkUnType", tagName + "tosink",
-            [ "tfa", "_", innerTypeTerm, [ "sink" ] ],
-            [ "tfn", "val", innerTypeTerm, [ toSink, "val" ] ] );
+            [ "polytermunit",
+                [ "tfa", "_", innerTypeTerm, [ "sink" ] ] ],
+            [ "polytermunit",
+                [ "tfn", "val", innerTypeTerm,
+                    [ toSink, "val" ] ] ] );
         addEraVal( "kitchenSinkUnType", "sinkto" + tagName,
-            [ "tfa", "_", [ "sink" ],
-                [ "sfa", "case", [ "bool" ],
-                    [ "ift", "case",
-                        innerTypeTerm,
-                        [ "unittype" ] ] ] ],
-            [ "tfn", "sink", [ "sink" ], [ fromSink, "sink" ] ] );
+            [ "polytermunit",
+                [ "tfa", "_", [ "sink" ],
+                    [ "sfa", "case", [ "bool" ],
+                        [ "ift", "case",
+                            innerTypeTerm,
+                            [ "unittype" ] ] ] ] ],
+            [ "polytermunit",
+                [ "tfn", "sink", [ "sink" ],
+                    [ fromSink, "sink" ] ] ] );
     }
     
     
@@ -1891,14 +1785,6 @@ var builtins = strMap();
         [ str( "arg" ), "argType", sub( "result", "arg" ) ] );
     addTerm( "deductive", "tcall", [
         str( "argName" ), "argType", sub( "resultType", "argName" ),
-        "fn", "argVal"
-    ] );
-    addEasyType( "deductive", "ttfa",
-        [ str( "arg" ), sub( "resultType", "arg" ) ] );
-    addEasyTerm( "deductive", "ttfn",
-        [ str( "arg" ), sub( "result", "arg" ) ] );
-    addTerm( "deductive", "ttcall", [
-        str( "argName" ), sub( "resultType", "argName" ),
         "fn", "argVal"
     ] );
     addEasyType( "deductive", "sfa",
@@ -1945,35 +1831,44 @@ var builtins = strMap();
     addEasyTerm( "partiality", "zfixpartial",
         [ "terminationType", "thunkToThunk" ] );
     addEraVal( "partiality", "unitpartial",
-        [ "ttfa", "a", [ "tfa", "_", "a", [ "partialtype", "a" ] ] ],
-        [ "ttfn", "a",
-            [ "tfn", "result", "a",
-                [ "zunitpartial", "a", "result" ] ] ] );
+        [ "polytermforall", "a",
+            [ "polytermunit",
+                [ "tfa", "_", "a", [ "partialtype", "a" ] ] ] ],
+        [ "polytermforall", "a",
+            [ "polytermunit",
+                [ "tfn", "result", "a",
+                    [ "zunitpartial", "a", "result" ] ] ] ] );
     addEraVal( "partiality", "bindpartial",
-        [ "ttfa", "a",
-            [ "ttfa", "b",
-                [ "tfa", "_", [ "partialtype", "a" ],
-                    [ "tfa", "_",
-                        [ "tfa", "_", "a", [ "partialtype", "b" ] ],
-                        [ "partialtype", "b" ] ] ] ] ],
-        [ "ttfn", "a",
-            [ "ttfn", "b",
-                [ "tfn", "thunkA", [ "partialtype", "a" ],
-                    [ "tfn", "aToThunkB",
-                        [ "tfa", "_", "a", [ "partialtype", "b" ] ],
-                        [ "zbindpartial", "a", "b",
-                            "thunkA", "aToThunkB" ] ] ] ] ] );
+        [ "polytermforall", "a",
+            [ "polytermforall", "b",
+                [ "polytermunit",
+                    [ "tfa", "_", [ "partialtype", "a" ],
+                        [ "tfa", "_",
+                            [ "tfa", "_", "a",
+                                [ "partialtype", "b" ] ],
+                            [ "partialtype", "b" ] ] ] ] ] ],
+        [ "polytermforall", "a",
+            [ "polytermforall", "b",
+                [ "polytermunit",
+                    [ "tfn", "thunkA", [ "partialtype", "a" ],
+                        [ "tfn", "aToThunkB",
+                            [ "tfa", "_", "a",
+                                [ "partialtype", "b" ] ],
+                            [ "zbindpartial", "a", "b",
+                                "thunkA", "aToThunkB" ] ] ] ] ] ] );
     addEraVal( "partiality", "fixpartial",
-        [ "ttfa", "a",
-            [ "tfa", "_",
-                [ "tfa", "_", [ "partialtype", "a" ],
-                    [ "partialtype", "a" ] ],
-                [ "partialtype", "a" ] ] ],
-        [ "ttfn", "a",
-            [ "tfn", "thunkToThunk",
-                [ "tfa", "_", [ "partialtype", "a" ],
-                    [ "partialtype", "a" ] ],
-                [ "zfixpartial", "a", "thunkToThunk" ] ] ] );
+        [ "polytermforall", "a",
+            [ "polytermunit",
+                [ "tfa", "_",
+                    [ "tfa", "_", [ "partialtype", "a" ],
+                        [ "partialtype", "a" ] ],
+                    [ "partialtype", "a" ] ] ] ],
+        [ "polytermforall", "a",
+            [ "polytermunit",
+                [ "tfn", "thunkToThunk",
+                    [ "tfa", "_", [ "partialtype", "a" ],
+                        [ "partialtype", "a" ] ],
+                    [ "zfixpartial", "a", "thunkToThunk" ] ] ] ] );
     // TODO: Come up with a shorter name than
     // "imperativePartialComputation".
     addEasyType( "imperativePartialComputation", "impartialtype", [
@@ -1995,11 +1890,13 @@ var builtins = strMap();
     addTerm( "staticallyGeneratedDynamicToken", "ztokenequals",
         [ "a", "b" ] );
     addEraVal( "staticallyGeneratedDynamicToken", "tokenequals",
-        [ "tfa", "_", [ "tokentype" ],
-            [ "tfa", "_", [ "tokentype" ], [ "bool" ] ] ],
-        [ "tfn", "a", [ "tokentype" ],
-            [ "tfn", "b", [ "tokentype" ],
-                [ "ztokenequals", "a", "b" ] ] ] );
+        [ "polytermunit",
+            [ "tfa", "_", [ "tokentype" ],
+                [ "tfa", "_", [ "tokentype" ], [ "bool" ] ] ] ],
+        [ "polytermunit",
+            [ "tfn", "a", [ "tokentype" ],
+                [ "tfn", "b", [ "tokentype" ],
+                    [ "ztokenequals", "a", "b" ] ] ] ] );
     addEasyType( "kitchenSinkUnType", "sink", [] );
     addSinkTag( "token", [ "tokentype" ] );
     addSinkTag( "pfn",

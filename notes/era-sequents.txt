@@ -86,22 +86,15 @@
 // Our inference rules always universally quanify over a context of
 // preexisting facts, and their entailments always assume those facts.
 
-// NOTE: (by Ross Angle) Currently I'm bending over backwards to avoid
-// defining a term "(type)" that represents the type of a type. It's
-// my way to avoid the intuition that the logic should support
-// (describes (type) (type)), aka "Type : Type", and become
-// inconsistent. Besides, I'm not yet convinced that "here's a type"
-// is the most interesting theorem a type object demonstrates, nor
-// that general "for all types..." quantification is a particularly
-// valuable abstraction tool (even though we use it here).
+// NOTE: Currently we're bending over backwards to avoid assigning a
+// type object any particular type. It's our way to avoid the
+// intuition that the logic should support (describes (type) (type)),
+// aka "Type : Type", and become inconsistent.
 
 // ift: if type
 // tfa: total for-all
 // tfn: total function
 // tcall: total call
-// ttfa: total type for-all
-// ttfn: total type function (a function that takes types to values)
-// ttcall: total type call
 // sfa: sigma for-all
 // sfn: sigma function (i.e. a dependent pair)
 // fst: first (of an sfn)
@@ -136,10 +129,6 @@ Term ::=| "(" "if" Term Arg Term Term Term ")"
 Term ::=| "(" "tfa" Arg Term Term ")"
 Term ::=| "(" "tfn" Arg Term Term ")"
 Term ::=| "(" "tcall" Arg Term Term Term Term ")"
-// Total functions from type to value
-Term ::=| "(" "ttfa" Arg Term ")"
-Term ::=| "(" "ttfn" Arg Term ")"
-Term ::=| "(" "ttcall" Arg Term Term Term ")"
 // Strong Sigma type
 Term ::=| "(" "sfa" Arg Term Term ")"
 Term ::=| "(" "sfn" Arg Term Term Term ")"
@@ -215,18 +204,6 @@ Term ::=| "(" "maybe" Term ")"  // short for (either term (unittype))
 ~~>
 y[ xExample ]
 
-// Introduce (ttfn ...) and (ttfa ...).
-(istype x) |- (istype yType[ x ]), (describes yType[ x ] y[ x ])
----
-(istype (ttfa ^x yType[ x ]))
-(describes (ttfa ^x yType[ x ]) (ttfn ^x y[ x ]))
-
-// Eliminate (ttfa ...) and introduce (ttcall ...).
-(describes (ttfa ^x yType[ x ]))
-(istype xExample)
----
-(describes yType[ xExample ] (ttcall ^x yType[ x ] f xExample))
-
 // Eliminate (ift ...) and (true).
 (ift (true) then else)
 ~~>
@@ -246,11 +223,6 @@ then
 (if (false) ^c resultType[ c ] then else)
 ~~>
 else
-
-// Eliminate (ttfn ...) and (ttcall ...).
-(ttcall ^x yType[ x ] (ttfn ^x y[ x ]) xExample)
-~~>
-y[ xExample ]
 
 // Introduce (sfa ...) and (sfn ...).
 (istype x1) |- (istype yType[ x1 ])
@@ -408,23 +380,6 @@ in
         ao[ ax ] (tcall ^x ai ao[ x ] a ax)
         bo[ bx ] (tcall ^x bi bo[ x ] b bx)))))
 
-(coerce (ttfa ^x ao[ x ]) (ttfa ^x bo[ x ]) pf orig)
-~~>
-(ttfn ^x
-  (ttcall ^x2 (subtype ao[ x2 ] bo[ x2 ]) pf x)
-  (ttcall ^x2 ao[ x2 ] orig x))
-
-(subtype (ttfa ^x ao[ x ]) (ttfa ^x bo[ x ]))
-~~>
-(ttfa ^x (subtype ao[ x ] bo[ x ]))
-
-(subval (ttfa ^x ao[ x ]) a (ttfa ^x bo[ x ]) b)
-~~>
-(ttfa ^x
-  (subval
-    ao[ x ] (ttcall ^x2 ao[ x2 ] a x)
-    bo[ x ] (ttcall ^x2 bo[ x2 ] b x)))
-
 (coerce (sfa ^x ai ao[ x ]) (sfa ^x bi bo[ x ]) pf orig)
 ~~>
 let
@@ -495,12 +450,18 @@ Term ::=| "<hiddenCode>"
 //
 // Depends on the action fragment.
 
-// NOTE: Right now, the (ttfa ...) type provides impredicative
-// polymorphism, and it's difficult to add phantom types or other
-// type-hiding tools without introducing the potential for
-// nontermination. So we're going to drop (ttfa ...) and handle type
-// parameters as a feature of exports and imports (knowledge queries),
-// rather than as a feature of types.
+// NOTE: At one point, we had a (ttfa ...) type ("total type for all")
+// for a function that took a type as its parameter. Unfortunately,
+// this impredicative polymorphism made it difficult to add phantom
+// types or other type-hiding tools without introducing the potential
+// for nontermination. If we use (mytype) as a wrapper for
+// (ttfa ^a (tfa ^_ a a)), we can instantiate the contents as
+// (tfa ^_ (mytype) (mytype)) and thereby pass a function to itself.
+//
+// So we dropped (ttfa ...) and introduced this more intricate system
+// of predicative polymorphism. Abstract type variables are a feature
+// of exports (user actions) and imports (knowledge queries), rather
+// than a feature local to type expressions.
 
 
 // == Grammar ==
@@ -660,10 +621,6 @@ you @ (describesquery xType (defined myKey yourKey xType))
 // ===== Local collaborative phantom type fragment ===================
 //
 // Depends on the local collaboration fragment.
-//
-// TODO: If this wraps a (tfa ...), we can get nontermination! We
-// should either stop using that impredicative type, abandon this
-// fragment idea, or think outside the box some more.
 
 
 // == Grammar ==
@@ -933,18 +890,21 @@ Term ::=| "(" "zfixpartial" Term Term ")"
 
 // == Built-in module exports ==
 
-unitpartial : (ttfa ^a (tfa ^_ a (partialtype a)))
+unitpartial :
+  (polytermforall ^a (polytermunit (tfa ^_ a (partialtype a))))
 
 bindpartial :
-  (ttfa ^a
-    (ttfa ^b
-      (tfa ^_ (partialtype a)
-        (tfa ^_ (tfa ^_ a (partialtype b)) (partialtype b)))))
+  (polytermforall ^a
+    (polytermforall ^b
+      (polytermunit
+        (tfa ^_ (partialtype a)
+          (tfa ^_ (tfa ^_ a (partialtype b)) (partialtype b))))))
 
 fixpartial :
-  (ttfa ^a
-    (tfa ^_ (tfa ^_ (partialtype a) (partialtype a))
-      (partialtype a)))
+  (polytermforall ^a
+    (polytermunit
+      (tfa ^_ (tfa ^_ (partialtype a) (partialtype a))
+        (partialtype a))))
 
 
 
@@ -1070,7 +1030,8 @@ Term ::=| "(" "ztokenequals" Term Term ")"
 
 // == Built-in module exports ==
 
-tokenequals : (tfa ^_ (tokentype) (tfa ^_ (tokentype) (bool)))
+tokenequals :
+  (polytermunit (tfa ^_ (tokentype) (tfa ^_ (tokentype) (bool))))
 
 
 
@@ -1149,26 +1110,30 @@ Term ::=| "(" "zsinktoipfn" Term ")"
 
 // == Built-in module exports ==
 
-tokentosink : (tfa ^_ (tokentype) (sink))
-sinktotoken : (tfa ^_ (sink) (maybe (tokentype)))
+tokentosink : (polytermunit (tfa ^_ (tokentype) (sink)))
+sinktotoken : (polytermunit (tfa ^_ (sink) (maybe (tokentype))))
 
 // TODO: See if we need this.
 // NOTE: "pfn" = "partial function"
-pfntosink : (tfa ^_ (tfa ^_ (sink) (partialtype (sink))) (sink))
+pfntosink :
+  (polytermunit (tfa ^_ (tfa ^_ (sink) (partialtype (sink))) (sink)))
 sinktopfn :
-  (tfa ^_ (sink) (maybe (tfa ^_ (sink) (partialtype (sink)))))
+  (polytermunit
+    (tfa ^_ (sink) (maybe (tfa ^_ (sink) (partialtype (sink))))))
 
 // NOTE: "ipfn" = "imperative partial function"
 ipfntosink :
-  (tfa ^_
-    (tfa ^_ (sink)
-      (partialtype (impartialtype ^_ (sink) (sink) (sink))))
-    (sink))
-sinktoipfn :
-  (tfa ^_ (sink)
-    (maybe
+  (polytermunit
+    (tfa ^_
       (tfa ^_ (sink)
-        (partialtype (impartialtype ^_ (sink) (sink) (sink))))))
+        (partialtype (impartialtype ^_ (sink) (sink) (sink))))
+      (sink)))
+sinktoipfn :
+  (polytermunit
+    (tfa ^_ (sink)
+      (maybe
+        (tfa ^_ (sink)
+          (partialtype (impartialtype ^_ (sink) (sink) (sink)))))))
 
 
 
