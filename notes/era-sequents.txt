@@ -182,27 +182,8 @@ Term ::=| "(" "maybe" Term ")"  // short for (either term (unittype))
 (describes resultType[ (true) ] then)
 (describes resultType[ (false) ] else)
 ---
-(describes (ift condition thenType elseType)
+(describes (ift condition resultType[ (true) ] resultType[ (false) ])
   (if condition ^c resultType[ c ] then else))
-
-// Introduce (tfn ...) and (tfa ...).
-(istype xType)
-(describes xType x)
-  |- (istype yType[ x ]), (describes yType[ x ] y[ x ])
----
-(istype (tfa ^x xType yType[ x ]))
-(describes (tfa ^x xType yType[ x ]) (tfn x ^xType y[ x ]))
-
-// Eliminate (tfa ...) and introduce (tcall ...).
-(describes (tfa ^x xType yType[ x ]) f)
-(describes xType xExample)
----
-(describes yType[ xExample ] (tcall ^x xType yType[ x ] f xExample))
-
-// Eliminate (tfn ...) and (tcall ...).
-(tcall ^x xType yType[ x ] (tfn ^x xType y[ x ]) xExample)
-~~>
-y[ xExample ]
 
 // Eliminate (ift ...) and (true).
 (ift (true) then else)
@@ -224,15 +205,34 @@ then
 ~~>
 else
 
+// Introduce (tfn ...) and (tfa ...).
+(istype xType)
+(describes xType x)
+  |- (istype yType[ x ]), (describes yType[ x ] y[ x ])
+---
+(istype (tfa ^x xType yType[ x ]))
+(describes (tfa ^x xType yType[ x ]) (tfn x ^xType y[ x ]))
+
+// Eliminate (tfa ...) and introduce (tcall ...).
+(describes (tfa ^x xType yType[ x ]) f)
+(describes xType xExample)
+---
+(describes yType[ xExample ] (tcall ^x xType yType[ x ] f xExample))
+
+// Eliminate (tfn ...) and (tcall ...).
+(tcall ^x xType yType[ x ] (tfn ^x xType y[ x ]) xExample)
+~~>
+y[ xExample ]
+
 // Introduce (sfa ...) and (sfn ...).
-(istype x1) |- (istype yType[ x1 ])
 (describes xType xVal)
+(describes xType x) |- (istype yType[ x ])
 (describes yType[ xVal ] y[ xVal ])
 ---
 (istype (sfa ^x xType yType[ x ]))
 (describes (sfa ^x xType yType[ x ]) (sfn ^x xType xVal y[ x ]))
 
-// Eliminate (sfa ...).
+// Eliminate (sfa ...) and introduce (fst ...) and (snd ...).
 (describes (sfa ^x xType yType[ x ]) s)
 ---
 (describes xType (fst ^x xType yType[ ^x ] s))
