@@ -107,7 +107,7 @@ Rule ::=| Entailment* "---" Entailment*  // deduction
 Rule ::=| Term "~~>" Term  // beta reduction
 Entailment ::=| Fact*"," "|-" Fact*","
 Fact ::=| "(" Fact ")"
-Fact ::=| UserVar "@" UserKnowledge
+Fact ::=| UserKnowledge
 UserKnowledge ::=| "(" "istype" Term ")"
 UserKnowledge ::=| "(" "describes" Term Term ")"
 Arg ::= "^" TermVar
@@ -134,7 +134,6 @@ Term ::=| "(" "sfa" Arg Term Term ")"
 Term ::=| "(" "sfn" Arg Term Term Term ")"
 Term ::=| "(" "fst" Arg Term Term Term ")"
 Term ::=| "(" "snd" Arg Term Term Term ")"
-UserVar ::= Word | "me" | "you"
 TermVar ::= Word
 // NOTE: This is the grammar of nonempty sequences of case-insensitive
 // ASCII letters. When another grammar is specified as an alternation
@@ -147,7 +146,6 @@ Term ::=| TermVar ("[" Term "]")+
 
 // Shorthands:
 Entailment ::=| Fact  // short for |- (fact)
-Fact ::=| UserKnowledge  // short for "me @ userKnowledge"
 Term ::=| "let" (Term "=" Term)* "in" Term
   // introduces other abbreviations
 Term ::=| "(" "either" Term Term ")"
@@ -430,7 +428,7 @@ in
 // A root node:
 MODULE ::= UserAction*
 
-Fact ::=| UserVar "@!" UserAction
+Fact ::=| "!!" UserAction
 // NOTE: This is a user's knowledge that they have the choice to
 // perform an action.
 UserKnowledge ::=| "(" "can" UserAction ")"
@@ -610,11 +608,12 @@ KnolQuery ::=| "(" "defined" Key Term PolyTerm ")"
 (can (define myKey yourKey xType x))
 
 // Introduce (defined ...).
-you @ (public myKey)
-you @ (secret yourKey)
-you @ (polyistype xType)
+// NOTE: This rule happens on the "you" side.
+(public myKey)
+(secret yourKey)
+(polyistype xType)
 ---
-you @ (describesquery xType (defined myKey yourKey xType))
+(describesquery xType (defined myKey yourKey xType))
 
 
 
@@ -646,7 +645,7 @@ Term ::=| "(" "wrapper" Term ")"
 (can (definewrapper by innerType))
 
 // Eliminate (definewrapper ...) and introduce (witheachwrapper ...).
-me @! (definewrapper by innerType)
+!! (definewrapper by innerType)
 (secret by)
 (istype innerType)
 (describes (tfa ^_ innerType (wrapper by)) wrap),
@@ -723,8 +722,7 @@ Term ::=| "(" "extend" Term Term ")"
   (startsum myKey ^x accum[ x ] seedParts ^e seedImplementation[ e ]))
 
 // Eliminate (startsum ...) and introduce (witheachstartsum ...).
-me @!
-  (startsum myKey ^x accum[ x ] seedParts ^e seedImplementation[ e ])
+!! (startsum myKey ^x accum[ x ] seedParts ^e seedImplementation[ e ])
 (describes (tfa ^_ seedParts (sumpart myKey)) sumExt),
   (describes (tfa ^_ (sumpart myKey) (maybe seedParts)) sumExtElim),
   (describes accum[ (sumpart mykey) ] sumOut)
@@ -745,8 +743,7 @@ me @!
 // order to make certain kinds of extension invariants possible to
 // enforce.
 //
-me @!
-  (startsum myKey ^x accum[ x ] seedParts ^e seedImplementation[ e ])
+!! (startsum myKey ^x accum[ x ] seedParts ^e seedImplementation[ e ])
 (public yourKey)
 ---
 (can (youcanextendsum myKey yourKey ^x accum[ x ]))
@@ -765,39 +762,39 @@ me @!
 // type. If we let (subtype ...) be computationally relevant,
 // extend[ e ] could just be a (subtype ...) proof.
 //
-me @! (youcanextendsum myKey yourKey x1 accum[ x1 ])
-you @ (public myKey)
-you @ (secret yourKey)
-you @ (istype myParts)
-(you @ (istype x2)) |- (you @ (istype accum[ x2 ]))
-(you @ (istype e1)), (you @ (extensible e1)) |-
-  (you @
-    let
-      xParts = (extendtype (sumpart myKey) e1)
-      yParts = (extendtype myParts xParts)
-    in
-    (describes
-      (tfa ^x accum[ xParts ]
-        (sfa ^y accum[ yParts ]
-          (subval accum[ xParts ] x accum[ yParts ] y)))
-      extend[ e1 ]))
+// NOTE: This rule happens on the "you" side.
+//
+!! (youcanextendsum myKey yourKey x1 accum[ x1 ])
+(public myKey)
+(secret yourKey)
+(istype myParts)
+(istype x2) |- (istype accum[ x2 ])
+(istype e1), (extensible e1)
+  |- let
+    xParts = (extendtype (sumpart myKey) e1)
+    yParts = (extendtype myParts xParts)
+  in
+  (describes
+    (tfa ^x accum[ xParts ]
+      (sfa ^y accum[ yParts ]
+        (subval accum[ xParts ] x accum[ yParts ] y)))
+    extend[ e1 ])
 ---
-you @ (can (extendsum myKey yourKey myParts ^e extend[ e ]))
+(can (extendsum myKey yourKey myParts ^e extend[ e ]))
 
 // Eliminate (extendsum ...) and introduce (witheachextendsum ...).
-you @! (extendsum myKey yourKey myParts ^e extend[ e ])
-you @ (public myKey)
-you @ (secret yourKey)
-you @ (istype myParts)
-(you @ (describes (tfa ^_ myParts (sumpart myKey)) sumExt)),
-  (you @
-    (describes (tfa ^_ (sumpart myKey) (maybe myParts)) sumExtElim))
-  |- (you @ (can act[ sumExt ][ sumExtElim ]))
+// NOTE: This rule happens on the "you" side.
+!! (extendsum myKey yourKey myParts ^e extend[ e ])
+(public myKey)
+(secret yourKey)
+(istype myParts)
+(describes (tfa ^_ myParts (sumpart myKey)) sumExt),
+  (describes (tfa ^_ (sumpart myKey) (maybe myParts)) sumExtElim)
+  |- (can act[ sumExt ][ sumExtElim ])
 ---
-you @
-  (can
-    (witheachextendsum ^sumExt ^sumExtElim myKey yourKey myParts
-      act[ sumExt ][ sumExtElim ]))
+(can
+  (witheachextendsum ^sumExt ^sumExtElim myKey yourKey myParts
+    act[ sumExt ][ sumExtElim ]))
 
 // Introduce #Extend, #stoe, #etos, and #extend.
 (istype myParts)
