@@ -609,7 +609,7 @@ KnolQuery ::=| "(" "defined" Key Term PolyTerm PolyInst Term ")"
 // NOTE: This rule happens on the "you" side.
 (public myKey)
 (secret yourKey)
-(describesint polyType polyInst finalType)
+(describesinst polyType polyInst finalType)
 ---
 (describesquery finalType
   (defined myKey yourKey polyType polyInst finalType))
