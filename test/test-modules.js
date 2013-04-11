@@ -782,7 +782,7 @@ addShouldThrowUnitTest( function () {
     var pubk = [ "everyone" ];
     var polyTerm = [ "polytermunit", vari ];
     var polyInst = [ "polyinstunit" ];
-    var query = [ "defined", pubk, vari, polyTerm ];
+    var query = [ "defined", pubk, vari, polyTerm, polyInst, vari ];
     
     add( false, vari );
     add( false, true );
@@ -806,9 +806,9 @@ addShouldThrowUnitTest( function () {
     add( false, [ "describesinst", polyTerm, true, vari ] );
     add( false, [ "describesinst", polyTerm, polyInst, true ] );
     
-    add( true, [ "describesquery", polyTerm, query ] );
+    add( true, [ "describesquery", vari, query ] );
     add( false, [ "describesquery", true, query ] );
-    add( false, [ "describesquery", polyTerm, true ] );
+    add( false, [ "describesquery", vari, true ] );
     
     add( true, [ "public", [ "everyone" ] ] );
     add( false, [ "public", true ] );
@@ -1080,29 +1080,36 @@ addShouldThrowUnitTest( function () {
     var vari = "x";
     var pubk = [ "everyone" ];
     var polyTerm = [ "polytermunit", vari ];
+    var polyInst = [ "polyinstunit" ];
+    var typeTerm = [ "unittype" ];
     
     add( false, vari );
     add( false, true );
     
-    add( true, [ "defined", pubk, vari, polyTerm ] );
-    add( false, [ "defined", true, vari, polyTerm ] );
-    add( false, [ "defined", pubk, true, polyTerm ] );
-    add( false, [ "defined", pubk, vari, true ] );
+    add( true,
+        [ "defined", pubk, vari, polyTerm, polyInst, typeTerm ] );
+    add( false,
+        [ "defined", true, vari, polyTerm, polyInst, typeTerm ] );
+    add( false,
+        [ "defined", pubk, true, polyTerm, polyInst, typeTerm ] );
+    add( false, [ "defined", pubk, vari, true, polyInst, typeTerm ] );
+    add( false, [ "defined", pubk, vari, polyTerm, true, typeTerm ] );
+    add( false, [ "defined", pubk, vari, polyTerm, polyInst, true ] );
     
     add( false, [ "nonexistentSyntax", "a", "b", "c" ] );
 })();
 
 (function () {
-    function add( expected, env, polyType, knolQuery ) {
+    function add( expected, env, type, knolQuery ) {
         addPredicateUnitTest( function ( then ) {
             then( {
                 knol: { env: env, term:
-                    [ "describesquery", polyType, knolQuery ] },
-                polyType: { env: env, term: polyType },
+                    [ "describesquery", type, knolQuery ] },
+                type: { env: env, term: type },
                 knolQuery: { env: env, term: knolQuery }
             }, function ( args ) {
-                if ( expected !== checkDescribesQuery(
-                    args.polyType, args.knolQuery ) )
+                if ( expected !==
+                    checkDescribesQuery( args.type, args.knolQuery ) )
                     return false;
                 if ( expected !==
                     checkUserKnowledge( strMap(), args.knol ) )
@@ -1124,17 +1131,19 @@ addShouldThrowUnitTest( function () {
     var unit = [ "unit" ];
     var ptut = [ "polytermunit", unitType ];
     
-    add( true, env, ptut, [ "defined", [ "everyone" ], "me", ptut ] );
+    add( true, env, unitType,
+        [ "defined", [ "everyone" ], "me",
+            ptut, [ "polyinstunit" ], unitType ] );
     
     addShouldThrowUnitTest( function () {
-        return checkDescribesQuery( { env: _env, term: ptut }, {
-            env: _env,
+        return checkDescribesQuery( { env: env, term: unitType }, {
+            env: env,
             term: [ "nonexistentSyntax", "a", "b", "c" ]
         } );
     } );
     addShouldThrowUnitTest( function () {
-        return checkDescribesInst( { env: _env, term: ptut }, {
-            env: _env,
+        return checkDescribesInst( { env: env, term: unitType }, {
+            env: env,
             term: !"a boolean rather than a nested Array of strings"
         } );
     } );
@@ -1399,9 +1408,9 @@ addShouldThrowUnitTest( function () {
     function withEachDefinedMono(
         vari, fromKey, toKey, type, action ) {
         
-        return [ "witheachknol", vari,
-            [ "polytermunit", type ], [ "polyinstunit" ], type,
-            [ "defined", fromKey, toKey, [ "polytermunit", type ] ],
+        return [ "witheachknol", vari, type,
+            [ "defined", fromKey, toKey,
+                [ "polytermunit", type ], [ "polyinstunit" ], type ],
             action ];
     }
     

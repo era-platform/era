@@ -471,10 +471,9 @@ PolyInst ::=| "(" "polyinstforall" Term PolyInst ")"
 UserKnowledge ::=| "(" "polyistype" PolyTerm ")"
 UserKnowledge ::=| "(" "polydescribes" PolyTerm PolyTerm ")"
 UserKnowledge ::=| "(" "describesinst" PolyTerm PolyInst Term ")"
-UserKnowledge ::=| "(" "describesquery" PolyTerm KnolQuery ")"
+UserKnowledge ::=| "(" "describesquery" Term KnolQuery ")"
 UserAction ::=| "(" "witheachtype" Arg UserAction ")"
-UserAction ::=| "(" "witheachknol"
-  Arg PolyTerm PolyInst Term KnolQuery UserAction ")"
+UserAction ::=| "(" "witheachknol" Arg Term KnolQuery UserAction ")"
 
 // Only for inference rules, not code:
 PolyTerm ::=| Word ("[" Term "]")*
@@ -530,11 +529,10 @@ Term ::=| "<hiddenCode>"
 
 // Introduce (witheachknol ...).
 (istype xType)
-(describesinst polyType polyInst xType)
-(describesquery polyType query)
+(describesquery xType query)
 (describes xType x) |- (can act[ x ])
 ---
-(can (witheachknol ^x polyType polyInst xType query act[ x ]))
+(can (witheachknol ^x xType query act[ x ]))
 
 
 
@@ -595,7 +593,7 @@ WordVar ::= Word | "word"
 // == Grammar ==
 
 UserAction ::=| "(" "define" Term Key Term Term ")"
-KnolQuery ::=| "(" "defined" Key Term PolyTerm ")"
+KnolQuery ::=| "(" "defined" Key Term PolyTerm PolyInst Term ")"
 
 
 // == Inference rules ==
@@ -611,9 +609,10 @@ KnolQuery ::=| "(" "defined" Key Term PolyTerm ")"
 // NOTE: This rule happens on the "you" side.
 (public myKey)
 (secret yourKey)
-(polyistype xType)
+(describesint polyType polyInst finalType)
 ---
-(describesquery xType (defined myKey yourKey xType))
+(describesquery finalType
+  (defined myKey yourKey polyType polyInst finalType))
 
 
 

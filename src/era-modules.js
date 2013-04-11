@@ -1950,9 +1950,9 @@ function isWfUserKnowledge( term ) {
             isWfTerm( em.val.get( "type" ) );
         
     } else if ( em = getMatch( term,
-        [ lit( "describesquery" ), "polyType", "knolQuery" ] ) ) {
+        [ lit( "describesquery" ), "type", "knolQuery" ] ) ) {
         
-        return isWfPolyTerm( em.val.get( "polyType" ) ) &&
+        return isWfTerm( em.val.get( "type" ) ) &&
             isWfKnolQuery( em.val.get( "knolQuery" ) );
         
     } else if ( em = getMatch( term, [ lit( "public" ), "key" ] ) ) {
@@ -2013,10 +2013,10 @@ function checkUserKnowledge( keyring, expr ) {
             eget( "polyTerm" ), eget( "polyInst" ), eget( "type" ) );
         
     } else if ( em = getMatch( expr.term,
-        [ lit( "describesquery" ), "polyType", "knolQuery" ] ) ) {
+        [ lit( "describesquery" ), "type", "knolQuery" ] ) ) {
         
         return checkDescribesQuery(
-            eget( "polyType" ), eget( "knolQuery" ) );
+            eget( "type" ), eget( "knolQuery" ) );
         
     } else if ( em = getMatch( expr.term,
         [ lit( "public" ), "key" ] ) ) {
@@ -2286,22 +2286,25 @@ function isWfKnolQuery( term ) {
     var getMatch = patternLang.getMatch;
     
     var em;
-    if ( em = getMatch( term, [ lit( "defined" ),
-        "yourPubKey", "myPrivKey", "polyType" ] ) ) {
+    if ( em = getMatch( term,
+        [ lit( "defined" ), "yourPubKey", "myPrivKey",
+            "polyType", "polyInst", "finalType" ] ) ) {
         
         // TODO: While `myPrivKey` is a term, it also can't be
         // anything but a variable reference. See if we should check
         // that here or just leave it to checkDescribesQuery().
         return isWfKey( em.val.get( "yourPubKey" ) ) &&
             isWfTerm( em.val.get( "myPrivKey" ) ) &&
-            isWfPolyTerm( em.val.get( "polyType" ) );
+            isWfPolyTerm( em.val.get( "polyType" ) ) &&
+            isWfPolyInst( em.val.get( "polyInst" ) ) &&
+            isWfTerm( em.val.get( "finalType" ) );
     } else {
         // TODO: Handle more language fragments.
         return false;
     }
 }
 
-function checkDescribesQuery( polyType, knolQuery ) {
+function checkDescribesQuery( type, knolQuery ) {
     var lit = patternLang.lit;
     var str = patternLang.str;
     var getMatch = patternLang.getMatch;
@@ -2321,8 +2324,9 @@ function checkDescribesQuery( polyType, knolQuery ) {
         );
     }
     
-    if ( em = getMatch( knolQuery.term, [ lit( "defined" ),
-        "yourPubKey", "myPrivKey", "polyType" ] ) ) {
+    if ( em = getMatch( knolQuery.term,
+        [ lit( "defined" ), "yourPubKey", "myPrivKey",
+            "polyType", "polyInst", "finalType" ] ) ) {
         
         return (true
             // TODO: See if we should write a global checkPublicKey()
@@ -2331,7 +2335,10 @@ function checkDescribesQuery( polyType, knolQuery ) {
             && isWfKey( em.val.get( "yourPubKey" ) )
             && checkPrivKey( "myPrivKey" )
             && checkIsPolyType( eget( "polyType" ) )
-            && knownEqualPoly( eget( "polyType" ), polyType )
+            && checkIsType( eget( "finalType" ) )
+            && checkDescribesInst( eget( "polyType" ),
+                eget( "polyInst" ), eget( "finalType" ) )
+            && knownEqual( eget( "finalType" ), type )
         );
     } else {
         // TODO: Handle more language fragments.
@@ -2416,13 +2423,10 @@ function isWfUserAction( term ) {
         
         return isWfUserAction( em.val.get( "action" ) );
         
-    } else if ( em = getMatch( term,
-        [ lit( "witheachknol" ), str( "x" ),
-            "polyType", "polyInst", "xType", "query", "action" ] ) ) {
+    } else if ( em = getMatch( term, [ lit( "witheachknol" ),
+        str( "x" ), "xType", "query", "action" ] ) ) {
         
-        return isWfPolyTerm( em.val.get( "polyType" ) ) &&
-            isWfPolyInst( em.val.get( "polyInst" ) ) &&
-            isWfTerm( em.val.get( "xType" ) ) &&
+        return isWfTerm( em.val.get( "xType" ) ) &&
             isWfKnolQuery( em.val.get( "query" ) ) &&
             isWfUserAction( em.val.get( "action" ) );
         
@@ -2489,19 +2493,14 @@ function checkUserAction( keyring, expr ) {
             term: em.val.get( "action" )
         } );
         
-    } else if ( em = getMatch( expr.term,
-        [ lit( "witheachknol" ), str( "x" ),
-            "polyType", "polyInst", "xType", "query", "action" ] ) ) {
+    } else if ( em = getMatch( expr.term, [ lit( "witheachknol" ),
+        str( "x" ), "xType", "query", "action" ] ) ) {
         
         // TODO: See if we should beta-reduce polyType and xType.
         // (Note that we can't just call betaReduce() on polyType
         // since it isn't a term.)
-        return checkIsPolyType( eget( "polyType" ) ) &&
-            checkIsType( eget( "xType" ) ) &&
-            checkDescribesInst( eget( "polyType" ),
-                eget( "polyInst" ), eget( "xType" ) ) &&
-            checkDescribesQuery(
-                eget( "polyType" ), eget( "query" ) ) &&
+        return checkIsType( eget( "xType" ) ) &&
+            checkDescribesQuery( eget( "xType" ), eget( "query" ) ) &&
             checkUserAction( keyring, {
                 env: envWith( expr.env, em.val.get( "x" ), {
                     knownType: { val: eget( "xType" ) }
