@@ -654,7 +654,7 @@ addShouldThrowUnitTest( function () {
 //                    [ "ift", "b", [ "unittype" ], [ "bool" ] ],
 //                   "x" ] ],
 //            [ "true" ] ],
-        [ "tfn", "x", [ "unittype" ], "x" ] );
+//        [ "tfn", "x", [ "unittype" ], "x" ] );
     addTerm( true, _env, unitType,
         [ "tcall", igno, unitType, unitType,
             [ "tfn", "x", unitType, "x" ], unit ],
