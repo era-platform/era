@@ -644,6 +644,17 @@ addShouldThrowUnitTest( function () {
 //            [ "ttfn", "a", [ "tfn", "x", "a", "x" ] ],
 //            unitType ],
 //        [ "tfn", "x", unitType, "x" ] );
+    // TODO: Figure out whether we should expect true or false here.
+    // We actually get neither at the moment; we get an error.
+//    addTerm( true, _env, [ "tfa", igno, unitType, unitType ],
+//        [ "tcall",
+//            "t", [ "bool" ], [ "tfa", igno, unitType, unitType ],
+//            [ "tfn", "b", [ "bool" ],
+//                [ "tfn", "x",
+//                    [ "ift", "b", [ "unittype" ], [ "bool" ] ],
+//                   "x" ] ],
+//            [ "true" ] ],
+        [ "tfn", "x", [ "unittype" ], "x" ] );
     addTerm( true, _env, unitType,
         [ "tcall", igno, unitType, unitType,
             [ "tfn", "x", unitType, "x" ], unit ],
