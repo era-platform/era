@@ -491,8 +491,9 @@ function betaReduce( expr ) {
         ) )
             throw new Error();
         
-        var boolVal = a.env.get( a.term ).knownTokenStringifiedKey ===
-            b.env.get( b.term ).knownTokenStringifiedKey;
+        var boolVal =
+            a.env.get( a.term ).knownTokenStringifiedKey.val ===
+            b.env.get( b.term ).knownTokenStringifiedKey.val;
         return { env: strMap(), term:
             [ boolVal ? "true" : "false" ] };
     } else {
@@ -2691,7 +2692,8 @@ function classifyUserAction( context, expr ) {
             env: envWith( expr.env, em.val.get( "var" ), {
                 knownType:
                     { val: { env: strMap(), term: [ "tokentype" ] } },
-                knownTokenStringifiedKey: stringifyKey( pubKey )
+                knownTokenStringifiedKey:
+                    { val: stringifyKey( pubKey ) }
             } ),
             term: em.val.get( "action" )
         } );
