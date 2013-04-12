@@ -2618,7 +2618,7 @@ function classifyUserAction( context, expr ) {
     if ( em = getMatch( term,
         [ lit( "witheachtype" ), str( "t" ), "action" ] ) ) {
         
-        return unnestUserAction( objPlus( context, {
+        return classifyUserAction( objPlus( context, {
             polymorphicVars: context.polymorphicVars.concat(
                 [ em.val.get( "t" ) ] ),
         } ), eget( "action" ) );
@@ -2626,7 +2626,7 @@ function classifyUserAction( context, expr ) {
     } else if ( em = getMatch( expr.term, [ lit( "witheachknol" ),
         str( "x" ), "xType", "query", "action" ] ) ) {
         
-        return unnestUserAction( objPlus( context, {
+        return classifyUserAction( objPlus( context, {
             content: context.content.concat( [ {
                 type: "witheachknol",
                 varName: em.val.get( "x" ),
@@ -2638,7 +2638,7 @@ function classifyUserAction( context, expr ) {
     } else if ( em = getMatch( expr.term,
         [ lit( "withsecret" ), str( "var" ), "key", "action" ] ) ) {
         
-        return unnestUserAction( objPlus( context, {
+        return classifyUserAction( objPlus( context, {
             secrets: context.secrets.concat( [ em.val.get( "key" ) ] )
         } ), {
             env: envWith( expr.env, em.val.get( "var" ), {
@@ -2688,7 +2688,7 @@ function classifyUserAction( context, expr ) {
         
         var pubKey = expr.env.get( em.val.get( "privKey" ) ).
             knownCorrespondingPublicKey.val;
-        return unnestUserAction( context, {
+        return classifyUserAction( context, {
             env: envWith( expr.env, em.val.get( "var" ), {
                 knownType:
                     { val: { env: strMap(), term: [ "tokentype" ] } },
