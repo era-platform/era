@@ -14,6 +14,7 @@ function envWith( env, varName, varSpecifics ) {
         knownIsPrivateKey: null,
         knownIsType: null,
         knownType: null,
+        knownCorrespondingPublicKey: null,
         knownTokenStringifiedKey: null,
         knownVal: null
     }, varSpecifics ) );
@@ -2328,6 +2329,9 @@ function checkDescribesQuery( type, knolQuery ) {
         [ lit( "defined" ), "yourPubKey", "myPrivKey",
             "polyType", "polyInst", "finalType" ] ) ) {
         
+        // TODO: See if we should beta-reduce polyType or finalType.
+        // (Note that we can't just call betaReduce() on polyType
+        // since it isn't a term.)
         return (true
             // TODO: See if we should write a global checkPublicKey()
             // function. For the moment, it would always return true,
@@ -2496,9 +2500,7 @@ function checkUserAction( keyring, expr ) {
     } else if ( em = getMatch( expr.term, [ lit( "witheachknol" ),
         str( "x" ), "xType", "query", "action" ] ) ) {
         
-        // TODO: See if we should beta-reduce polyType and xType.
-        // (Note that we can't just call betaReduce() on polyType
-        // since it isn't a term.)
+        // TODO: See if we should beta-reduce xType.
         return checkIsType( eget( "xType" ) ) &&
             checkDescribesQuery( eget( "xType" ), eget( "query" ) ) &&
             checkUserAction( keyring, {
@@ -2548,6 +2550,151 @@ function checkUserAction( keyring, expr ) {
                 term: em.val.get( "action" )
             } )
         );
+        
+    } else {
+        // TODO: Handle more language fragments.
+        throw new Error();
+    }
+}
+
+// TODO: Use this. It'll be an important part of module compilation
+// and signing (since it extracts the list of signatures needed), as
+// well as dependency resolution (since it extracts the source key,
+// destination key, and polymorphism spine from each definition for
+// linear-time dependency lookup).
+//
+// TODO: Write unit tests for this.
+//
+function classifyUserAction( context, expr ) {
+    // NOTE: The `context` parameter is an object of this form:
+    // {
+    //     secrets:
+    //         <Array set (possibly with duplicates) containing public
+    //             key s-expressions>,
+    //     polymorphicVars: [ <string> * ],
+    //     content: [ {
+    //         type: "witheachknol",
+    //         varName: <string>,
+    //         varType: <type s-expression>,
+    //         query: <query s-expression>
+    //     } * ]
+    // }
+    
+    // NOTE: The return value is an object of this form...
+    // {
+    //     type: "define",
+    //     secrets:
+    //         <Array set (possibly with duplicates) containing public
+    //             key s-expressions>,
+    //     env: <StrMap environment containing only tokens>,
+    //     polymorphicVars: [ <string> * ],
+    //     myPubKey: <public key s-expression>,
+    //     yourPubKey: <public key s-expression>,
+    //     content: <content>
+    // }
+    // ...where <content> stands for this, recursively:
+    // {
+    //     type: "define",
+    //     definedType: <type s-expression>,
+    //     definedVal: <value s-expression>
+    // } or {
+    //     type: "query",
+    //     varName: <string>,
+    //     varType: <type s-expression>,
+    //     query: <query s-expression>,
+    //     content: <content>
+    // }
+    
+    var lit = patternLang.lit;
+    var str = patternLang.str;
+    var getMatch = patternLang.getMatch;
+    
+    function eget( k ) {
+        return { env: expr.env, term: em.val.get( k ) };
+    }
+    
+    var em;
+    if ( em = getMatch( term,
+        [ lit( "witheachtype" ), str( "t" ), "action" ] ) ) {
+        
+        return unnestUserAction( objPlus( context, {
+            polymorphicVars: context.polymorphicVars.concat(
+                [ em.val.get( "t" ) ] ),
+        } ), eget( "action" ) );
+        
+    } else if ( em = getMatch( expr.term, [ lit( "witheachknol" ),
+        str( "x" ), "xType", "query", "action" ] ) ) {
+        
+        return unnestUserAction( objPlus( context, {
+            content: context.content.concat( [ {
+                type: "witheachknol",
+                varName: em.val.get( "x" ),
+                varType: em.val.get( "xType" ),
+                query: em.val.get( "query" )
+            } ] )
+        } ), eget( "action" ) );
+        
+    } else if ( em = getMatch( expr.term,
+        [ lit( "withsecret" ), str( "var" ), "key", "action" ] ) ) {
+        
+        return unnestUserAction( objPlus( context, {
+            secrets: context.secrets.concat( [ em.val.get( "key" ) ] )
+        } ), {
+            env: envWith( expr.env, em.val.get( "var" ), {
+                knownIsPrivateKey: { val: true },
+                knownCorrespondingPublicKey:
+                    { val: em.val.get( "key" ) }
+            } ),
+            term: em.val.get( "action" )
+        } );
+        
+    } else if ( em = getMatch( expr.term, [ lit( "define" ),
+        "myPrivKey", "yourPubKey", "type", "val" ] ) ) {
+        
+        var myPubKey = expr.env.get( em.val.get( "myPrivKey" ) ).
+            knownCorrespondingPublicKey.val;
+        var content = {
+            type: "define",
+            definedType: em.val.get( "type" ),
+            definedVal: em.val.get( "val" )
+        };
+        for ( var i = context.content.length - 1; 0 <= i; i-- ) {
+            var entry = context.content[ i ];
+            content = {
+                type: "query",
+                varName: entry.varName,
+                varType: entry.varType,
+                query: entry.query,
+                content: content
+            };
+        }
+        return {
+            type: "define",
+            secrets: context.secrets,
+            env: getFreeVarsOfTerm( em.val.get( "type" ) ).
+                plus( getFreeVarsOfTerm( em.val.get( "val" ) ) ).
+                map( function ( truth, varName ) {
+                    return expr.env.get( varName );
+                } ),
+            polymorphicVars: context.polymorphicVars,
+            myPubKey: myPubKey,
+            yourPubKey: em.val.get( "yourPubKey" ),
+            content: content
+        };
+        
+    } else if ( em = getMatch( expr.term, [ lit( "withtoken" ),
+        str( "var" ), "privKey", "action" ] ) ) {
+        
+        var pubKey = expr.env.get( em.val.get( "privKey" ) ).
+            knownCorrespondingPublicKey.val;
+        return unnestUserAction( context, {
+            env: envWith( expr.env, em.val.get( "var" ), {
+                knownType:
+                    { val: { env: strMap(), term: [ "tokentype" ] } },
+                knownTokenStringifiedKey: stringifyKey( pubKey )
+            } ),
+            term: em.val.get( "action" )
+        } );
         
     } else {
         // TODO: Handle more language fragments.
