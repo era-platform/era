@@ -2567,42 +2567,40 @@ function checkUserAction( keyring, expr ) {
 // TODO: Write unit tests for this.
 //
 function classifyUserAction( context, expr ) {
-    // NOTE: The `context` parameter is an object of this form:
-    // {
+    // NOTE:
+    // <the context parameter> ::= {
     //     secrets:
     //         <Array set (possibly with duplicates) containing public
     //             key s-expressions>,
-    //     polymorphicVars: [ <string> * ],
-    //     content: [ {
-    //         type: "witheachknol",
-    //         varName: <string>,
-    //         varType: <type s-expression>,
-    //         query: <query s-expression>
-    //     } * ]
+    //     content: [ <binder> * ]
     // }
-    
-    // NOTE: The return value is an object of this form...
-    // {
+    // <binder> ::= {
+    //     type: "witheachtype",
+    //     varName: <string>
+    // } or {
+    //     type: "witheachknol",
+    //     varName: <string>,
+    //     varType: <type s-expression>,
+    //     query: <query s-expression>
+    // }
+    // <the return value> ::= {
     //     type: "define",
     //     secrets:
     //         <Array set (possibly with duplicates) containing public
     //             key s-expressions>,
     //     env: <StrMap environment containing only tokens>,
-    //     polymorphicVars: [ <string> * ],
+    //     polymorphicSpine: [ "witheachtype" * ],
     //     myPubKey: <public key s-expression>,
     //     yourPubKey: <public key s-expression>,
     //     content: <content>
     // }
-    // ...where <content> stands for this, recursively:
-    // {
+    // <content> ::= {
     //     type: "define",
     //     definedType: <type s-expression>,
     //     definedVal: <value s-expression>
     // } or {
-    //     type: "query",
-    //     varName: <string>,
-    //     varType: <type s-expression>,
-    //     query: <query s-expression>,
+    //     type: "bind",
+    //     binder: <binder>,
     //     content: <content>
     // }
     
@@ -2619,8 +2617,10 @@ function classifyUserAction( context, expr ) {
         [ lit( "witheachtype" ), str( "t" ), "action" ] ) ) {
         
         return classifyUserAction( objPlus( context, {
-            polymorphicVars: context.polymorphicVars.concat(
-                [ em.val.get( "t" ) ] ),
+            content: context.content.concat( [ {
+                type: "witheachtype",
+                varName: em.val.get( "t" )
+            } ] )
         } ), eget( "action" ) );
         
     } else if ( em = getMatch( expr.term, [ lit( "witheachknol" ),
@@ -2659,15 +2659,13 @@ function classifyUserAction( context, expr ) {
             definedType: em.val.get( "type" ),
             definedVal: em.val.get( "val" )
         };
+        var polymorphicSpine = [];
         for ( var i = context.content.length - 1; 0 <= i; i-- ) {
-            var entry = context.content[ i ];
-            content = {
-                type: "query",
-                varName: entry.varName,
-                varType: entry.varType,
-                query: entry.query,
-                content: content
-            };
+            var binder = context.content[ i ];
+            content =
+                { type: "bind", binder: binder, content: content };
+            if ( binder.type === "witheachtype" )
+                polymorphicSpine.push( "witheachtype" );
         }
         return {
             type: "define",
@@ -2677,7 +2675,7 @@ function classifyUserAction( context, expr ) {
                 map( function ( truth, varName ) {
                     return expr.env.get( varName );
                 } ),
-            polymorphicVars: context.polymorphicVars,
+            polymorphicSpine: polymorphicSpine,
             myPubKey: myPubKey,
             yourPubKey: em.val.get( "yourPubKey" ),
             content: content
