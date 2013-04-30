@@ -2796,10 +2796,10 @@ function checkSpineFitsInst( spine, inst ) {
 // definition, the new module is certainly invalid. But that still
 // leaves the case where independent, distinct definitions lead to
 // well-formed dependency trees that come together to form a cycle....
-// (For instance, A=1 depends on B=2 depends on C=3, and
-// independently, A=4 depends on C=5 depends on B=6. When these two
-// definitions of A come together, the B=2 and C=5 definitions form a
-// dependency cycle.)
+// (For instance, A=1 depends on B=2, and independently, B=3 depends
+// on A=4. When these two definition families come together, the A=1
+// and B=3 definitions depend on each other (alongside their original
+// dependency candidates).)
 //
 // TODO: Use this.
 function resolveDefinitionContent( content, polyInst, actions ) {
