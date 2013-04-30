@@ -2788,6 +2788,19 @@ function checkSpineFitsInst( spine, inst ) {
 // being defined, it would become tempting to introduce a complex
 // system of constrained polymorphism over timestamps.
 //
+// Oh, here's an idea: The build result of a module contains hashes to
+// identify specific modules that will satisfy it. It must be
+// distributed with those other modules, but diamond dependencies can
+// share their ancestors rather than proliferating duplicates. If the
+// hash-identified modules at any point depend on the new module's
+// definition, the new module is certainly invalid. But that still
+// leaves the case where independent, distinct definitions lead to
+// well-formed dependency trees that come together to form a cycle....
+// (For instance, A=1 depends on B=2 depends on C=3, and
+// independently, A=4 depends on C=5 depends on B=6. When these two
+// definitions of A come together, the B=2 and C=5 definitions form a
+// dependency cycle.)
+//
 // TODO: Use this.
 function resolveDefinitionContent( content, polyInst, actions ) {
     // NOTE: The return value is
