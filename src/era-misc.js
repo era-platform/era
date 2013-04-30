@@ -17,6 +17,16 @@ function arrMap( arr, func ) {
         result.push( func( arr[ i ], i ) );
     return result;
 }
+// NOTE: This body takes its args as ( v, k ).
+function arrMappend( arr, func ) {
+    var result = [];
+    for ( var i = 0, n = arr.length; i < n; i++ ) {
+        var entries = func( arr[ i ], i );
+        for ( var j = 0, m = entries.length; j < m; j++ )
+            result.push( entries[ j ] );
+    }
+    return result;
+}
 function hasOwn( obj, k ) {
     return {}.hasOwnProperty.call( obj, k );
 }

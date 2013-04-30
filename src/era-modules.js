@@ -2211,12 +2211,10 @@ function knownEqualPoly( polyExprA, polyExprB, opt_boundVars ) {
 function isWfPolyInst( term ) {
     
     var lit = patternLang.lit;
-    var str = patternLang.str;
     var getMatch = patternLang.getMatch;
     
     var em;
     if ( em = getMatch( term, [ lit( "polyinstunit" ) ] ) ) {
-        
         return true;
         
     } else if ( em = getMatch( term,
@@ -2558,6 +2556,37 @@ function checkUserAction( keyring, expr ) {
     }
 }
 
+function classifyQuery( expr ) {
+    
+    var lit = patternLang.lit;
+    var str = patternLang.str;
+    var getMatch = patternLang.getMatch;
+    
+    function eget( k ) {
+        return { env: expr.env, term: em.val.get( k ) };
+    }
+    
+    var em;
+    if ( em = getMatch( expr.term,
+        [ lit( "defined" ), "yourPubKey", "myPrivKey",
+            "polyType", "polyInst", "finalType" ] ) ) {
+        
+        var toPubKey = expr.env.get( em.val.get( "myPrivKey" ) ).
+            knownCorrespondingPublicKey.val;
+        return {
+            type: "defined",
+            fromPubKey: em.val.get( "yourPubKey" ),
+            toPubKey: toPubKey,
+            definedPolyType: eget( "polyType" ),
+            definedPolyInst: eget( "polyInst" ),
+            definedType: eget( "finalType" )
+        };
+    } else {
+        // TODO: Handle more language fragments.
+        throw new Error();
+    }
+}
+
 // TODO: Use this. It'll be an important part of module compilation
 // and signing (since it extracts the list of signatures needed), as
 // well as dependency resolution (since it extracts the source key,
@@ -2581,7 +2610,7 @@ function classifyUserAction( context, expr ) {
     //     type: "witheachknol",
     //     varName: <string>,
     //     varType: <type s-expression>,
-    //     query: <query s-expression>
+    //     query: <query>
     // }
     // <the return value> ::= {
     //     type: "define",
@@ -2590,18 +2619,26 @@ function classifyUserAction( context, expr ) {
     //             key s-expressions>,
     //     env: <StrMap environment containing only tokens>,
     //     polymorphicSpine: [ "witheachtype" * ],
-    //     myPubKey: <public key s-expression>,
-    //     yourPubKey: <public key s-expression>,
-    //     content: <content>
+    //     fromPubKey: <public key s-expression>,
+    //     toPubKey: <public key s-expression>,
+    //     content: <definition content>
     // }
-    // <content> ::= {
+    // <definition content> ::= {
     //     type: "define",
     //     definedType: <type s-expression>,
     //     definedVal: <value s-expression>
     // } or {
     //     type: "bind",
     //     binder: <binder>,
-    //     content: <content>
+    //     content: <definition content>
+    // }
+    // <query> ::= {
+    //     type: "defined",
+    //     fromPubKey: <public key s-expression>,
+    //     toPubKey: <public key s-expression>,
+    //     definedPolyType: <polytype env-term pair>,
+    //     definedPolyInst: <polyinst env-term pair>,
+    //     definedType: <type env-term pair>
     // }
     
     var lit = patternLang.lit;
@@ -2631,7 +2668,7 @@ function classifyUserAction( context, expr ) {
                 type: "witheachknol",
                 varName: em.val.get( "x" ),
                 varType: em.val.get( "xType" ),
-                query: em.val.get( "query" )
+                query: classifyQuery( eget( "query" ) )
             } ] )
         } ), eget( "action" ) );
         
@@ -2652,7 +2689,7 @@ function classifyUserAction( context, expr ) {
     } else if ( em = getMatch( expr.term, [ lit( "define" ),
         "myPrivKey", "yourPubKey", "type", "val" ] ) ) {
         
-        var myPubKey = expr.env.get( em.val.get( "myPrivKey" ) ).
+        var fromPubKey = expr.env.get( em.val.get( "myPrivKey" ) ).
             knownCorrespondingPublicKey.val;
         var content = {
             type: "define",
@@ -2676,8 +2713,8 @@ function classifyUserAction( context, expr ) {
                     return expr.env.get( varName );
                 } ),
             polymorphicSpine: polymorphicSpine,
-            myPubKey: myPubKey,
-            yourPubKey: em.val.get( "yourPubKey" ),
+            fromPubKey: fromPubKey,
+            toPubKey: em.val.get( "yourPubKey" ),
             content: content
         };
         
@@ -2696,6 +2733,139 @@ function classifyUserAction( context, expr ) {
             term: em.val.get( "action" )
         } );
         
+    } else {
+        // TODO: Handle more language fragments.
+        throw new Error();
+    }
+}
+
+// TODO: Test this.
+function checkSpineFitsInst( spine, inst ) {
+    
+    var lit = patternLang.lit;
+    var getMatch = patternLang.getMatch;
+    
+    var im;
+    if ( im = getMatch( inst, [ lit( "polyinstunit" ) ] ) ) {
+        return spine.length === 0;
+        
+    } else if ( im = getMatch( inst,
+        [ lit( "polyinstforall" ), "type", "next" ] ) ) {
+        
+        return 1 <= spine.length && spine[ 0 ] === "witheachtype" &&
+            checkSpineFitsInst(
+                spine.slice( 1 ), im.val.get( "next" ) );
+    } else {
+        // TODO: Handle more language fragments.
+        return false;
+    }
+}
+
+// TODO: Prevent cycles where one UserAction queries in a way that
+// directly or indirectly matches itself. Direct self-queries will
+// currently manifest as infinite loops. Fixing this will likely
+// require a significant redesign of the collaborative value-level
+// definition fragment.
+//
+// In earlier stages of the definition design, I relied on the
+// implicit assumption that a module couldn't even be authored unless
+// two conditions were met:
+//
+// - The definitions it queried for existed already. Thus, by
+//   induction, there were no unsatisfied ancestors to attach a cycle
+//   to. This assumption can be realized if the build result of a
+//   module carries all the other modules it depends on.
+// - The definition(s) it put forward didn't conflict with existing
+//   ones. Thus it was impossible to attach a cycle to an already
+//   satisfied ancestor. This assumption is like a double-spending
+//   restriction on e-coin, so it may be appropriate in contexts where
+//   that's implementable.
+//
+// Another way we could prevent cycles is to striate definitions by
+// annotating them with a timestamp. Definitions at time T can only
+// depend on definitions at times earlier than T. Unfortunately, since
+// these timestamps would seem arbitrary with respect to the concepts
+// being defined, it would become tempting to introduce a complex
+// system of constrained polymorphism over timestamps.
+//
+// TODO: Use this.
+function resolveDefinitionContent( content, polyInst, actions ) {
+    // NOTE: The return value is
+    // [ <pair of env and trivial definition content> * ].
+    
+    if ( content.term.type === "define" ) {
+        return [ content ];
+    } else if ( content.term.type === "bind" ) {
+        if ( content.term.binder.type === "witheachtype" ) {
+            var instMatch = getMatch( polyInst.term,
+                [ lit( "polyinstforall" ), "type", "next" ] );
+            if ( !instMatch )
+                throw new Error();
+            return resolveDefinitionContent( {
+                env: envWith( content.env,
+                    content.term.binder.varName, {
+                        knownIsType: { val: true },
+                        knownVal: { val: {
+                            env: polyInst.env,
+                            term: instMatch.val.get( "type" )
+                        } },
+                    } ),
+                term: content.term.content
+            }, {
+                env: polyInst.env,
+                term: instMatch.val.get( "next" )
+            }, actions );
+        } else if ( content.term.binder.type === "witheachknol" ) {
+            var query = content.term.binder.query;
+            if ( query.type === "defined" ) {
+                var from = stringifyKey( query.fromPubKey );
+                var to = stringifyKey( query.toPubKey );
+                var results = arrMappend( actions, function ( act ) {
+                    if ( act.type === "define" ) {
+                        if ( from !== stringifyKey( act.fromPubKey ) )
+                            return [];
+                        if ( to !== stringifyKey( act.toPubKey ) )
+                            return [];
+                        if ( !checkSpineFitsInst(
+                            act.polymorphicSpine,
+                            query.definedPolyInst.term ) )
+                            return [];
+                        
+                        return arrMappend(
+                            resolveDefinitionContent( {
+                                env: act.env,
+                                term: act.content
+                            }, query.definedPolyInst, actions ),
+                            function ( subcontent ) {
+                            
+                            if ( subcontent.term.type === "define" ) {
+                                if ( !knownEqual( query.definedType,
+                                    betaReduce( {
+                                        env: subcontent.env,
+                                        term: subcontent.term.
+                                            definedType
+                                    } ) ) )
+                                    return [];
+                                return [ subcontent ];
+                            } else {
+                                // TODO: Handle more language
+                                // fragments.
+                                throw new Error();
+                            }
+                        } );
+                    } else {
+                        // TODO: Handle more language fragments.
+                        throw new Error();
+                    }
+                } );
+            } else {
+                // TODO: Handle more language fragments.
+                throw new Error();
+            }
+        } else {
+            // TODO: Handle more language fragments.
+            throw new Error();
+        }
     } else {
         // TODO: Handle more language fragments.
         throw new Error();
