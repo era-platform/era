@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<!--
+reader.html (part of Era)
+Copyright 2013 Ross Angle. Released under the MIT License.
+-->
+<title>Era reader demo</title>
+<style type="text/css">
+textarea { display: block; }
+</style>
+</head>
+<body>
+<p><a href="https://github.com/rocketnia/era">View the Era project on GitHub.</a></p>
+
+<textarea id="code" cols="80" rows="24">
+; This example is set up to read only one s-expression, so we surround
+; the code in parens.
+(
+
+; This reads as the string "foo".
+foo
+
+; This is the string "12".
+12
+
+; Strings can contain letters, numbers, and the '-' and '*'
+; punctuation characters.
+
+
+; If we uncomment this, it'll cause a parse error. Nothing uses the
+; '.' character yet.
+; .
+
+; This is the Array [ "a", "b", "c" ].
+(a b c)
+
+; The / reader macro is like ( but doesn't consume ). Thus, the
+; following is shorthand for (a b (c d)).
+(a b /c d)
+
+a(This is all a single string. The reader macro that handles string
+characters (like "a") will continue until the parens in the string are
+matched.
+)b()()c(
+    This is still the same string.
+)
+
+)
+</textarea>
+<button id="read">Read</button>
+<textarea id="result" disabled cols="80" rows="24"></textarea>
+
+<script type="text/javascript" src="../src/era-misc.js"></script>
+<script type="text/javascript" src="../src/era-reader.js"></script>
+<script type="text/javascript">"use strict";
+
+// Turns out the reader is very slow right now because it makes
+// frequent use of setTimeout() for control flow. This redefinition of
+// `defer` is hackish, but it definitely fixes the speed issue.
+var deferTrampolineEvents = [];
+defer = function ( func ) {
+    deferTrampolineEvents.push( func );
+};
+function runDeferTrampoline() {
+    while ( deferTrampolineEvents.length !== 0 )
+        deferTrampolineEvents.pop()();
+};
+
+window.onload = function () {
+    function read() {
+        var resultArea = document.getElementById( "result" );
+        reader( {
+            stream: stringStream(
+                document.getElementById( "code" ).value ),
+            readerMacros: readerMacros,
+            end: function ( $ ) {
+                $.then( { ok: false, msg: "No expression found" } );
+                runDeferTrampoline();
+            },
+            unrecognized: function ( $ ) {
+                $.then( { ok: false,
+                    msg: "Encountered an unrecognized character" } );
+                runDeferTrampoline();
+            },
+            then: function ( result ) {
+                if ( result.ok )
+                    resultArea.value =
+                        JSON.stringify( result.val, null, "    " );
+                else
+                    resultArea.value = "Error: " + result.msg;
+            }
+        } );
+        runDeferTrampoline();
+    }
+    document.getElementById( "read" ).onclick = read;
+    read();
+};
+</script>
+</body>
+</html>
