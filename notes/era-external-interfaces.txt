@@ -1,0 +1,155 @@
+era-external-interfaces.txt
+Copyright 2013 Ross Angle. Released under the MIT License.
+
+This document is an exploratory specification of the interfaces the
+Era module system will expose. This may serve as an anchor during
+whatever remains of implementation. Until now, I've known compromised
+cryptography could cause contradictions, but I haven't carefully
+considered the consequences for computational complexity, cor blimey.
+This system actually seems like a reasonable goal, although some
+complexity bounds might still be troublesome to accomplish.
+
+
+(a -> b) is a constant-time operation
+(a ~> b) is a continuous reactive behavior (esp. an RDP behavior)
+(TComp a) is a terminating computation
+(PComp a) is a potentially nonterminating computation
+QueryE, (ExportE q) are as-yet-undesigned query and response types
+QueryC, (ExportC q) are as-yet-undesigned query and response types
+QueryP, (ExportP q) are as-yet-undesigned query and response types
+
+The "establish" operations are used during mathematical proof
+verification, where termination is necessary but performance is
+optional.
+
+The "calculate" operations are used during batch processing, where the
+overall computation time is generally limited by human patience, but
+where occasional nontermination is okay for the same reason.
+
+The "proact" operations (just a working name) are used during live
+programming. Here I include small-scale live programming where a
+programmer is writing code to continuously augment their own coding
+experience, as well as large-scale live programming where a
+development team or community is writing code to continuously augment
+their always-online service offerings. I'm shooting for algorithms
+whose time-complexity at any state is O(n) in the active input, so
+that the demand-response behavior's cost is seamless with the cost of
+sending the active input across the network.
+
+
+
+zeroKnowledgeBase : KnowledgeBase
+
+establishKnowledgeBase : KnowledgeBase -> Set KnowledgeModule ->
+  TComp (KnowledgeBase, Set KnowledgeModule)
+where the resulting (Set KnowledgeModule) contains modules that
+contradicted with existing ones
+
+proactKnowledgeBase : KnowledgeBase -> Set KnowledgeModule ->
+  TComp (KnowledgeBase, Set KnowledgeModule)
+where the resulting (Set KnowledgeModule) contains modules that
+contradicted with existing ones
+where this TComp takes O(n * kUnused * kUsed) time where n is the sum
+of the sizes of the new modules, kUnused is the sum of the sizes of
+preexisting modules which don't impact this result, and kUsed is an
+arbitrary function of the sum of the sizes of the other modules
+
+establish : KnowledgeBase -> (q : QueryE) -> TComp (Maybe (ExportE q))
+
+calculate : KnowledgeBase -> (q : QueryC) -> PComp (Maybe (ExportC q))
+
+proact : KnowledgeBase -> (q : QueryP) -> TComp (Maybe (ExportP q))
+where this TComp takes O(n * kUnused * kUsed) time where n is the sum
+of the sizes of the query, kUnused is the sum of the sizes of modules
+which don't impact this result, and kUsed is an arbitrary function of
+the sum of the sizes of the other modules
+
+
+
+The `proactKnowledgeBase` and `proact` operations will be used in the
+context of a server that tracks a persistent collection of currently
+installed modules. The server can respond to demands to install or
+uninstall modules and answer queries, and it will have to deal with
+some conditions that would be unusual in a mathematical context, such
+as low memory and contradictory knowledge.
+
+Era will make it possible to avoid most petty contradictions by
+construction (and hopefully insidious logical contradictions as well),
+but it settles for making them only rare and ameliorable, not
+impossible. Currently, a petty contradiction can happen if two
+definitions exist with the same identifier and different meanings.
+Diligent authors will be able to manage cryptographic signatures for
+their definitions, so a contradiction is only likely to occur when an
+author is reckless or under attack. I expect the community to
+gravitate toward relatively few popular libraries with relatively high
+scrutiny.
+
+To avoid this issue during the semantics of a single Era query, this
+server acts as a central authority, installing modules only if it
+knows they'll be consistent with its internal modules. In contexts
+where a trusted central authority already exists, it may be feasible
+to tweak Era's semantics to take advantage of existing secure features
+like identity and e-coin. In these cases it may truly be impossible to
+construct a contradiction without first finding a flaw in the
+surrounding system.
+
+
+proactInstall : (KnowledgeBaseServer, KnowledgeModule) ~> ModuleStatus
+
+establishInstall :
+  (KnowledgeBaseServer, KnowledgeModule) ~> ModuleStatus
+
+uninstall :
+  (KnowledgeBaseServer, KnowledgeModule) ~> Maybe ModuleStatus
+
+establishQuery :
+  (KnowledgeBaseServer, (q : QueryE)) ~> Maybe (Maybe (ExportE q))
+where a result of Nothing indicates ongoing computation and a result
+of (Just Nothing) indicates search failure
+
+calculateQuery :
+  (KnowledgeBaseServer, (q : QueryC)) ~> Maybe (Maybe (ExportC q))
+where a result of Nothing indicates ongoing computation and a result
+of (Just Nothing) indicates search failure
+
+proactQuery : (KnowledgeBaseServer, (q : QueryP)) ~> Maybe (ExportP q)
+where a result of Nothing indicates search failure
+
+getModuleStatus :
+  (KnowledgeBaseServer, KnowledgeModule) ~> Maybe ModuleStatus
+
+enumerate : KnowledgeBaseServer ~> Map KnowledgeModule ModuleStatus
+
+where ModuleStatus is (StorageStatus, RemovalStatus)
+where StorageStatus is Unverified, Storing, Stored, or Contradictory
+where RemovalStatus is NotRemoving or Removing
+
+
+If we proactInstall a new module that can't be installed that quickly
+(i.e. it requires establishEnstall), then the StorageStatus is
+Unverified, and the entry disappears if we stop installing it.
+
+If we establishInstall a new module, the StorageStatus is initially
+Storing until the computation is complete and it becomes Stored or
+Contradictory.
+
+If we install a module either way, it becomes Contradictory if
+establishKnowledgeBase or proactKnowledgeBase returns it in the
+resulting (Set KnowledgeModule).
+
+An entry whose StorageStatus is Unverified, Storing, or Contradictory
+vanishes as soon as nothing is trying to install it.
+
+If we uninstall a module, it immediately vanishes unless it's
+simultaneously being installed, in which case its RemovalStatus
+becomes Removing. If both the installation and uninstallation give up
+at the same time and the module is already Stored, it remains Stored.
+
+If we're uninstalling a module that's currently Storing, then it's
+inhibited from becoming Stored or Contradictory. However, a module
+that's usable with proactInstall can go from completely absent to
+Stored or Contradictory without Storing in between, even if it's being
+installed with establishInstall.
+
+If we proactInstall and establishInstall the same module at the same
+time, then it has the same overall effect as establishInstall.
