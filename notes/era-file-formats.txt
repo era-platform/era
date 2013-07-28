@@ -1,0 +1,189 @@
+era-file-formats.txt
+Copyright 2013 Ross Angle. Released under the MIT License.
+
+To store modules in a filesystem, Era will use a binary format that
+happens to be restricted to the ASCII printable characters (0x20-0xFE)
+and ASCII line breaks (\r and \n) and is readable as text. This file
+will be structured using a lisp-like syntax for nested lists of
+symbols. In an Era file, a symbol is always a sequence of printable
+ASCII characters or newlines (\n) that begins with a lowercase letter,
+contains square brackets only if they're properly nested, and contains
+whitespace and parens only if they're inside square brackets. A symbol
+must be followed by whitespace or an end paren.
+
+When parsing a symbol (or anything else, for that matter), instances
+of \r\n or \r are parsed as though they were \n.
+
+Once the file is parsed into lists and symbols, it's parsed according
+to a more semantics-oriented grammar, described below.
+
+
+Some very rough examples:
+
+(era-v1 signed-bundle
+  (def-pubkey-everyone k1)
+  (def-bytes b1 hex[abcd])
+  (def-pubkey-derived k2 k1 b1)
+  (def-bytes b2 hex[abcd])
+  (def-signature-given s1 k2 b2)
+  (def-action a1
+    (use <pubkey> <pubkey> ...)
+    (parse <sym> <pubkey> x (x))
+    (<sym> foo))
+  (sign s1 a1))
+
+(era-v1 signable-bundle
+  (def-pubkey-everyone k1)
+  (def-bytes b1 hex[abc])
+  (def-pubkey-derived k2 k1 b1)
+  (def-signature-needed s1 k2)
+  (def-action a1
+    (use <pubkey> <pubkey> ...)
+    (parse <sym> <pubkey> x (x))
+    (<sym> foo))
+  (sign s1 a1))
+
+(era-v1 signable-action
+  (def-pubkey-everyone k1)
+  (def-bytes b1 hex[abc])
+  (def-pubkey-derived k2 k1 b1)
+  (def-signature-needed s1 k2)
+  (parse <sym> <pubkey> x (x))
+  (<sym> foo))
+
+
+The grammar:
+
+<signed-bundle> ::= (era-v1 signed-bundle <signed-bundle-decl>*)
+<signable-bundle> ::= (era-v1 signable-bundle <signable-bundle-decl>*)
+<signable-action> ::=
+  (era-v1 signable-action <signable-action-decl>* <act-expr>)
+<signed-bundle-decl> ::= <bundle-decl>
+<signed-bundle-decl> ::= (def-signature-given <sym> <sym> <sym>)
+<signable-bundle-decl> ::= <bundle-decl>
+<signable-bundle-decl> ::= <signature-needed-decl>
+<bundle-decl> ::= <def-decl>
+<bundle-decl> ::= (sign <sym> <sym>)
+<bundle-decl> ::= (def-action <sym> <def-action-decl>* <act-expr>)
+<def-action-decl> ::= (use <sym>*)
+<def-action-decl> ::= <parse-decl>
+<signable-action-decl> ::= <def-decl>
+<signable-action-decl> ::= <signature-needed-decl>
+<signable-action-decl> ::= <parse-decl>
+<parse-decl> ::= (parse <sym> <sym> <parse-arg>*)
+<parse-arg> ::= <sym>
+<parse-arg> ::= (<sym>*)
+<signature-needed-decl> ::= (def-signature-needed <sym> <sym>)
+<def-decl> ::= (def-bytes <sym> <bytes>)
+<def-decl> ::= (def-ints-mod-110000 <sym> <ints-mod-110000>)
+<def-decl> ::= (def-pubkey-everyone <sym>)
+<def-decl> ::= (def-pubkey-derived <sym> <sym> <sym>)
+<act-expr> ::= // any symbol
+<act-expr> ::= (<sym> <act-expr>*)
+<sym> ::= // a symbol matching regex /[a-z][-a-z01-9]*/
+<bytes> ::=
+  // a symbol matching regex /hex\[(?:[01-9a-fA-F]{2}|[\r\n ])*\]/
+<bytes> ::= // a symbol of the form base64[...] with base64 inside
+<ints-mod-110000> ::=
+  // "str[" <char>* "]" where <char>* contains balanced square
+  // brackets
+<char> ::= "\("  // escape sequence for [
+<char> ::= "\)"  // escape sequence for ]
+<char> ::= "\-"  // escape sequence for \
+<char> ::= "\s"  // escape sequence for space
+<char> ::= "\t"  // escape sequence for tab
+<char> ::= "\r"  // escape sequence for carriage return
+<char> ::= "\n"  // escape sequence for newline
+<char> ::= "\x[" <hexdigit>+ "]"
+  // escape sequence for any value from 0 to 10FFFF, inclusive
+<char> ::=
+  // any printable ASCII character (0x20-0x7E) except backslash
+<hexdigit> ::= // any character matching regex [01-9a-fA-F]
+
+
+The signature process:
+
+The document that's actually signed is a <signable-action> derived
+from the contents of the <signable-bundle> or <signed-bundle>, and
+then normalized.
+
+If the signature algorithm itself needs binary data, the normalized
+s-expression can be rendered with spaces in between the list elements,
+like (a (b c)). If the algorithm needs a string, it can use this
+binary representation as though it were encoded ASCII text.
+
+For def-pubkey-derived, the given signature is verified against the
+parent of this key.
+
+For def-pubkey-everyone, the given signature is verified to be an
+empty sequence of bytes.
+
+TODO: Choose a nontrivial signature algorithm. Until we have one, we
+don't actually need to do normalization at all.
+
+
+Some miscellaneous notes about signatures and normalization:
+
+- If we want to determine whether a given <signable-action> is already
+  normalized, our algorithm tan take time and space linear in the size
+  of the <signable-action>.
+
+- A <signable-action> can be constructed from a <signable-bundle> in
+  time linear in the size of the bundle.
+
+- Neither normalization, nor signature verification, nor
+  <signable-action> generation needs to refer to any user-defined Era
+  modules except for the one bundle or action it's dealing with.
+
+- Normalization acts like JavaScript minification: It removes
+  whitespace, removes some top-level dead code, and replaces all local
+  variable names with short versions. However, it doesn't do any
+  obfuscation or run time performance optimization, and it doesn't
+  choose the shortest variable names possible. In fact, it chooses
+  local variable names in a way that will hopefully make it easy for a
+  human to navigate the nested lexical scopes of a normalized program.
+
+
+The normalization process:
+
+First the normalization process removes all unused
+<signable-action-decl> nodes. Then it sorts the remaining ones as
+follows:
+
+  def-bytes
+  def-ints-mod-110000
+  def-pubkey-everyone
+  def-pubkey-derived
+  def-signature-needed
+  parse
+
+The def-bytes declarations are sorted lexicographically and
+deduplicated by contents, then given incrementing decimal output
+symbols prefixed with "d" (for "data").
+
+The def-ints-mod-110000 declarations are arranged the same way and use
+the same incrementing output symbols.
+
+The def-pubkey-everyone declarations are deduplicated into zero or
+one occurrence, then given an incrementing output symbol prefixed with
+"i" (for "identity").
+
+The def-pubkey-derived declarations may depend on each other in a DAG.
+To sort them, first the maximum independent subset is found, then that
+group is sorted lexicographically by its input symbols, deduplicated,
+and assigned "i" output symbols. This process repeats until the DAG is
+empty.
+
+The def-signature-needed declarations are sorted by their input
+symbols, deduplicated, then assigned "x" output symbols (a metaphor
+for "signature").
+
+The parse declarations are sorted by their input public key symbol,
+deduplicated, then assigned "s" output symbols (for "syntax"). Their
+<parse-arg> symbols are replaced with symbols that begin with "v" (for
+"variable").
+
+The local variables of the <act-expr> are renamed to start with "v"
+(for "variable"), and each subexpression's variables are a consecutive
+group beginning with the first variable not used by an ancestor
+expression.
