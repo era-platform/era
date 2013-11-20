@@ -15,10 +15,6 @@ textarea { display: block; }
 <p><a href="https://github.com/rocketnia/era">View the Era project on GitHub.</a></p>
 
 <textarea id="code" cols="80" rows="24">
-; This example is set up to read only one s-expression, so we surround
-; the code in parens.
-(
-
 ; This reads as the string "foo".
 foo
 
@@ -28,13 +24,13 @@ foo
 ; Strings can contain letters, numbers, and the '-' and '*'
 ; punctuation characters.
 
-
-; If we uncomment this, it'll cause a parse error. Nothing uses the
-; '.' character yet.
-; .
-
 ; This is the Array [ "a", "b", "c" ].
 (a b c)
+
+; This is the Array [ "a", "b", "c" ] in infix notation. The '.'
+; character is used for infix, not for the dotted list syntax usually
+; found in Lisp dialects.
+b .a c
 
 ; The / reader macro is like ( but doesn't consume ). Thus, the
 ; following is shorthand for (a b (c d)).
@@ -45,8 +41,6 @@ characters (like "a") will continue until the parens in the string are
 matched.
 )b()()c(
     This is still the same string.
-)
-
 )
 </textarea>
 <button id="read">Read</button>
@@ -69,14 +63,16 @@ function runDeferTrampoline() {
 };
 
 window.onload = function () {
-    function read() {
-        var resultArea = document.getElementById( "result" );
+    function read( stream, onEnd, onFailure, onSuccess ) {
         reader( {
-            stream: stringStream(
-                document.getElementById( "code" ).value ),
+            stream: stream,
             readerMacros: readerMacros,
+            infixState: { type: "empty" },
             end: function ( $ ) {
-                $.then( { ok: false, msg: "No expression found" } );
+                if ( $.infixState.type === "ready" )
+                    $.then( { ok: true, val: $.infixState.val } );
+                else
+                    onEnd();
                 runDeferTrampoline();
             },
             unrecognized: function ( $ ) {
@@ -86,16 +82,35 @@ window.onload = function () {
             },
             then: function ( result ) {
                 if ( result.ok )
-                    resultArea.value =
-                        JSON.stringify( result.val, null, "    " );
+                    onSuccess( result.val );
                 else
-                    resultArea.value = "Error: " + result.msg;
+                    onFailure( result.msg );
             }
         } );
         runDeferTrampoline();
     }
-    document.getElementById( "read" ).onclick = read;
-    read();
+    function readAll() {
+        var stream = stringStream(
+            document.getElementById( "code" ).value );
+        readNext( [] );
+        function readNext( resultsSoFar ) {
+            read( stream, function () {  // onEnd
+                show( resultsSoFar );
+            }, function ( message ) {  // onFailure
+                show( resultsSoFar.concat(
+                    [ "Error: " + message ] ) );
+            }, function ( result ) {  // onSuccess
+                readNext( resultsSoFar.concat(
+                    [ JSON.stringify( result, null, "    " ) ] ) );
+            } );
+        }
+        function show( results ) {
+            document.getElementById( "result" ).value =
+                results.join( "\n" );
+        }
+    }
+    document.getElementById( "read" ).onclick = readAll;
+    readAll();
 };
 </script>
 </body>

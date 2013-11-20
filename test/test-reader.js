@@ -8,8 +8,12 @@ addNaiveIsoUnitTest( function ( then ) {
         stream: stringStream(
             " (woo;comment\n b (c( woo( ) string) / x//)/())" ),
         readerMacros: readerMacros,
+        infixState: { type: "empty" },
         end: function ( $ ) {
-            $.then( { ok: false, msg: "Reached the end" } );
+            if ( $.infixState.type === "ready" )
+                $.then( { ok: true, val: $.infixState.val } );
+            else
+                $.then( { ok: false, msg: "Reached the end" } );
         },
         unrecognized: function ( $ ) {
             $.then( { ok: false, msg: "Unrecognized char" } );
