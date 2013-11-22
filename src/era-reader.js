@@ -47,11 +47,17 @@ function addReaderMacros( readerMacros, string, func ) {
     for ( var i = 0, n = string.length; i < n; i++ )
         readerMacros.set( string.charAt( i ), func );
 }
-function thenIfInfix( $ ) {
-    if ( $.infixState.type !== "ready" )
-        return false;
-    $.then( { ok: true, val: $.infixState.val } );
-    return true;
+function bankInfix( $ ) {
+    var result = $.infixState.type === "ready";
+    if ( result )
+        $.then( { ok: true, val: $.infixState.val } );
+    return result;
+}
+function bankCommand( $ ) {
+    var result = $.list === void 0 && $.infixState.type === "ready";
+    if ( result )
+        $.then( { ok: true, val: $.infixState.val } );
+    return result;
 }
 function continueInfix( $, val ) {
     if ( $.infixState.type === "empty" ) {
@@ -85,7 +91,7 @@ function readListUntilParen( $, consumeParen ) {
             readerMacros: $.readerMacros.plusEntry( ")",
                 function ( $sub ) {
                 
-                if ( thenIfInfix( $sub ) )
+                if ( bankInfix( $sub ) )
                     return;
                 
                 if ( consumeParen )
@@ -129,6 +135,8 @@ var whiteChars = " \t";
 
 var readerMacros = strMap();
 readerMacros.set( ";", function ( $ ) {
+    if ( bankCommand( $ ) )
+        return;
     function loop() {
         $.stream.readc( function ( c ) {
             if ( c === "" )
@@ -142,7 +150,7 @@ readerMacros.set( ";", function ( $ ) {
 } );
 addReaderMacros( readerMacros, commandEndChars, function ( $ ) {
     $.stream.readc( function ( c ) {
-        if ( thenIfInfix( $ ) )
+        if ( bankCommand( $ ) )
             return;
         reader( $ );
     } );
@@ -153,7 +161,7 @@ addReaderMacros( readerMacros, whiteChars, function ( $ ) {
     } );
 } );
 addReaderMacros( readerMacros, symbolChars, function ( $ ) {
-    if ( thenIfInfix( $ ) )
+    if ( bankInfix( $ ) )
         return;
     // TODO: See if this series of string concatenations is a
     // painter's algorithm. Those in the know seem to say it's faster
@@ -190,12 +198,12 @@ addReaderMacros( readerMacros, symbolChars, function ( $ ) {
     collect( "" );
 } );
 readerMacros.set( "(", function ( $ ) {
-    if ( thenIfInfix( $ ) )
+    if ( bankInfix( $ ) )
         return;
     readListUntilParen( $, !!"consumeParen" );
 } );
 readerMacros.set( "/", function ( $ ) {
-    if ( thenIfInfix( $ ) )
+    if ( bankInfix( $ ) )
         return;
     readListUntilParen( $, !"consumeParen" );
 } );
