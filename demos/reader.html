@@ -30,6 +30,23 @@ foo
 ; This is the Array [ "a", "b", "c" ] in tertiary infix notation.
 b :a c
 
+; This is the Array [ "a", "b" ] in binary infix notation. Lisp
+; dialects usually use the '.' character for dotted lists, but this
+; syntax uses it for infix instead.
+a.b
+
+; The "b :a c" operator has lower precedence than the "a.b" operator,
+; so this is [ [ "a", "b" ], [ "c", "d" ], [ "e", "f" ] ].
+c.d :a.b e.f
+
+; The "a.b" operator is left-associative, so this is
+; [ [ "a", "b" ], "c" ].
+a.b.c
+
+; The "b :a c" operator is left-associative, so this is
+; [ "a", [ "b", "c", "d" ], "e" ].
+c :b d :a e
+
 ; The / reader macro is like ( but doesn't consume ). Thus, the
 ; following is shorthand for (a b (c d)).
 (a b /c d)
@@ -65,6 +82,8 @@ window.onload = function () {
         reader( {
             stream: stream,
             readerMacros: readerMacros,
+            heedsCommandEnds: true,
+            infixLevel: 0,
             infixState: { type: "empty" },
             end: function ( $ ) {
                 if ( $.infixState.type === "ready" )

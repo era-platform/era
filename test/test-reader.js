@@ -8,6 +8,8 @@ addNaiveIsoUnitTest( function ( then ) {
         stream: stringStream(
             " (woo;comment\n b (c( woo( ) string) / x//)/())" ),
         readerMacros: readerMacros,
+        heedsCommandEnds: true,
+        infixLevel: 0,
         infixState: { type: "empty" },
         end: function ( $ ) {
             if ( $.infixState.type === "ready" )

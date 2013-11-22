@@ -14,24 +14,12 @@
 // $.stream.peekc
 // $.then
 // $.readerMacros
+// $.heedsCommandEnds
+// $.infixLevel
 // $.infixState
 // $.list
 // $.end
 // $.unrecognized
-
-// The $.infixState object changes between four types as the reader
-// goes through an infix expression:
-//
-// a .b c .d e
-//
-// {empty}
-// {ready a}
-// {infix1 a}
-// {infix2 a b}
-// {ready (b a c)}
-// {infix1 (b a c)}
-// {infix2 (b a c) d}
-// {ready (d (b a c) e)}
 
 function reader( $ ) {
     $.stream.peekc( function ( c ) {
@@ -47,14 +35,15 @@ function addReaderMacros( readerMacros, string, func ) {
     for ( var i = 0, n = string.length; i < n; i++ )
         readerMacros.set( string.charAt( i ), func );
 }
-function bankInfix( $ ) {
-    var result = $.infixState.type === "ready";
+function bankInfix( $, minInfixLevel ) {
+    var result = $.infixState.type === "ready" &&
+        minInfixLevel <= $.infixLevel;
     if ( result )
         $.then( { ok: true, val: $.infixState.val } );
     return result;
 }
 function bankCommand( $ ) {
-    var result = $.list === void 0 && $.infixState.type === "ready";
+    var result = $.infixState.type === "ready" && $.heedsCommandEnds;
     if ( result )
         $.then( { ok: true, val: $.infixState.val } );
     return result;
@@ -68,16 +57,6 @@ function continueInfix( $, val ) {
         throw new Error(
             "Read a second complete value before realizing this " +
             "wasn't an infix expression." );
-    } else if ( $.infixState.type === "infix1" ) {
-        reader( objPlus( $, {
-            infixState:
-                { type: "infix2", lhs: $.infixState.lhs, op: val }
-        } ) );
-    } else if ( $.infixState.type === "infix2" ) {
-        reader( objPlus( $, {
-            infixState: { type: "ready",
-                val: [ $.infixState.op, $.infixState.lhs, val ] }
-        } ) );
     } else {
         throw new Error();
     }
@@ -87,11 +66,12 @@ function continueInfix( $, val ) {
 function readListUntilParen( $, consumeParen ) {
     function sub( $, list ) {
         return objPlus( $, {
+            heedsCommandEnds: false,
             list: list,
             readerMacros: $.readerMacros.plusEntry( ")",
                 function ( $sub ) {
                 
-                if ( bankInfix( $sub ) )
+                if ( bankInfix( $sub, 0 ) )
                     return;
                 
                 if ( consumeParen )
@@ -109,6 +89,7 @@ function readListUntilParen( $, consumeParen ) {
                     continueInfix( $, result );
                 }
             } ),
+            infixLevel: 0,
             infixState: { type: "empty" },
             then: function ( result ) {
                 if ( result.ok )
@@ -149,9 +130,9 @@ readerMacros.set( ";", function ( $ ) {
     loop();
 } );
 addReaderMacros( readerMacros, commandEndChars, function ( $ ) {
+    if ( bankCommand( $ ) )
+        return;
     $.stream.readc( function ( c ) {
-        if ( bankCommand( $ ) )
-            return;
         reader( $ );
     } );
 } );
@@ -161,7 +142,7 @@ addReaderMacros( readerMacros, whiteChars, function ( $ ) {
     } );
 } );
 addReaderMacros( readerMacros, symbolChars, function ( $ ) {
-    if ( bankInfix( $ ) )
+    if ( bankInfix( $, 0 ) )
         return;
     // TODO: See if this series of string concatenations is a
     // painter's algorithm. Those in the know seem to say it's faster
@@ -198,33 +179,89 @@ addReaderMacros( readerMacros, symbolChars, function ( $ ) {
     collect( "" );
 } );
 readerMacros.set( "(", function ( $ ) {
-    if ( bankInfix( $ ) )
+    if ( bankInfix( $, 0 ) )
         return;
     readListUntilParen( $, !!"consumeParen" );
 } );
 readerMacros.set( "/", function ( $ ) {
-    if ( bankInfix( $ ) )
+    if ( bankInfix( $, 0 ) )
         return;
     readListUntilParen( $, !"consumeParen" );
 } );
-readerMacros.set( ":", function ( $ ) {
-    if ( $.infixState.type === "empty" ) {
-        $.then( { ok: false, msg: "Infix expression without lhs" } );
-    } else if ( $.infixState.type === "ready" ) {
-        $.stream.readc( function ( c ) {
-            reader( objPlus( $, {
-                infixState: { type: "infix1", lhs: $.infixState.val }
-            } ) );
+function defineInfixOperator(
+    ch, level, noLhsErr, incompleteErr, readRemaining ) {
+    
+    readerMacros.set( ch, function ( $ ) {
+        if ( bankInfix( $, level ) )
+            return;
+        if ( $.infixState.type === "empty" ) {
+            $.then( { ok: false, msg: noLhsErr } );
+        } else if ( $.infixState.type === "ready" ) {
+            var lhs = $.infixState.val;
+            var origHeedsCommandEnds = $.heedsCommandEnds;
+            var $sub1 = objPlus( $, {
+                infixState: { type: "empty" }
+            } );
+            $sub1.stream.readc( function ( c ) {
+                function read( heedsCommandEnds, then ) {
+                    reader( objPlus( $sub1, {
+                        heedsCommandEnds:
+                            origHeedsCommandEnds && heedsCommandEnds,
+                        infixLevel: level,
+                        infixState: { type: "empty" },
+                        then: function ( result ) {
+                            if ( !result.ok )
+                                return void $sub1.then( result );
+                            then( result.val );
+                        },
+                        end: function ( $sub2 ) {
+                            if ( $sub2.infixState.type === "ready" )
+                                $sub2.then( { ok: true,
+                                    val: $sub2.infixState.val } );
+                            else
+                                $sub2.then( { ok: false,
+                                    msg: incompleteErr } );
+                        }
+                    } ) );
+                }
+                readRemaining( lhs, read, function ( result ) {
+                    continueInfix( $sub1, result );
+                } );
+            } );
+        } else {
+            throw new Error();
+        }
+    } );
+}
+defineInfixOperator( ":", 1,
+    "Tertiary infix expression without lhs",
+    "Incomplete tertiary infix expression",
+    function ( lhs, read, then ) {
+    
+    // NOTE: We support top-level code like the following by disabling
+    // heedsCommandEnds when reading the operator:
+    //
+    //  a :b
+    //      .c d
+    //
+    // This is a weird thing to support, but heedsCommandEnds should
+    // always be disabled in contexts where it's obvious the command
+    // is incomplete and could be completed.
+    //
+    read( !"heedsCommandEnds", function ( op ) {
+        read( !!"heedsCommandEnds", function ( rhs ) {
+            then( [ op, lhs, rhs ] );
         } );
-    } else if ( $.infixState.type === "infix1" ) {
-        $.then( { ok: false,
-            msg: "Infix expression with duplicate dot" } );
-    } else if ( $.infixState.type === "infix2" ) {
-        $.then( { ok: false,
-            msg: "Infix expression with dot after operator" } );
-    } else {
-        throw new Error();
-    }
+    } );
+} );
+defineInfixOperator( ".", 2,
+    "Binary infix expression without lhs",
+    "Incomplete binary infix expression",
+    function ( lhs, read, then ) {
+    
+    read( !!"heedsCommandEnds", function ( rhs ) {
+        then( [ lhs, rhs ] );
+    } );
 } );
 
 function stringStream( string ) {
