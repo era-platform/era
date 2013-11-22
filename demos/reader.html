@@ -27,10 +27,8 @@ foo
 ; This is the Array [ "a", "b", "c" ].
 (a b c)
 
-; This is the Array [ "a", "b", "c" ] in infix notation. The '.'
-; character is used for infix, not for the dotted list syntax usually
-; found in Lisp dialects.
-b .a c
+; This is the Array [ "a", "b", "c" ] in tertiary infix notation.
+b :a c
 
 ; The / reader macro is like ( but doesn't consume ). Thus, the
 ; following is shorthand for (a b (c d)).

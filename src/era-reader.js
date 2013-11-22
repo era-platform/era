@@ -207,7 +207,7 @@ readerMacros.set( "/", function ( $ ) {
         return;
     readListUntilParen( $, !"consumeParen" );
 } );
-readerMacros.set( ".", function ( $ ) {
+readerMacros.set( ":", function ( $ ) {
     if ( $.infixState.type === "empty" ) {
         $.then( { ok: false, msg: "Infix expression without lhs" } );
     } else if ( $.infixState.type === "ready" ) {
