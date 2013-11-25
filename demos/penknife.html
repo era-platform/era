@@ -132,6 +132,9 @@ window.onload = function () {
                     displays.push(
                         "" + interpreted.args[ 0 ] + "\n" );
                 }
+                // NOTE: We respect linearity already. A linear value
+                // won't be returned from macroexpansion or
+                // interpretation because no linear values go in.
             }
             document.getElementById( "result" ).value =
                 displays.join( "\n" );

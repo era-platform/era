@@ -112,6 +112,8 @@ function runWaitOne( next, then ) {
 }
 var bindingGetterForMacroexpand = bindingGetter( "a get-binding" );
 function funcAsMacro( pkRuntime, funcBinding ) {
+    // TODO: Respect linearity. If funcBinding is linear, the function
+    // we return here should also be linear.
     return pkfn( function ( args, next ) {
         if ( args.length !== 2 )
             return pkErr(
@@ -121,6 +123,8 @@ function funcAsMacro( pkRuntime, funcBinding ) {
             return pkErr(
                 "Called a non-macro's macroexpander with a " +
                 "non-list args list." );
+        // TODO: Respect linearity. Perhaps args[ 0 ] is linear, in
+        // which case we should raise an error.
         function parseList( list, next ) {
             if ( list.tag !== "cons" )
                 return pk( "yep", pk( "nil" ) );
@@ -174,6 +178,7 @@ PkRuntime.prototype.init_ = function () {
     self.setStrictImpl( "call", "fn", function ( args, next ) {
         if ( !isList( args[ 1 ] ) )
             return pkErr( "Called call with a non-list args list" );
+        // TODO: Respect linearity. Perhaps args[ 0 ] is linear here.
         return args[ 0 ].special.call( args[ 1 ], next );
     } );
     self.defTag( "main-binding", [ "name" ] );
@@ -202,6 +207,9 @@ PkRuntime.prototype.init_ = function () {
     // TODO: See if we should implement binding-get-val for
     // call-binding, local-binding, nonlocal-binding, or fn-binding.
     
+    // TODO: Respect linearity in binding-interpret. This will require
+    // some major refactoring, since we copy and drop the stack a lot
+    // right now.
     self.defMethod( "binding-interpret", [ "self", "stack" ] );
     self.setStrictImpl( "binding-interpret", "main-binding",
         function ( args, next ) {
@@ -287,6 +295,10 @@ PkRuntime.prototype.init_ = function () {
         } ) );
     } );
     
+    // NOTE: We respect linearity in binding-get-macro already, but it
+    // has a strange contract. If it returns nil, it should not
+    // consume its argument, so that funcAsMacro can consume it
+    // instead.
     self.defMethod( "binding-get-macro", [ "self" ] );
     self.setStrictImpl( "binding-get-macro", "main-binding",
         function ( args, next ) {
@@ -324,6 +336,8 @@ PkRuntime.prototype.init_ = function () {
     self.setStrictImpl( "macroexpand-to-binding", "cons",
         function ( args, next ) {
         
+        // TODO: Respect linearity. Perhaps args[ 1 ] is linear, in
+        // which case we should raise an error.
         return runWaitTry( next, function ( next ) {
             return self.callMethod( "macroexpand-to-binding",
                 [ args[ 0 ].args[ 0 ], args[ 1 ] ], next );
@@ -351,6 +365,8 @@ PkRuntime.prototype.init_ = function () {
                 "Called fn's macroexpander with a non-list macro body"
                 );
         var nonlocalGetBinding = args[ 0 ];
+        // TODO: Respect linearity. Perhaps nonlocalGetBinding is
+        // linear, in which case we should raise an error.
         return consToArray( args[ 1 ], next, function ( body, next ) {
             if ( body.length !== 2 )
                 return pkErr(
@@ -409,6 +425,8 @@ PkRuntime.prototype.prepareMeta_ = function (
     return meta;
 };
 PkRuntime.prototype.defVal = function ( name, val ) {
+    // TODO: Respect linearity. When we call this from Penknife code
+    // someday, if val is linear, raise an error.
     var meta = this.prepareMeta_( name, "val" );
     if ( meta === null )
         return false;
@@ -416,6 +434,8 @@ PkRuntime.prototype.defVal = function ( name, val ) {
     return true;
 };
 PkRuntime.prototype.defMacro = function ( name, macro ) {
+    // TODO: Respect linearity. When we call this from Penknife code
+    // someday, if macro is linear, raise an error.
     var meta = this.prepareMeta_( name );
     if ( meta === null )
         return false;
