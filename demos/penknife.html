@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<!--
+reader.html (part of Era)
+Copyright 2013 Ross Angle. Released under the MIT License.
+-->
+<title>Era reader demo</title>
+<style type="text/css">
+textarea { display: block; }
+</style>
+</head>
+<body>
+<p><a href="https://github.com/rocketnia/era"
+    >View the Era project on GitHub.</a></p>
+<p><a href="https://github.com/rocketnia/penknife"
+    >View the old Penknife project on GitHub.</a></p>
+
+<textarea id="code" cols="80" rows="24">
+(nil)
+(yep (nil))
+(cons (nil) (nil))
+(yep/nil) :cons (nil)
+</textarea>
+<button id="go">Execute</button>
+<textarea id="result" disabled cols="80" rows="24"></textarea>
+
+<script type="text/javascript" src="../src/era-misc.js"></script>
+<script type="text/javascript" src="../src/era-reader.js"></script>
+<script type="text/javascript" src="../src/era-penknife.js"></script>
+<script type="text/javascript">"use strict";
+
+// Turns out the reader is very slow right now because it makes
+// frequent use of setTimeout() for control flow. This redefinition of
+// `defer` is hackish, but it definitely fixes the speed issue.
+var deferTrampolineEvents = [];
+defer = function ( func ) {
+    deferTrampolineEvents.push( func );
+};
+function runDeferTrampoline() {
+    while ( deferTrampolineEvents.length !== 0 )
+        deferTrampolineEvents.pop()();
+};
+
+window.onload = function () {
+    function read( stream, onEnd, onFailure, onSuccess ) {
+        reader( {
+            stream: stream,
+            readerMacros: readerMacros,
+            heedsCommandEnds: true,
+            infixLevel: 0,
+            infixState: { type: "empty" },
+            end: function ( $ ) {
+                if ( $.infixState.type === "ready" )
+                    $.then( { ok: true, val: $.infixState.val } );
+                else
+                    onEnd();
+                runDeferTrampoline();
+            },
+            unrecognized: function ( $ ) {
+                $.then( { ok: false,
+                    msg: "Encountered an unrecognized character" } );
+                runDeferTrampoline();
+            },
+            then: function ( result ) {
+                if ( result.ok )
+                    onSuccess( result.val );
+                else
+                    onFailure( result.msg );
+            }
+        } );
+        runDeferTrampoline();
+    }
+    function readAll() {
+        var penknife = makePkRuntime();
+        var stream = stringStream(
+            document.getElementById( "code" ).value );
+        readNext( [] );
+        function readNext( resultsSoFar ) {
+            read( stream, function () {  // onEnd
+                show( resultsSoFar );
+            }, function ( message ) {  // onFailure
+                show( resultsSoFar.concat(
+                    [ { ok: false, msg: message } ] ) );
+            }, function ( result ) {  // onSuccess
+                readNext( resultsSoFar.concat(
+                    [ { ok: true, val: result } ] ) );
+            } );
+        }
+        function show( results ) {
+            var displays = [];
+            for ( var i = 0, n = results.length; i < n; i++ ) {
+                var result = results[ i ];
+                if ( !result.ok ) {
+                    displays.push( "Parse error: " + result.msg );
+                    break;
+                }
+                var macroexpanded =
+                    penknife.conveniences_macroexpandArrays(
+                        result.val );
+                if ( macroexpanded.tag === "nope" ) {
+                    displays.push(
+                        "Macroexpansion error: " +
+                        macroexpanded.args[ 0 ] );
+                    break;
+                } else if ( macroexpanded.tag !== "yep" ) {
+                    displays.push(
+                        "Poorly wrapped macroexpansion error: " +
+                        macroexpanded );
+                    break;
+                } else {
+                    displays.push(
+                        "Macroexpansion: " +
+                        macroexpanded.args[ 0 ] );
+                }
+                var interpreted =
+                    penknife.conveniences_interpretBinding(
+                        macroexpanded.args[ 0 ] );
+                if ( interpreted.tag === "nope" ) {
+                    displays.push(
+                        "Interpretation error: " +
+                        interpreted.args[ 0 ] );
+                    break;
+                } else if ( interpreted.tag !== "yep" ) {
+                    displays.push(
+                        "Poorly wrapped interpretation error: " +
+                        interpreted );
+                    break;
+                } else {
+                    displays.push(
+                        "" + interpreted.args[ 0 ] + "\n" );
+                }
+            }
+            document.getElementById( "result" ).value =
+                displays.join( "\n" );
+        }
+    }
+    document.getElementById( "go" ).onclick = readAll;
+    readAll();
+};
+</script>
+</body>
+</html>
