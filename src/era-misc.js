@@ -11,6 +11,11 @@ function defer( body ) {
     }, 0 );
 }
 // NOTE: This body takes its args as ( v, k ).
+function arrEach( arr, func ) {
+    for ( var i = 0, n = arr.length; i < n; i++ )
+        func( arr[ i ], i );
+}
+// NOTE: This body takes its args as ( v, k ).
 function arrMap( arr, func ) {
     var result = [];
     for ( var i = 0, n = arr.length; i < n; i++ )
