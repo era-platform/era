@@ -272,3 +272,63 @@ naiveIsoCases.push( function ( recur, a, b ) {
     } );
     return result ? result.val : true;
 } );
+
+
+var patternLang = {};
+(function () {
+    function Pat() {}
+    Pat.prototype.init_ = function ( match ) {
+        this.match_ = match;
+        return this;
+    };
+    Pat.prototype.match = function ( data ) {
+        return this.match_.call( {}, data );
+    };
+    
+    patternLang.lit = function ( string ) {
+        return new Pat().init_( function ( data ) {
+            return data === string ? { val: strMap() } : null;
+        } );
+    };
+    patternLang.str = function ( x ) {
+        return new Pat().init_( function ( data ) {
+            return isPrimString( data ) ?
+                { val: strMap().set( x, data ) } : null;
+        } );
+    };
+    var pat =
+    patternLang.pat = function ( x ) {
+        if ( x instanceof Pat ) {
+            return x;
+        } else if ( isPrimString( x ) ) {
+            return new Pat().init_( function ( data ) {
+                return { val: strMap().set( x, data ) };
+            } );
+        } else if ( isArray( x ) ) {
+            var n = x.length;
+            var pats = arrMap( x, function ( subx ) {
+                return pat( subx );
+            } );
+            return new Pat().init_( function ( data ) {
+                if ( !(isArray( data ) && data.length === n) )
+                    return null;
+                var result = strMap();
+                for ( var i = 0; i < n; i++ ) {
+                    var subresult = pats[ i ].match( data[ i ] );
+                    if ( subresult === null )
+                        return null;
+                    // TODO: Figure out what to do when keys overlap.
+                    // For now, we just avoid overlapping keys in
+                    // practice.
+                    result.setAll( subresult.val );
+                }
+                return { val: result };
+            } );
+        } else {
+            throw new Error();
+        }
+    };
+    patternLang.getMatch = function ( arrData, arrPat ) {
+        return pat( arrPat ).match( arrData );
+    };
+})();
