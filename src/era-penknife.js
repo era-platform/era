@@ -20,6 +20,12 @@ Pk.prototype.toString = function () {
             arr.push( list.ind( 0 ) );
         return arr;
     }
+    function toJsNum( nat ) {
+        var result = 0;
+        for ( ; nat.tag === "succ"; nat = nat.ind( 0 ) )
+            result++;
+        return result;
+    }
     function spaceBetween( list ) {
         return toArr( list ).join( " " );
     }
@@ -36,6 +42,8 @@ Pk.prototype.toString = function () {
         return "nil";
     if ( this.tag === "cons" )
         return "#(" + spaceBetween( this ) + ")";
+    if ( this.tag === "succ" )
+        return "" + toJsNum( this );
     return "(" + this.tag + spaceBefore( this.args_ ) + ")";
 };
 var pkNil = new Pk().init_( "nil", null, { argsArr: [] } );
@@ -70,6 +78,9 @@ function pkList( var_args ) {
 function isList( x ) {
     return x.tag === "cons" || x.tag === "nil";
 }
+function isNat( x ) {
+    return x.tag === "succ" || x.tag === "nil";
+}
 function listGet( x, i ) {
     for ( ; 0 < i; i-- ) {
         if ( x.tag !== "cons" )
@@ -101,20 +112,26 @@ function listLenIs( x, n ) {
 }
 function pkErrLen( args, message ) {
     var len = listLenBounded( args, 100 );
-    return "" + message + " with " + (
+    return pkErr( "" + message + " with " + (
         len === null ? "way too many args" :
         len === 1 ? "1 arg" :
-            "" + len + " args");
+            "" + len + " args") );
 }
 function bindingGetter( nameForError ) {
     return pkfn( function ( args, next ) {
-        if ( !listLenIs( args, 1 ) )
+        if ( !listLenIs( args, 2 ) )
             return pkErrLen( args, "Called " + nameForError );
         if ( listGet( args, 0 ).tag !== "string" )
             return pkErr(
                 "Called " + nameForError + " with a non-string " +
                 "name" );
-        return pk( "yep", pk( "main-binding", listGet( args, 0 ) ) );
+        if ( !isNat( listGet( args, 1 ) ) )
+            return pkErr(
+                "Called " + nameForError + " with a capture count " +
+                "that wasn't a nat" );
+        return pk( "yep",
+            pkList(
+                pk( "main-binding", listGet( args, 0 ) ), pkNil ) );
     } );
 }
 function runWaitTry( next, func, then ) {
@@ -149,41 +166,182 @@ function listLenEq( a, b, next, then ) {
         return then( result, next );
     } );
 }
+function lenPlusNat( list, nat, next, then ) {
+    function go( list, nat, next ) {
+        if ( list.tag !== "cons" )
+            return nat;
+        return runWaitOne( next, function ( next ) {
+            return go( list.ind( 1 ), pk( "succ", nat ), next );
+        } );
+    }
+    return next.runWait( function ( next ) {
+        return go( list, nat, next );
+    }, function ( result, next ) {
+        return then( result, next );
+    } );
+}
+function listGetNat( list, nat, next, then ) {
+    function go( list, nat, next ) {
+        if ( list.tag !== "cons" )
+            return then( pkNil, next );
+        if ( nat.tag !== "succ" )
+            return then( pk( "yep", list.ind( 0 ) ), next );
+        return runWaitOne( next, function ( next ) {
+            return go( list.ind( 1 ), nat.ind( 0 ), next );
+        } );
+    }
+    return next.runWait( function ( next ) {
+        return go( list, nat, next );
+    }, function ( result, next ) {
+        return then( result, next );
+    } );
+}
+function listRevAppend( backwardFirst, forwardSecond, next, then ) {
+    function go( backwardFirst, forwardSecond, next ) {
+        if ( backwardFirst.tag !== "cons" )
+            return forwardSecond;
+        return runWaitOne( next, function ( next ) {
+            return go(
+                backwardFirst.ind( 1 ),
+                pkCons( backwardFirst.ind( 0 ), forwardSecond ),
+                next );
+        } );
+    }
+    return next.runWait( function ( next ) {
+        return go( backwardFirst, forwardSecond, next );
+    }, function ( result, next ) {
+        return then( result, next );
+    } );
+}
+function listAppend( a, b, next, then ) {
+    return listRevAppend( a, pkNil, next, function ( revA, next ) {
+        return listRevAppend( revA, b, next,
+            function ( result, next ) {
+            
+            return then( result, next );
+        } );
+    } );
+}
+function listRevFlatten( list, next, then ) {
+    // Do flatten( reverse( list ) ).
+    // TODO: See if there's a more efficient way to do this.
+    
+    return listRevAppend( list, pkNil, next, function ( list, next ) {
+        return listFlatten( list, next, function ( result, next ) {
+            return then( result, next );
+        } );
+        function listFlatten( list, next, then ) {
+            if ( list.tag !== "cons" )
+                return then( pkNil, next );
+            if ( list.ind( 1 ).tag !== "cons" )
+                return then( list.ind( 0 ), next );
+            return runWaitOne( next, function ( next ) {
+                return listFlatten( list.ind( 1 ), next,
+                    function ( flatTail, next ) {
+                    
+                    return listAppend( list.ind( 0 ), flatTail, next,
+                        function ( result, next ) {
+                        
+                        return then( result, next );
+                    } );
+                } );
+            } );
+        }
+    } );
+}
+function listMap( list, next, func, then ) {
+    return go( list, pkNil, next );
+    function go( list, revResults, next ) {
+        if ( list.tag !== "cons" )
+            return listRevAppend( revResults, pkNil, next,
+                function ( results, next ) {
+                
+                return then( results, next );
+            } );
+        return runWaitTry( next, function ( next ) {
+            return func( list.ind( 0 ), next );
+        }, function ( resultElem, next ) {
+            return go( list.ind( 1 ),
+                pkCons( resultElem, revResults ), next );
+        } );
+    }
+}
+function runWaitTryCaptures( next, nameForError, func, then ) {
+    return runWaitTry( next, function ( next ) {
+        return func( next );
+    }, function ( opBindingAndCaptures, next ) {
+        if ( !(isList( opBindingAndCaptures )
+            && listLenIs( opBindingAndCaptures, 2 )) )
+            return pkErr( "Got a non-pair from " + nameForError );
+        var opBinding = listGet( opBindingAndCaptures, 0 );
+        var captures = listGet( opBindingAndCaptures, 1 );
+        if ( !isList( captures ) )
+            return pkErr(
+                "Got non-list captures from " + nameForError );
+        return then( opBinding, captures, next );
+    } );
+}
 var bindingGetterForMacroexpand = bindingGetter( "a get-binding" );
 function funcAsMacro( pkRuntime, funcBinding ) {
     // TODO: Respect linearity. If funcBinding is linear, the function
     // we return here should also be linear.
     return pkfn( function ( args, next ) {
-        if ( !listLenIs( args, 2 ) )
+        if ( !listLenIs( args, 3 ) )
             return pkErrLen( args,
                 "Called a non-macro's macroexpander" );
-        if ( !isList( listGet( args, 1 ) ) )
+        var getBinding = listGet( args, 0 );
+        var captureCount = listGet( args, 1 );
+        var argsList = listGet( args, 2 );
+        if ( !isList( argsList ) )
             return pkErr(
                 "Called a non-macro's macroexpander with a " +
                 "non-list args list" );
-        // TODO: Respect linearity. Perhaps listGet( args, 0 ) is
-        // linear, in which case we should raise an error.
-        function parseList( list, next ) {
+        // TODO: Respect linearity. Perhaps getBinding is linear, in
+        // which case we should raise an error.
+        return parseList(
+            argsList, captureCount, pkNil, pkNil, next );
+        function parseList(
+            list, captureCount, revCapturesSoFar, revBindingsSoFar,
+            next ) {
+            
             if ( list.tag !== "cons" )
-                return pk( "yep", pkNil );
-            return runWaitTry( next, function ( next ) {
+                return listRevFlatten( revCapturesSoFar, next,
+                    function ( captures, next ) {
+                    
+                    return listRevAppend(
+                        revBindingsSoFar, pkNil, next,
+                        function ( bindings, next ) {
+                        
+                        return pk( "yep", pkList(
+                            pk( "call-binding",
+                                funcBinding, bindings ),
+                            captures
+                        ) );
+                    } );
+                } );
+            return runWaitTryCaptures( next, "macroexpand-to-binding",
+                function ( next ) {
+                
                 return pkRuntime.callMethod( "macroexpand-to-binding",
-                    pkList( list.ind( 0 ), listGet( args, 0 ) ),
+                    pkList(
+                        list.ind( 0 ),
+                        listGet( args, 0 ),
+                        captureCount
+                    ),
                     next );
-            }, function ( elem, next ) {
-                return runWaitTry( next, function ( next ) {
-                    return parseList( list.ind( 1 ), next );
-                }, function ( parsedTail, next ) {
-                    return pk( "yep", pkCons( elem, parsedTail ) );
+            }, function ( binding, captures, next ) {
+                return lenPlusNat( captures, captureCount, next,
+                    function ( captureCount, next ) {
+                    
+                    return parseList(
+                        list.ind( 1 ),
+                        captureCount,
+                        pkCons( captures, revCapturesSoFar ),
+                        pkCons( binding, revBindingsSoFar ),
+                        next );
                 } );
             } );
         }
-        return runWaitTry( next, function ( next ) {
-            return parseList( listGet( args, 1 ), next );
-        }, function ( parsedArgs, next ) {
-            return pk( "yep",
-                pk( "call-binding", funcBinding, parsedArgs ) );
-        } );
     } );
 }
 
@@ -200,6 +358,15 @@ PkRuntime.prototype.init_ = function () {
                 "Called cons with a rest that wasn't a list" );
         return pk( "yep",
             pkCons( listGet( args, 0 ), listGet( args, 1 ) ) );
+    } ) );
+    self.defTag( "succ", pkList( "pred" ) );
+    self.defVal( "succ", pkfn( function ( args, next ) {
+        if ( !listLenIs( args, 1 ) )
+            return pkErrLen( args, "Called succ" );
+        if ( !isNat( listGet( args, 0 ) ) )
+            return pkErr(
+                "Called succ with a predecessor that wasn't a nat" );
+        return pk( "yep", pk( "succ", listGet( args, 0 ) ) );
     } ) );
     self.defTag( "yep", pkList( "val" ) );
     self.defTag( "nope", pkList( "val" ) );
@@ -234,9 +401,25 @@ PkRuntime.prototype.init_ = function () {
             pk( "call-binding",
                 listGet( args, 0 ), listGet( args, 1 ) ) );
     } ) );
-    self.defTag( "local-binding", pkList() );
-    self.defTag( "nonlocal-binding", pkList( "binding" ) );
-    self.defTag( "fn-binding", pkList( "body-binding" ) );
+    self.defTag( "param-binding", pkList( "index" ) );
+    self.defVal( "param-binding", pkfn( function ( args, next ) {
+        if ( !listLenIs( args, 1 ) )
+            return pkErrLen( args, "Called param-binding" );
+        if ( !isNat( listGet( args, 0 ) ) )
+            return pkErr(
+                "Called param-binding with a non-nat index" );
+        return pk( "yep", pk( "param-binding", listGet( args, 0 ) ) );
+    } ) );
+    self.defTag( "fn-binding", pkList( "captures", "body-binding" ) );
+    self.defVal( "fn-binding", pkfn( function ( args, next ) {
+        // NOTE: By blocking this function, we preserve the invariant
+        // that the "captures" list is a list of maybes of bindings.
+        // That way we don't have to check for this explicitly in
+        // binding-interpret.
+        // TODO: See if we should check for it explicitly anyway. Then
+        // we can remove this restriction.
+        return pkErr( "The fn-binding function has no behavior" );
+    } ) );
     
     self.defMethod( "binding-get-val", pkList( "self" ) );
     self.setStrictImpl( "binding-get-val", "main-binding",
@@ -246,18 +429,26 @@ PkRuntime.prototype.init_ = function () {
             listGet( args, 0 ).ind( 0 ).special.jsStr );
     } );
     // TODO: See if we should implement binding-get-val for
-    // call-binding, local-binding, nonlocal-binding, or fn-binding.
+    // call-binding, param-binding, or fn-binding.
     
     // TODO: Respect linearity in binding-interpret. This will require
     // some major refactoring, since we copy and drop the stack a lot
     // right now.
-    self.defMethod( "binding-interpret", pkList( "self", "stack" ) );
+    //
+    // NOTE: We respect linearity in binding-interpret already, but it
+    // has a strange contract. It consumes only part of the list of
+    // captured values. A full top-level expression should always
+    // consume it all.
+    //
+    self.defMethod( "binding-interpret",
+        pkList( "self", "list-of-captured-vals" ) );
     self.setStrictImpl( "binding-interpret", "main-binding",
         function ( args, next ) {
         
         if ( !isList( listGet( args, 1 ) ) )
             return pkErr(
-                "Called binding-interpret with a non-list stack" );
+                "Called binding-interpret with a non-list list of " +
+                "captured values" );
         return runWaitOne( next, function ( next ) {
             return self.callMethod( "binding-get-val",
                 pkList( listGet( args, 0 ) ), next );
@@ -268,7 +459,8 @@ PkRuntime.prototype.init_ = function () {
         
         if ( !isList( listGet( args, 1 ) ) )
             return pkErr(
-                "Called binding-interpret with a non-list stack" );
+                "Called binding-interpret with a non-list list of " +
+                "captured values" );
         function interpretList( list, next ) {
             if ( list.tag !== "cons" )
                 return pk( "yep", pkNil );
@@ -300,33 +492,22 @@ PkRuntime.prototype.init_ = function () {
             } );
         } );
     } );
-    self.setStrictImpl( "binding-interpret", "local-binding",
+    self.setStrictImpl( "binding-interpret", "param-binding",
         function ( args, next ) {
         
         if ( !isList( listGet( args, 1 ) ) )
             return pkErr(
-                "Called binding-interpret with a non-list stack" );
-        if ( listGet( args, 1 ).tag !== "cons" )
-            return pkErr(
-                "Tried to interpret local-binding with an empty " +
-                "stack" );
-        return pk( "yep", listGet( args, 1 ).ind( 0 ) );
-    } );
-    self.setStrictImpl( "binding-interpret", "nonlocal-binding",
-        function ( args, next ) {
-        
-        if ( !isList( listGet( args, 1 ) ) )
-            return pkErr(
-                "Called binding-interpret with a non-list stack" );
-        if ( listGet( args, 1 ).tag !== "cons" )
-            return pkErr(
-                "Tried to interpret a nonlocal-binding with an " +
-                "empty stack" );
-        return runWaitOne( next, function ( next ) {
-            return self.callMethod( "binding-interpret", pkList(
-                listGet( args, 0 ).ind( 0 ),
-                listGet( args, 1 ).ind( 1 )
-            ), next );
+                "Called binding-interpret with a non-list list of " +
+                "captured values" );
+        return listGetNat(
+            listGet( args, 1 ), listGet( args, 0 ).ind( 0 ), next,
+            function ( result, next ) {
+            
+            if ( result.tag !== "yep" )
+                return pkErr(
+                    "Tried to interpret a param-binding that fell " +
+                    "off the end of the list of captured values" );
+            return result;
         } );
     } );
     self.setStrictImpl( "binding-interpret", "fn-binding",
@@ -334,13 +515,40 @@ PkRuntime.prototype.init_ = function () {
         
         if ( !isList( listGet( args, 1 ) ) )
             return pkErr(
-                "Called binding-interpret with a non-list stack" );
-        var bodyBinding = listGet( args, 0 ).ind( 0 );
-        var stack = listGet( args, 1 );
-        return pk( "yep", pkfn( function ( args, next ) {
-            return self.callMethod( "binding-interpret",
-                pkList( bodyBinding, pkCons( args, stack ) ), next );
-        } ) );
+                "Called binding-interpret with a non-list list of " +
+                "captured values" );
+        var captures = listGet( args, 0 ).ind( 0 );
+        var bodyBinding = listGet( args, 0 ).ind( 1 );
+        var nonlocalCaptures = listGet( args, 1 );
+        return listMap( captures, next, function ( capture, next ) {
+            if ( capture.tag !== "yep" )
+                return pk( "yep", pkNil );
+            return runWaitTry( next, function ( next ) {
+                return self.callMethod( "binding-interpret",
+                    pkList( capture.ind( 0 ), nonlocalCaptures ),
+                    next );
+            }, function ( value, next ) {
+                return pk( "yep", pk( "yep", value ) );
+            } );
+        }, function ( captures ) {
+            // TODO: Respect linearity. If any of the captured values
+            // at this point is linear, this returned function should
+            // also be linear.
+            return pk( "yep", pkfn( function ( args, next ) {
+                // TODO: Respect linearity. If args is linear, we
+                // should try to explicitly copy and drop it.
+                return listMap( captures, next,
+                    function ( capture, next ) {
+                    
+                    if ( capture.tag !== "yep" )
+                        return pk( "yep", args );
+                    return pk( "yep", capture.ind( 0 ) );
+                }, function ( captures ) {
+                    return self.callMethod( "binding-interpret",
+                        pkList( bodyBinding, captures ), next );
+                } );
+            } ) );
+        } );
     } );
     
     // NOTE: We respect linearity in binding-get-macro already, but it
@@ -354,7 +562,7 @@ PkRuntime.prototype.init_ = function () {
         return self.getMacro(
             listGet( args, 0 ).ind( 0 ).special.jsStr );
     } );
-    arrEach( [ "call-binding", "local-binding", "fn-binding" ],
+    arrEach( [ "call-binding", "fn-binding" ],
         function ( tag ) {
         
         self.setStrictImpl( "binding-get-macro", tag,
@@ -363,95 +571,189 @@ PkRuntime.prototype.init_ = function () {
             return pk( "yep", pkNil );
         } );
     } );
-    self.setStrictImpl( "binding-get-macro", "nonlocal-binding",
+    // TODO: Figure out how to get macros working inside functions.
+    self.setStrictImpl( "binding-get-macro", "param-binding",
         function ( args, next ) {
         
-        return runWaitOne( next, function ( next ) {
-            return self.callMethod( "binding-get-macro",
-                pkList( listGet( args, 0 ).ind( 0 ) ), next );
-        } );
+        return pk( "yep", pkNil );
     } );
     
     self.defMethod( "macroexpand-to-binding",
-        pkList( "self", "get-binding" ) );
+        pkList( "self", "get-binding", "capture-count" ) );
     self.setStrictImpl( "macroexpand-to-binding", "string",
         function ( args, next ) {
         
+        if ( !isNat( listGet( args, 2 ) ) )
+            return pkErr(
+                "Called macroexpand-to-binding with a capture " +
+                "count that wasn't a nat" );
         return runWaitOne( next, function ( next ) {
             return self.callMethod( "call", pkList(
                 listGet( args, 1 ),
-                pkList( listGet( args, 0 ) )
+                pkList( listGet( args, 0 ), listGet( args, 2 ) )
             ), next );
         } );
     } );
     self.setStrictImpl( "macroexpand-to-binding", "cons",
         function ( args, next ) {
         
+        if ( !isNat( listGet( args, 2 ) ) )
+            return pkErr(
+                "Called macroexpand-to-binding with a capture " +
+                "count that wasn't a nat" );
         // TODO: Respect linearity. Perhaps listGet( args, 1 ) is
         // linear, in which case we should raise an error.
-        return runWaitTry( next, function ( next ) {
+        return runWaitTryCaptures( next, "macroexpand-to-binding",
+            function ( next ) {
+            
             return self.callMethod( "macroexpand-to-binding", pkList(
                 listGet( args, 0 ).ind( 0 ),
-                listGet( args, 1 )
+                listGet( args, 1 ),
+                listGet( args, 2 )
             ), next );
-        }, function ( opBinding, next ) {
-            return runWaitTry( next, function ( next ) {
-                return self.callMethod( "binding-get-macro",
-                    pkList( opBinding ), next );
-            }, function ( maybeOp, next ) {
-                var op = maybeOp.tag === "yep" ? maybeOp.ind( 0 ) :
-                    funcAsMacro( self, opBinding );
-                return self.callMethod( "call", pkList(
-                    op,
-                    pkList( listGet( args, 1 ),
-                        listGet( args, 0 ).ind( 1 ) )
-                ), next );
+        }, function ( opBinding, captures1, next ) {
+            return lenPlusNat( captures1, listGet( args, 2 ), next,
+                function ( captureCount1, next ) {
+                
+                return runWaitTry( next, function ( next ) {
+                    return self.callMethod( "binding-get-macro",
+                        pkList( opBinding ), next );
+                }, function ( maybeOp, next ) {
+                    var op = maybeOp.tag === "yep" ? maybeOp.ind( 0 ) :
+                        funcAsMacro( self, opBinding );
+                    return runWaitTryCaptures( next, "a macro",
+                        function ( next ) {
+                        
+                        return self.callMethod( "call", pkList(
+                            op,
+                            pkList(
+                                listGet( args, 1 ),
+                                captureCount1,
+                                listGet( args, 0 ).ind( 1 )
+                            )
+                        ), next );
+                    }, function ( binding, captures2, next ) {
+                        return listAppend( captures1, captures2, next,
+                            function ( captures, next ) {
+                            
+                            return pk( "yep",
+                                pkList( binding, captures ) );
+                        } );
+                    } );
+                } );
             } );
         } );
     } );
     
     self.defMacro( "fn", pkfn( function ( args, next ) {
-        if ( !listLenIs( args, 2 ) )
+        if ( !listLenIs( args, 3 ) )
             return pkErrLen( args, "Called fn's macroexpander" );
-        if ( !isList( listGet( args, 1 ) ) )
+        var nonlocalGetBinding = listGet( args, 0 );
+        var captureCount = listGet( args, 1 );
+        var body = listGet( args, 2 );
+        if ( !isList( body ) )
             return pkErr(
                 "Called fn's macroexpander with a non-list macro body"
                 );
-        var nonlocalGetBinding = listGet( args, 0 );
         // TODO: Respect linearity. Perhaps nonlocalGetBinding is
         // linear, in which case we should raise an error.
-        var body = listGet( args, 1 );
         if ( !listLenIs( body, 2 ) )
             return pkErrLen( body, "Expanded fn" );
         if ( listGet( body, 0 ).tag !== "string" )
             return pkErr( "Expanded fn with a non-string var" );
         var jsName = listGet( body, 0 ).special.jsStr;
-        return runWaitTry( next, function ( next ) {
+        return runWaitTryCaptures( next, "macroexpand-to-binding",
+            function ( next ) {
+            
             return self.callMethod( "macroexpand-to-binding", pkList(
                 listGet( body, 1 ),
                 pkfn( function ( args, next ) {
-                    if ( !listLenIs( args, 1 ) )
+                    if ( !listLenIs( args, 2 ) )
                         return pkErrLen( args,
                             "Called a get-binding" );
                     if ( listGet( args, 0 ).tag !== "string" )
                         return pkErr(
                             "Called a get-binding with a " +
                             "non-string name" );
-                    if ( jsName === listGet( args, 0 ).special.jsStr )
-                        return pk( "yep", pk( "local-binding" ) );
-                    return runWaitTry( next, function ( next ) {
-                        return self.callMethod( "call", pkList(
-                            nonlocalGetBinding,
-                            pkList( listGet( args, 0 ) )
-                        ), next );
-                    }, function ( binding, next ) {
-                        return pk( "yep",
-                            pk( "nonlocal-binding", binding ) );
-                    } );
-                } )
+                    if ( !isNat( listGet( args, 1 ) ) )
+                        return pkErr(
+                            "Called a get-binding with a capture " +
+                            "count that wasn't a nat" );
+                    return pk( "yep",
+                        pkList(
+                            pk( "param-binding", listGet( args, 1 ) ),
+                            pkList( listGet( args, 0 ) ) ) );
+                } ),
+                pkNil
             ), next );
-        }, function ( bodyBinding, next ) {
-            return pk( "yep", pk( "fn-binding", bodyBinding ) );
+        }, function ( bodyBinding, localCaptureNames, next ) {
+            // NOTE: This isn't quite a map operation, because we
+            // thread captureCount through it (not to mention that we
+            // accumulate two results per pass, and one of the result
+            // lists gets flattened).
+            return processCaptures(
+                localCaptureNames, pkNil, pkNil, captureCount, next );
+            function processCaptures(
+                localCaptureNames, revCaptureBindings,
+                revNonlocalCaptureNames, captureCount, next ) {
+                
+                if ( localCaptureNames.tag !== "cons" )
+                    return listRevAppend(
+                        revCaptureBindings, pkNil, next,
+                        function ( captureBindings, next ) {
+                        
+                        return listRevFlatten(
+                            revNonlocalCaptureNames, next,
+                            function ( nonlocalCaptureNames, next ) {
+                            
+                            return pk( "yep", pkList(
+                                pk( "fn-binding",
+                                    captureBindings, bodyBinding ),
+                                nonlocalCaptureNames
+                            ) );
+                        } );
+                    } );
+                if ( localCaptureNames.ind( 0 ).tag !== "string" )
+                    return pkErr(
+                        "Got a non-string capture name from a " +
+                        "get-binding, a macroexpand-to-binding, or " +
+                        "a macro result somewhere along the line" );
+                if ( jsName ===
+                    localCaptureNames.ind( 0 ).special.jsStr )
+                    return runWaitOne( next, function ( next ) {
+                        return processCaptures(
+                            localCaptureNames.ind( 1 ),
+                            pkCons( pkNil, revCaptureBindings ),
+                            revNonlocalCaptureNames,
+                            captureCount,
+                            next );
+                    } );
+                return runWaitTryCaptures( next, "a get-binding",
+                    function ( next ) {
+                    
+                    return self.callMethod( "call", pkList(
+                        nonlocalGetBinding,
+                        pkList(
+                            localCaptureNames.ind( 0 ), captureCount )
+                    ), next );
+                }, function (
+                    captureBinding, nonlocalCaptureNames, next ) {
+                    
+                    return lenPlusNat(
+                        nonlocalCaptureNames, captureCount, next,
+                        function ( captureCount, next ) {
+                        
+                        return processCaptures(
+                            localCaptureNames.ind( 1 ),
+                            pkCons( pk( "yep", captureBinding ),
+                                revCaptureBindings ),
+                            pkCons( nonlocalCaptureNames,
+                                revNonlocalCaptureNames ),
+                            captureCount,
+                            next );
+                    } );
+                } );
+            }
         } );
     } ) );
     
@@ -604,10 +906,22 @@ PkRuntime.prototype.conveniences_syncNext =
 PkRuntime.prototype.conveniences_macroexpand = function (
     expr, opt_next ) {
     
+    var self = this;
     if ( opt_next === void 0 )
-        opt_next = this.conveniences_syncNext;
-    return this.callMethod( "macroexpand-to-binding",
-        pkList( expr, bindingGetter( "main-binding" ) ), opt_next );
+        opt_next = self.conveniences_syncNext;
+    return runWaitTryCaptures( opt_next, "macroexpand-to-binding",
+        function ( next ) {
+        
+        return self.callMethod( "macroexpand-to-binding",
+            pkList( expr, bindingGetter( "main-binding" ), pkNil ),
+            next );
+    }, function ( binding, captures, next ) {
+        if ( captures.tag !== "nil" )
+            return pkErr(
+                "Got a top-level macroexpansion result with " +
+                "captures" );
+        return pk( "yep", binding );
+    } );
 };
 PkRuntime.prototype.conveniences_macroexpandArrays = function (
     arrayExpr, opt_next ) {
