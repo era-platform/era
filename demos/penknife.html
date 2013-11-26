@@ -103,7 +103,7 @@ window.onload = function () {
                 if ( macroexpanded.tag === "nope" ) {
                     displays.push(
                         "Macroexpansion error: " +
-                        macroexpanded.args[ 0 ] );
+                        macroexpanded.ind( 0 ) );
                     break;
                 } else if ( macroexpanded.tag !== "yep" ) {
                     displays.push(
@@ -113,15 +113,15 @@ window.onload = function () {
                 } else {
                     displays.push(
                         "Macroexpansion: " +
-                        macroexpanded.args[ 0 ] );
+                        macroexpanded.ind( 0 ) );
                 }
                 var interpreted =
                     penknife.conveniences_interpretBinding(
-                        macroexpanded.args[ 0 ] );
+                        macroexpanded.ind( 0 ) );
                 if ( interpreted.tag === "nope" ) {
                     displays.push(
                         "Interpretation error: " +
-                        interpreted.args[ 0 ] );
+                        interpreted.ind( 0 ) );
                     break;
                 } else if ( interpreted.tag !== "yep" ) {
                     displays.push(
@@ -130,7 +130,7 @@ window.onload = function () {
                     break;
                 } else {
                     displays.push(
-                        "" + interpreted.args[ 0 ] + "\n" );
+                        "" + interpreted.ind( 0 ) + "\n" );
                 }
                 // NOTE: We respect linearity already. A linear value
                 // won't be returned from macroexpansion or
