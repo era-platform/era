@@ -289,6 +289,104 @@ function listMap( list, next, func, then ) {
         } );
     }
 }
+function natMap( nat, next, func, then ) {
+    return go( nat, pkNil, next );
+    function go( nat, revResults, next ) {
+        if ( nat.tag !== "succ" )
+            return listRevAppend( revResults, pkNil, next,
+                function ( results, next ) {
+                
+                return then( results, next );
+            } );
+        return runWaitTry( next, function ( next ) {
+            return func( nat, next );
+        }, function ( resultElem, next ) {
+            return go( nat.ind( 0 ),
+                pkCons( resultElem, revResults ), next );
+        } );
+    }
+}
+function listCount( list, next, func, then ) {
+    return go( list, pkNil, next );
+    function go( list, count, next ) {
+        if ( list.tag !== "cons" )
+            return then( count, next );
+        return runWaitOne( next, function ( next ) {
+            if ( func( list.ind( 0 ) ) )
+                return go( list.ind( 1 ), pk( "succ", count ), next );
+            return go( list.ind( 1 ), count, next );
+        } );
+    }
+}
+function listMapMultiWithLen( nat, lists, next, func, then ) {
+    return go( nat, lists, pkNil, next );
+    function go( nat, lists, revResults, next ) {
+        if ( nat.tag !== "succ" )
+            return listRevAppend( revResults, pkNil, next,
+                function ( results, next ) {
+                
+                return then( results, next );
+            } );
+        return listMap( lists, next, function ( list, next ) {
+            return pk( "yep", list.ind( 0 ) );
+        }, function ( firsts, next ) {
+            return listMap( lists, next, function ( list, next ) {
+                return pk( "yep", list.ind( 1 ) );
+            }, function ( rests, next ) {
+                return runWaitTry( next, function ( next ) {
+                    return func( firsts, next );
+                }, function ( resultElem ) {
+                    return go( nat.ind( 0 ), rests,
+                        pkCons( resultElem, revResults ), next );
+                } );
+            } );
+        } );
+    }
+}
+function pkDup( val, count, next ) {
+    
+    // If we're only trying to get one duplicate, we already have our
+    // answer, regardless of whether the value is linear.
+    if ( count.tag === "succ" && count.ind( 0 ).tag === "nil" )
+        return pkList( val );
+    
+    if ( !val.isLinear() )  // (including tags "nil" and "string")
+        return withDups( pkNil, function ( ignored ) {
+            return val;
+        } );
+    if ( val.tag === "cons" )
+        return withDups( pkList( val.ind( 0 ), val.ind( 1 ) ),
+            function ( args ) {
+            
+            return pkCons( listGet( args, 0 ), listGet( args, 1 ) );
+        } );
+    if ( val.tag === "fn" )
+        return withDups( val.special.captures, function ( captures ) {
+            return new Pk().init_( "fn", pkNil, captures.isLinear(), {
+                captures: captures,
+                call: val.special.call,
+                string: val.special.string
+            } );
+        } );
+    // TODO: Once we have defLinearTag, add another case here for
+    // that.
+    return withDups( val.args, function ( args ) {
+        return new Pk().init_( val.tag, args, !!"isLinear", {} );
+    } );
+    function withDups( args, reconstruct ) {
+        return listMap( args, next, function ( arg, next ) {
+            return pkDup( arg, count, next );
+        }, function ( argsDuplicates, next ) {
+            return listMapMultiWithLen( count, argsDuplicates, next,
+                function ( args ) {
+                
+                return pk( "yep", reconstruct( args ) );
+            }, function ( result, next ) {
+                return pk( "yep", result );
+            } );
+        } );
+    }
+}
 function runWaitTryBinding( next, nameForError, func, then ) {
     return runWaitTry( next, function ( next ) {
         return func( next );
@@ -584,17 +682,55 @@ PkRuntime.prototype.init_ = function () {
             return pk( "yep", pkfnLinear( captures,
                 function ( captures, args, next ) {
                 
-                // TODO: Respect linearity. If args is linear, we
-                // should try to explicitly copy and drop it.
-                return listMap( captures, next,
-                    function ( capture, next ) {
+                return listCount( captures, next,
+                    function ( maybeCapturedVal ) {
                     
-                    if ( capture.tag !== "yep" )
-                        return pk( "yep", args );
-                    return pk( "yep", capture.ind( 0 ) );
-                }, function ( captures ) {
-                    return self.callMethod( "binding-interpret",
-                        pkList( bodyBinding, captures ), next );
+                    return maybeCapturedVal.tag !== "yep";
+                }, function ( argsDupCount, next ) {
+                    return runWaitTry( next, function ( next ) {
+                        return pkDup( args, argsDupCount, next );
+                    }, function ( argsDuplicates, next ) {
+                        return go(
+                            captures, argsDuplicates, pkNil, next );
+                        function go(
+                            nonlocalCaptures, argsDuplicates,
+                            revLocalCaptures, next ) {
+                            
+                            if ( nonlocalCaptures.tag !== "cons" )
+                                return listRevAppend(
+                                    revLocalCaptures, pkNil, next,
+                                    function ( localCaptures, next ) {
+                                    
+                                    return self.callMethod(
+                                        "binding-interpret",
+                                        pkList( bodyBinding,
+                                            localCaptures ),
+                                        next
+                                    );
+                                } );
+                            return runWaitOne( next,
+                                function ( next ) {
+                                
+                                var maybeNlc =
+                                    nonlocalCaptures.ind( 0 );
+                                if ( maybeNlc.tag === "yep" )
+                                    return go(
+                                        nonlocalCaptures.ind( 1 ),
+                                        argsDuplicates,
+                                        pkCons( maybeNlc.ind( 0 ),
+                                            revLocalCaptures ),
+                                        next
+                                    );
+                                return go(
+                                    nonlocalCaptures.ind( 1 ),
+                                    argsDuplicates.ind( 1 ),
+                                    pkCons( argsDuplicates.ind( 0 ),
+                                        revLocalCaptures ),
+                                    next
+                                );
+                            } );
+                        }
+                    } );
                 } );
             } ) );
         } );
