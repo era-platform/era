@@ -71,11 +71,18 @@ function pkStr( jsStr ) {
     return new Pk().init_( "string", pkNil, !"isLinear",
         { jsStr: jsStr } );
 }
-// TODO: Make a corresponding function called pkfnLinear() or
-// something.
+function pkfnLinear( captures, call ) {
+    return new Pk().init_( "fn", pkNil, captures.isLinear(),
+        { captures: captures, call: call, string: "" + call } );
+}
 function pkfn( call ) {
-    return new Pk().init_( "fn", pkNil, !"isLinear",
-        { call: call, string: "" + call } );
+    return new Pk().init_( "fn", pkNil, !"isLinear", {
+        captures: pkNil,
+        call: function ( captures, args, next ) {
+            return call( args, next );
+        },
+        string: "" + call
+    } );
 }
 function pkErr( jsStr ) {
     return pk( "nope", pkStr( jsStr ) );
@@ -309,9 +316,11 @@ function runWaitTryBinding( next, nameForError, func, then ) {
     } );
 }
 function funcAsMacro( pkRuntime, funcBinding ) {
-    // TODO: Respect linearity. If funcBinding is linear, the function
-    // we return here should also be linear.
-    return pkfn( function ( args, next ) {
+    return pkfnLinear( pkList( pk( "yep", funcBinding ) ),
+        function ( captures, args, next ) {
+        
+        var funcBinding = listGet( captures, 0 ).ind( 0 );
+        
         if ( !listLenIs( args, 3 ) )
             return pkErrLen( args,
                 "Called a non-macro's macroexpander" );
@@ -425,10 +434,14 @@ PkRuntime.prototype.init_ = function () {
     self.setStrictImpl( "call", "fn", function ( args, next ) {
         if ( !isList( listGet( args, 1 ) ) )
             return pkErr( "Called call with a non-list args list" );
-        // TODO: Respect linearity. Perhaps listGet( args, 0 ) is
-        // linear here.
+        // TODO: See if we should respect linearity some more by
+        // double-checking that the captured values haven't already
+        // been spent.
         return listGet( args, 0 ).special.call(
-            listGet( args, 1 ), next );
+            listGet( args, 0 ).special.captures,
+            listGet( args, 1 ),
+            next
+        );
     } );
     defTag( "main-binding", "name" );
     self.defVal( "main-binding",
@@ -568,10 +581,9 @@ PkRuntime.prototype.init_ = function () {
                 return pk( "yep", pk( "yep", value ) );
             } );
         }, function ( captures ) {
-            // TODO: Respect linearity. If any of the captured values
-            // at this point is linear, this returned function should
-            // also be linear.
-            return pk( "yep", pkfn( function ( args, next ) {
+            return pk( "yep", pkfnLinear( captures,
+                function ( captures, args, next ) {
+                
                 // TODO: Respect linearity. If args is linear, we
                 // should try to explicitly copy and drop it.
                 return listMap( captures, next,

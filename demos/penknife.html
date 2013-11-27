@@ -23,6 +23,7 @@ textarea { display: block; }
 (cons (nil) (nil))
 (yep/nil) :cons (nil)
 ((fn x (cons x x)) (nil) (nil))
+((fn x ((fn x (cons x x)) x x)) (nil) (nil))
 </textarea>
 <button id="go">Execute</button>
 <textarea id="result" disabled cols="80" rows="24"></textarea>
