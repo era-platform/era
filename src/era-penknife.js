@@ -364,7 +364,7 @@ function pkDup( pkRuntime, val, count, next ) {
     // If we're only trying to get one duplicate, we already have our
     // answer, regardless of whether the value is linear.
     if ( count.tag === "succ" && count.ind( 0 ).tag === "nil" )
-        return pkList( val );
+        return pk( "yep", pkList( val ) );
     
     if ( !val.isLinear() )  // (including tags "nil" and "string")
         return withDups( pkNil, function ( ignored ) {
@@ -571,6 +571,8 @@ PkRuntime.prototype.init_ = function () {
             next
         );
     } );
+    
+    defTag( "literal-binding", "literal-val" );
     defTag( "main-binding", "name" );
     self.defVal( "main-binding",
         bindingGetter( self, "main-binding" ) );
@@ -605,21 +607,22 @@ PkRuntime.prototype.init_ = function () {
         return pkErr( "The fn-binding function has no behavior" );
     } ) );
     
-    defMethod( "binding-get-val", "self" );
-    self.setStrictImpl( "binding-get-val", "main-binding",
-        function ( args, next ) {
-        
-        return self.getVal(
-            listGet( args, 0 ).ind( 0 ).special.jsStr );
-    } );
-    // TODO: See if we should implement binding-get-val for
-    // call-binding, param-binding, or fn-binding.
-    
     // NOTE: We respect linearity in binding-interpret already, but it
     // has a strange contract. Each binding-interpret call consumes
     // only part of the list of captured values, but a top-level call
     // to binding-interpret should always consume the whole thing.
     defMethod( "binding-interpret", "self", "list-of-captured-vals" );
+    self.setStrictImpl( "binding-interpret", "literal-binding",
+        function ( args, next ) {
+        
+        if ( !isList( listGet( args, 1 ) ) )
+            return pkErr(
+                "Called binding-interpret with a non-list list of " +
+                "captured values" );
+        return runWaitOne( next, function ( next ) {
+            return pk( "yep", listGet( args, 0 ).ind( 0 ) );
+        } );
+    } );
     self.setStrictImpl( "binding-interpret", "main-binding",
         function ( args, next ) {
         
@@ -628,8 +631,8 @@ PkRuntime.prototype.init_ = function () {
                 "Called binding-interpret with a non-list list of " +
                 "captured values" );
         return runWaitOne( next, function ( next ) {
-            return self.callMethod( "binding-get-val",
-                pkList( listGet( args, 0 ) ), next );
+            return self.getVal(
+                listGet( args, 0 ).ind( 0 ).special.jsStr );
         } );
     } );
     self.setStrictImpl( "binding-interpret", "call-binding",
@@ -841,13 +844,17 @@ PkRuntime.prototype.init_ = function () {
         var nonlocalGetBinding = listGet( args, 0 );
         var captureCount = listGet( args, 1 );
         var body = listGet( args, 2 );
-        if ( !isList( body ) )
-            return pkErr(
-                "Called fn's macroexpander with a non-list macro body"
-                );
         if ( nonlocalGetBinding.isLinear() )
             return pkErr(
                 "Called fn's macroexpander with a linear get-binding"
+                );
+        if ( !isNat( captureCount ) )
+            return pkErr(
+                "Called fn's macroexpander with a non-nat capture " +
+                "count" );
+        if ( !isList( body ) )
+            return pkErr(
+                "Called fn's macroexpander with a non-list macro body"
                 );
         if ( !listLenIs( body, 2 ) )
             return pkErrLen( body, "Expanded fn" );
@@ -969,6 +976,102 @@ PkRuntime.prototype.init_ = function () {
         } );
     } ) );
     
+    self.defMacro( "quote", pkfn( function ( args, next ) {
+        if ( !listLenIs( args, 3 ) )
+            return pkErrLen( args, "Called quote's macroexpander" );
+        var getBinding = listGet( args, 0 );
+        var captureCount = listGet( args, 1 );
+        var body = listGet( args, 2 );
+        if ( getBinding.isLinear() )
+            return pkErr(
+                "Called quote's macroexpander with a linear " +
+                "get-binding" );
+        if ( !isNat( captureCount ) )
+            return pkErr(
+                "Called quote's macroexpander with a non-nat " +
+                "capture count" );
+        if ( !isList( body ) )
+            return pkErr(
+                "Called quote's macroexpander with a non-list " +
+                "macro body" );
+        if ( !listLenIs( body, 1 ) )
+            return pkErrLen( body, "Expanded quote" );
+        return pk( "yep", pkList(
+            pk( "literal-binding", listGet( body, 0 ) ),
+            pkNil,
+            pkNil
+        ) );
+    } ) );
+    
+    self.defVal( "defval", pkfn( function ( args, next ) {
+        if ( !listLenIs( args, 2 ) )
+            return pkErrLen( args, "Called defval" );
+        if ( listGet( args, 0 ).tag !== "string" )
+            return pkErr( "Called defval with a non-string name" );
+        return self.defVal( listGet( args, 0 ).special.jsStr,
+            listGet( args, 1 ) );
+    } ) );
+    self.defVal( "defmacro", pkfn( function ( args, next ) {
+        if ( !listLenIs( args, 2 ) )
+            return pkErrLen( args, "Called defmacro" );
+        if ( listGet( args, 0 ).tag !== "string" )
+            return pkErr( "Called defmacro with a non-string name" );
+        return self.defMacro( listGet( args, 0 ).special.jsStr,
+            listGet( args, 1 ) );
+    } ) );
+    self.defVal( "deftag", pkfn( function ( args, next ) {
+        if ( !listLenIs( args, 2 ) )
+            return pkErrLen( args, "Called deftag" );
+        if ( listGet( args, 0 ).tag !== "string" )
+            return pkErr( "Called deftag with a non-string name" );
+        // TODO: Verify that the keys list contains only strings.
+        return self.defTag( listGet( args, 0 ).special.jsStr,
+            listGet( args, 1 ) );
+    } ) );
+    self.defVal( "deflineartag", pkfn( function ( args, next ) {
+        if ( !listLenIs( args, 3 ) )
+            return pkErrLen( args, "Called deftag" );
+        if ( listGet( args, 0 ).tag !== "string" )
+            return pkErr( "Called deftag with a non-string name" );
+        // TODO: Verify that the keys list contains only strings.
+        return self.defLinearTag( listGet( args, 0 ).special.jsStr,
+            listGet( args, 1 ), listGet( args, 2 ) );
+    } ) );
+    self.defVal( "defmethod", pkfn( function ( args, next ) {
+        if ( !listLenIs( args, 2 ) )
+            return pkErrLen( args, "Called defmethod" );
+        if ( listGet( args, 0 ).tag !== "string" )
+            return pkErr( "Called defmethod with a non-string name" );
+        // TODO: Verify that the args list contains only strings.
+        return self.defMethod( listGet( args, 0 ).special.jsStr,
+            listGet( args, 1 ) );
+    } ) );
+    self.defVal( "set-impl", pkfn( function ( args, next ) {
+        if ( !listLenIs( args, 3 ) )
+            return pkErrLen( args, "Called set-impl" );
+        if ( listGet( args, 0 ).tag !== "string" )
+            return pkErr(
+                "Called set-impl with a non-string method name" );
+        if ( listGet( args, 1 ).tag !== "string" )
+            return pkErr(
+                "Called set-impl with a non-string tag name" );
+        if ( listGet( args, 2 ).isLinear() )
+            return pkErr( "Called set-impl with a linear function" );
+        return self.setImpl(
+            listGet( args, 0 ).special.jsStr,
+            listGet( args, 1 ).special.jsStr,
+            function ( args, next ) {
+                return pkRuntime.callMethod( "call",
+                    pkList( listGet( args, 2 ), args ), next );
+            } );
+    } ) );
+    
+    self.defVal( "raise", pkfn( function ( args, next ) {
+        if ( !listLenIs( args, 1 ) )
+            return pkErrLen( args, "Called raise" );
+        return pk( "nope", listGet( args, 0 ) );
+    } ) );
+    
     return self;
 };
 PkRuntime.prototype.prepareMeta_ = function (
@@ -989,64 +1092,65 @@ PkRuntime.prototype.prepareMeta_ = function (
     return meta;
 };
 PkRuntime.prototype.defVal = function ( name, val ) {
-    // TODO: Respect linearity. When we call this from Penknife code
-    // someday, if val is linear, raise an error.
     if ( val.isLinear() )
-        return false;
+        return pkErr( "Called defval with a linear value" );
     var meta = this.prepareMeta_( name, "val" );
     if ( meta === null )
-        return false;
+        return pkErr(
+            "Called defval with a name that was already bound to a " +
+            "method" );
     meta.val = val;
-    return true;
+    return pk( "yep", pkNil );
 };
 PkRuntime.prototype.defMacro = function ( name, macro ) {
-    // TODO: Respect linearity. When we call this from Penknife code
-    // someday, if macro is linear, raise an error.
     if ( macro.isLinear() )
-        return false;
+        return pkErr( "Called defmacro with a linear macro" );
     var meta = this.prepareMeta_( name );
     meta.macro = macro;
-    return true;
+    return pk( "yep", pkNil );
 };
 PkRuntime.prototype.defTag = function ( name, keys ) {
-    // TODO: Respect linearity. When we call this from Penknife code
-    // someday, if keys is linear, raise an error.
     if ( keys.isLinear() )
-        return false;
+        return pkErr( "Called deftag with a linear args list" );
     var meta = this.prepareMeta_( name );
     if ( meta.tagKeys !== void 0 )
-        return false;
+        return pkErr(
+            "Called deftag with a name that was already bound to a " +
+            "tag" );
     meta.tagKeys = keys;
     meta.dup = null;
-    return true;
+    return pk( "yep", pkNil );
 };
 PkRuntime.prototype.defLinearTag = function ( name, keys, dup ) {
-    // TODO: Respect linearity. When we call this from Penknife code
-    // someday, if keys or dup is linear, raise an error.
     if ( keys.isLinear() )
-        return false;
+        return pkErr( "Called deflineartag with a linear args list" );
     if ( dup.isLinear() )
-        return false;
+        return pkErr(
+            "Called deflineartag with a linear dup function" );
     var meta = this.prepareMeta_( name );
     if ( meta.tagKeys !== void 0 )
-        return false;
+        return pkErr(
+            "Called deflineartag with a name that was already " +
+            "bound to a tag" );
     meta.tagKeys = keys;
     meta.dup = dup;
-    return true;
+    return pk( "yep", pkNil );
 };
 PkRuntime.prototype.defMethod = function ( name, args ) {
-    // TODO: Respect linearity. When we call this from Penknife code
-    // someday, if args is linear, raise an error.
     if ( args.isLinear() )
-        return false;
+        return pkErr( "Called defmethod with a linear args list" );
     var meta = this.prepareMeta_( name, "method" );
     if ( meta === null )
-        return false;
+        return pkErr(
+            "Called defmethod with a name that was already bound " +
+            "to a value" );
     if ( meta.methodArgs !== void 0 )
-        return false;
+        return pkErr(
+            "Called defmethod with a name that was already bound " +
+            "to a method" );
     meta.methodArgs = args;
     meta.methodImplsByTag = strMap();
-    return true;
+    return pk( "yep", pkNil );
 };
 PkRuntime.prototype.callMethod = function ( name, args, next ) {
     var meta = this.meta_.get( name );
@@ -1192,6 +1296,5 @@ function makePkRuntime() {
     return new PkRuntime().init_();
 }
 
-// TODO: Define more useful utilities, including function syntaxes,
-// conditionals, assignment, tag definitions, method definitions, and
-// exceptions.
+// TODO: Define more useful utilities, including conditionals and
+// assignment.
