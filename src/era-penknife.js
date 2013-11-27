@@ -189,6 +189,22 @@ function listLenEq( a, b, next, then ) {
         return then( result, next );
     } );
 }
+function listLenIsNat( list, nat, next, then ) {
+    function go( list, nat, next ) {
+        if ( list.tag === "nil" && nat.tag === "nil" )
+            return true;
+        if ( !(list.tag === "cons" && nat.tag === "succ") )
+            return false;
+        return runWaitOne( next, function ( next ) {
+            return go( list.ind( 1 ), nat.ind( 0 ), next );
+        } );
+    }
+    return next.runWait( function ( next ) {
+        return go( list, nat, next );
+    }, function ( result, next ) {
+        return then( result, next );
+    } );
+}
 function lenPlusNat( list, nat, next, then ) {
     function go( list, nat, next ) {
         if ( list.tag !== "cons" )
@@ -343,7 +359,7 @@ function listMapMultiWithLen( nat, lists, next, func, then ) {
         } );
     }
 }
-function pkDup( val, count, next ) {
+function pkDup( pkRuntime, val, count, next ) {
     
     // If we're only trying to get one duplicate, we already have our
     // answer, regardless of whether the value is linear.
@@ -368,14 +384,28 @@ function pkDup( val, count, next ) {
                 string: val.special.string
             } );
         } );
-    // TODO: Once we have defLinearTag, add another case here for
-    // that.
+    if ( val.special.dup !== void 0 )
+        return runWaitTry( next, function ( next ) {
+            return pkRuntime.callMethod( "call",
+                pkList( val.special.dup, pkList( val, count ) ),
+                next );
+        }, function ( result, next ) {
+            return listLenIsNat( result, count, next,
+                function ( correct, next ) {
+                
+                if ( !correct )
+                    return pkErr(
+                        "Got a list of incorrect length from a " +
+                        "linear value's custom dup function." );
+                return pk( "yep", result );
+            } );
+        } );
     return withDups( val.args, function ( args ) {
         return new Pk().init_( val.tag, args, !!"isLinear", {} );
     } );
     function withDups( args, reconstruct ) {
         return listMap( args, next, function ( arg, next ) {
-            return pkDup( arg, count, next );
+            return pkDup( pkRuntime, arg, count, next );
         }, function ( argsDuplicates, next ) {
             return listMapMultiWithLen( count, argsDuplicates, next,
                 function ( args ) {
@@ -688,7 +718,8 @@ PkRuntime.prototype.init_ = function () {
                     return maybeCapturedVal.tag !== "yep";
                 }, function ( argsDupCount, next ) {
                     return runWaitTry( next, function ( next ) {
-                        return pkDup( args, argsDupCount, next );
+                        return pkDup(
+                            self, args, argsDupCount, next );
                     }, function ( argsDuplicates, next ) {
                         return go(
                             captures, argsDuplicates, pkNil, next );
@@ -977,16 +1008,37 @@ PkRuntime.prototype.defMacro = function ( name, macro ) {
     meta.macro = macro;
     return true;
 };
-// TODO: Introduce a corresponding function called defLinearTag or
-// something.
 PkRuntime.prototype.defTag = function ( name, keys ) {
+    // TODO: Respect linearity. When we call this from Penknife code
+    // someday, if keys is linear, raise an error.
+    if ( keys.isLinear() )
+        return false;
     var meta = this.prepareMeta_( name );
     if ( meta.tagKeys !== void 0 )
         return false;
     meta.tagKeys = keys;
+    meta.dup = null;
+    return true;
+};
+PkRuntime.prototype.defLinearTag = function ( name, keys, dup ) {
+    // TODO: Respect linearity. When we call this from Penknife code
+    // someday, if keys or dup is linear, raise an error.
+    if ( keys.isLinear() )
+        return false;
+    if ( dup.isLinear() )
+        return false;
+    var meta = this.prepareMeta_( name );
+    if ( meta.tagKeys !== void 0 )
+        return false;
+    meta.tagKeys = keys;
+    meta.dup = dup;
     return true;
 };
 PkRuntime.prototype.defMethod = function ( name, args ) {
+    // TODO: Respect linearity. When we call this from Penknife code
+    // someday, if args is linear, raise an error.
+    if ( args.isLinear() )
+        return false;
     var meta = this.prepareMeta_( name, "method" );
     if ( meta === null )
         return false;
@@ -1059,7 +1111,11 @@ PkRuntime.prototype.getVal = function ( name ) {
                     return pkErrLen( args, "Can't make " + name );
                 return pk( "yep",
                     new Pk().init_(
-                        name, args, args.isLinear(), {} ) );
+                        name,
+                        args,
+                        meta.dup !== null || args.isLinear(),
+                        meta.dup === null ? {} : { dup: meta.dup }
+                    ) );
             } );
         } ) );
     // NOTE: If (meta.macro !== void 0), we don't do anything special.
