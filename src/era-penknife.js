@@ -2,6 +2,15 @@
 // Copyright 2013 Ross Angle. Released under the MIT License.
 "use strict";
 
+// TODO: Address all the places that say "TODO X". The following
+// Penknife code demonstrates a bug right now because the "cons" and
+// "x" expressions compiled inside the inner function have no way to
+// keep track of their respective indices in the outer function's
+// lexical closure:
+//
+// (defval quote.llac /fn x /fn y (cons y x))
+// ((llac (nil)) (yep/nil))
+
 function Pk() {}
 Pk.prototype.init_ = function ( tag, args, isLinear, special ) {
     this.tag = tag;
@@ -417,6 +426,9 @@ function pkDup( pkRuntime, val, count, next ) {
         } );
     }
 }
+// TODO X: Change this so the func returns a stack of lists of maybes
+// of bindings, rather than a "captures," where a "captures" is a list
+// of (pairs of (maybes of bindings) and (captures)).
 function runWaitTryBinding( next, nameForError, func, then ) {
     return runWaitTry( next, function ( next ) {
         return func( next );
@@ -444,6 +456,10 @@ function runWaitTryBinding( next, nameForError, func, then ) {
     } );
 }
 function funcAsMacro( pkRuntime, funcBinding ) {
+    // TODO X: Change this so it takes a stack of capture counts.
+    // TODO X: Change this so it returns a stack of lists of maybes of
+    // bindings, rather than a "captures," where a "captures" is a
+    // list of (pairs of (maybes of bindings) and (captures)).
     return pkfnLinear( pkList( pk( "yep", funcBinding ) ),
         function ( captures, args, next ) {
         
@@ -488,6 +504,7 @@ function funcAsMacro( pkRuntime, funcBinding ) {
             return runWaitTryBinding( next, "macroexpand-to-binding",
                 function ( next ) {
                 
+                // TODO X: Pass in a stack of capture counts.
                 return pkRuntime.callMethod( "macroexpand-to-binding",
                     pkList(
                         list.ind( 0 ),
@@ -496,6 +513,8 @@ function funcAsMacro( pkRuntime, funcBinding ) {
                     ),
                     next );
             }, function ( binding, captures, maybeMacro, next ) {
+                // TODO X: Expect "captures" to be a stack of lists of
+                // maybes of bindings.
                 return lenPlusNat( captures, captureCount, next,
                     function ( captureCount, next ) {
                     
@@ -770,6 +789,10 @@ PkRuntime.prototype.init_ = function () {
         } );
     } );
     
+    // TODO X: Change this so it takes a stack of capture counts.
+    // TODO X: Change this so it returns a stack of lists of maybes of
+    // bindings, rather than a "captures," where a "captures" is a
+    // list of (pairs of (maybes of bindings) and (captures)).
     defMethod( "macroexpand-to-binding",
         "self", "get-binding", "capture-count" );
     self.setStrictImpl( "macroexpand-to-binding", "string",
@@ -804,12 +827,15 @@ PkRuntime.prototype.init_ = function () {
         return runWaitTryBinding( next, "macroexpand-to-binding",
             function ( next ) {
             
+            // TODO X: Pass in a stack of capture counts.
             return self.callMethod( "macroexpand-to-binding", pkList(
                 listGet( args, 0 ).ind( 0 ),
                 listGet( args, 1 ),
                 listGet( args, 2 )
             ), next );
         }, function ( opBinding, captures1, maybeOp1, next ) {
+            // TODO X: Expect "captures1" to be a stack of lists of
+            // maybes of bindings.
             return lenPlusNat( captures1, listGet( args, 2 ), next,
                 function ( captureCount1, next ) {
                 
@@ -818,6 +844,7 @@ PkRuntime.prototype.init_ = function () {
                 return runWaitTryBinding( next, "a macro",
                     function ( next ) {
                     
+                    // TODO X: Pass in a stack of capture counts.
                     return self.callMethod( "call", pkList(
                         op,
                         pkList(
@@ -827,6 +854,8 @@ PkRuntime.prototype.init_ = function () {
                         )
                     ), next );
                 }, function ( binding, captures2, maybeOp2, next ) {
+                    // TODO X: Expect "captures2" to be a stack of
+                    // lists of maybes of bindings.
                     return listAppend( captures1, captures2, next,
                         function ( captures, next ) {
                         
@@ -838,6 +867,10 @@ PkRuntime.prototype.init_ = function () {
         } );
     } );
     
+    // TODO X: Change this so it takes a stack of capture counts.
+    // TODO X: Change this so it returns a stack of lists of maybes of
+    // bindings, rather than a "captures," where a "captures" is a
+    // list of (pairs of (maybes of bindings) and (captures)).
     self.defMacro( "fn", pkfn( function ( args, next ) {
         if ( !listLenIs( args, 3 ) )
             return pkErrLen( args, "Called fn's macroexpander" );
@@ -864,8 +897,15 @@ PkRuntime.prototype.init_ = function () {
         return runWaitTryBinding( next, "macroexpand-to-binding",
             function ( next ) {
             
+            // TODO X: Pass in a stack of capture counts.
             return self.callMethod( "macroexpand-to-binding", pkList(
                 listGet( body, 1 ),
+                // TODO X: Change this so it takes a stack of capture
+                // counts.
+                // TODO X: Change this so it returns a stack of lists
+                // of maybes of bindings, rather than a "captures,"
+                // where a "captures" is a list of
+                // (pairs of (maybes of bindings) and (captures)).
                 pkfn( function ( args, next ) {
                     if ( !listLenIs( args, 2 ) )
                         return pkErrLen( args,
@@ -884,9 +924,13 @@ PkRuntime.prototype.init_ = function () {
                             pkList( pkList( pkNil, pkNil ) ),
                             pkNil
                         ) );
+                    // TODO X: Once the macro takes a stack of capture
+                    // counts, use the tail of that stack here rather
+                    // than using the "captureCount" variable.
                     return runWaitTryBinding( next, "a get-binding",
                         function ( next ) {
                         
+                        // TODO X: Pass in a stack of capture counts.
                         return self.callMethod( "call", pkList(
                             nonlocalGetBinding,
                             pkList( listGet( args, 0 ), captureCount )
@@ -895,6 +939,11 @@ PkRuntime.prototype.init_ = function () {
                         captureBinding, nonlocalCaptureFrames,
                         maybeMacro, next ) {
                         
+                        // TODO X: Expect "nonlocalCaptureFrames" to
+                        // be a stack of lists of maybes of bindings.
+                        
+                        // TODO X: Er, remove this lenPlusNat call,
+                        // since we don't actually use the result.
                         return lenPlusNat(
                             nonlocalCaptureFrames, captureCount, next,
                             function ( captureCount, next ) {
@@ -915,6 +964,9 @@ PkRuntime.prototype.init_ = function () {
             ), next );
         }, function (
             bodyBinding, localCaptureFrames, maybeMacro, next ) {
+            
+            // TODO X: Expect "localCaptureFrames" to be a stack of
+            // lists of maybes of bindings.
             
             // NOTE: This isn't quite a map operation, because we
             // thread captureCount through it (not to mention that we
@@ -976,6 +1028,10 @@ PkRuntime.prototype.init_ = function () {
         } );
     } ) );
     
+    // TODO X: Change this so it takes a stack of capture counts.
+    // TODO X: Change this so it returns a stack of lists of maybes of
+    // bindings, rather than a "captures," where a "captures" is a
+    // list of (pairs of (maybes of bindings) and (captures)).
     self.defMacro( "quote", pkfn( function ( args, next ) {
         if ( !listLenIs( args, 3 ) )
             return pkErrLen( args, "Called quote's macroexpander" );
@@ -1254,12 +1310,15 @@ PkRuntime.prototype.conveniences_macroexpand = function (
     return runWaitTryBinding( opt_next, "macroexpand-to-binding",
         function ( next ) {
         
+        // TODO X: Pass in a stack of capture counts.
         return self.callMethod( "macroexpand-to-binding", pkList(
             expr,
             bindingGetter( self, "main-binding" ),
             pkNil
         ), next );
     }, function ( binding, captures, maybeMacro, next ) {
+        // TODO X: Expect "captures" to be a stack of lists of maybes
+        // of bindings.
         if ( captures.tag !== "nil" )
             return pkErr(
                 "Got a top-level macroexpansion result with " +

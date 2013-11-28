@@ -26,6 +26,10 @@ textarea { display: block; }
 ((fn x ((fn x (cons x x)) x x)) (nil) (nil))
 (defval quote.list /fn x x)
 (list quote.a quote.b)
+
+; failing test case
+(defval quote.llac /fn x /fn y (cons y x))
+((llac (nil)) (yep/nil))
 </textarea>
 <button id="go">Execute</button>
 <textarea id="result" disabled cols="80" rows="24"></textarea>
