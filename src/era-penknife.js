@@ -2,15 +2,6 @@
 // Copyright 2013 Ross Angle. Released under the MIT License.
 "use strict";
 
-// TODO: Address all the places that say "TODO X". The following
-// Penknife code demonstrates a bug right now because the "cons" and
-// "x" expressions compiled inside the inner function have no way to
-// keep track of their respective indices in the outer function's
-// lexical closure:
-//
-// (defval quote.llac /fn x /fn y (cons y x))
-// ((llac (nil)) (yep/nil))
-
 function Pk() {}
 Pk.prototype.init_ = function ( tag, args, isLinear, special ) {
     this.tag = tag;
@@ -231,9 +222,9 @@ function lenPlusNat( list, nat, next, then ) {
 function listGetNat( list, nat, next, then ) {
     function go( list, nat, next ) {
         if ( list.tag !== "cons" )
-            return then( pkNil, next );
+            return pkNil;
         if ( nat.tag !== "succ" )
-            return then( pk( "yep", list.ind( 0 ) ), next );
+            return pk( "yep", list.ind( 0 ) );
         return runWaitOne( next, function ( next ) {
             return go( list.ind( 1 ), nat.ind( 0 ), next );
         } );
@@ -270,6 +261,24 @@ function listAppend( a, b, next, then ) {
         } );
     } );
 }
+function listFlatten( list, next, then ) {
+    // TODO: See if there's a more efficient way to do this.
+    if ( list.tag !== "cons" )
+        return then( pkNil, next );
+    if ( list.ind( 1 ).tag !== "cons" )
+        return then( list.ind( 0 ), next );
+    return runWaitOne( next, function ( next ) {
+        return listFlatten( list.ind( 1 ), next,
+            function ( flatTail, next ) {
+            
+            return listAppend( list.ind( 0 ), flatTail, next,
+                function ( result, next ) {
+                
+                return then( result, next );
+            } );
+        } );
+    } );
+}
 function listRevFlatten( list, next, then ) {
     // Do flatten( reverse( list ) ).
     // TODO: See if there's a more efficient way to do this.
@@ -278,21 +287,82 @@ function listRevFlatten( list, next, then ) {
         return listFlatten( list, next, function ( result, next ) {
             return then( result, next );
         } );
-        function listFlatten( list, next, then ) {
-            if ( list.tag !== "cons" )
-                return then( pkNil, next );
-            if ( list.ind( 1 ).tag !== "cons" )
-                return then( list.ind( 0 ), next );
-            return runWaitOne( next, function ( next ) {
-                return listFlatten( list.ind( 1 ), next,
-                    function ( flatTail, next ) {
+    } );
+}
+function appendStacks( stacks, next ) {
+    // Given a list of stacks of lists, where the stacks are
+    // conceptually infinite with nils at the end, return a stack that
+    // concatenates the lists in the original stacks.
+    return listAny( stacks, next, function ( stack ) {
+        return stack.tag === "cons";
+    }, function ( moreToGo, next ) {
+        if ( !moreToGo )
+            return pk( "yep", pkNil );
+        return listMap( stacks, next, function ( stack, next ) {
+            return pk( "yep",
+                stack.tag === "cons" ? stack.ind( 0 ) : pkNil );
+        }, function ( heads, next ) {
+            return listMap( stacks, next, function ( stack, next ) {
+                return pk( "yep",
+                    stack.tag === "cons" ? stack.ind( 1 ) : pkNil );
+            }, function ( tails, next ) {
+                return listFlatten( heads, next,
+                    function ( flatHead, next ) {
                     
-                    return listAppend( list.ind( 0 ), flatTail, next,
-                        function ( result, next ) {
-                        
-                        return then( result, next );
+                    return runWaitTry( next, function ( next ) {
+                        return appendStacks( tails, next );
+                    }, function ( flatTail, next ) {
+                        return pk( "yep",
+                            pkCons( flatHead, flatTail ) );
                     } );
                 } );
+            } );
+        } );
+    } );
+}
+function lensPlusNats( lists, nats, next ) {
+    // Given a stack of lists and a stack of nats, where the stacks
+    // are conceptually infinite with empty lists or zeros at the end,
+    // return a stack of nats that sums the length of each list with
+    // the corresponding nat.
+    if ( !(lists.tag === "cons" || nats.tag === "cons") )
+        return pk( "yep", pkNil );
+    if ( lists.tag !== "cons" )
+        lists = pkList( pkNil );
+    if ( nats.tag !== "cons" )
+        nats = pkList( pkNil );
+    
+    return lenPlusNat( lists.ind( 0 ), nats.ind( 0 ), next,
+        function ( head, next ) {
+        
+        return runWaitTry( next, function ( next ) {
+            return lensPlusNats(
+                lists.ind( 1 ), nats.ind( 1 ), next );
+        }, function ( tail, next ) {
+            return pk( "yep", pkCons( head, tail ) );
+        } );
+    } );
+}
+// TODO: Use this. It'll come in handy when receiving a stack from
+// user-supplied code.
+function trimStack( lists, next ) {
+    // Given a stack of lists, return the stack with all its trailing
+    // nils removed.
+    return listRevAppend( lists, pkNil, next,
+        function ( revLists, next ) {
+        
+        return go( revLists, next );
+        function go( revLists, next ) {
+            if ( revLists.tag !== "cons" )
+                return pk( "yep", pkNil );
+            if ( revLists.ind( 0 ).tag === "cons" )
+                return listRevAppend( revLists, pkNil, next,
+                    function ( lists, next ) {
+                    
+                    return pk( "yep", lists );
+                } );
+            return runWaitOne( next, function ( next ) {
+                return go( revLists.ind( 1 ), next );
             } );
         }
     } );
@@ -340,6 +410,19 @@ function listCount( list, next, func, then ) {
             if ( func( list.ind( 0 ) ) )
                 return go( list.ind( 1 ), pk( "succ", count ), next );
             return go( list.ind( 1 ), count, next );
+        } );
+    }
+}
+function listAny( list, next, func, then ) {
+    return go( list, next );
+    function go( list, next ) {
+        if ( list.tag !== "cons" )
+            return then( false, next );
+        return runWaitOne( next, function ( next ) {
+            var result = func( list.ind( 0 ) );
+            if ( result )
+                return then( result, next );
+            return go( list.ind( 1 ), next );
         } );
     }
 }
@@ -426,9 +509,6 @@ function pkDup( pkRuntime, val, count, next ) {
         } );
     }
 }
-// TODO X: Change this so the func returns a stack of lists of maybes
-// of bindings, rather than a "captures," where a "captures" is a list
-// of (pairs of (maybes of bindings) and (captures)).
 function runWaitTryBinding( next, nameForError, func, then ) {
     return runWaitTry( next, function ( next ) {
         return func( next );
@@ -438,6 +518,10 @@ function runWaitTryBinding( next, nameForError, func, then ) {
         var opBinding = listGet( results, 0 );
         var captures = listGet( results, 1 );
         var maybeMacro = listGet( results, 2 );
+        // TODO: See if we should verify that `captures` is a stack of
+        // lists of maybes of bindings. It would be inefficient, but
+        // it might be necessary sometimes. Perhaps it should be a
+        // parameter to runWaitTryBinding().
         if ( !isList( captures ) )
             return pkErr(
                 "Got non-list captures from " + nameForError );
@@ -456,10 +540,6 @@ function runWaitTryBinding( next, nameForError, func, then ) {
     } );
 }
 function funcAsMacro( pkRuntime, funcBinding ) {
-    // TODO X: Change this so it takes a stack of capture counts.
-    // TODO X: Change this so it returns a stack of lists of maybes of
-    // bindings, rather than a "captures," where a "captures" is a
-    // list of (pairs of (maybes of bindings) and (captures)).
     return pkfnLinear( pkList( pk( "yep", funcBinding ) ),
         function ( captures, args, next ) {
         
@@ -469,58 +549,69 @@ function funcAsMacro( pkRuntime, funcBinding ) {
             return pkErrLen( args,
                 "Called a non-macro's macroexpander" );
         var getBinding = listGet( args, 0 );
-        var captureCount = listGet( args, 1 );
+        var captureCounts = listGet( args, 1 );
         var argsList = listGet( args, 2 );
-        if ( !isList( argsList ) )
-            return pkErr(
-                "Called a non-macro's macroexpander with a " +
-                "non-list args list" );
         if ( getBinding.isLinear() )
             return pkErr(
                 "Called a non-macro's macroexpander with a linear " +
                 "get-binding" );
+        // TODO: See if we should verify that `captureCounts` is a
+        // stack of nats.
+        if ( !isList( captureCounts ) )
+            return pkErr(
+                "Called a non-macro's macroexpander with a " +
+                "non-list stack of capture counts." );
+        if ( !isList( argsList ) )
+            return pkErr(
+                "Called a non-macro's macroexpander with a " +
+                "non-list args list" );
         return parseList(
-            argsList, captureCount, pkNil, pkNil, next );
+            argsList, captureCounts, pkNil, pkNil, next );
         function parseList(
-            list, captureCount, revCapturesSoFar, revBindingsSoFar,
+            list, captureCounts, revCapturesSoFar, revBindingsSoFar,
             next ) {
             
             if ( list.tag !== "cons" )
-                return listRevFlatten( revCapturesSoFar, next,
+                return listRevAppend(
+                    revCapturesSoFar, pkNil, next,
                     function ( captures, next ) {
                     
-                    return listRevAppend(
-                        revBindingsSoFar, pkNil, next,
-                        function ( bindings, next ) {
-                        
-                        return pk( "yep", pkList(
-                            pk( "call-binding",
-                                funcBinding, bindings ),
-                            captures,
-                            pkNil
-                        ) );
+                    return runWaitTry( next, function ( next ) {
+                        return appendStacks( captures, next );
+                    }, function ( captures, next ) {
+                        return listRevAppend(
+                            revBindingsSoFar, pkNil, next,
+                            function ( bindings, next ) {
+                            
+                            return pk( "yep", pkList(
+                                pk( "call-binding",
+                                    funcBinding, bindings ),
+                                captures,
+                                pkNil
+                            ) );
+                        } );
                     } );
                 } );
             return runWaitTryBinding( next, "macroexpand-to-binding",
                 function ( next ) {
                 
-                // TODO X: Pass in a stack of capture counts.
                 return pkRuntime.callMethod( "macroexpand-to-binding",
                     pkList(
                         list.ind( 0 ),
                         listGet( args, 0 ),
-                        captureCount
+                        captureCounts
                     ),
                     next );
             }, function ( binding, captures, maybeMacro, next ) {
-                // TODO X: Expect "captures" to be a stack of lists of
+                // TODO: Verify that `captures` is a stack of lists of
                 // maybes of bindings.
-                return lenPlusNat( captures, captureCount, next,
-                    function ( captureCount, next ) {
-                    
+                return runWaitTry( next, function ( next ) {
+                    return lensPlusNats(
+                        captures, captureCounts, next );
+                }, function ( captureCounts, next ) {
                     return parseList(
                         list.ind( 1 ),
-                        captureCount,
+                        captureCounts,
                         pkCons( captures, revCapturesSoFar ),
                         pkCons( binding, revBindingsSoFar ),
                         next );
@@ -789,23 +880,20 @@ PkRuntime.prototype.init_ = function () {
         } );
     } );
     
-    // TODO X: Change this so it takes a stack of capture counts.
-    // TODO X: Change this so it returns a stack of lists of maybes of
-    // bindings, rather than a "captures," where a "captures" is a
-    // list of (pairs of (maybes of bindings) and (captures)).
     defMethod( "macroexpand-to-binding",
-        "self", "get-binding", "capture-count" );
+        "self", "get-binding", "capture-counts" );
     self.setStrictImpl( "macroexpand-to-binding", "string",
         function ( args, next ) {
         
-        if ( !isNat( listGet( args, 2 ) ) )
-            return pkErr(
-                "Called macroexpand-to-binding with a capture " +
-                "count that wasn't a nat" );
         if ( listGet( args, 1 ).isLinear() )
             return pkErr(
                 "Called macroexpand-to-binding with a linear " +
                 "get-binding" );
+        // TODO: Verify that listGet( args, 2 ) is a stack of nats.
+        if ( !isList( listGet( args, 2 ) ) )
+            return pkErr(
+                "Called macroexpand-to-binding with a non-list " +
+                "stack of capture counts" );
         return runWaitOne( next, function ( next ) {
             return self.callMethod( "call", pkList(
                 listGet( args, 1 ),
@@ -816,49 +904,57 @@ PkRuntime.prototype.init_ = function () {
     self.setStrictImpl( "macroexpand-to-binding", "cons",
         function ( args, next ) {
         
-        if ( !isNat( listGet( args, 2 ) ) )
-            return pkErr(
-                "Called macroexpand-to-binding with a capture " +
-                "count that wasn't a nat" );
         if ( listGet( args, 1 ).isLinear() )
             return pkErr(
                 "Called macroexpand-to-binding with a linear " +
                 "get-binding" );
+        // TODO: Verify that listGet( args, 2 ) is a stack of nats.
+        if ( !isList( listGet( args, 2 ) ) )
+            return pkErr(
+                "Called macroexpand-to-binding with a non-list " +
+                "stack of capture counts" );
         return runWaitTryBinding( next, "macroexpand-to-binding",
             function ( next ) {
             
-            // TODO X: Pass in a stack of capture counts.
             return self.callMethod( "macroexpand-to-binding", pkList(
                 listGet( args, 0 ).ind( 0 ),
                 listGet( args, 1 ),
                 listGet( args, 2 )
             ), next );
         }, function ( opBinding, captures1, maybeOp1, next ) {
-            // TODO X: Expect "captures1" to be a stack of lists of
-            // maybes of bindings.
-            return lenPlusNat( captures1, listGet( args, 2 ), next,
-                function ( captureCount1, next ) {
-                
+            return runWaitTry( next, function ( next ) {
+                return lensPlusNats(
+                    captures1, listGet( args, 2 ), next );
+            }, function ( captureCounts1, next ) {
+                // TODO: Right now we always include `captures1` in
+                // the overall captures. This means a function
+                // containing a macro call always captures the *value*
+                // of that macro name, even though it's unused. See if
+                // we should revise the macro interface so it takes
+                // those bindings as paramters and has to spit them
+                // out again if it actually wants them. Alternately,
+                // see if we should introduce a dedicated fork type
+                // that either returns a binding-and-captures or
+                // returns a macro. The old Penknife used forks like
+                // that.
                 var op = maybeOp1.tag === "yep" ? maybeOp1.ind( 0 ) :
                     funcAsMacro( self, opBinding );
                 return runWaitTryBinding( next, "a macro",
                     function ( next ) {
                     
-                    // TODO X: Pass in a stack of capture counts.
                     return self.callMethod( "call", pkList(
                         op,
                         pkList(
                             listGet( args, 1 ),
-                            captureCount1,
+                            captureCounts1,
                             listGet( args, 0 ).ind( 1 )
                         )
                     ), next );
                 }, function ( binding, captures2, maybeOp2, next ) {
-                    // TODO X: Expect "captures2" to be a stack of
-                    // lists of maybes of bindings.
-                    return listAppend( captures1, captures2, next,
-                        function ( captures, next ) {
-                        
+                    return runWaitTry( next, function ( next ) {
+                        return appendStacks(
+                            pkList( captures1, captures2 ), next );
+                    }, function ( captures, next ) {
                         return pk( "yep",
                             pkList( binding, captures, maybeOp2 ) );
                     } );
@@ -867,24 +963,22 @@ PkRuntime.prototype.init_ = function () {
         } );
     } );
     
-    // TODO X: Change this so it takes a stack of capture counts.
-    // TODO X: Change this so it returns a stack of lists of maybes of
-    // bindings, rather than a "captures," where a "captures" is a
-    // list of (pairs of (maybes of bindings) and (captures)).
     self.defMacro( "fn", pkfn( function ( args, next ) {
         if ( !listLenIs( args, 3 ) )
             return pkErrLen( args, "Called fn's macroexpander" );
         var nonlocalGetBinding = listGet( args, 0 );
-        var captureCount = listGet( args, 1 );
+        var captureCounts = listGet( args, 1 );
         var body = listGet( args, 2 );
         if ( nonlocalGetBinding.isLinear() )
             return pkErr(
                 "Called fn's macroexpander with a linear get-binding"
                 );
-        if ( !isNat( captureCount ) )
+        // TODO: Verify that `captureCounts` is a stack of
+        // nats.
+        if ( !isList( captureCounts ) )
             return pkErr(
-                "Called fn's macroexpander with a non-nat capture " +
-                "count" );
+                "Called fn's macroexpander with a non-list stack " +
+                "of capture counts" );
         if ( !isList( body ) )
             return pkErr(
                 "Called fn's macroexpander with a non-list macro body"
@@ -897,15 +991,8 @@ PkRuntime.prototype.init_ = function () {
         return runWaitTryBinding( next, "macroexpand-to-binding",
             function ( next ) {
             
-            // TODO X: Pass in a stack of capture counts.
             return self.callMethod( "macroexpand-to-binding", pkList(
                 listGet( body, 1 ),
-                // TODO X: Change this so it takes a stack of capture
-                // counts.
-                // TODO X: Change this so it returns a stack of lists
-                // of maybes of bindings, rather than a "captures,"
-                // where a "captures" is a list of
-                // (pairs of (maybes of bindings) and (captures)).
                 pkfn( function ( args, next ) {
                     if ( !listLenIs( args, 2 ) )
                         return pkErrLen( args,
@@ -914,138 +1001,75 @@ PkRuntime.prototype.init_ = function () {
                         return pkErr(
                             "Called a get-binding with a " +
                             "non-string name" );
-                    if ( !isNat( listGet( args, 1 ) ) )
+                    var captureCounts = listGet( args, 1 );
+                    // TODO: Verify that `captureCounts` is a stack of
+                    // nats.
+                    if ( !isList( captureCounts ) )
                         return pkErr(
-                            "Called a get-binding with a capture " +
-                            "count that wasn't a nat" );
+                            "Called macroexpand-to-binding with a " +
+                            "non-list stack of capture counts" );
+                    if ( captureCounts.tag === "nil" )
+                        captureCounts = pkList( pkNil );
                     if ( jsName === listGet( args, 0 ).special.jsStr )
                         return pk( "yep", pkList(
-                            pk( "param-binding", listGet( args, 1 ) ),
-                            pkList( pkList( pkNil, pkNil ) ),
+                            pk( "param-binding",
+                                captureCounts.ind( 0 ) ),
+                            pkList( pkList( pkNil ) ),
                             pkNil
                         ) );
-                    // TODO X: Once the macro takes a stack of capture
-                    // counts, use the tail of that stack here rather
-                    // than using the "captureCount" variable.
                     return runWaitTryBinding( next, "a get-binding",
                         function ( next ) {
                         
-                        // TODO X: Pass in a stack of capture counts.
                         return self.callMethod( "call", pkList(
                             nonlocalGetBinding,
-                            pkList( listGet( args, 0 ), captureCount )
+                            pkList( listGet( args, 0 ),
+                                captureCounts.ind( 1 ) )
                         ), next );
                     }, function (
                         captureBinding, nonlocalCaptureFrames,
                         maybeMacro, next ) {
                         
-                        // TODO X: Expect "nonlocalCaptureFrames" to
-                        // be a stack of lists of maybes of bindings.
-                        
-                        // TODO X: Er, remove this lenPlusNat call,
-                        // since we don't actually use the result.
-                        return lenPlusNat(
-                            nonlocalCaptureFrames, captureCount, next,
-                            function ( captureCount, next ) {
-                            
-                            return pk( "yep", pkList(
-                                pk( "param-binding",
-                                    listGet( args, 1 ) ),
-                                pkList( pkList(
-                                    pk( "yep", captureBinding ),
-                                    nonlocalCaptureFrames
-                                ) ),
-                                maybeMacro
-                            ) );
-                        } );
+                        return pk( "yep", pkList(
+                            pk( "param-binding",
+                                captureCounts.ind( 0 ) ),
+                            pkCons(
+                                pkList( pk( "yep", captureBinding ) ),
+                                nonlocalCaptureFrames ),
+                            maybeMacro
+                        ) );
                     } );
                 } ),
-                pkNil
+                pkCons( pkNil, captureCounts )
             ), next );
         }, function (
             bodyBinding, localCaptureFrames, maybeMacro, next ) {
             
-            // TODO X: Expect "localCaptureFrames" to be a stack of
-            // lists of maybes of bindings.
-            
-            // NOTE: This isn't quite a map operation, because we
-            // thread captureCount through it (not to mention that we
-            // accumulate two results per pass, and one of the result
-            // lists gets flattened).
-            return processCaptures(
-                localCaptureFrames, pkNil, pkNil, captureCount, next
-                );
-            function processCaptures(
-                localCaptureFrames, revCaptureBindings,
-                revNonlocalCaptureFrames, captureCount, next ) {
-                
-                if ( localCaptureFrames.tag !== "cons" )
-                    return listRevAppend(
-                        revCaptureBindings, pkNil, next,
-                        function ( captureBindings, next ) {
-                        
-                        return listRevFlatten(
-                            revNonlocalCaptureFrames, next,
-                            function ( nonlocalCaptureFrames, next ) {
-                            
-                            return pk( "yep", pkList(
-                                pk( "fn-binding",
-                                    captureBindings, bodyBinding ),
-                                nonlocalCaptureFrames,
-                                pkNil
-                            ) );
-                        } );
-                    } );
-                var errLongWindedness =
-                    " from a get-binding, a " +
-                    "macroexpand-to-binding, or a macro result " +
-                    "somewhere along the line";
-                if ( !(isList( localCaptureFrames.ind( 0 ) )
-                    && listLenIs( localCaptureFrames.ind( 0 ), 2 ) ) )
-                    return pkErr(
-                        "Got a non-pair capture frame" +
-                        errLongWindedness );
-                var maybeCaptureBinding =
-                    listGet( localCaptureFrames.ind( 0 ), 0 );
-                var theseNonlocalCaptureFrames =
-                    listGet( localCaptureFrames.ind( 0 ), 1 );
-                // TODO: See if we should verify the structure of
-                // maybeCaptureBinding and theseNonlocalCaptureFrames.
-                return lenPlusNat(
-                    theseNonlocalCaptureFrames, captureCount, next,
-                    function ( captureCount, next ) {
-                    
-                    return processCaptures(
-                        localCaptureFrames.ind( 1 ),
-                        pkCons( localCaptureFrames.ind( 0 ).ind( 0 ),
-                            revCaptureBindings ),
-                        pkCons( theseNonlocalCaptureFrames,
-                            revNonlocalCaptureFrames ),
-                        captureCount,
-                        next );
-                } );
-            }
-        } );
+            if ( localCaptureFrames.tag === "nil" )
+                localCaptureFrames = pkList( pkNil );
+            return pk( "yep", pkList(
+                pk( "fn-binding",
+                    localCaptureFrames.ind( 0 ), bodyBinding ),
+                localCaptureFrames.ind( 1 ),
+                pkNil
+            ) );
+       } );
     } ) );
     
-    // TODO X: Change this so it takes a stack of capture counts.
-    // TODO X: Change this so it returns a stack of lists of maybes of
-    // bindings, rather than a "captures," where a "captures" is a
-    // list of (pairs of (maybes of bindings) and (captures)).
     self.defMacro( "quote", pkfn( function ( args, next ) {
         if ( !listLenIs( args, 3 ) )
             return pkErrLen( args, "Called quote's macroexpander" );
         var getBinding = listGet( args, 0 );
-        var captureCount = listGet( args, 1 );
+        var captureCounts = listGet( args, 1 );
         var body = listGet( args, 2 );
         if ( getBinding.isLinear() )
             return pkErr(
                 "Called quote's macroexpander with a linear " +
                 "get-binding" );
-        if ( !isNat( captureCount ) )
+        // TODO: Verify that `captureCounts` is a stack of nats.
+        if ( !isList( captureCounts ) )
             return pkErr(
-                "Called quote's macroexpander with a non-nat " +
-                "capture count" );
+                "Called quote's macroexpander with a non-list " +
+                "stack of capture counts" );
         if ( !isList( body ) )
             return pkErr(
                 "Called quote's macroexpander with a non-list " +
@@ -1310,20 +1334,25 @@ PkRuntime.prototype.conveniences_macroexpand = function (
     return runWaitTryBinding( opt_next, "macroexpand-to-binding",
         function ( next ) {
         
-        // TODO X: Pass in a stack of capture counts.
         return self.callMethod( "macroexpand-to-binding", pkList(
             expr,
             bindingGetter( self, "main-binding" ),
             pkNil
         ), next );
     }, function ( binding, captures, maybeMacro, next ) {
-        // TODO X: Expect "captures" to be a stack of lists of maybes
-        // of bindings.
-        if ( captures.tag !== "nil" )
-            return pkErr(
-                "Got a top-level macroexpansion result with " +
-                "captures" );
-        return pk( "yep", binding );
+        
+        // Verify `captures` is a stack of *empty* lists of maybes of
+        // bindings.
+        return listAny( captures, next, function ( bindings ) {
+            return bindings.tag !== "nil";
+        }, function ( incorrect, next ) {
+            if ( incorrect )
+                return pkErr(
+                    "Got a top-level macroexpansion result with " +
+                    "captures" );
+            
+            return pk( "yep", binding );
+        } );
     } );
 };
 PkRuntime.prototype.conveniences_macroexpandArrays = function (
