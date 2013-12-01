@@ -133,7 +133,7 @@ function pkErrLen( args, message ) {
         len === 1 ? "1 arg" :
             "" + len + " args") );
 }
-function bindingGetter( pkRuntime, nameForError ) {
+function forkGetter( pkRuntime, nameForError ) {
     return pkfn( function ( args, next ) {
         if ( !listLenIs( args, 2 ) )
             return pkErrLen( args, "Called " + nameForError );
@@ -149,7 +149,7 @@ function bindingGetter( pkRuntime, nameForError ) {
             return pkRuntime.getMacro(
                 listGet( args, 0 ).special.jsStr );
         }, function ( maybeMacro, next ) {
-            return pk( "yep", pkList(
+            return pk( "yep", pk( "getmac-fork",
                 pk( "main-binding", listGet( args, 0 ) ),
                 pkNil,
                 maybeMacro
@@ -509,34 +509,45 @@ function pkDup( pkRuntime, val, count, next ) {
         } );
     }
 }
-function runWaitTryBinding( next, nameForError, func, then ) {
+function runWaitTryGetmacFork(
+    pkRuntime, next, nameForError, func, then ) {
+    
     return runWaitTry( next, function ( next ) {
         return func( next );
-    }, function ( results, next ) {
-        if ( !(isList( results ) && listLenIs( results, 3 )) )
-            return pkErr( "Got a non-triple from " + nameForError );
-        var opBinding = listGet( results, 0 );
-        var captures = listGet( results, 1 );
-        var maybeMacro = listGet( results, 2 );
-        // TODO: See if we should verify that `captures` is a stack of
-        // lists of maybes of bindings. It would be inefficient, but
-        // it might be necessary sometimes. Perhaps it should be a
-        // parameter to runWaitTryBinding().
-        if ( !isList( captures ) )
-            return pkErr(
-                "Got non-list captures from " + nameForError );
-        if ( maybeMacro.tag === "nil" ) {
-            // Do nothing.
-        } else if ( maybeMacro.tag !== "yep" ) {
-            return pkErr(
-                "Got a non-maybe value for the macro result of " +
-                nameForError );
-        } else if ( maybeMacro.isLinear() ) {
-            return pkErr(
-                "Got a linear value for the macro result of " +
-                nameForError );
-        }
-        return then( opBinding, captures, maybeMacro, next );
+    }, function ( fork, next ) {
+        if ( fork.tag === "cons" )
+            debugger;
+        return runWaitTry( next, function ( next ) {
+            return pkRuntime.callMethod( "fork-to-getmac",
+                pkList( fork ), next );
+        }, function ( results, next ) {
+            if ( !(isList( results ) && listLenIs( results, 3 )) )
+                return pkErr(
+                    "Got a non-triple from " + nameForError );
+            var opBinding = listGet( results, 0 );
+            var captures = listGet( results, 1 );
+            var maybeMacro = listGet( results, 2 );
+            // TODO: See if we should verify that `captures` is a
+            // stack of lists of maybes of bindings. It would be
+            // inefficient, but it might be necessary sometimes.
+            // Perhaps a parameter to runWaitTryGetmacFork() should
+            // tell us whether or not to do this.
+            if ( !isList( captures ) )
+                return pkErr(
+                    "Got non-list captures from " + nameForError );
+            if ( maybeMacro.tag === "nil" ) {
+                // Do nothing.
+            } else if ( maybeMacro.tag !== "yep" ) {
+                return pkErr(
+                    "Got a non-maybe value for the macro result of " +
+                    nameForError );
+            } else if ( maybeMacro.isLinear() ) {
+                return pkErr(
+                    "Got a linear value for the macro result of " +
+                    nameForError );
+            }
+            return then( opBinding, captures, maybeMacro, next );
+        } );
     } );
 }
 function funcAsMacro( pkRuntime, funcBinding ) {
@@ -548,13 +559,13 @@ function funcAsMacro( pkRuntime, funcBinding ) {
         if ( !listLenIs( args, 3 ) )
             return pkErrLen( args,
                 "Called a non-macro's macroexpander" );
-        var getBinding = listGet( args, 0 );
+        var getFork = listGet( args, 0 );
         var captureCounts = listGet( args, 1 );
         var argsList = listGet( args, 2 );
-        if ( getBinding.isLinear() )
+        if ( getFork.isLinear() )
             return pkErr(
                 "Called a non-macro's macroexpander with a linear " +
-                "get-binding" );
+                "get-fork" );
         // TODO: See if we should verify that `captureCounts` is a
         // stack of nats.
         if ( !isList( captureCounts ) )
@@ -583,7 +594,7 @@ function funcAsMacro( pkRuntime, funcBinding ) {
                             revBindingsSoFar, pkNil, next,
                             function ( bindings, next ) {
                             
-                            return pk( "yep", pkList(
+                            return pk( "yep", pk( "getmac-fork",
                                 pk( "call-binding",
                                     funcBinding, bindings ),
                                 captures,
@@ -592,15 +603,12 @@ function funcAsMacro( pkRuntime, funcBinding ) {
                         } );
                     } );
                 } );
-            return runWaitTryBinding( next, "macroexpand-to-binding",
+            return runWaitTryGetmacFork( pkRuntime, next,
+                "macroexpand-to-fork",
                 function ( next ) {
                 
-                return pkRuntime.callMethod( "macroexpand-to-binding",
-                    pkList(
-                        list.ind( 0 ),
-                        listGet( args, 0 ),
-                        captureCounts
-                    ),
+                return pkRuntime.callMethod( "macroexpand-to-fork",
+                    pkList( list.ind( 0 ), getFork, captureCounts ),
                     next );
             }, function ( binding, captures, maybeMacro, next ) {
                 // TODO: Verify that `captures` is a stack of lists of
@@ -682,10 +690,37 @@ PkRuntime.prototype.init_ = function () {
         );
     } );
     
+    defTag( "getmac-fork", "binding", "captures", "macro" );
+    self.defVal( "getmac-fork", pkfn( function ( args, next ) {
+        if ( !listLenIs( args, 3 ) )
+            return pkErrLen( args, "Called getmac-fork" );
+        // TODO: Verify that `listGet( args, 2 )` is a stack of lists
+        // of maybes of bindings.
+        return pk( "yep",
+            pk( "getmac-fork",
+                listGet( args, 0 ),
+                listGet( args, 1 ),
+                listGet( args, 2 ) ) );
+    } ) );
+    defMethod( "fork-to-getmac", "fork" );
+    self.setStrictImpl( "fork-to-getmac", "getmac-fork",
+        function ( args, next ) {
+        
+        var fork = listGet( args, 0 );
+        return pk( "yep",
+            pkList( fork.ind( 0 ), fork.ind( 1 ), fork.ind( 2 ) ) );
+    } );
+    
     defTag( "literal-binding", "literal-val" );
     defTag( "main-binding", "name" );
-    self.defVal( "main-binding",
-        bindingGetter( self, "main-binding" ) );
+    self.defVal( "main-binding", pkfn( function ( args, next ) {
+        if ( !listLenIs( args, 1 ) )
+            return pkErrLen( args, "Called main-binding" );
+        if ( listGet( args, 0 ).tag !== "string" )
+            return pkErr(
+                "Called main-binding with a non-string name" );
+        return pk( "yep", pk( "main-binding", listGet( args, 0 ) ) );
+    } ) );
     defTag( "call-binding", "op", "args" );
     self.defVal( "call-binding", pkfn( function ( args, next ) {
         if ( !listLenIs( args, 2 ) )
@@ -729,9 +764,7 @@ PkRuntime.prototype.init_ = function () {
             return pkErr(
                 "Called binding-interpret with a non-list list of " +
                 "captured values" );
-        return runWaitOne( next, function ( next ) {
-            return pk( "yep", listGet( args, 0 ).ind( 0 ) );
-        } );
+        return pk( "yep", listGet( args, 0 ).ind( 0 ) );
     } );
     self.setStrictImpl( "binding-interpret", "main-binding",
         function ( args, next ) {
@@ -740,10 +773,8 @@ PkRuntime.prototype.init_ = function () {
             return pkErr(
                 "Called binding-interpret with a non-list list of " +
                 "captured values" );
-        return runWaitOne( next, function ( next ) {
-            return self.getVal(
-                listGet( args, 0 ).ind( 0 ).special.jsStr );
-        } );
+        return self.getVal(
+            listGet( args, 0 ).ind( 0 ).special.jsStr );
     } );
     self.setStrictImpl( "binding-interpret", "call-binding",
         function ( args, next ) {
@@ -880,75 +911,70 @@ PkRuntime.prototype.init_ = function () {
         } );
     } );
     
-    defMethod( "macroexpand-to-binding",
-        "self", "get-binding", "capture-counts" );
-    self.setStrictImpl( "macroexpand-to-binding", "string",
+    defMethod( "macroexpand-to-fork",
+        "self", "get-fork", "capture-counts" );
+    self.setStrictImpl( "macroexpand-to-fork", "string",
         function ( args, next ) {
         
-        if ( listGet( args, 1 ).isLinear() )
+        var expr = listGet( args, 0 );
+        var getFork = listGet( args, 1 );
+        var captureCounts = listGet( args, 2 );
+        if ( getFork.isLinear() )
             return pkErr(
-                "Called macroexpand-to-binding with a linear " +
-                "get-binding" );
-        // TODO: Verify that listGet( args, 2 ) is a stack of nats.
-        if ( !isList( listGet( args, 2 ) ) )
+                "Called macroexpand-to-fork with a linear get-fork" );
+        // TODO: Verify that `captureCounts` is a stack of nats.
+        if ( !isList( captureCounts ) )
             return pkErr(
-                "Called macroexpand-to-binding with a non-list " +
-                "stack of capture counts" );
+                "Called macroexpand-to-fork with a non-list stack " +
+                "of capture counts" );
         return runWaitOne( next, function ( next ) {
-            return self.callMethod( "call", pkList(
-                listGet( args, 1 ),
-                pkList( listGet( args, 0 ), listGet( args, 2 ) )
-            ), next );
+            return self.callMethod( "call",
+                pkList( getFork, pkList( expr, captureCounts ) ),
+                next );
         } );
     } );
-    self.setStrictImpl( "macroexpand-to-binding", "cons",
+    self.setStrictImpl( "macroexpand-to-fork", "cons",
         function ( args, next ) {
         
-        if ( listGet( args, 1 ).isLinear() )
+        var expr = listGet( args, 0 );
+        var getFork = listGet( args, 1 );
+        var captureCounts = listGet( args, 2 );
+        if ( getFork.isLinear() )
             return pkErr(
-                "Called macroexpand-to-binding with a linear " +
-                "get-binding" );
-        // TODO: Verify that listGet( args, 2 ) is a stack of nats.
-        if ( !isList( listGet( args, 2 ) ) )
+                "Called macroexpand-to-fork with a linear get-fork" );
+        // TODO: Verify that `captureCounts` is a stack of nats.
+        if ( !isList( captureCounts ) )
             return pkErr(
-                "Called macroexpand-to-binding with a non-list " +
-                "stack of capture counts" );
-        return runWaitTryBinding( next, "macroexpand-to-binding",
+                "Called macroexpand-to-fork with a non-list stack " +
+                "of capture counts" );
+        return runWaitTryGetmacFork( self, next,
+            "macroexpand-to-fork",
             function ( next ) {
             
-            return self.callMethod( "macroexpand-to-binding", pkList(
-                listGet( args, 0 ).ind( 0 ),
-                listGet( args, 1 ),
-                listGet( args, 2 )
-            ), next );
+            return self.callMethod( "macroexpand-to-fork",
+                pkList( expr.ind( 0 ), getFork, captureCounts ),
+                next );
         }, function ( opBinding, captures1, maybeOp1, next ) {
             return runWaitTry( next, function ( next ) {
-                return lensPlusNats(
-                    captures1, listGet( args, 2 ), next );
+                return lensPlusNats( captures1, captureCounts, next );
             }, function ( captureCounts1, next ) {
                 // TODO: Right now we always include `captures1` in
                 // the overall captures. This means a function
                 // containing a macro call always captures the *value*
-                // of that macro name, even though it's unused. See if
-                // we should revise the macro interface so it takes
-                // those bindings as paramters and has to spit them
-                // out again if it actually wants them. Alternately,
-                // see if we should introduce a dedicated fork type
-                // that either returns a binding-and-captures or
-                // returns a macro. The old Penknife used forks like
-                // that.
+                // of that macro name, even though it's unused. Now
+                // that we have a dedicated fork type that either
+                // returns a binding-and-captures or a macro, revise
+                // the macro interface so it takes a fork as a
+                // parameter.
                 var op = maybeOp1.tag === "yep" ? maybeOp1.ind( 0 ) :
                     funcAsMacro( self, opBinding );
-                return runWaitTryBinding( next, "a macro",
+                return runWaitTryGetmacFork( self, next, "a macro",
                     function ( next ) {
                     
                     return self.callMethod( "call", pkList(
                         op,
                         pkList(
-                            listGet( args, 1 ),
-                            captureCounts1,
-                            listGet( args, 0 ).ind( 1 )
-                        )
+                            getFork, captureCounts1, expr.ind( 1 ) )
                     ), next );
                 }, function ( binding, captures2, maybeOp2, next ) {
                     return runWaitTry( next, function ( next ) {
@@ -956,7 +982,8 @@ PkRuntime.prototype.init_ = function () {
                             pkList( captures1, captures2 ), next );
                     }, function ( captures, next ) {
                         return pk( "yep",
-                            pkList( binding, captures, maybeOp2 ) );
+                            pk( "getmac-fork",
+                                binding, captures, maybeOp2 ) );
                     } );
                 } );
             } );
@@ -966,13 +993,12 @@ PkRuntime.prototype.init_ = function () {
     self.defMacro( "fn", pkfn( function ( args, next ) {
         if ( !listLenIs( args, 3 ) )
             return pkErrLen( args, "Called fn's macroexpander" );
-        var nonlocalGetBinding = listGet( args, 0 );
+        var nonlocalGetFork = listGet( args, 0 );
         var captureCounts = listGet( args, 1 );
         var body = listGet( args, 2 );
-        if ( nonlocalGetBinding.isLinear() )
+        if ( nonlocalGetFork.isLinear() )
             return pkErr(
-                "Called fn's macroexpander with a linear get-binding"
-                );
+                "Called fn's macroexpander with a linear get-fork" );
         // TODO: Verify that `captureCounts` is a stack of
         // nats.
         if ( !isList( captureCounts ) )
@@ -988,48 +1014,49 @@ PkRuntime.prototype.init_ = function () {
         if ( listGet( body, 0 ).tag !== "string" )
             return pkErr( "Expanded fn with a non-string var" );
         var jsName = listGet( body, 0 ).special.jsStr;
-        return runWaitTryBinding( next, "macroexpand-to-binding",
+        return runWaitTryGetmacFork( self, next,
+            "macroexpand-to-fork",
             function ( next ) {
             
-            return self.callMethod( "macroexpand-to-binding", pkList(
+            return self.callMethod( "macroexpand-to-fork", pkList(
                 listGet( body, 1 ),
                 pkfn( function ( args, next ) {
                     if ( !listLenIs( args, 2 ) )
-                        return pkErrLen( args,
-                            "Called a get-binding" );
-                    if ( listGet( args, 0 ).tag !== "string" )
-                        return pkErr(
-                            "Called a get-binding with a " +
-                            "non-string name" );
+                        return pkErrLen( args, "Called a get-fork" );
+                    var name = listGet( args, 0 );
                     var captureCounts = listGet( args, 1 );
+                    if ( name.tag !== "string" )
+                        return pkErr(
+                            "Called a get-fork with a non-string " +
+                            "name" );
                     // TODO: Verify that `captureCounts` is a stack of
                     // nats.
                     if ( !isList( captureCounts ) )
                         return pkErr(
-                            "Called macroexpand-to-binding with a " +
-                            "non-list stack of capture counts" );
+                            "Called a get-fork with a non-list " +
+                            "stack of capture counts" );
                     if ( captureCounts.tag === "nil" )
                         captureCounts = pkList( pkNil );
-                    if ( jsName === listGet( args, 0 ).special.jsStr )
-                        return pk( "yep", pkList(
+                    if ( jsName === name.special.jsStr )
+                        return pk( "yep", pk( "getmac-fork",
                             pk( "param-binding",
                                 captureCounts.ind( 0 ) ),
                             pkList( pkList( pkNil ) ),
                             pkNil
                         ) );
-                    return runWaitTryBinding( next, "a get-binding",
+                    return runWaitTryGetmacFork( self, next,
+                        "a get-fork",
                         function ( next ) {
                         
                         return self.callMethod( "call", pkList(
-                            nonlocalGetBinding,
-                            pkList( listGet( args, 0 ),
-                                captureCounts.ind( 1 ) )
+                            nonlocalGetFork,
+                            pkList( name, captureCounts.ind( 1 ) )
                         ), next );
                     }, function (
                         captureBinding, nonlocalCaptureFrames,
                         maybeMacro, next ) {
                         
-                        return pk( "yep", pkList(
+                        return pk( "yep", pk( "getmac-fork",
                             pk( "param-binding",
                                 captureCounts.ind( 0 ) ),
                             pkCons(
@@ -1046,7 +1073,7 @@ PkRuntime.prototype.init_ = function () {
             
             if ( localCaptureFrames.tag === "nil" )
                 localCaptureFrames = pkList( pkNil );
-            return pk( "yep", pkList(
+            return pk( "yep", pk( "getmac-fork",
                 pk( "fn-binding",
                     localCaptureFrames.ind( 0 ), bodyBinding ),
                 localCaptureFrames.ind( 1 ),
@@ -1058,13 +1085,13 @@ PkRuntime.prototype.init_ = function () {
     self.defMacro( "quote", pkfn( function ( args, next ) {
         if ( !listLenIs( args, 3 ) )
             return pkErrLen( args, "Called quote's macroexpander" );
-        var getBinding = listGet( args, 0 );
+        var getFork = listGet( args, 0 );
         var captureCounts = listGet( args, 1 );
         var body = listGet( args, 2 );
-        if ( getBinding.isLinear() )
+        if ( getFork.isLinear() )
             return pkErr(
                 "Called quote's macroexpander with a linear " +
-                "get-binding" );
+                "get-fork" );
         // TODO: Verify that `captureCounts` is a stack of nats.
         if ( !isList( captureCounts ) )
             return pkErr(
@@ -1076,7 +1103,7 @@ PkRuntime.prototype.init_ = function () {
                 "macro body" );
         if ( !listLenIs( body, 1 ) )
             return pkErrLen( body, "Expanded quote" );
-        return pk( "yep", pkList(
+        return pk( "yep", pk( "getmac-fork",
             pk( "literal-binding", listGet( body, 0 ) ),
             pkNil,
             pkNil
@@ -1331,12 +1358,13 @@ PkRuntime.prototype.conveniences_macroexpand = function (
     var self = this;
     if ( opt_next === void 0 )
         opt_next = self.conveniences_syncNext;
-    return runWaitTryBinding( opt_next, "macroexpand-to-binding",
+    return runWaitTryGetmacFork( self, opt_next,
+        "macroexpand-to-fork",
         function ( next ) {
         
-        return self.callMethod( "macroexpand-to-binding", pkList(
+        return self.callMethod( "macroexpand-to-fork", pkList(
             expr,
-            bindingGetter( self, "main-binding" ),
+            forkGetter( self, "the top-level get-fork" ),
             pkNil
         ), next );
     }, function ( binding, captures, maybeMacro, next ) {
