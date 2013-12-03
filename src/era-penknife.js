@@ -1229,7 +1229,7 @@ PkRuntime.prototype.init_ = function () {
                 listGet( args, 0 ).special.jsStr,
                 listGet( args, 1 ).special.jsStr,
                 function ( args, next ) {
-                    return pkRuntime.callMethod( "call",
+                    return self.callMethod( "call",
                         pkList( listGet( args, 2 ), args ), next );
                 } ) );
     } ) );
