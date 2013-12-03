@@ -106,7 +106,7 @@ window.onload = function () {
                 }
                 var macroexpanded =
                     penknife.conveniences_macroexpandArrays(
-                        result.val );
+                        result.val ).result;
                 if ( macroexpanded.tag === "nope" ) {
                     displays.push(
                         "Macroexpansion error: " +
@@ -124,7 +124,7 @@ window.onload = function () {
                 }
                 var interpreted =
                     penknife.conveniences_interpretBinding(
-                        macroexpanded.ind( 0 ) );
+                        macroexpanded.ind( 0 ) ).result;
                 if ( interpreted.tag === "nope" ) {
                     displays.push(
                         "Interpretation error: " +
