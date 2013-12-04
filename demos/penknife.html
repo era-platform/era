@@ -118,9 +118,9 @@ window.onload = function () {
                         macroexpanded );
                     break;
                 } else {
-                    displays.push(
-                        "Macroexpansion: " +
-                        macroexpanded.ind( 0 ) );
+//                    displays.push(
+//                        "Macroexpansion: " +
+//                        macroexpanded.ind( 0 ) );
                 }
                 var interpreted =
                     penknife.conveniences_interpretBinding(
@@ -136,8 +136,8 @@ window.onload = function () {
                         interpreted );
                     break;
                 } else {
-                    displays.push(
-                        "" + interpreted.ind( 0 ) + "\n" );
+                    displays.push( "" + interpreted.ind( 0 ) );
+//                    displays.push( "" );
                 }
                 // NOTE: We respect linearity already. A linear value
                 // won't be returned from macroexpansion or
