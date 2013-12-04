@@ -173,7 +173,7 @@ function runWaitTry( yoke, func, then ) {
     }, function ( yoke, tryVal ) {
         if ( tryVal.tag !== "yep" )
             return runRet( yoke, tryVal );
-        return then( tryVal.ind( 0 ), yoke );
+        return then( yoke, tryVal.ind( 0 ) );
     } );
 }
 function runWaitOne( yoke, then ) {
@@ -310,7 +310,7 @@ function listMap( list, yoke, func, then ) {
             } );
         return runWaitTry( yoke, function ( yoke ) {
             return func( list.ind( 0 ), yoke );
-        }, function ( resultElem, yoke ) {
+        }, function ( yoke, resultElem ) {
             return go( list.ind( 1 ),
                 pkCons( resultElem, revResults ), yoke );
         } );
@@ -327,7 +327,7 @@ function natMap( nat, yoke, func, then ) {
             } );
         return runWaitTry( yoke, function ( yoke ) {
             return func( nat, yoke );
-        }, function ( resultElem, yoke ) {
+        }, function ( yoke, resultElem ) {
             return go( nat.ind( 0 ),
                 pkCons( resultElem, revResults ), yoke );
         } );
@@ -375,7 +375,7 @@ function listMapMultiWithLen( nat, lists, yoke, func, then ) {
             }, function ( rests, yoke ) {
                 return runWaitTry( yoke, function ( yoke ) {
                     return func( firsts, yoke );
-                }, function ( resultElem, yoke ) {
+                }, function ( yoke, resultElem ) {
                     return go( nat.ind( 0 ), rests,
                         pkCons( resultElem, revResults ), yoke );
                 } );
@@ -405,7 +405,7 @@ function appendStacks( stacks, yoke ) {
                     
                     return runWaitTry( yoke, function ( yoke ) {
                         return appendStacks( tails, yoke );
-                    }, function ( flatTail, yoke ) {
+                    }, function ( yoke, flatTail ) {
                         return pkRet( yoke,
                             pkCons( flatHead, flatTail ) );
                     } );
@@ -432,7 +432,7 @@ function lensPlusNats( lists, nats, yoke ) {
         return runWaitTry( yoke, function ( yoke ) {
             return lensPlusNats(
                 lists.ind( 1 ), nats.ind( 1 ), yoke );
-        }, function ( tail, yoke ) {
+        }, function ( yoke, tail ) {
             return pkRet( yoke, pkCons( head, tail ) );
         } );
     } );
@@ -496,7 +496,7 @@ function pkDup( pkRuntime, val, count, yoke ) {
             return pkRuntime.callMethod( "call",
                 pkList( val.special.dup, pkList( val, count ) ),
                 yoke );
-        }, function ( result, yoke ) {
+        }, function ( yoke, result ) {
             return listLenIsNat( result, count, yoke,
                 function ( correct, yoke ) {
                 
@@ -550,10 +550,10 @@ function forkGetter( pkRuntime, nameForError ) {
 //                "top-level definition-reading side effects" );
         return runWaitTry( yoke, function ( yoke ) {
             return runRet( yoke, pkRuntime.getName( name ) );
-        }, function ( name, yoke ) {
+        }, function ( yoke, name ) {
             return runWaitTry( yoke, function ( yoke ) {
                 return runRet( yoke, pkRuntime.getMacro( name ) );
-            }, function ( maybeMacro, yoke ) {
+            }, function ( yoke, maybeMacro ) {
                 return pkRet( yoke, pk( "getmac-fork",
                     pk( "main-binding", name ),
                     pkNil,
@@ -568,11 +568,11 @@ function runWaitTryGetmacFork(
     
     return runWaitTry( yoke, function ( yoke ) {
         return func( yoke );
-    }, function ( fork, yoke ) {
+    }, function ( yoke, fork ) {
         return runWaitTry( yoke, function ( yoke ) {
             return pkRuntime.callMethod( "fork-to-getmac",
                 pkList( fork ), yoke );
-        }, function ( results, yoke ) {
+        }, function ( yoke, results ) {
             if ( !(isList( results ) && listLenIs( results, 3 )) )
                 return pkErr( yoke,
                     "Got a non-triple from " + nameForError );
@@ -636,7 +636,7 @@ function nonMacroMacroexpander( pkRuntime ) {
             return runWaitTry( yoke, function ( yoke ) {
                 return lensPlusNats(
                     funcCaptures, captureCounts, yoke );
-            }, function ( captureCounts, yoke ) {
+            }, function ( yoke, captureCounts ) {
                 return parseList(
                     argsList, captureCounts, pkList( funcCaptures ),
                     pkNil, yoke );
@@ -652,7 +652,7 @@ function nonMacroMacroexpander( pkRuntime ) {
                         
                         return runWaitTry( yoke, function ( yoke ) {
                             return appendStacks( captures, yoke );
-                        }, function ( captures, yoke ) {
+                        }, function ( yoke, captures ) {
                             return listRevAppend(
                                 revBindingsSoFar, pkNil, yoke,
                                 function ( bindings, yoke ) {
@@ -681,7 +681,7 @@ function nonMacroMacroexpander( pkRuntime ) {
                     return runWaitTry( yoke, function ( yoke ) {
                         return lensPlusNats(
                             captures, captureCounts, yoke );
-                    }, function ( captureCounts, yoke ) {
+                    }, function ( yoke, captureCounts ) {
                         return parseList(
                             list.ind( 1 ),
                             captureCounts,
@@ -888,10 +888,10 @@ PkRuntime.prototype.init_ = function () {
                 return self.callMethod( "binding-interpret",
                     pkList( list.ind( 0 ), listGet( args, 1 ) ),
                     yoke );
-            }, function ( elem, yoke ) {
+            }, function ( yoke, elem ) {
                 return runWaitTry( yoke, function ( yoke ) {
                     return interpretList( list.ind( 1 ), yoke );
-                }, function ( interpretedTail, yoke ) {
+                }, function ( yoke, interpretedTail ) {
                     return pkRet( yoke,
                         pkCons( elem, interpretedTail ) );
                 } );
@@ -902,11 +902,11 @@ PkRuntime.prototype.init_ = function () {
                 pkList(
                     listGet( args, 0 ).ind( 0 ), listGet( args, 1 ) ),
                 yoke );
-        }, function ( op, yoke ) {
+        }, function ( yoke, op ) {
             return runWaitTry( yoke, function ( yoke ) {
                 return interpretList(
                     listGet( args, 0 ).ind( 1 ), yoke );
-            }, function ( args, yoke ) {
+            }, function ( yoke, args ) {
                 return self.callMethod(
                     "call", pkList( op, args ), yoke );
             } );
@@ -947,7 +947,7 @@ PkRuntime.prototype.init_ = function () {
                 return self.callMethod( "binding-interpret",
                     pkList( capture.ind( 0 ), nonlocalCaptures ),
                     yoke );
-            }, function ( value, yoke ) {
+            }, function ( yoke, value ) {
                 return pkRet( yoke, pk( "yep", value ) );
             } );
         }, function ( captures ) {
@@ -962,7 +962,7 @@ PkRuntime.prototype.init_ = function () {
                     return runWaitTry( yoke, function ( yoke ) {
                         return pkDup(
                             self, args, argsDupCount, yoke );
-                    }, function ( argsDuplicates, yoke ) {
+                    }, function ( yoke, argsDuplicates ) {
                         return go(
                             captures, argsDuplicates, pkNil, yoke );
                         function go(
@@ -1049,7 +1049,7 @@ PkRuntime.prototype.init_ = function () {
             return self.callMethod( "macroexpand-to-fork",
                 pkList( expr.ind( 0 ), getFork, captureCounts ),
                 yoke );
-        }, function ( opFork, yoke ) {
+        }, function ( yoke, opFork ) {
             return runWaitTryGetmacFork( self, yoke,
                 "macroexpand-to-fork",
                 function ( yoke ) {
