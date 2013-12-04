@@ -3,14 +3,23 @@
 "use strict";
 
 function Pk() {}
-Pk.prototype.init_ = function ( tag, args, isLinear, special ) {
-    this.tag = tag;
+Pk.prototype.init_ = function (
+    tagName, tagJsStr, args, isLinear, special ) {
+    
+    this.tagName = tagName;
+    this.tag = tagJsStr;
     this.args_ = args;
     this.isLinear_ = isLinear;
     this.special = special;
     return this;
 };
+Pk.prototype.getTagName = function () {
+    // NOTE: The function pkStrName() is defined below.
+    return this.tagName !== null ? this.tagName :
+        pkStrName( this.tag );
+};
 Pk.prototype.ind = function ( i ) {
+    // NOTE: The function listGet() is defined below.
     return this.args_ === null ?
         this.special.argsArr[ i ] : listGet( this.args_, i );
 };
@@ -38,6 +47,12 @@ Pk.prototype.toString = function () {
             return " " + elem;
         } ).join( "" );
     }
+    if ( this.tag === "string-name" ) {
+        // TODO: See if this toString behavior still makes sense when
+        // the name contains spaces, parentheses, quotation marks,
+        // etc., or when the name is "nil".
+        return "" + this.ind( 0 );
+    }
     if ( this.tag === "string" )
         return JSON.stringify( this.special.jsStr );
     if ( this.tag === "fn" )
@@ -48,13 +63,13 @@ Pk.prototype.toString = function () {
         return "#(" + spaceBetween( this ) + ")";
     if ( this.tag === "succ" )
         return "" + toJsNum( this );
-    return "(" + this.tag + spaceBefore( this.args_ ) + ")";
+    return "(" + this.getTagName() + spaceBefore( this.args_ ) + ")";
 };
 var pkNil =
-    new Pk().init_( "nil", null, !"isLinear", { argsArr: [] } );
+    new Pk().init_( null, "nil", null, !"isLinear", { argsArr: [] } );
 function pkCons( first, rest ) {
     return new Pk().init_(
-        "cons", null, first.isLinear() || rest.isLinear(),
+        null, "cons", null, first.isLinear() || rest.isLinear(),
         { argsArr: [ first, rest ] } );
 }
 function pkListFromArr( arr ) {
@@ -65,18 +80,26 @@ function pkListFromArr( arr ) {
 }
 function pk( tag, var_args ) {
     var args = pkListFromArr( [].slice.call( arguments, 1 ) );
-    return new Pk().init_( tag, args, args.isLinear(), {} );
+    return new Pk().init_( null, tag, args, args.isLinear(), {} );
 }
 function pkStr( jsStr ) {
-    return new Pk().init_( "string", pkNil, !"isLinear",
+    return new Pk().init_( null, "string", pkNil, !"isLinear",
         { jsStr: jsStr } );
 }
+function pkStrNameRaw( str ) {
+    return new Pk().init_(
+        null, "string-name", pkList( str ), !"isLinear",
+        { nameJson: JSON.stringify( str.special.jsStr ) } );
+}
+function pkStrName( jsStr ) {
+    return pkStrNameRaw( pkStr( jsStr ) );
+}
 function pkfnLinear( captures, call ) {
-    return new Pk().init_( "fn", pkNil, captures.isLinear(),
+    return new Pk().init_( null, "fn", pkNil, captures.isLinear(),
         { captures: captures, call: call, string: "" + call } );
 }
 function pkfn( call ) {
-    return new Pk().init_( "fn", pkNil, !"isLinear", {
+    return new Pk().init_( null, "fn", pkNil, !"isLinear", {
         captures: pkNil,
         call: function ( captures, args, next ) {
             return call( args, next );
@@ -93,6 +116,9 @@ function isList( x ) {
 }
 function isNat( x ) {
     return x.tag === "succ" || x.tag === "nil";
+}
+function isName( x ) {
+    return x.tag === "string-name";
 }
 function listGet( x, i ) {
     for ( ; 0 < i; i-- ) {
@@ -442,10 +468,13 @@ function pkDup( pkRuntime, val, count, next ) {
     if ( count.tag === "succ" && count.ind( 0 ).tag === "nil" )
         return pkRet( next, pkList( val ) );
     
-    if ( !val.isLinear() )  // (including tags "nil" and "string")
+    if ( !val.isLinear() ) {
+        // NOTE: This includes tags "nil", "string", and
+        // "string-name".
         return withDups( pkNil, function ( ignored ) {
             return val;
         } );
+    }
     if ( val.tag === "cons" )
         return withDups( pkList( val.ind( 0 ), val.ind( 1 ) ),
             function ( args ) {
@@ -454,11 +483,13 @@ function pkDup( pkRuntime, val, count, next ) {
         } );
     if ( val.tag === "fn" )
         return withDups( val.special.captures, function ( captures ) {
-            return new Pk().init_( "fn", pkNil, captures.isLinear(), {
-                captures: captures,
-                call: val.special.call,
-                string: val.special.string
-            } );
+            return new Pk().init_(
+                null, "fn", pkNil, captures.isLinear(),
+                {
+                    captures: captures,
+                    call: val.special.call,
+                    string: val.special.string
+                } );
         } );
     if ( val.special.dup !== void 0 )
         return runWaitTry( next, function ( next ) {
@@ -477,7 +508,8 @@ function pkDup( pkRuntime, val, count, next ) {
             } );
         } );
     return withDups( val.args, function ( args ) {
-        return new Pk().init_( val.tag, args, !!"isLinear", {} );
+        return new Pk().init_(
+            val.tagName, val.tag, args, !!"isLinear", {} );
     } );
     function withDups( args, reconstruct ) {
         return listMap( args, next, function ( arg, next ) {
@@ -497,24 +529,37 @@ function forkGetter( pkRuntime, nameForError ) {
     return pkfn( function ( args, next ) {
         if ( !listLenIs( args, 2 ) )
             return pkErrLen( next, args, "Called " + nameForError );
-        if ( listGet( args, 0 ).tag !== "string" )
+        var name = listGet( args, 0 );
+        var captureCounts = listGet( args, 1 );
+        if ( name.tag !== "string" )
             return pkErr( next,
-                "Called " + nameForError + " with a non-string " +
-                "name" );
-        if ( !isNat( listGet( args, 1 ) ) )
+                "Called " + nameForError + " with a non-string name"
+                );
+        // TODO: Verify that `captureCounts` is a stack of
+        // nats.
+        if ( !isList( captureCounts ) )
             return pkErr( next,
-                "Called " + nameForError + " with a capture count " +
-                "that wasn't a nat" );
+                "Called " + nameForError + " with a non-list stack " +
+                "of capture counts" );
+        // TODO: If we ever have allowsGets() return false, uncomment
+        // this code. Until then, it will only be a performance
+        // burden.
+//        if ( !self.allowsGets( next ) )
+//            return pkErr( next,
+//                "Called " + nameForError + " without access to " +
+//                "top-level definition-reading side effects" );
         return runWaitTry( next, function ( next ) {
-            return runRet( next,
-                pkRuntime.getMacro(
-                    listGet( args, 0 ).special.jsStr ) );
-        }, function ( maybeMacro, next ) {
-            return pkRet( next, pk( "getmac-fork",
-                pk( "main-binding", listGet( args, 0 ) ),
-                pkNil,
-                maybeMacro
-            ) );
+            return runRet( next, pkRuntime.getName( name ) );
+        }, function ( name, next ) {
+            return runWaitTry( next, function ( next ) {
+                return runRet( next, pkRuntime.getMacro( name ) );
+            }, function ( maybeMacro, next ) {
+                return pkRet( next, pk( "getmac-fork",
+                    pk( "main-binding", name ),
+                    pkNil,
+                    maybeMacro
+                ) );
+            } );
         } );
     } );
 }
@@ -656,21 +701,31 @@ function PkRuntime() {}
 PkRuntime.prototype.init_ = function () {
     var self = this;
     function defTag( name, var_args ) {
-        self.defTag( name, pkListFromArr(
+        self.defTag( pkStrName( name ), pkListFromArr(
             arrMap( [].slice.call( arguments, 1 ), function ( s ) {
                 return pkStr( s );
             } ) ) );
     }
     function defMethod( name, var_args ) {
-        self.defMethod( name, pkListFromArr(
+        self.defMethod( pkStrName( name ), pkListFromArr(
             arrMap( [].slice.call( arguments, 1 ), function ( s ) {
                 return pkStr( s );
             } ) ) );
     }
+    function defVal( name, val ) {
+        self.defVal( pkStrName( name ), val );
+    }
+    function defMacro( name, macro ) {
+        self.defMacro( pkStrName( name ), macro );
+    }
+    function setStrictImpl( methodName, tagName, macro ) {
+        self.setStrictImpl(
+            pkStrName( methodName ), pkStrName( tagName ), macro );
+    }
     
     self.meta_ = strMap();
     defTag( "cons", "first", "rest" );
-    self.defVal( "cons", pkfn( function ( args, next ) {
+    defVal( "cons", pkfn( function ( args, next ) {
         if ( !listLenIs( args, 2 ) )
             return pkErrLen( next, args, "Called cons" );
         if ( !isList( listGet( args, 1 ) ) )
@@ -680,7 +735,7 @@ PkRuntime.prototype.init_ = function () {
             pkCons( listGet( args, 0 ), listGet( args, 1 ) ) );
     } ) );
     defTag( "succ", "pred" );
-    self.defVal( "succ", pkfn( function ( args, next ) {
+    defVal( "succ", pkfn( function ( args, next ) {
         if ( !listLenIs( args, 1 ) )
             return pkErrLen( next, args, "Called succ" );
         if ( !isNat( listGet( args, 0 ) ) )
@@ -692,15 +747,24 @@ PkRuntime.prototype.init_ = function () {
     defTag( "nope", "val" );
     defTag( "nil" );
     defTag( "string" );
-    self.defVal( "string", pkfn( function ( args, next ) {
+    defVal( "string", pkfn( function ( args, next ) {
         return pkErr( next, "The string function has no behavior" );
     } ) );
+    defTag( "string-name", "string" );
+    defVal( "string-name", pkfn( function ( args, next ) {
+        if ( !listLenIs( args, 1 ) )
+            return pkErrLen( next, args, "Called string-name" );
+        if ( listGet( args, 0 ).tag !== "string" )
+            return pkErr( next,
+                "Called string-name with a non-string" );
+        return pkRet( next, pkStrNameRaw( listGet( args, 0 ) ) );
+    } ) );
     defTag( "fn" );
-    self.defVal( "fn", pkfn( function ( args, next ) {
+    defVal( "fn", pkfn( function ( args, next ) {
         return pkErr( next, "The fn function has no behavior" );
     } ) );
     defMethod( "call", "self", "args" );
-    self.setStrictImpl( "call", "fn", function ( args, next ) {
+    setStrictImpl( "call", "fn", function ( args, next ) {
         if ( !isList( listGet( args, 1 ) ) )
             return pkErr( next,
                 "Called call with a non-list args list" );
@@ -715,7 +779,7 @@ PkRuntime.prototype.init_ = function () {
     } );
     
     defTag( "getmac-fork", "binding", "captures", "macro" );
-    self.defVal( "getmac-fork", pkfn( function ( args, next ) {
+    defVal( "getmac-fork", pkfn( function ( args, next ) {
         if ( !listLenIs( args, 3 ) )
             return pkErrLen( next, args, "Called getmac-fork" );
         // TODO: Verify that `listGet( args, 2 )` is a stack of lists
@@ -727,7 +791,7 @@ PkRuntime.prototype.init_ = function () {
                 listGet( args, 2 ) ) );
     } ) );
     defMethod( "fork-to-getmac", "fork" );
-    self.setStrictImpl( "fork-to-getmac", "getmac-fork",
+    setStrictImpl( "fork-to-getmac", "getmac-fork",
         function ( args, next ) {
         
         var fork = listGet( args, 0 );
@@ -737,17 +801,17 @@ PkRuntime.prototype.init_ = function () {
     
     defTag( "literal-binding", "literal-val" );
     defTag( "main-binding", "name" );
-    self.defVal( "main-binding", pkfn( function ( args, next ) {
+    defVal( "main-binding", pkfn( function ( args, next ) {
         if ( !listLenIs( args, 1 ) )
             return pkErrLen( next, args, "Called main-binding" );
-        if ( listGet( args, 0 ).tag !== "string" )
+        if ( !isName( listGet( args, 0 ) ) )
             return pkErr( next,
-                "Called main-binding with a non-string name" );
+                "Called main-binding with a non-name name" );
         return pkRet( next,
             pk( "main-binding", listGet( args, 0 ) ) );
     } ) );
     defTag( "call-binding", "op", "args" );
-    self.defVal( "call-binding", pkfn( function ( args, next ) {
+    defVal( "call-binding", pkfn( function ( args, next ) {
         if ( !listLenIs( args, 2 ) )
             return pkErrLen( next, args, "Called call-binding" );
         if ( !isList( listGet( args, 1 ) ) )
@@ -758,7 +822,7 @@ PkRuntime.prototype.init_ = function () {
                 listGet( args, 0 ), listGet( args, 1 ) ) );
     } ) );
     defTag( "param-binding", "index" );
-    self.defVal( "param-binding", pkfn( function ( args, next ) {
+    defVal( "param-binding", pkfn( function ( args, next ) {
         if ( !listLenIs( args, 1 ) )
             return pkErrLen( next, args, "Called param-binding" );
         if ( !isNat( listGet( args, 0 ) ) )
@@ -768,7 +832,7 @@ PkRuntime.prototype.init_ = function () {
             pk( "param-binding", listGet( args, 0 ) ) );
     } ) );
     defTag( "fn-binding", "captures", "body-binding" );
-    self.defVal( "fn-binding", pkfn( function ( args, next ) {
+    defVal( "fn-binding", pkfn( function ( args, next ) {
         // NOTE: By blocking this function, we preserve the invariant
         // that the "captures" list is a list of maybes of bindings.
         // That way we don't have to check for this explicitly in
@@ -784,7 +848,7 @@ PkRuntime.prototype.init_ = function () {
     // only part of the list of captured values, but a top-level call
     // to binding-interpret should always consume the whole thing.
     defMethod( "binding-interpret", "self", "list-of-captured-vals" );
-    self.setStrictImpl( "binding-interpret", "literal-binding",
+    setStrictImpl( "binding-interpret", "literal-binding",
         function ( args, next ) {
         
         if ( !isList( listGet( args, 1 ) ) )
@@ -793,7 +857,7 @@ PkRuntime.prototype.init_ = function () {
                 "captured values" );
         return pkRet( next, listGet( args, 0 ).ind( 0 ) );
     } );
-    self.setStrictImpl( "binding-interpret", "main-binding",
+    setStrictImpl( "binding-interpret", "main-binding",
         function ( args, next ) {
         
         if ( !isList( listGet( args, 1 ) ) )
@@ -810,10 +874,9 @@ PkRuntime.prototype.init_ = function () {
 //                "without access to top-level definition-reading " +
 //                "side effects" );
         return runRet( next,
-            self.getVal(
-                listGet( args, 0 ).ind( 0 ).special.jsStr ) );
+            self.getVal( listGet( args, 0 ).ind( 0 ) ) );
     } );
-    self.setStrictImpl( "binding-interpret", "call-binding",
+    setStrictImpl( "binding-interpret", "call-binding",
         function ( args, next ) {
         
         if ( !isList( listGet( args, 1 ) ) )
@@ -851,7 +914,7 @@ PkRuntime.prototype.init_ = function () {
             } );
         } );
     } );
-    self.setStrictImpl( "binding-interpret", "param-binding",
+    setStrictImpl( "binding-interpret", "param-binding",
         function ( args, next ) {
         
         if ( !isList( listGet( args, 1 ) ) )
@@ -869,7 +932,7 @@ PkRuntime.prototype.init_ = function () {
             return pkRet( next, result.ind( 0 ) );
         } );
     } );
-    self.setStrictImpl( "binding-interpret", "fn-binding",
+    setStrictImpl( "binding-interpret", "fn-binding",
         function ( args, next ) {
         
         if ( !isList( listGet( args, 1 ) ) )
@@ -950,7 +1013,7 @@ PkRuntime.prototype.init_ = function () {
     
     defMethod( "macroexpand-to-fork",
         "self", "get-fork", "capture-counts" );
-    self.setStrictImpl( "macroexpand-to-fork", "string",
+    setStrictImpl( "macroexpand-to-fork", "string",
         function ( args, next ) {
         
         var expr = listGet( args, 0 );
@@ -970,7 +1033,7 @@ PkRuntime.prototype.init_ = function () {
                 next );
         } );
     } );
-    self.setStrictImpl( "macroexpand-to-fork", "cons",
+    setStrictImpl( "macroexpand-to-fork", "cons",
         function ( args, next ) {
         
         var expr = listGet( args, 0 );
@@ -1011,7 +1074,7 @@ PkRuntime.prototype.init_ = function () {
         } );
     } );
     
-    self.defMacro( "fn", pkfn( function ( args, next ) {
+    defMacro( "fn", pkfn( function ( args, next ) {
         if ( !listLenIs( args, 4 ) )
             return pkErrLen( next, args,
                 "Called fn's macroexpander" );
@@ -1105,7 +1168,7 @@ PkRuntime.prototype.init_ = function () {
        } );
     } ) );
     
-    self.defMacro( "quote", pkfn( function ( args, next ) {
+    defMacro( "quote", pkfn( function ( args, next ) {
         if ( !listLenIs( args, 4 ) )
             return pkErrLen( next, args,
                 "Called quote's macroexpander" );
@@ -1135,38 +1198,36 @@ PkRuntime.prototype.init_ = function () {
         ) );
     } ) );
     
-    self.defVal( "defval", pkfn( function ( args, next ) {
+    defVal( "defval", pkfn( function ( args, next ) {
         if ( !listLenIs( args, 2 ) )
             return pkErrLen( next, args, "Called defval" );
-        if ( listGet( args, 0 ).tag !== "string" )
+        if ( !isName( listGet( args, 0 ) ) )
             return pkErr( next,
-                "Called defval with a non-string name" );
+                "Called defval with a non-name name" );
         if ( !self.allowsDefs( next ) )
             return pkErr( next,
                 "Called defval without access to top-level " +
                 "definition side effects" );
         return runRet( next,
-            self.defVal( listGet( args, 0 ).special.jsStr,
-                listGet( args, 1 ) ) );
+            self.defVal( listGet( args, 0 ), listGet( args, 1 ) ) );
     } ) );
-    self.defVal( "defmacro", pkfn( function ( args, next ) {
+    defVal( "defmacro", pkfn( function ( args, next ) {
         if ( !listLenIs( args, 2 ) )
             return pkErrLen( next, args, "Called defmacro" );
-        if ( listGet( args, 0 ).tag !== "string" )
+        if ( !isName( listGet( args, 0 ) ) )
             return pkErr( next,
-                "Called defmacro with a non-string name" );
+                "Called defmacro with a non-name name" );
         if ( !self.allowsDefs( next ) )
             return pkErr( next,
                 "Called defmacro without access to top-level " +
                 "definition side effects" );
         return runRet( next,
-            self.defMacro( listGet( args, 0 ).special.jsStr,
-                listGet( args, 1 ) ) );
+            self.defMacro( listGet( args, 0 ), listGet( args, 1 ) ) );
     } ) );
-    self.defVal( "deftag", pkfn( function ( args, next ) {
+    defVal( "deftag", pkfn( function ( args, next ) {
         if ( !listLenIs( args, 2 ) )
             return pkErrLen( next, args, "Called deftag" );
-        if ( listGet( args, 0 ).tag !== "string" )
+        if ( !isName( listGet( args, 0 ) ) )
             return pkErr( next,
                 "Called deftag with a non-string name" );
         // TODO: Verify that the keys list contains only strings.
@@ -1175,48 +1236,49 @@ PkRuntime.prototype.init_ = function () {
                 "Called deftag without access to top-level " +
                 "definition side effects" );
         return runRet( next,
-            self.defTag( listGet( args, 0 ).special.jsStr,
-                listGet( args, 1 ) ) );
+            self.defTag( listGet( args, 0 ), listGet( args, 1 ) ) );
     } ) );
-    self.defVal( "deflineartag", pkfn( function ( args, next ) {
+    defVal( "deflineartag", pkfn( function ( args, next ) {
         if ( !listLenIs( args, 3 ) )
             return pkErrLen( next, args, "Called deftag" );
-        if ( listGet( args, 0 ).tag !== "string" )
+        if ( !isName( listGet( args, 0 ) ) )
             return pkErr( next,
-                "Called deftag with a non-string name" );
+                "Called deflineartag with a non-name name" );
         // TODO: Verify that the keys list contains only strings.
         if ( !self.allowsDefs( next ) )
             return pkErr( next,
                 "Called deflineartag without access to top-level " +
                 "definition side effects" );
         return runRet( next,
-            self.defLinearTag( listGet( args, 0 ).special.jsStr,
-                listGet( args, 1 ), listGet( args, 2 ) ) );
+            self.defLinearTag(
+                listGet( args, 0 ),
+                listGet( args, 1 ),
+                listGet( args, 2 ) ) );
     } ) );
-    self.defVal( "defmethod", pkfn( function ( args, next ) {
+    defVal( "defmethod", pkfn( function ( args, next ) {
         if ( !listLenIs( args, 2 ) )
             return pkErrLen( next, args, "Called defmethod" );
-        if ( listGet( args, 0 ).tag !== "string" )
+        if ( !isName( listGet( args, 0 ) ) )
             return pkErr( next,
-                "Called defmethod with a non-string name" );
+                "Called defmethod with a non-name name" );
         // TODO: Verify that the args list contains only strings.
         if ( !self.allowsDefs( next ) )
             return pkErr( next,
                 "Called defmethod without access to top-level " +
                 "definition side effects" );
         return runRet( next,
-            self.defMethod( listGet( args, 0 ).special.jsStr,
-                listGet( args, 1 ) ) );
+            self.defMethod(
+                listGet( args, 0 ), listGet( args, 1 ) ) );
     } ) );
-    self.defVal( "set-impl", pkfn( function ( args, next ) {
+    defVal( "set-impl", pkfn( function ( args, next ) {
         if ( !listLenIs( args, 3 ) )
             return pkErrLen( next, args, "Called set-impl" );
-        if ( listGet( args, 0 ).tag !== "string" )
+        if ( !isName( listGet( args, 0 ) ) )
             return pkErr( next,
-                "Called set-impl with a non-string method name" );
-        if ( listGet( args, 1 ).tag !== "string" )
+                "Called set-impl with a non-name method name" );
+        if ( !isName( listGet( args, 1 ) ) )
             return pkErr( next,
-                "Called set-impl with a non-string tag name" );
+                "Called set-impl with a non-name tag name" );
         if ( listGet( args, 2 ).isLinear() )
             return pkErr( next,
                 "Called set-impl with a linear function" );
@@ -1226,15 +1288,15 @@ PkRuntime.prototype.init_ = function () {
                 "definition side effects" );
         return runRet( next,
             self.setImpl(
-                listGet( args, 0 ).special.jsStr,
-                listGet( args, 1 ).special.jsStr,
+                listGet( args, 0 ),
+                listGet( args, 1 ),
                 function ( args, next ) {
                     return self.callMethod( "call",
                         pkList( listGet( args, 2 ), args ), next );
                 } ) );
     } ) );
     
-    self.defVal( "raise", pkfn( function ( args, next ) {
+    defVal( "raise", pkfn( function ( args, next ) {
         if ( !listLenIs( args, 1 ) )
             return pkErrLen( next, args, "Called raise" );
         return pkRet( next, pk( "nope", listGet( args, 0 ) ) );
@@ -1242,13 +1304,16 @@ PkRuntime.prototype.init_ = function () {
     
     return self;
 };
+PkRuntime.prototype.getMeta_ = function ( name ) {
+    return this.meta_.get( name.special.nameJson );
+};
 PkRuntime.prototype.prepareMeta_ = function (
     name, opt_methodOrVal ) {
     
-    var meta = this.meta_.get( name );
+    var meta = this.getMeta_( name );
     if ( meta === void 0 ) {
         meta = { name: name };
-        this.meta_.set( name, meta );
+        this.meta_.set( name.special.nameJson, meta );
     }
     if ( opt_methodOrVal === void 0 ) {
         // Do nothing.
@@ -1322,35 +1387,46 @@ PkRuntime.prototype.defMethod = function ( name, args ) {
     meta.methodImplsByTag = strMap();
     return pk( "yep", pkNil );
 };
-PkRuntime.prototype.callMethod = function ( name, args, next ) {
+PkRuntime.prototype.callMethodRaw = function (
+    methodName, args, next ) {
+    
     // TODO: If we ever have allowsGets() return false, uncomment this
     // code. Until then, it will only be a performance burden.
 //    if ( !this.allowsGets( next ) )
 //        return pkErr( next,
-//            "Called method " + name + " without access to " +
+//            "Called method " + methodName + " without access to " +
 //            "top-level definition-reading side effects" );
-    var meta = this.meta_.get( name );
     if ( listLenIs( args, 0 ) )
-        return pkErrLen( next, args, "Called method " + name );
-    var impl = meta.methodImplsByTag.get( listGet( args, 0 ).tag );
+        return pkErrLen( next, args, "Called method " + methodName );
+    var meta = this.getMeta_( methodName );
+    var tagName = listGet( args, 0 ).getTagName();
+    var impl =
+        meta && meta.methodImplsByTag.get( tagName.special.nameJson );
     if ( impl === void 0 )
         return pkErr( next,
-            "No implementation for method " + name + " tag " +
-            listGet( args, 0 ).tag );
+            "No implementation for method " + methodName + " tag " +
+            tagName );
     return impl.call( args, next );
 };
+PkRuntime.prototype.callMethod = function (
+    jsMethodName, args, next ) {
+    
+    return this.callMethodRaw(
+        pkStrName( jsMethodName ), args, next );
+};
 PkRuntime.prototype.setImpl = function ( methodName, tagName, call ) {
-    var methodMeta = this.meta_.get( methodName );
+    var methodMeta = this.getMeta_( methodName );
     if ( methodMeta.methodOrVal !== "method" )
         return pkRawErr(
             "Can't implement non-method " + methodName + " for tag " +
             tagName );
-    var tagMeta = this.meta_.get( tagName );
+    var tagMeta = this.getMeta_( tagName );
     if ( tagMeta.tagKeys === void 0 )
         return pkRawErr(
             "Can't implement method " + methodName + " for non-tag " +
             tagName );
-    methodMeta.methodImplsByTag.set( tagName, { call: call } );
+    methodMeta.methodImplsByTag.set( tagName.special.nameJson,
+        { call: call } );
     return pk( "yep", pkNil );
 };
 PkRuntime.prototype.setStrictImpl = function (
@@ -1371,7 +1447,7 @@ PkRuntime.prototype.setStrictImpl = function (
 };
 PkRuntime.prototype.getVal = function ( name ) {
     var self = this;
-    var meta = self.meta_.get( name );
+    var meta = self.getMeta_( name );
     if ( meta === void 0 )
         return pkRawErr( "Unbound variable " + name );
     if ( meta.methodOrVal === "val" )
@@ -1379,7 +1455,7 @@ PkRuntime.prototype.getVal = function ( name ) {
     if ( meta.methodOrVal === "method" )
         return pk( "yep", pkfn( function ( args, next ) {
             return runWaitOne( next, function ( next ) {
-                return self.callMethod( name, args, next );
+                return self.callMethodRaw( name, args, next );
             } );
         } ) );
     if ( meta.tagKeys !== void 0 )
@@ -1393,6 +1469,8 @@ PkRuntime.prototype.getVal = function ( name ) {
                 return pkRet( next,
                     new Pk().init_(
                         name,
+                        name.tag === "string-name" ?
+                            name.ind( 0 ).special.jsStr : null,
                         args,
                         meta.dup !== null || args.isLinear(),
                         meta.dup === null ? {} : { dup: meta.dup }
@@ -1402,8 +1480,13 @@ PkRuntime.prototype.getVal = function ( name ) {
     // NOTE: If (meta.macro !== void 0), we don't do anything special.
     return pkRawErr( "Unbound variable " + name );
 };
+PkRuntime.prototype.getName = function ( nameStr ) {
+    // TODO: If we ever implement namespaces, complicate this method
+    // to handle them.
+    return pk( "yep", pkStrNameRaw( nameStr ) );
+};
 PkRuntime.prototype.getMacro = function ( name ) {
-    var meta = this.meta_.get( name );
+    var meta = this.getMeta_( name );
     if ( meta === void 0 )
         return pkRawErr( "Unbound variable " + name );
     
