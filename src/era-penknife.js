@@ -101,8 +101,8 @@ function pkfnLinear( captures, call ) {
 function pkfn( call ) {
     return new Pk().init_( null, "fn", pkNil, !"isLinear", {
         captures: pkNil,
-        call: function ( captures, args, yoke ) {
-            return call( args, yoke );
+        call: function ( yoke, captures, args ) {
+            return call( yoke, args );
         },
         string: "" + call
     } );
@@ -526,7 +526,7 @@ function pkDup( pkRuntime, val, count, yoke ) {
     }
 }
 function forkGetter( pkRuntime, nameForError ) {
-    return pkfn( function ( args, yoke ) {
+    return pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 2 ) )
             return pkErrLen( yoke, args, "Called " + nameForError );
         var name = listGet( args, 0 );
@@ -605,7 +605,7 @@ function runWaitTryGetmacFork(
     } );
 }
 function nonMacroMacroexpander( pkRuntime ) {
-    return pkfn( function ( args, yoke ) {
+    return pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 4 ) )
             return pkErrLen( yoke, args,
                 "Called a non-macro's macroexpander" );
@@ -725,7 +725,7 @@ PkRuntime.prototype.init_ = function () {
     
     self.meta_ = strMap();
     defTag( "cons", "first", "rest" );
-    defVal( "cons", pkfn( function ( args, yoke ) {
+    defVal( "cons", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 2 ) )
             return pkErrLen( yoke, args, "Called cons" );
         if ( !isList( listGet( args, 1 ) ) )
@@ -735,7 +735,7 @@ PkRuntime.prototype.init_ = function () {
             pkCons( listGet( args, 0 ), listGet( args, 1 ) ) );
     } ) );
     defTag( "succ", "pred" );
-    defVal( "succ", pkfn( function ( args, yoke ) {
+    defVal( "succ", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 1 ) )
             return pkErrLen( yoke, args, "Called succ" );
         if ( !isNat( listGet( args, 0 ) ) )
@@ -747,11 +747,11 @@ PkRuntime.prototype.init_ = function () {
     defTag( "nope", "val" );
     defTag( "nil" );
     defTag( "string" );
-    defVal( "string", pkfn( function ( args, yoke ) {
+    defVal( "string", pkfn( function ( yoke, args ) {
         return pkErr( yoke, "The string function has no behavior" );
     } ) );
     defTag( "string-name", "string" );
-    defVal( "string-name", pkfn( function ( args, yoke ) {
+    defVal( "string-name", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 1 ) )
             return pkErrLen( yoke, args, "Called string-name" );
         if ( listGet( args, 0 ).tag !== "string" )
@@ -760,11 +760,11 @@ PkRuntime.prototype.init_ = function () {
         return pkRet( yoke, pkStrNameRaw( listGet( args, 0 ) ) );
     } ) );
     defTag( "fn" );
-    defVal( "fn", pkfn( function ( args, yoke ) {
+    defVal( "fn", pkfn( function ( yoke, args ) {
         return pkErr( yoke, "The fn function has no behavior" );
     } ) );
     defMethod( "call", "self", "args" );
-    setStrictImpl( "call", "fn", function ( args, yoke ) {
+    setStrictImpl( "call", "fn", function ( yoke, args ) {
         if ( !isList( listGet( args, 1 ) ) )
             return pkErr( yoke,
                 "Called call with a non-list args list" );
@@ -772,14 +772,14 @@ PkRuntime.prototype.init_ = function () {
         // double-checking that the captured values haven't already
         // been spent.
         return listGet( args, 0 ).special.call(
+            yoke,
             listGet( args, 0 ).special.captures,
-            listGet( args, 1 ),
-            yoke
+            listGet( args, 1 )
         );
     } );
     
     defTag( "getmac-fork", "binding", "captures", "macro" );
-    defVal( "getmac-fork", pkfn( function ( args, yoke ) {
+    defVal( "getmac-fork", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 3 ) )
             return pkErrLen( yoke, args, "Called getmac-fork" );
         // TODO: Verify that `listGet( args, 2 )` is a stack of lists
@@ -792,7 +792,7 @@ PkRuntime.prototype.init_ = function () {
     } ) );
     defMethod( "fork-to-getmac", "fork" );
     setStrictImpl( "fork-to-getmac", "getmac-fork",
-        function ( args, yoke ) {
+        function ( yoke, args ) {
         
         var fork = listGet( args, 0 );
         return pkRet( yoke,
@@ -801,7 +801,7 @@ PkRuntime.prototype.init_ = function () {
     
     defTag( "literal-binding", "literal-val" );
     defTag( "main-binding", "name" );
-    defVal( "main-binding", pkfn( function ( args, yoke ) {
+    defVal( "main-binding", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 1 ) )
             return pkErrLen( yoke, args, "Called main-binding" );
         if ( !isName( listGet( args, 0 ) ) )
@@ -811,7 +811,7 @@ PkRuntime.prototype.init_ = function () {
             pk( "main-binding", listGet( args, 0 ) ) );
     } ) );
     defTag( "call-binding", "op", "args" );
-    defVal( "call-binding", pkfn( function ( args, yoke ) {
+    defVal( "call-binding", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 2 ) )
             return pkErrLen( yoke, args, "Called call-binding" );
         if ( !isList( listGet( args, 1 ) ) )
@@ -822,7 +822,7 @@ PkRuntime.prototype.init_ = function () {
                 listGet( args, 0 ), listGet( args, 1 ) ) );
     } ) );
     defTag( "param-binding", "index" );
-    defVal( "param-binding", pkfn( function ( args, yoke ) {
+    defVal( "param-binding", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 1 ) )
             return pkErrLen( yoke, args, "Called param-binding" );
         if ( !isNat( listGet( args, 0 ) ) )
@@ -832,7 +832,7 @@ PkRuntime.prototype.init_ = function () {
             pk( "param-binding", listGet( args, 0 ) ) );
     } ) );
     defTag( "fn-binding", "captures", "body-binding" );
-    defVal( "fn-binding", pkfn( function ( args, yoke ) {
+    defVal( "fn-binding", pkfn( function ( yoke, args ) {
         // NOTE: By blocking this function, we preserve the invariant
         // that the "captures" list is a list of maybes of bindings.
         // That way we don't have to check for this explicitly in
@@ -849,7 +849,7 @@ PkRuntime.prototype.init_ = function () {
     // to binding-interpret should always consume the whole thing.
     defMethod( "binding-interpret", "self", "list-of-captured-vals" );
     setStrictImpl( "binding-interpret", "literal-binding",
-        function ( args, yoke ) {
+        function ( yoke, args ) {
         
         if ( !isList( listGet( args, 1 ) ) )
             return pkErr( yoke,
@@ -858,7 +858,7 @@ PkRuntime.prototype.init_ = function () {
         return pkRet( yoke, listGet( args, 0 ).ind( 0 ) );
     } );
     setStrictImpl( "binding-interpret", "main-binding",
-        function ( args, yoke ) {
+        function ( yoke, args ) {
         
         if ( !isList( listGet( args, 1 ) ) )
             return pkErr( yoke,
@@ -877,7 +877,7 @@ PkRuntime.prototype.init_ = function () {
             self.getVal( listGet( args, 0 ).ind( 0 ) ) );
     } );
     setStrictImpl( "binding-interpret", "call-binding",
-        function ( args, yoke ) {
+        function ( yoke, args ) {
         
         if ( !isList( listGet( args, 1 ) ) )
             return pkErr( yoke,
@@ -915,7 +915,7 @@ PkRuntime.prototype.init_ = function () {
         } );
     } );
     setStrictImpl( "binding-interpret", "param-binding",
-        function ( args, yoke ) {
+        function ( yoke, args ) {
         
         if ( !isList( listGet( args, 1 ) ) )
             return pkErr( yoke,
@@ -933,7 +933,7 @@ PkRuntime.prototype.init_ = function () {
         } );
     } );
     setStrictImpl( "binding-interpret", "fn-binding",
-        function ( args, yoke ) {
+        function ( yoke, args ) {
         
         if ( !isList( listGet( args, 1 ) ) )
             return pkErr( yoke,
@@ -954,7 +954,7 @@ PkRuntime.prototype.init_ = function () {
             } );
         }, function ( captures ) {
             return pkRet( yoke, pkfnLinear( captures,
-                function ( captures, args, yoke ) {
+                function ( yoke, captures, args ) {
                 
                 return listCount( captures, yoke,
                     function ( maybeCapturedVal ) {
@@ -1014,7 +1014,7 @@ PkRuntime.prototype.init_ = function () {
     defMethod( "macroexpand-to-fork",
         "self", "get-fork", "capture-counts" );
     setStrictImpl( "macroexpand-to-fork", "string",
-        function ( args, yoke ) {
+        function ( yoke, args ) {
         
         var expr = listGet( args, 0 );
         var getFork = listGet( args, 1 );
@@ -1034,7 +1034,7 @@ PkRuntime.prototype.init_ = function () {
         } );
     } );
     setStrictImpl( "macroexpand-to-fork", "cons",
-        function ( args, yoke ) {
+        function ( yoke, args ) {
         
         var expr = listGet( args, 0 );
         var getFork = listGet( args, 1 );
@@ -1074,7 +1074,7 @@ PkRuntime.prototype.init_ = function () {
         } );
     } );
     
-    defMacro( "fn", pkfn( function ( args, yoke ) {
+    defMacro( "fn", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 4 ) )
             return pkErrLen( yoke, args,
                 "Called fn's macroexpander" );
@@ -1105,7 +1105,7 @@ PkRuntime.prototype.init_ = function () {
             
             return self.callMethod( "macroexpand-to-fork", pkList(
                 listGet( body, 1 ),
-                pkfn( function ( args, yoke ) {
+                pkfn( function ( yoke, args ) {
                     if ( !listLenIs( args, 2 ) )
                         return pkErrLen( yoke, args,
                             "Called a get-fork" );
@@ -1168,7 +1168,7 @@ PkRuntime.prototype.init_ = function () {
        } );
     } ) );
     
-    defMacro( "quote", pkfn( function ( args, yoke ) {
+    defMacro( "quote", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 4 ) )
             return pkErrLen( yoke, args,
                 "Called quote's macroexpander" );
@@ -1198,7 +1198,7 @@ PkRuntime.prototype.init_ = function () {
         ) );
     } ) );
     
-    defVal( "defval", pkfn( function ( args, yoke ) {
+    defVal( "defval", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 2 ) )
             return pkErrLen( yoke, args, "Called defval" );
         if ( !isName( listGet( args, 0 ) ) )
@@ -1211,7 +1211,7 @@ PkRuntime.prototype.init_ = function () {
         return runRet( yoke,
             self.defVal( listGet( args, 0 ), listGet( args, 1 ) ) );
     } ) );
-    defVal( "defmacro", pkfn( function ( args, yoke ) {
+    defVal( "defmacro", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 2 ) )
             return pkErrLen( yoke, args, "Called defmacro" );
         if ( !isName( listGet( args, 0 ) ) )
@@ -1224,7 +1224,7 @@ PkRuntime.prototype.init_ = function () {
         return runRet( yoke,
             self.defMacro( listGet( args, 0 ), listGet( args, 1 ) ) );
     } ) );
-    defVal( "deftag", pkfn( function ( args, yoke ) {
+    defVal( "deftag", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 2 ) )
             return pkErrLen( yoke, args, "Called deftag" );
         if ( !isName( listGet( args, 0 ) ) )
@@ -1238,7 +1238,7 @@ PkRuntime.prototype.init_ = function () {
         return runRet( yoke,
             self.defTag( listGet( args, 0 ), listGet( args, 1 ) ) );
     } ) );
-    defVal( "deflineartag", pkfn( function ( args, yoke ) {
+    defVal( "deflineartag", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 3 ) )
             return pkErrLen( yoke, args, "Called deftag" );
         if ( !isName( listGet( args, 0 ) ) )
@@ -1255,7 +1255,7 @@ PkRuntime.prototype.init_ = function () {
                 listGet( args, 1 ),
                 listGet( args, 2 ) ) );
     } ) );
-    defVal( "defmethod", pkfn( function ( args, yoke ) {
+    defVal( "defmethod", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 2 ) )
             return pkErrLen( yoke, args, "Called defmethod" );
         if ( !isName( listGet( args, 0 ) ) )
@@ -1270,7 +1270,7 @@ PkRuntime.prototype.init_ = function () {
             self.defMethod(
                 listGet( args, 0 ), listGet( args, 1 ) ) );
     } ) );
-    defVal( "set-impl", pkfn( function ( args, yoke ) {
+    defVal( "set-impl", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 3 ) )
             return pkErrLen( yoke, args, "Called set-impl" );
         if ( !isName( listGet( args, 0 ) ) )
@@ -1290,13 +1290,13 @@ PkRuntime.prototype.init_ = function () {
             self.setImpl(
                 listGet( args, 0 ),
                 listGet( args, 1 ),
-                function ( args, yoke ) {
+                function ( yoke, args ) {
                     return self.callMethod( "call",
                         pkList( listGet( args, 2 ), args ), yoke );
                 } ) );
     } ) );
     
-    defVal( "raise", pkfn( function ( args, yoke ) {
+    defVal( "raise", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 1 ) )
             return pkErrLen( yoke, args, "Called raise" );
         return pkRet( yoke, pk( "nope", listGet( args, 0 ) ) );
@@ -1406,7 +1406,7 @@ PkRuntime.prototype.callMethodRaw = function (
         return pkErr( yoke,
             "No implementation for method " + methodName + " tag " +
             tagName );
-    return impl.call( args, yoke );
+    return impl.call( yoke, args );
 };
 PkRuntime.prototype.callMethod = function (
     jsMethodName, args, yoke ) {
@@ -1434,14 +1434,14 @@ PkRuntime.prototype.setStrictImpl = function (
     
     var methodMeta = this.meta_.get( methodName );
     return this.setImpl( methodName, tagName,
-        function ( args, yoke ) {
+        function ( yoke, args ) {
         
         return listLenEq( args, methodMeta.methodArgs, yoke,
             function ( areEq, yoke ) {
             
             if ( !areEq )
                 return pkErrLen( yoke, args, "Called " + methodName );
-            return call( args, yoke );
+            return call( yoke, args );
         } );
     } );
 };
@@ -1453,13 +1453,13 @@ PkRuntime.prototype.getVal = function ( name ) {
     if ( meta.methodOrVal === "val" )
         return pk( "yep", meta.val );
     if ( meta.methodOrVal === "method" )
-        return pk( "yep", pkfn( function ( args, yoke ) {
+        return pk( "yep", pkfn( function ( yoke, args ) {
             return runWaitOne( yoke, function ( yoke ) {
                 return self.callMethodRaw( name, args, yoke );
             } );
         } ) );
     if ( meta.tagKeys !== void 0 )
-        return pk( "yep", pkfn( function ( args, yoke ) {
+        return pk( "yep", pkfn( function ( yoke, args ) {
             return listLenEq( args, meta.tagKeys, yoke,
                 function ( areEq, yoke ) {
                 
