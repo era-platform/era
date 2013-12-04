@@ -375,7 +375,7 @@ function listMapMultiWithLen( nat, lists, yoke, func, then ) {
             }, function ( rests, yoke ) {
                 return runWaitTry( yoke, function ( yoke ) {
                     return func( firsts, yoke );
-                }, function ( resultElem ) {
+                }, function ( resultElem, yoke ) {
                     return go( nat.ind( 0 ), rests,
                         pkCons( resultElem, revResults ), yoke );
                 } );
@@ -569,8 +569,6 @@ function runWaitTryGetmacFork(
     return runWaitTry( yoke, function ( yoke ) {
         return func( yoke );
     }, function ( fork, yoke ) {
-        if ( fork.tag === "cons" )
-            debugger;
         return runWaitTry( yoke, function ( yoke ) {
             return pkRuntime.callMethod( "fork-to-getmac",
                 pkList( fork ), yoke );
