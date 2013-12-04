@@ -142,7 +142,7 @@ function listLenIs( x, n ) {
     return listLenBounded( x, n ) === n;
 }
 function runRet( yoke, val ) {
-    return { result: val, yoke: yoke };
+    return { yoke: yoke, result: val };
 }
 function pkRet( yoke, val ) {
     return runRet( yoke, pk( "yep", val ) );
@@ -163,14 +163,14 @@ function pkErrLen( yoke, args, message ) {
 function runWait( yoke, func, then ) {
     return yoke.runWaitLinear( function ( yoke ) {
         return func( yoke );
-    }, function ( resultAndYoke ) {
-        return then( resultAndYoke.result, resultAndYoke.yoke );
+    }, function ( yokeAndResult ) {
+        return then( yokeAndResult.yoke, yokeAndResult.result );
     } );
 }
 function runWaitTry( yoke, func, then ) {
     return runWait( yoke, function ( yoke ) {
         return func( yoke );
-    }, function ( tryVal, yoke ) {
+    }, function ( yoke, tryVal ) {
         if ( tryVal.tag !== "yep" )
             return runRet( yoke, tryVal );
         return then( tryVal.ind( 0 ), yoke );
@@ -179,7 +179,7 @@ function runWaitTry( yoke, func, then ) {
 function runWaitOne( yoke, then ) {
     return runWait( yoke, function ( yoke ) {
         return runRet( yoke, null );
-    }, function ( ignored, yoke ) {
+    }, function ( yoke, ignored ) {
         return then( yoke );
     } );
 }
@@ -195,7 +195,7 @@ function listLenEq( a, b, yoke, then ) {
     }
     return runWait( yoke, function ( yoke ) {
         return go( a, b, yoke );
-    }, function ( result, yoke ) {
+    }, function ( yoke, result ) {
         return then( result, yoke );
     } );
 }
@@ -211,7 +211,7 @@ function listLenIsNat( list, nat, yoke, then ) {
     }
     return runWait( yoke, function ( yoke ) {
         return go( list, nat, yoke );
-    }, function ( result, yoke ) {
+    }, function ( yoke, result ) {
         return then( result, yoke );
     } );
 }
@@ -225,7 +225,7 @@ function lenPlusNat( list, nat, yoke, then ) {
     }
     return runWait( yoke, function ( yoke ) {
         return go( list, nat, yoke );
-    }, function ( result, yoke ) {
+    }, function ( yoke, result ) {
         return then( result, yoke );
     } );
 }
@@ -241,7 +241,7 @@ function listGetNat( list, nat, yoke, then ) {
     }
     return runWait( yoke, function ( yoke ) {
         return go( list, nat, yoke );
-    }, function ( result, yoke ) {
+    }, function ( yoke, result ) {
         return then( result, yoke );
     } );
 }
@@ -258,7 +258,7 @@ function listRevAppend( backwardFirst, forwardSecond, yoke, then ) {
     }
     return runWait( yoke, function ( yoke ) {
         return go( backwardFirst, forwardSecond, yoke );
-    }, function ( result, yoke ) {
+    }, function ( yoke, result ) {
         return then( result, yoke );
     } );
 }
@@ -1516,12 +1516,12 @@ PkRuntime.prototype.withAllowsDefs = function ( yoke, body ) {
         allowsDefs: true,
         runWaitLinear: yoke.runWaitLinear
     };
-    var resultAndYoke = body( empoweredYoke );
+    var yokeAndResult = body( empoweredYoke );
     var disempoweredYoke = {
         allowsDefs: yoke.allowsDefs,
-        runWaitLinear: resultAndYoke.yoke.runWaitLinear
+        runWaitLinear: yokeAndResult.yoke.runWaitLinear
     };
-    return runRet( disempoweredYoke, resultAndYoke.result );
+    return runRet( disempoweredYoke, yokeAndResult.result );
 };
 PkRuntime.prototype.conveniences_syncYoke =
     { allowsDefs: false, runWaitLinear: function ( step, then ) {
