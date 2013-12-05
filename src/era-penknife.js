@@ -488,7 +488,7 @@ function pkDup( pkRuntime, val, count, yoke ) {
             return pkDup( pkRuntime, arg, count, yoke );
         }, function ( yoke, argsDuplicates ) {
             return listMapMultiWithLen( count, argsDuplicates, yoke,
-                function ( args ) {
+                function ( args, yoke ) {
                 
                 return pkRet( yoke, reconstruct( args ) );
             }, function ( result, yoke ) {
