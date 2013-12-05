@@ -184,81 +184,47 @@ function runWaitOne( yoke, then ) {
     } );
 }
 function listLenEq( yoke, a, b, then ) {
-    function go( yoke, a, b ) {
-        if ( a.tag === "nil" && b.tag === "nil" )
-            return runRet( yoke, true );
-        if ( !(a.tag === "cons" && b.tag === "cons") )
-            return runRet( yoke, false );
-        return runWaitOne( yoke, function ( yoke ) {
-            return go( yoke, a.ind( 1 ), b.ind( 1 ) );
-        } );
-    }
-    return runWait( yoke, function ( yoke ) {
-        return go( yoke, a, b );
-    }, function ( yoke, result ) {
-        return then( yoke, result );
+    if ( a.tag === "nil" && b.tag === "nil" )
+        return then( yoke, true );
+    if ( !(a.tag === "cons" && b.tag === "cons") )
+        return then( yoke, false );
+    return runWaitOne( yoke, function ( yoke ) {
+        return listLenEq( yoke, a.ind( 1 ), b.ind( 1 ), then );
     } );
 }
 function listLenIsNat( yoke, list, nat, then ) {
-    function go( yoke, list, nat ) {
-        if ( list.tag === "nil" && nat.tag === "nil" )
-            return runRet( yoke, true );
-        if ( !(list.tag === "cons" && nat.tag === "succ") )
-            return runRet( yoke, false );
-        return runWaitOne( yoke, function ( yoke ) {
-            return go( yoke, list.ind( 1 ), nat.ind( 0 ) );
-        } );
-    }
-    return runWait( yoke, function ( yoke ) {
-        return go( yoke, list, nat );
-    }, function ( yoke, result ) {
-        return then( yoke, result );
+    if ( list.tag === "nil" && nat.tag === "nil" )
+        return then( yoke, true );
+    if ( !(list.tag === "cons" && nat.tag === "succ") )
+        return then( yoke, false );
+    return runWaitOne( yoke, function ( yoke ) {
+        return listLenIsNat(
+            yoke, list.ind( 1 ), nat.ind( 0 ), then );
     } );
 }
 function lenPlusNat( yoke, list, nat, then ) {
-    function go( yoke, list, nat ) {
-        if ( list.tag !== "cons" )
-            return runRet( yoke, nat );
-        return runWaitOne( yoke, function ( yoke ) {
-            return go( yoke, list.ind( 1 ), pk( "succ", nat ) );
-        } );
-    }
-    return runWait( yoke, function ( yoke ) {
-        return go( yoke, list, nat );
-    }, function ( yoke, result ) {
-        return then( yoke, result );
+    if ( list.tag !== "cons" )
+        return then( yoke, nat );
+    return runWaitOne( yoke, function ( yoke ) {
+        return lenPlusNat(
+            yoke, list.ind( 1 ), pk( "succ", nat ), then );
     } );
 }
 function listGetNat( yoke, list, nat, then ) {
-    function go( yoke, list, nat ) {
-        if ( list.tag !== "cons" )
-            return runRet( yoke, pkNil );
-        if ( nat.tag !== "succ" )
-            return runRet( yoke, pk( "yep", list.ind( 0 ) ) );
-        return runWaitOne( yoke, function ( yoke ) {
-            return go( yoke, list.ind( 1 ), nat.ind( 0 ) );
-        } );
-    }
-    return runWait( yoke, function ( yoke ) {
-        return go( yoke, list, nat );
-    }, function ( yoke, result ) {
-        return then( yoke, result );
+    if ( list.tag !== "cons" )
+        return then( yoke, pkNil );
+    if ( nat.tag !== "succ" )
+        return then( yoke, pk( "yep", list.ind( 0 ) ) );
+    return runWaitOne( yoke, function ( yoke ) {
+        return listGetNat( yoke, list.ind( 1 ), nat.ind( 0 ), then );
     } );
 }
 function listRevAppend( yoke, backwardFirst, forwardSecond, then ) {
-    function go( yoke, backwardFirst, forwardSecond ) {
-        if ( backwardFirst.tag !== "cons" )
-            return runRet( yoke, forwardSecond );
-        return runWaitOne( yoke, function ( yoke ) {
-            return go( yoke,
-                backwardFirst.ind( 1 ),
-                pkCons( backwardFirst.ind( 0 ), forwardSecond ) );
-        } );
-    }
-    return runWait( yoke, function ( yoke ) {
-        return go( yoke, backwardFirst, forwardSecond );
-    }, function ( yoke, result ) {
-        return then( yoke, result );
+    if ( backwardFirst.tag !== "cons" )
+        return then( yoke, forwardSecond );
+    return runWaitOne( yoke, function ( yoke ) {
+        return listRevAppend( yoke, backwardFirst.ind( 1 ),
+            pkCons( backwardFirst.ind( 0 ), forwardSecond ), then );
     } );
 }
 function listAppend( yoke, a, b, then ) {
@@ -318,17 +284,14 @@ function listCount( yoke, list, func, then ) {
     }
 }
 function listAny( yoke, list, func, then ) {
-    return go( yoke, list );
-    function go( yoke, list ) {
-        if ( list.tag !== "cons" )
-            return then( yoke, false );
-        return runWaitOne( yoke, function ( yoke ) {
-            var result = func( list.ind( 0 ) );
-            if ( result )
-                return then( yoke, result );
-            return go( yoke, list.ind( 1 ) );
-        } );
-    }
+    if ( list.tag !== "cons" )
+        return then( yoke, false );
+    var result = func( list.ind( 0 ) );
+    if ( result )
+        return then( yoke, result );
+    return runWaitOne( yoke, function ( yoke ) {
+        return listAny( yoke, list.ind( 1 ), func, then );
+    } );
 }
 function listMapMultiWithLen( yoke, nat, lists, func, then ) {
     return go( yoke, nat, lists, pkNil );
@@ -398,13 +361,15 @@ function lensPlusNats( yoke, lists, nats, then ) {
     if ( nats.tag !== "cons" )
         nats = pkList( pkNil );
     
-    return lenPlusNat( yoke, lists.ind( 0 ), nats.ind( 0 ),
-        function ( yoke, head ) {
-        
-        return lensPlusNats( yoke, lists.ind( 1 ), nats.ind( 1 ),
-            function ( yoke, tail ) {
+    return runWaitOne( yoke, function ( yoke ) {
+        return lenPlusNat( yoke, lists.ind( 0 ), nats.ind( 0 ),
+            function ( yoke, head ) {
             
-            return then( yoke, pkCons( head, tail ) );
+            return lensPlusNats( yoke, lists.ind( 1 ), nats.ind( 1 ),
+                function ( yoke, tail ) {
+                
+                return then( yoke, pkCons( head, tail ) );
+            } );
         } );
     } );
 }
@@ -1396,7 +1361,7 @@ PkRuntime.prototype.setImpl = function ( methodName, tagName, call ) {
 PkRuntime.prototype.setStrictImpl = function (
     methodName, tagName, call ) {
     
-    var methodMeta = this.meta_.get( methodName );
+    var methodMeta = this.getMeta_( methodName );
     return this.setImpl( methodName, tagName,
         function ( yoke, args ) {
         
