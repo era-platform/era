@@ -610,12 +610,12 @@ function nonMacroMacroexpander( pkRuntime ) {
                     yoke, funcCaptures, captureCounts );
             }, function ( yoke, captureCounts ) {
                 return parseList(
-                    argsList, captureCounts, pkList( funcCaptures ),
-                    pkNil, yoke );
+                    yoke, argsList, captureCounts,
+                    pkList( funcCaptures ), pkNil );
             } );
             function parseList(
-                list, captureCounts, revCapturesSoFar,
-                revBindingsSoFar, yoke ) {
+                yoke, list, captureCounts,
+                revCapturesSoFar, revBindingsSoFar ) {
                 
                 if ( list.tag !== "cons" )
                     return listRevAppend(
@@ -655,11 +655,11 @@ function nonMacroMacroexpander( pkRuntime ) {
                             yoke, captures, captureCounts );
                     }, function ( yoke, captureCounts ) {
                         return parseList(
+                            yoke,
                             list.ind( 1 ),
                             captureCounts,
                             pkCons( captures, revCapturesSoFar ),
-                            pkCons( binding, revBindingsSoFar ),
-                            yoke );
+                            pkCons( binding, revBindingsSoFar ) );
                     } );
                 } );
             }
@@ -853,7 +853,7 @@ PkRuntime.prototype.init_ = function () {
             return pkErr( yoke,
                 "Called binding-interpret with a non-list list of " +
                 "captured values" );
-        function interpretList( list, yoke ) {
+        function interpretList( yoke, list ) {
             if ( list.tag !== "cons" )
                 return pkRet( yoke, pkNil );
             return runWaitTry( yoke, function ( yoke ) {
@@ -862,7 +862,7 @@ PkRuntime.prototype.init_ = function () {
                     yoke );
             }, function ( yoke, elem ) {
                 return runWaitTry( yoke, function ( yoke ) {
-                    return interpretList( list.ind( 1 ), yoke );
+                    return interpretList( yoke, list.ind( 1 ) );
                 }, function ( yoke, interpretedTail ) {
                     return pkRet( yoke,
                         pkCons( elem, interpretedTail ) );
@@ -877,7 +877,7 @@ PkRuntime.prototype.init_ = function () {
         }, function ( yoke, op ) {
             return runWaitTry( yoke, function ( yoke ) {
                 return interpretList(
-                    listGet( args, 0 ).ind( 1 ), yoke );
+                    yoke, listGet( args, 0 ).ind( 1 ) );
             }, function ( yoke, args ) {
                 return self.callMethod(
                     "call", pkList( op, args ), yoke );
@@ -936,10 +936,10 @@ PkRuntime.prototype.init_ = function () {
                             yoke, self, args, argsDupCount );
                     }, function ( yoke, argsDuplicates ) {
                         return go(
-                            captures, argsDuplicates, pkNil, yoke );
+                            yoke, captures, argsDuplicates, pkNil );
                         function go(
-                            nonlocalCaptures, argsDuplicates,
-                            revLocalCaptures, yoke ) {
+                            yoke, nonlocalCaptures, argsDuplicates,
+                            revLocalCaptures ) {
                             
                             if ( nonlocalCaptures.tag !== "cons" )
                                 return listRevAppend(
@@ -960,18 +960,18 @@ PkRuntime.prototype.init_ = function () {
                                     nonlocalCaptures.ind( 0 );
                                 if ( maybeNlc.tag === "yep" )
                                     return go(
+                                        yoke,
                                         nonlocalCaptures.ind( 1 ),
                                         argsDuplicates,
                                         pkCons( maybeNlc.ind( 0 ),
-                                            revLocalCaptures ),
-                                        yoke
+                                            revLocalCaptures )
                                     );
                                 return go(
+                                    yoke,
                                     nonlocalCaptures.ind( 1 ),
                                     argsDuplicates.ind( 1 ),
                                     pkCons( argsDuplicates.ind( 0 ),
-                                        revLocalCaptures ),
-                                    yoke
+                                        revLocalCaptures )
                                 );
                             } );
                         }
