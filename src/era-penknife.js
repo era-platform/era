@@ -697,8 +697,8 @@ PkRuntime.prototype.init_ = function () {
                     return maybeCapturedVal.tag !== "yep";
                 }, function ( yoke, argsDupCount ) {
                     return runWaitTry( yoke, function ( yoke ) {
-                        return pkDup(
-                            yoke, self, args, argsDupCount );
+                        return self.pkDup(
+                            yoke, args, argsDupCount );
                     }, function ( yoke, argsDuplicates ) {
                         return go(
                             yoke, captures, argsDuplicates, pkNil );
@@ -783,7 +783,7 @@ PkRuntime.prototype.init_ = function () {
             return self.callMethod( yoke, "macroexpand-to-fork",
                 pkList( expr.ind( 0 ), getFork, captureCounts ) );
         }, function ( yoke, opFork ) {
-            return runWaitTryGetmacFork( self, yoke,
+            return self.runWaitTryGetmacFork( yoke,
                 "macroexpand-to-fork",
                 function ( yoke ) {
                 
@@ -791,7 +791,7 @@ PkRuntime.prototype.init_ = function () {
             }, function ( yoke, binding, captures, maybeMacro ) {
                 var macroexpander = maybeMacro.tag === "yep" ?
                     maybeMacro.ind( 0 ) :
-                    nonMacroMacroexpander( self );
+                    self.nonMacroMacroexpander();
                 return self.callMethod( yoke, "call", pkList(
                     macroexpander,
                     pkList(
@@ -830,8 +830,7 @@ PkRuntime.prototype.init_ = function () {
         if ( listGet( body, 0 ).tag !== "string" )
             return pkErr( yoke, "Expanded fn with a non-string var" );
         var jsName = listGet( body, 0 ).special.jsStr;
-        return runWaitTryGetmacFork( self, yoke,
-            "macroexpand-to-fork",
+        return self.runWaitTryGetmacFork( yoke, "macroexpand-to-fork",
             function ( yoke ) {
             
             return self.callMethod( yoke, "macroexpand-to-fork",
@@ -863,7 +862,7 @@ PkRuntime.prototype.init_ = function () {
                             pkList( pkList( pkNil ) ),
                             pkNil
                         ) );
-                    return runWaitTryGetmacFork( self, yoke,
+                    return self.runWaitTryGetmacFork( yoke,
                         "a get-fork",
                         function ( yoke ) {
                         
@@ -1057,7 +1056,8 @@ PkRuntime.prototype.prepareMeta_ = function (
     }
     return meta;
 };
-function pkDup( yoke, pkRuntime, val, count ) {
+PkRuntime.prototype.pkDup = function ( yoke, val, count ) {
+    var self = this;
     
     // If we're only trying to get one duplicate, we already have our
     // answer, regardless of whether the value is linear.
@@ -1089,7 +1089,7 @@ function pkDup( yoke, pkRuntime, val, count ) {
         } );
     if ( val.special.dup !== void 0 )
         return runWaitTry( yoke, function ( yoke ) {
-            return pkRuntime.callMethod( yoke, "call",
+            return self.callMethod( yoke, "call",
                 pkList( val.special.dup, pkList( val, count ) ) );
         }, function ( yoke, result ) {
             return listLenIsNat( yoke, result, count,
@@ -1108,7 +1108,7 @@ function pkDup( yoke, pkRuntime, val, count ) {
     } );
     function withDups( args, reconstruct ) {
         return listMap( yoke, args, function ( yoke, arg ) {
-            return pkDup( yoke, pkRuntime, arg, count );
+            return self.pkDup( yoke, arg, count );
         }, function ( yoke, argsDuplicates ) {
             return listMapMultiWithLen( yoke, count, argsDuplicates,
                 function ( yoke, args ) {
@@ -1119,8 +1119,9 @@ function pkDup( yoke, pkRuntime, val, count ) {
             } );
         } );
     }
-}
-function forkGetter( pkRuntime, nameForError ) {
+};
+PkRuntime.prototype.forkGetter = function ( nameForError ) {
+    var self = this;
     return pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 2 ) )
             return pkErrLen( yoke, args, "Called " + nameForError );
@@ -1144,10 +1145,10 @@ function forkGetter( pkRuntime, nameForError ) {
 //                "Called " + nameForError + " without access to " +
 //                "top-level definition-reading side effects" );
         return runWaitTry( yoke, function ( yoke ) {
-            return runRet( yoke, pkRuntime.getName( name ) );
+            return runRet( yoke, self.getName( name ) );
         }, function ( yoke, name ) {
             return runWaitTry( yoke, function ( yoke ) {
-                return runRet( yoke, pkRuntime.getMacro( name ) );
+                return runRet( yoke, self.getMacro( name ) );
             }, function ( yoke, maybeMacro ) {
                 return pkRet( yoke, pk( "getmac-fork",
                     pk( "main-binding", name ),
@@ -1157,15 +1158,16 @@ function forkGetter( pkRuntime, nameForError ) {
             } );
         } );
     } );
-}
-function runWaitTryGetmacFork(
-    pkRuntime, yoke, nameForError, func, then ) {
+};
+PkRuntime.prototype.runWaitTryGetmacFork = function (
+    yoke, nameForError, func, then ) {
     
+    var self = this;
     return runWaitTry( yoke, function ( yoke ) {
         return func( yoke );
     }, function ( yoke, fork ) {
         return runWaitTry( yoke, function ( yoke ) {
-            return pkRuntime.callMethod( yoke, "fork-to-getmac",
+            return self.callMethod( yoke, "fork-to-getmac",
                 pkList( fork ) );
         }, function ( yoke, results ) {
             if ( !(isList( results ) && listLenIs( results, 3 )) )
@@ -1196,8 +1198,9 @@ function runWaitTryGetmacFork(
             return then( yoke, opBinding, captures, maybeMacro );
         } );
     } );
-}
-function nonMacroMacroexpander( pkRuntime ) {
+};
+PkRuntime.prototype.nonMacroMacroexpander = function () {
+    var self = this;
     return pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 4 ) )
             return pkErrLen( yoke, args,
@@ -1220,7 +1223,7 @@ function nonMacroMacroexpander( pkRuntime ) {
             return pkErr( yoke,
                 "Called a non-macro's macroexpander with a " +
                 "non-list args list" );
-        return runWaitTryGetmacFork( pkRuntime, yoke,
+        return self.runWaitTryGetmacFork( yoke,
             "the fork parameter to a non-macro's macroexpander",
             function ( yoke ) {
             
@@ -1261,11 +1264,11 @@ function nonMacroMacroexpander( pkRuntime ) {
                             } );
                         } );
                     } );
-                return runWaitTryGetmacFork( pkRuntime, yoke,
+                return self.runWaitTryGetmacFork( yoke,
                     "macroexpand-to-fork",
                     function ( yoke ) {
                     
-                    return pkRuntime.callMethod( yoke,
+                    return self.callMethod( yoke,
                         "macroexpand-to-fork",
                         pkList(
                             list.ind( 0 ), getFork, captureCounts ) );
@@ -1287,7 +1290,7 @@ function nonMacroMacroexpander( pkRuntime ) {
             }
         } );
     } );
-}
+};
 PkRuntime.prototype.defVal = function ( name, val ) {
     if ( val.isLinear() )
         return pkRawErr( "Called defval with a linear value" );
@@ -1497,13 +1500,12 @@ PkRuntime.prototype.conveniences_macroexpand = function (
     var self = this;
     if ( opt_yoke === void 0 )
         opt_yoke = self.conveniences_syncYoke;
-    return runWaitTryGetmacFork( self, opt_yoke,
-        "macroexpand-to-fork",
+    return self.runWaitTryGetmacFork( opt_yoke, "macroexpand-to-fork",
         function ( yoke ) {
         
         return self.callMethod( yoke, "macroexpand-to-fork", pkList(
             expr,
-            forkGetter( self, "the top-level get-fork" ),
+            self.forkGetter( "the top-level get-fork" ),
             pkNil
         ) );
     }, function ( yoke, binding, captures, maybeMacro ) {
