@@ -288,16 +288,6 @@ function listFlatten( yoke, list, then ) {
         } );
     } );
 }
-function listRevFlatten( yoke, list, then ) {
-    // Do flatten( reverse( list ) ).
-    // TODO: See if there's a more efficient way to do this.
-    
-    return listRevAppend( yoke, list, pkNil, function ( yoke, list ) {
-        return listFlatten( yoke, list, function ( yoke, result ) {
-            return then( yoke, result );
-        } );
-    } );
-}
 function listMap( list, yoke, func, then ) {
     return go( list, pkNil, yoke );
     function go( list, revResults, yoke ) {
