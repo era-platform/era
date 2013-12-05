@@ -355,7 +355,7 @@ function listMapMultiWithLen( yoke, nat, lists, func, then ) {
         } );
     }
 }
-function appendStacks( yoke, stacks ) {
+function appendStacks( yoke, stacks, then ) {
     // Given a list of stacks of lists, where the stacks are
     // conceptually infinite with nils at the end, return a stack that
     // concatenates the lists in the original stacks.
@@ -363,7 +363,7 @@ function appendStacks( yoke, stacks ) {
         return stack.tag === "cons";
     }, function ( yoke, moreToGo ) {
         if ( !moreToGo )
-            return pkRet( yoke, pkNil );
+            return then( yoke, pkNil );
         return listMap( yoke, stacks, function ( yoke, stack ) {
             return pkRet( yoke,
                 stack.tag === "cons" ? stack.ind( 0 ) : pkNil );
@@ -375,10 +375,10 @@ function appendStacks( yoke, stacks ) {
                 return listFlatten( yoke, heads,
                     function ( yoke, flatHead ) {
                     
-                    return runWaitTry( yoke, function ( yoke ) {
-                        return appendStacks( yoke, tails );
-                    }, function ( yoke, flatTail ) {
-                        return pkRet( yoke,
+                    return appendStacks( yoke, tails,
+                        function ( yoke, flatTail ) {
+                        
+                        return then( yoke,
                             pkCons( flatHead, flatTail ) );
                     } );
                 } );
@@ -386,13 +386,13 @@ function appendStacks( yoke, stacks ) {
         } );
     } );
 }
-function lensPlusNats( yoke, lists, nats ) {
+function lensPlusNats( yoke, lists, nats, then ) {
     // Given a stack of lists and a stack of nats, where the stacks
     // are conceptually infinite with empty lists or zeros at the end,
     // return a stack of nats that sums the length of each list with
     // the corresponding nat.
     if ( !(lists.tag === "cons" || nats.tag === "cons") )
-        return pkRet( yoke, pkNil );
+        return then( yoke, pkNil );
     if ( lists.tag !== "cons" )
         lists = pkList( pkNil );
     if ( nats.tag !== "cons" )
@@ -401,11 +401,10 @@ function lensPlusNats( yoke, lists, nats ) {
     return lenPlusNat( yoke, lists.ind( 0 ), nats.ind( 0 ),
         function ( yoke, head ) {
         
-        return runWaitTry( yoke, function ( yoke ) {
-            return lensPlusNats(
-                yoke, lists.ind( 1 ), nats.ind( 1 ) );
-        }, function ( yoke, tail ) {
-            return pkRet( yoke, pkCons( head, tail ) );
+        return lensPlusNats( yoke, lists.ind( 1 ), nats.ind( 1 ),
+            function ( yoke, tail ) {
+            
+            return then( yoke, pkCons( head, tail ) );
         } );
     } );
 }
@@ -620,17 +619,17 @@ PkRuntime.prototype.init_ = function () {
             return pkErr( yoke,
                 "Called binding-interpret with a non-list list of " +
                 "captured values" );
-        function interpretList( yoke, list ) {
+        function interpretList( yoke, list, then ) {
             if ( list.tag !== "cons" )
-                return pkRet( yoke, pkNil );
+                return then( yoke, pkNil );
             return runWaitTry( yoke, function ( yoke ) {
                 return self.callMethod( yoke, "binding-interpret",
                     pkList( list.ind( 0 ), listGet( args, 1 ) ) );
             }, function ( yoke, elem ) {
-                return runWaitTry( yoke, function ( yoke ) {
-                    return interpretList( yoke, list.ind( 1 ) );
-                }, function ( yoke, interpretedTail ) {
-                    return pkRet( yoke,
+                return interpretList( yoke, list.ind( 1 ),
+                    function ( yoke, interpretedTail ) {
+                    
+                    return then( yoke,
                         pkCons( elem, interpretedTail ) );
                 } );
             } );
@@ -641,10 +640,9 @@ PkRuntime.prototype.init_ = function () {
                 listGet( args, 1 )
             ) );
         }, function ( yoke, op ) {
-            return runWaitTry( yoke, function ( yoke ) {
-                return interpretList(
-                    yoke, listGet( args, 0 ).ind( 1 ) );
-            }, function ( yoke, args ) {
+            return interpretList( yoke, listGet( args, 0 ).ind( 1 ),
+                function ( yoke, args ) {
+                
                 return self.callMethod( yoke, "call",
                     pkList( op, args ) );
             } );
@@ -1231,10 +1229,9 @@ PkRuntime.prototype.nonMacroMacroexpander = function () {
         }, function (
             yoke, funcBinding, funcCaptures, funcMaybeMacro ) {
             
-            return runWaitTry( yoke, function ( yoke ) {
-                return lensPlusNats(
-                    yoke, funcCaptures, captureCounts );
-            }, function ( yoke, captureCounts ) {
+            return lensPlusNats( yoke, funcCaptures, captureCounts,
+                function ( yoke, captureCounts ) {
+                
                 return parseList(
                     yoke, argsList, captureCounts,
                     pkList( funcCaptures ), pkNil );
@@ -1248,9 +1245,9 @@ PkRuntime.prototype.nonMacroMacroexpander = function () {
                         yoke, revCapturesSoFar, pkNil,
                         function ( yoke, captures ) {
                         
-                        return runWaitTry( yoke, function ( yoke ) {
-                            return appendStacks( yoke, captures );
-                        }, function ( yoke, captures ) {
+                        return appendStacks( yoke, captures,
+                            function ( yoke, captures ) {
+                            
                             return listRevAppend(
                                 yoke, revBindingsSoFar, pkNil,
                                 function ( yoke, bindings ) {
@@ -1275,10 +1272,10 @@ PkRuntime.prototype.nonMacroMacroexpander = function () {
                 }, function ( yoke, binding, captures, maybeMacro ) {
                     // TODO: Verify that `captures` is a stack of
                     // lists of maybes of bindings.
-                    return runWaitTry( yoke, function ( yoke ) {
-                        return lensPlusNats(
-                            yoke, captures, captureCounts );
-                    }, function ( yoke, captureCounts ) {
+                    return lensPlusNats(
+                        yoke, captures, captureCounts,
+                        function ( yoke, captureCounts ) {
+                        
                         return parseList(
                             yoke,
                             list.ind( 1 ),
