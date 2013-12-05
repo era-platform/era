@@ -305,28 +305,28 @@ function listMap( yoke, list, func, then ) {
         } );
     }
 }
-function listCount( list, yoke, func, then ) {
-    return go( list, pkNil, yoke );
-    function go( list, count, yoke ) {
+function listCount( yoke, list, func, then ) {
+    return go( yoke, list, pkNil );
+    function go( yoke, list, count ) {
         if ( list.tag !== "cons" )
-            return then( count, yoke );
+            return then( yoke, count );
         return runWaitOne( yoke, function ( yoke ) {
             if ( func( list.ind( 0 ) ) )
-                return go( list.ind( 1 ), pk( "succ", count ), yoke );
-            return go( list.ind( 1 ), count, yoke );
+                return go( yoke, list.ind( 1 ), pk( "succ", count ) );
+            return go( yoke, list.ind( 1 ), count );
         } );
     }
 }
-function listAny( list, yoke, func, then ) {
-    return go( list, yoke );
-    function go( list, yoke ) {
+function listAny( yoke, list, func, then ) {
+    return go( yoke, list );
+    function go( yoke, list ) {
         if ( list.tag !== "cons" )
-            return then( false, yoke );
+            return then( yoke, false );
         return runWaitOne( yoke, function ( yoke ) {
             var result = func( list.ind( 0 ) );
             if ( result )
-                return then( result, yoke );
-            return go( list.ind( 1 ), yoke );
+                return then( yoke, result );
+            return go( yoke, list.ind( 1 ) );
         } );
     }
 }
@@ -359,9 +359,9 @@ function appendStacks( stacks, yoke ) {
     // Given a list of stacks of lists, where the stacks are
     // conceptually infinite with nils at the end, return a stack that
     // concatenates the lists in the original stacks.
-    return listAny( stacks, yoke, function ( stack ) {
+    return listAny( yoke, stacks, function ( stack ) {
         return stack.tag === "cons";
-    }, function ( moreToGo, yoke ) {
+    }, function ( yoke, moreToGo ) {
         if ( !moreToGo )
             return pkRet( yoke, pkNil );
         return listMap( yoke, stacks, function ( yoke, stack ) {
@@ -926,11 +926,11 @@ PkRuntime.prototype.init_ = function () {
             return pkRet( yoke, pkfnLinear( captures,
                 function ( yoke, captures, args ) {
                 
-                return listCount( captures, yoke,
+                return listCount( yoke, captures,
                     function ( maybeCapturedVal ) {
                     
                     return maybeCapturedVal.tag !== "yep";
-                }, function ( argsDupCount, yoke ) {
+                }, function ( yoke, argsDupCount ) {
                     return runWaitTry( yoke, function ( yoke ) {
                         return pkDup(
                             self, args, argsDupCount, yoke );
@@ -1516,9 +1516,9 @@ PkRuntime.prototype.conveniences_macroexpand = function (
         
         // Verify `captures` is a stack of *empty* lists of maybes of
         // bindings.
-        return listAny( captures, yoke, function ( bindings ) {
+        return listAny( yoke, captures, function ( bindings ) {
             return bindings.tag !== "nil";
-        }, function ( incorrect, yoke ) {
+        }, function ( yoke, incorrect ) {
             if ( incorrect )
                 return pkErr( yoke,
                     "Got a top-level macroexpansion result with " +
