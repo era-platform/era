@@ -330,14 +330,14 @@ function listAny( yoke, list, func, then ) {
         } );
     }
 }
-function listMapMultiWithLen( nat, lists, yoke, func, then ) {
-    return go( nat, lists, pkNil, yoke );
-    function go( nat, lists, revResults, yoke ) {
+function listMapMultiWithLen( yoke, nat, lists, func, then ) {
+    return go( yoke, nat, lists, pkNil );
+    function go( yoke, nat, lists, revResults ) {
         if ( nat.tag !== "succ" )
             return listRevAppend( yoke, revResults, pkNil,
                 function ( yoke, results ) {
                 
-                return then( results, yoke );
+                return then( yoke, results );
             } );
         return listMap( yoke, lists, function ( yoke, list ) {
             return pkRet( yoke, list.ind( 0 ) );
@@ -346,16 +346,16 @@ function listMapMultiWithLen( nat, lists, yoke, func, then ) {
                 return pkRet( yoke, list.ind( 1 ) );
             }, function ( yoke, rests ) {
                 return runWaitTry( yoke, function ( yoke ) {
-                    return func( firsts, yoke );
+                    return func( yoke, firsts );
                 }, function ( yoke, resultElem ) {
-                    return go( nat.ind( 0 ), rests,
-                        pkCons( resultElem, revResults ), yoke );
+                    return go( yoke, nat.ind( 0 ), rests,
+                        pkCons( resultElem, revResults ) );
                 } );
             } );
         } );
     }
 }
-function appendStacks( stacks, yoke ) {
+function appendStacks( yoke, stacks ) {
     // Given a list of stacks of lists, where the stacks are
     // conceptually infinite with nils at the end, return a stack that
     // concatenates the lists in the original stacks.
@@ -376,7 +376,7 @@ function appendStacks( stacks, yoke ) {
                     function ( yoke, flatHead ) {
                     
                     return runWaitTry( yoke, function ( yoke ) {
-                        return appendStacks( tails, yoke );
+                        return appendStacks( yoke, tails );
                     }, function ( yoke, flatTail ) {
                         return pkRet( yoke,
                             pkCons( flatHead, flatTail ) );
@@ -386,7 +386,7 @@ function appendStacks( stacks, yoke ) {
         } );
     } );
 }
-function lensPlusNats( lists, nats, yoke ) {
+function lensPlusNats( yoke, lists, nats ) {
     // Given a stack of lists and a stack of nats, where the stacks
     // are conceptually infinite with empty lists or zeros at the end,
     // return a stack of nats that sums the length of each list with
@@ -403,7 +403,7 @@ function lensPlusNats( lists, nats, yoke ) {
         
         return runWaitTry( yoke, function ( yoke ) {
             return lensPlusNats(
-                lists.ind( 1 ), nats.ind( 1 ), yoke );
+                yoke, lists.ind( 1 ), nats.ind( 1 ) );
         }, function ( yoke, tail ) {
             return pkRet( yoke, pkCons( head, tail ) );
         } );
@@ -411,14 +411,14 @@ function lensPlusNats( lists, nats, yoke ) {
 }
 // TODO: Use this. It'll come in handy when receiving a stack from
 // user-supplied code.
-function trimStack( lists, yoke ) {
+function trimStack( yoke, lists ) {
     // Given a stack of lists, return the stack with all its trailing
     // nils removed.
     return listRevAppend( yoke, lists, pkNil,
         function ( yoke, revLists ) {
         
-        return go( revLists, yoke );
-        function go( revLists, yoke ) {
+        return go( yoke, revLists );
+        function go( yoke, revLists ) {
             if ( revLists.tag !== "cons" )
                 return pkRet( yoke, pkNil );
             if ( revLists.ind( 0 ).tag === "cons" )
@@ -428,12 +428,12 @@ function trimStack( lists, yoke ) {
                     return pkRet( yoke, lists );
                 } );
             return runWaitOne( yoke, function ( yoke ) {
-                return go( revLists.ind( 1 ), yoke );
+                return go( yoke, revLists.ind( 1 ) );
             } );
         }
     } );
 }
-function pkDup( pkRuntime, val, count, yoke ) {
+function pkDup( yoke, pkRuntime, val, count ) {
     
     // If we're only trying to get one duplicate, we already have our
     // answer, regardless of whether the value is linear.
@@ -485,13 +485,13 @@ function pkDup( pkRuntime, val, count, yoke ) {
     } );
     function withDups( args, reconstruct ) {
         return listMap( yoke, args, function ( yoke, arg ) {
-            return pkDup( pkRuntime, arg, count, yoke );
+            return pkDup( yoke, pkRuntime, arg, count );
         }, function ( yoke, argsDuplicates ) {
-            return listMapMultiWithLen( count, argsDuplicates, yoke,
-                function ( args, yoke ) {
+            return listMapMultiWithLen( yoke, count, argsDuplicates,
+                function ( yoke, args ) {
                 
                 return pkRet( yoke, reconstruct( args ) );
-            }, function ( result, yoke ) {
+            }, function ( yoke, result ) {
                 return pkRet( yoke, result );
             } );
         } );
@@ -607,7 +607,7 @@ function nonMacroMacroexpander( pkRuntime ) {
             
             return runWaitTry( yoke, function ( yoke ) {
                 return lensPlusNats(
-                    funcCaptures, captureCounts, yoke );
+                    yoke, funcCaptures, captureCounts );
             }, function ( yoke, captureCounts ) {
                 return parseList(
                     argsList, captureCounts, pkList( funcCaptures ),
@@ -623,7 +623,7 @@ function nonMacroMacroexpander( pkRuntime ) {
                         function ( yoke, captures ) {
                         
                         return runWaitTry( yoke, function ( yoke ) {
-                            return appendStacks( captures, yoke );
+                            return appendStacks( yoke, captures );
                         }, function ( yoke, captures ) {
                             return listRevAppend(
                                 yoke, revBindingsSoFar, pkNil,
@@ -652,7 +652,7 @@ function nonMacroMacroexpander( pkRuntime ) {
                     // lists of maybes of bindings.
                     return runWaitTry( yoke, function ( yoke ) {
                         return lensPlusNats(
-                            captures, captureCounts, yoke );
+                            yoke, captures, captureCounts );
                     }, function ( yoke, captureCounts ) {
                         return parseList(
                             list.ind( 1 ),
@@ -933,7 +933,7 @@ PkRuntime.prototype.init_ = function () {
                 }, function ( yoke, argsDupCount ) {
                     return runWaitTry( yoke, function ( yoke ) {
                         return pkDup(
-                            self, args, argsDupCount, yoke );
+                            yoke, self, args, argsDupCount );
                     }, function ( yoke, argsDuplicates ) {
                         return go(
                             captures, argsDuplicates, pkNil, yoke );
