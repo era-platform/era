@@ -465,9 +465,8 @@ function pkDup( yoke, pkRuntime, val, count ) {
         } );
     if ( val.special.dup !== void 0 )
         return runWaitTry( yoke, function ( yoke ) {
-            return pkRuntime.callMethod( "call",
-                pkList( val.special.dup, pkList( val, count ) ),
-                yoke );
+            return pkRuntime.callMethod( yoke, "call",
+                pkList( val.special.dup, pkList( val, count ) ) );
         }, function ( yoke, result ) {
             return listLenIsNat( yoke, result, count,
                 function ( yoke, correct ) {
@@ -542,8 +541,8 @@ function runWaitTryGetmacFork(
         return func( yoke );
     }, function ( yoke, fork ) {
         return runWaitTry( yoke, function ( yoke ) {
-            return pkRuntime.callMethod( "fork-to-getmac",
-                pkList( fork ), yoke );
+            return pkRuntime.callMethod( yoke, "fork-to-getmac",
+                pkList( fork ) );
         }, function ( yoke, results ) {
             if ( !(isList( results ) && listLenIs( results, 3 )) )
                 return pkErr( yoke,
@@ -642,11 +641,10 @@ function nonMacroMacroexpander( pkRuntime ) {
                     "macroexpand-to-fork",
                     function ( yoke ) {
                     
-                    return pkRuntime.callMethod(
+                    return pkRuntime.callMethod( yoke,
                         "macroexpand-to-fork",
                         pkList(
-                            list.ind( 0 ), getFork, captureCounts ),
-                        yoke );
+                            list.ind( 0 ), getFork, captureCounts ) );
                 }, function ( yoke, binding, captures, maybeMacro ) {
                     // TODO: Verify that `captures` is a stack of
                     // lists of maybes of bindings.
@@ -857,9 +855,8 @@ PkRuntime.prototype.init_ = function () {
             if ( list.tag !== "cons" )
                 return pkRet( yoke, pkNil );
             return runWaitTry( yoke, function ( yoke ) {
-                return self.callMethod( "binding-interpret",
-                    pkList( list.ind( 0 ), listGet( args, 1 ) ),
-                    yoke );
+                return self.callMethod( yoke, "binding-interpret",
+                    pkList( list.ind( 0 ), listGet( args, 1 ) ) );
             }, function ( yoke, elem ) {
                 return runWaitTry( yoke, function ( yoke ) {
                     return interpretList( yoke, list.ind( 1 ) );
@@ -870,17 +867,17 @@ PkRuntime.prototype.init_ = function () {
             } );
         }
         return runWaitTry( yoke, function ( yoke ) {
-            return self.callMethod( "binding-interpret",
-                pkList(
-                    listGet( args, 0 ).ind( 0 ), listGet( args, 1 ) ),
-                yoke );
+            return self.callMethod( yoke, "binding-interpret", pkList(
+                listGet( args, 0 ).ind( 0 ),
+                listGet( args, 1 )
+            ) );
         }, function ( yoke, op ) {
             return runWaitTry( yoke, function ( yoke ) {
                 return interpretList(
                     yoke, listGet( args, 0 ).ind( 1 ) );
             }, function ( yoke, args ) {
-                return self.callMethod(
-                    "call", pkList( op, args ), yoke );
+                return self.callMethod( yoke, "call",
+                    pkList( op, args ) );
             } );
         } );
     } );
@@ -916,9 +913,8 @@ PkRuntime.prototype.init_ = function () {
             if ( capture.tag !== "yep" )
                 return pkRet( yoke, pkNil );
             return runWaitTry( yoke, function ( yoke ) {
-                return self.callMethod( "binding-interpret",
-                    pkList( capture.ind( 0 ), nonlocalCaptures ),
-                    yoke );
+                return self.callMethod( yoke, "binding-interpret",
+                    pkList( capture.ind( 0 ), nonlocalCaptures ) );
             }, function ( yoke, value ) {
                 return pkRet( yoke, pk( "yep", value ) );
             } );
@@ -946,12 +942,10 @@ PkRuntime.prototype.init_ = function () {
                                     yoke, revLocalCaptures, pkNil,
                                     function ( yoke, localCaptures ) {
                                     
-                                    return self.callMethod(
+                                    return self.callMethod( yoke,
                                         "binding-interpret",
                                         pkList( bodyBinding,
-                                            localCaptures ),
-                                        yoke
-                                    );
+                                            localCaptures ) );
                                 } );
                             return runWaitOne( yoke,
                                 function ( yoke ) {
@@ -998,9 +992,8 @@ PkRuntime.prototype.init_ = function () {
                 "Called macroexpand-to-fork with a non-list stack " +
                 "of capture counts" );
         return runWaitOne( yoke, function ( yoke ) {
-            return self.callMethod( "call",
-                pkList( getFork, pkList( expr, captureCounts ) ),
-                yoke );
+            return self.callMethod( yoke, "call",
+                pkList( getFork, pkList( expr, captureCounts ) ) );
         } );
     } );
     setStrictImpl( "macroexpand-to-fork", "cons",
@@ -1018,9 +1011,8 @@ PkRuntime.prototype.init_ = function () {
                 "Called macroexpand-to-fork with a non-list stack " +
                 "of capture counts" );
         return runWaitTry( yoke, function ( yoke ) {
-            return self.callMethod( "macroexpand-to-fork",
-                pkList( expr.ind( 0 ), getFork, captureCounts ),
-                yoke );
+            return self.callMethod( yoke, "macroexpand-to-fork",
+                pkList( expr.ind( 0 ), getFork, captureCounts ) );
         }, function ( yoke, opFork ) {
             return runWaitTryGetmacFork( self, yoke,
                 "macroexpand-to-fork",
@@ -1031,7 +1023,7 @@ PkRuntime.prototype.init_ = function () {
                 var macroexpander = maybeMacro.tag === "yep" ?
                     maybeMacro.ind( 0 ) :
                     nonMacroMacroexpander( self );
-                return self.callMethod( "call", pkList(
+                return self.callMethod( yoke, "call", pkList(
                     macroexpander,
                     pkList(
                         opFork,
@@ -1039,7 +1031,7 @@ PkRuntime.prototype.init_ = function () {
                         captureCounts,
                         expr.ind( 1 )
                     )
-                ), yoke );
+                ) );
             } );
         } );
     } );
@@ -1073,7 +1065,9 @@ PkRuntime.prototype.init_ = function () {
             "macroexpand-to-fork",
             function ( yoke ) {
             
-            return self.callMethod( "macroexpand-to-fork", pkList(
+            return self.callMethod( yoke, "macroexpand-to-fork",
+                pkList(
+                
                 listGet( body, 1 ),
                 pkfn( function ( yoke, args ) {
                     if ( !listLenIs( args, 2 ) )
@@ -1104,10 +1098,10 @@ PkRuntime.prototype.init_ = function () {
                         "a get-fork",
                         function ( yoke ) {
                         
-                        return self.callMethod( "call", pkList(
+                        return self.callMethod( yoke, "call", pkList(
                             nonlocalGetFork,
                             pkList( name, captureCounts.ind( 1 ) )
-                        ), yoke );
+                        ) );
                     }, function (
                         yoke, captureBinding,
                         nonlocalCaptureFrames, maybeMacro ) {
@@ -1123,7 +1117,7 @@ PkRuntime.prototype.init_ = function () {
                     } );
                 } ),
                 pkCons( pkNil, captureCounts )
-            ), yoke );
+            ) );
         }, function (
             yoke, bodyBinding, localCaptureFrames, maybeMacro ) {
             
@@ -1261,8 +1255,8 @@ PkRuntime.prototype.init_ = function () {
                 listGet( args, 0 ),
                 listGet( args, 1 ),
                 function ( yoke, args ) {
-                    return self.callMethod( "call",
-                        pkList( listGet( args, 2 ), args ), yoke );
+                    return self.callMethod( yoke, "call",
+                        pkList( listGet( args, 2 ), args ) );
                 } ) );
     } ) );
     
@@ -1358,7 +1352,7 @@ PkRuntime.prototype.defMethod = function ( name, args ) {
     return pk( "yep", pkNil );
 };
 PkRuntime.prototype.callMethodRaw = function (
-    methodName, args, yoke ) {
+    yoke, methodName, args ) {
     
     // TODO: If we ever have allowsGets() return false, uncomment this
     // code. Until then, it will only be a performance burden.
@@ -1379,10 +1373,10 @@ PkRuntime.prototype.callMethodRaw = function (
     return impl.call( yoke, args );
 };
 PkRuntime.prototype.callMethod = function (
-    jsMethodName, args, yoke ) {
+    yoke, jsMethodName, args ) {
     
     return this.callMethodRaw(
-        pkStrName( jsMethodName ), args, yoke );
+        yoke, pkStrName( jsMethodName ), args );
 };
 PkRuntime.prototype.setImpl = function ( methodName, tagName, call ) {
     var methodMeta = this.getMeta_( methodName );
@@ -1425,7 +1419,7 @@ PkRuntime.prototype.getVal = function ( name ) {
     if ( meta.methodOrVal === "method" )
         return pk( "yep", pkfn( function ( yoke, args ) {
             return runWaitOne( yoke, function ( yoke ) {
-                return self.callMethodRaw( name, args, yoke );
+                return self.callMethodRaw( yoke, name, args );
             } );
         } ) );
     if ( meta.tagKeys !== void 0 )
@@ -1507,11 +1501,11 @@ PkRuntime.prototype.conveniences_macroexpand = function (
         "macroexpand-to-fork",
         function ( yoke ) {
         
-        return self.callMethod( "macroexpand-to-fork", pkList(
+        return self.callMethod( yoke, "macroexpand-to-fork", pkList(
             expr,
             forkGetter( self, "the top-level get-fork" ),
             pkNil
-        ), yoke );
+        ) );
     }, function ( yoke, binding, captures, maybeMacro ) {
         
         // Verify `captures` is a stack of *empty* lists of maybes of
@@ -1552,8 +1546,8 @@ PkRuntime.prototype.conveniences_interpretBinding = function (
     if ( opt_yoke === void 0 )
         opt_yoke = self.conveniences_syncYoke;
     return self.withAllowsDefs( opt_yoke, function ( yoke ) {
-        return self.callMethod(
-            "binding-interpret", pkList( binding, pkNil ), yoke );
+        return self.callMethod( yoke, "binding-interpret",
+            pkList( binding, pkNil ) );
     } );
 };
 function makePkRuntime() {
