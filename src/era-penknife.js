@@ -183,119 +183,118 @@ function runWaitOne( yoke, then ) {
         return then( yoke );
     } );
 }
-function listLenEq( a, b, yoke, then ) {
-    function go( a, b, yoke ) {
+function listLenEq( yoke, a, b, then ) {
+    function go( yoke, a, b ) {
         if ( a.tag === "nil" && b.tag === "nil" )
             return runRet( yoke, true );
         if ( !(a.tag === "cons" && b.tag === "cons") )
             return runRet( yoke, false );
         return runWaitOne( yoke, function ( yoke ) {
-            return go( a.ind( 1 ), b.ind( 1 ), yoke );
+            return go( yoke, a.ind( 1 ), b.ind( 1 ) );
         } );
     }
     return runWait( yoke, function ( yoke ) {
-        return go( a, b, yoke );
+        return go( yoke, a, b );
     }, function ( yoke, result ) {
-        return then( result, yoke );
+        return then( yoke, result );
     } );
 }
-function listLenIsNat( list, nat, yoke, then ) {
-    function go( list, nat, yoke ) {
+function listLenIsNat( yoke, list, nat, then ) {
+    function go( yoke, list, nat ) {
         if ( list.tag === "nil" && nat.tag === "nil" )
             return runRet( yoke, true );
         if ( !(list.tag === "cons" && nat.tag === "succ") )
             return runRet( yoke, false );
         return runWaitOne( yoke, function ( yoke ) {
-            return go( list.ind( 1 ), nat.ind( 0 ), yoke );
+            return go( yoke, list.ind( 1 ), nat.ind( 0 ) );
         } );
     }
     return runWait( yoke, function ( yoke ) {
-        return go( list, nat, yoke );
+        return go( yoke, list, nat );
     }, function ( yoke, result ) {
-        return then( result, yoke );
+        return then( yoke, result );
     } );
 }
-function lenPlusNat( list, nat, yoke, then ) {
-    function go( list, nat, yoke ) {
+function lenPlusNat( yoke, list, nat, then ) {
+    function go( yoke, list, nat ) {
         if ( list.tag !== "cons" )
             return runRet( yoke, nat );
         return runWaitOne( yoke, function ( yoke ) {
-            return go( list.ind( 1 ), pk( "succ", nat ), yoke );
+            return go( yoke, list.ind( 1 ), pk( "succ", nat ) );
         } );
     }
     return runWait( yoke, function ( yoke ) {
-        return go( list, nat, yoke );
+        return go( yoke, list, nat );
     }, function ( yoke, result ) {
-        return then( result, yoke );
+        return then( yoke, result );
     } );
 }
-function listGetNat( list, nat, yoke, then ) {
-    function go( list, nat, yoke ) {
+function listGetNat( yoke, list, nat, then ) {
+    function go( yoke, list, nat ) {
         if ( list.tag !== "cons" )
             return runRet( yoke, pkNil );
         if ( nat.tag !== "succ" )
             return runRet( yoke, pk( "yep", list.ind( 0 ) ) );
         return runWaitOne( yoke, function ( yoke ) {
-            return go( list.ind( 1 ), nat.ind( 0 ), yoke );
+            return go( yoke, list.ind( 1 ), nat.ind( 0 ) );
         } );
     }
     return runWait( yoke, function ( yoke ) {
-        return go( list, nat, yoke );
+        return go( yoke, list, nat );
     }, function ( yoke, result ) {
-        return then( result, yoke );
+        return then( yoke, result );
     } );
 }
-function listRevAppend( backwardFirst, forwardSecond, yoke, then ) {
-    function go( backwardFirst, forwardSecond, yoke ) {
+function listRevAppend( yoke, backwardFirst, forwardSecond, then ) {
+    function go( yoke, backwardFirst, forwardSecond ) {
         if ( backwardFirst.tag !== "cons" )
             return runRet( yoke, forwardSecond );
         return runWaitOne( yoke, function ( yoke ) {
-            return go(
+            return go( yoke,
                 backwardFirst.ind( 1 ),
-                pkCons( backwardFirst.ind( 0 ), forwardSecond ),
-                yoke );
+                pkCons( backwardFirst.ind( 0 ), forwardSecond ) );
         } );
     }
     return runWait( yoke, function ( yoke ) {
-        return go( backwardFirst, forwardSecond, yoke );
+        return go( yoke, backwardFirst, forwardSecond );
     }, function ( yoke, result ) {
-        return then( result, yoke );
+        return then( yoke, result );
     } );
 }
-function listAppend( a, b, yoke, then ) {
-    return listRevAppend( a, pkNil, yoke, function ( revA, yoke ) {
-        return listRevAppend( revA, b, yoke,
-            function ( result, yoke ) {
+function listAppend( yoke, a, b, then ) {
+    return listRevAppend( yoke, a, pkNil, function ( yoke, revA ) {
+        return listRevAppend( yoke, revA, b,
+            function ( yoke, result ) {
             
-            return then( result, yoke );
+            return then( yoke, result );
         } );
     } );
 }
-function listFlatten( list, yoke, then ) {
+function listFlatten( yoke, list, then ) {
     // TODO: See if there's a more efficient way to do this.
     if ( list.tag !== "cons" )
-        return then( pkNil, yoke );
+        return then( yoke, pkNil );
     if ( list.ind( 1 ).tag !== "cons" )
-        return then( list.ind( 0 ), yoke );
+        return then( yoke, list.ind( 0 ) );
     return runWaitOne( yoke, function ( yoke ) {
-        return listFlatten( list.ind( 1 ), yoke,
-            function ( flatTail, yoke ) {
+        return listFlatten( yoke, list.ind( 1 ),
+            function ( yoke, flatTail ) {
             
-            return listAppend( list.ind( 0 ), flatTail, yoke,
-                function ( result, yoke ) {
+            return listAppend( yoke, list.ind( 0 ), flatTail,
+                function ( yoke, result ) {
                 
-                return then( result, yoke );
+                return then( yoke, result );
             } );
         } );
     } );
 }
-function listRevFlatten( list, yoke, then ) {
+function listRevFlatten( yoke, list, then ) {
     // Do flatten( reverse( list ) ).
     // TODO: See if there's a more efficient way to do this.
     
-    return listRevAppend( list, pkNil, yoke, function ( list, yoke ) {
-        return listFlatten( list, yoke, function ( result, yoke ) {
-            return then( result, yoke );
+    return listRevAppend( yoke, list, pkNil, function ( yoke, list ) {
+        return listFlatten( yoke, list, function ( yoke, result ) {
+            return then( yoke, result );
         } );
     } );
 }
@@ -303,8 +302,8 @@ function listMap( list, yoke, func, then ) {
     return go( list, pkNil, yoke );
     function go( list, revResults, yoke ) {
         if ( list.tag !== "cons" )
-            return listRevAppend( revResults, pkNil, yoke,
-                function ( results, yoke ) {
+            return listRevAppend( yoke, revResults, pkNil,
+                function ( yoke, results ) {
                 
                 return then( results, yoke );
             } );
@@ -320,8 +319,8 @@ function natMap( nat, yoke, func, then ) {
     return go( nat, pkNil, yoke );
     function go( nat, revResults, yoke ) {
         if ( nat.tag !== "succ" )
-            return listRevAppend( revResults, pkNil, yoke,
-                function ( results, yoke ) {
+            return listRevAppend( yoke, revResults, pkNil,
+                function ( yoke, results ) {
                 
                 return then( results, yoke );
             } );
@@ -362,8 +361,8 @@ function listMapMultiWithLen( nat, lists, yoke, func, then ) {
     return go( nat, lists, pkNil, yoke );
     function go( nat, lists, revResults, yoke ) {
         if ( nat.tag !== "succ" )
-            return listRevAppend( revResults, pkNil, yoke,
-                function ( results, yoke ) {
+            return listRevAppend( yoke, revResults, pkNil,
+                function ( yoke, results ) {
                 
                 return then( results, yoke );
             } );
@@ -400,8 +399,8 @@ function appendStacks( stacks, yoke ) {
                 return pkRet( yoke,
                     stack.tag === "cons" ? stack.ind( 1 ) : pkNil );
             }, function ( tails, yoke ) {
-                return listFlatten( heads, yoke,
-                    function ( flatHead, yoke ) {
+                return listFlatten( yoke, heads,
+                    function ( yoke, flatHead ) {
                     
                     return runWaitTry( yoke, function ( yoke ) {
                         return appendStacks( tails, yoke );
@@ -426,8 +425,8 @@ function lensPlusNats( lists, nats, yoke ) {
     if ( nats.tag !== "cons" )
         nats = pkList( pkNil );
     
-    return lenPlusNat( lists.ind( 0 ), nats.ind( 0 ), yoke,
-        function ( head, yoke ) {
+    return lenPlusNat( yoke, lists.ind( 0 ), nats.ind( 0 ),
+        function ( yoke, head ) {
         
         return runWaitTry( yoke, function ( yoke ) {
             return lensPlusNats(
@@ -442,16 +441,16 @@ function lensPlusNats( lists, nats, yoke ) {
 function trimStack( lists, yoke ) {
     // Given a stack of lists, return the stack with all its trailing
     // nils removed.
-    return listRevAppend( lists, pkNil, yoke,
-        function ( revLists, yoke ) {
+    return listRevAppend( yoke, lists, pkNil,
+        function ( yoke, revLists ) {
         
         return go( revLists, yoke );
         function go( revLists, yoke ) {
             if ( revLists.tag !== "cons" )
                 return pkRet( yoke, pkNil );
             if ( revLists.ind( 0 ).tag === "cons" )
-                return listRevAppend( revLists, pkNil, yoke,
-                    function ( lists, yoke ) {
+                return listRevAppend( yoke, revLists, pkNil,
+                    function ( yoke, lists ) {
                     
                     return pkRet( yoke, lists );
                 } );
@@ -497,8 +496,8 @@ function pkDup( pkRuntime, val, count, yoke ) {
                 pkList( val.special.dup, pkList( val, count ) ),
                 yoke );
         }, function ( yoke, result ) {
-            return listLenIsNat( result, count, yoke,
-                function ( correct, yoke ) {
+            return listLenIsNat( yoke, result, count,
+                function ( yoke, correct ) {
                 
                 if ( !correct )
                     return pkErr( yoke,
@@ -647,15 +646,15 @@ function nonMacroMacroexpander( pkRuntime ) {
                 
                 if ( list.tag !== "cons" )
                     return listRevAppend(
-                        revCapturesSoFar, pkNil, yoke,
-                        function ( captures, yoke ) {
+                        yoke, revCapturesSoFar, pkNil,
+                        function ( yoke, captures ) {
                         
                         return runWaitTry( yoke, function ( yoke ) {
                             return appendStacks( captures, yoke );
                         }, function ( yoke, captures ) {
                             return listRevAppend(
-                                revBindingsSoFar, pkNil, yoke,
-                                function ( bindings, yoke ) {
+                                yoke, revBindingsSoFar, pkNil,
+                                function ( yoke, bindings ) {
                                 
                                 return pkRet( yoke, pk( "getmac-fork",
                                     pk( "call-binding",
@@ -920,8 +919,8 @@ PkRuntime.prototype.init_ = function () {
                 "Called binding-interpret with a non-list list of " +
                 "captured values" );
         return listGetNat(
-            listGet( args, 1 ), listGet( args, 0 ).ind( 0 ), yoke,
-            function ( result, yoke ) {
+            yoke, listGet( args, 1 ), listGet( args, 0 ).ind( 0 ),
+            function ( yoke, result ) {
             
             if ( result.tag !== "yep" )
                 return pkErr( yoke,
@@ -971,8 +970,8 @@ PkRuntime.prototype.init_ = function () {
                             
                             if ( nonlocalCaptures.tag !== "cons" )
                                 return listRevAppend(
-                                    revLocalCaptures, pkNil, yoke,
-                                    function ( localCaptures, yoke ) {
+                                    yoke, revLocalCaptures, pkNil,
+                                    function ( yoke, localCaptures ) {
                                     
                                     return self.callMethod(
                                         "binding-interpret",
@@ -1434,8 +1433,8 @@ PkRuntime.prototype.setStrictImpl = function (
     return this.setImpl( methodName, tagName,
         function ( yoke, args ) {
         
-        return listLenEq( args, methodMeta.methodArgs, yoke,
-            function ( areEq, yoke ) {
+        return listLenEq( yoke, args, methodMeta.methodArgs,
+            function ( yoke, areEq ) {
             
             if ( !areEq )
                 return pkErrLen( yoke, args, "Called " + methodName );
@@ -1458,8 +1457,8 @@ PkRuntime.prototype.getVal = function ( name ) {
         } ) );
     if ( meta.tagKeys !== void 0 )
         return pk( "yep", pkfn( function ( yoke, args ) {
-            return listLenEq( args, meta.tagKeys, yoke,
-                function ( areEq, yoke ) {
+            return listLenEq( yoke, args, meta.tagKeys,
+                function ( yoke, areEq ) {
                 
                 if ( !areEq )
                     return pkErrLen( yoke, args,
