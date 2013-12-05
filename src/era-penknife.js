@@ -570,7 +570,7 @@ function runWaitTryGetmacFork(
                     "Got a linear value for the macro result of " +
                     nameForError );
             }
-            return then( opBinding, captures, maybeMacro, yoke );
+            return then( yoke, opBinding, captures, maybeMacro );
         } );
     } );
 }
@@ -603,7 +603,7 @@ function nonMacroMacroexpander( pkRuntime ) {
             
             return pkRet( yoke, fork );
         }, function (
-            funcBinding, funcCaptures, funcMaybeMacro, yoke ) {
+            yoke, funcBinding, funcCaptures, funcMaybeMacro ) {
             
             return runWaitTry( yoke, function ( yoke ) {
                 return lensPlusNats(
@@ -647,7 +647,7 @@ function nonMacroMacroexpander( pkRuntime ) {
                         pkList(
                             list.ind( 0 ), getFork, captureCounts ),
                         yoke );
-                }, function ( binding, captures, maybeMacro, yoke ) {
+                }, function ( yoke, binding, captures, maybeMacro ) {
                     // TODO: Verify that `captures` is a stack of
                     // lists of maybes of bindings.
                     return runWaitTry( yoke, function ( yoke ) {
@@ -1027,7 +1027,7 @@ PkRuntime.prototype.init_ = function () {
                 function ( yoke ) {
                 
                 return pkRet( yoke, opFork );
-            }, function ( binding, captures, maybeMacro, yoke ) {
+            }, function ( yoke, binding, captures, maybeMacro ) {
                 var macroexpander = maybeMacro.tag === "yep" ?
                     maybeMacro.ind( 0 ) :
                     nonMacroMacroexpander( self );
@@ -1109,8 +1109,8 @@ PkRuntime.prototype.init_ = function () {
                             pkList( name, captureCounts.ind( 1 ) )
                         ), yoke );
                     }, function (
-                        captureBinding, nonlocalCaptureFrames,
-                        maybeMacro, yoke ) {
+                        yoke, captureBinding,
+                        nonlocalCaptureFrames, maybeMacro ) {
                         
                         return pkRet( yoke, pk( "getmac-fork",
                             pk( "param-binding",
@@ -1125,7 +1125,7 @@ PkRuntime.prototype.init_ = function () {
                 pkCons( pkNil, captureCounts )
             ), yoke );
         }, function (
-            bodyBinding, localCaptureFrames, maybeMacro, yoke ) {
+            yoke, bodyBinding, localCaptureFrames, maybeMacro ) {
             
             if ( localCaptureFrames.tag === "nil" )
                 localCaptureFrames = pkList( pkNil );
@@ -1512,7 +1512,7 @@ PkRuntime.prototype.conveniences_macroexpand = function (
             forkGetter( self, "the top-level get-fork" ),
             pkNil
         ), yoke );
-    }, function ( binding, captures, maybeMacro, yoke ) {
+    }, function ( yoke, binding, captures, maybeMacro ) {
         
         // Verify `captures` is a stack of *empty* lists of maybes of
         // bindings.
