@@ -939,7 +939,7 @@ PkRuntime.prototype.init_ = function () {
             }, function ( yoke, value ) {
                 return pkRet( yoke, pk( "yep", value ) );
             } );
-        }, function ( captures ) {
+        }, function ( captures, yoke ) {
             return pkRet( yoke, pkfnLinear( captures,
                 function ( yoke, captures, args ) {
                 
