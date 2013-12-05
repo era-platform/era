@@ -288,20 +288,20 @@ function listFlatten( yoke, list, then ) {
         } );
     } );
 }
-function listMap( list, yoke, func, then ) {
-    return go( list, pkNil, yoke );
-    function go( list, revResults, yoke ) {
+function listMap( yoke, list, func, then ) {
+    return go( yoke, list, pkNil );
+    function go( yoke, list, revResults ) {
         if ( list.tag !== "cons" )
             return listRevAppend( yoke, revResults, pkNil,
                 function ( yoke, results ) {
                 
-                return then( results, yoke );
+                return then( yoke, results );
             } );
         return runWaitTry( yoke, function ( yoke ) {
-            return func( list.ind( 0 ), yoke );
+            return func( yoke, list.ind( 0 ) );
         }, function ( yoke, resultElem ) {
-            return go( list.ind( 1 ),
-                pkCons( resultElem, revResults ), yoke );
+            return go( yoke,
+                list.ind( 1 ), pkCons( resultElem, revResults ) );
         } );
     }
 }
@@ -356,12 +356,12 @@ function listMapMultiWithLen( nat, lists, yoke, func, then ) {
                 
                 return then( results, yoke );
             } );
-        return listMap( lists, yoke, function ( list, yoke ) {
+        return listMap( yoke, lists, function ( yoke, list ) {
             return pkRet( yoke, list.ind( 0 ) );
-        }, function ( firsts, yoke ) {
-            return listMap( lists, yoke, function ( list, yoke ) {
+        }, function ( yoke, firsts ) {
+            return listMap( yoke, lists, function ( yoke, list ) {
                 return pkRet( yoke, list.ind( 1 ) );
-            }, function ( rests, yoke ) {
+            }, function ( yoke, rests ) {
                 return runWaitTry( yoke, function ( yoke ) {
                     return func( firsts, yoke );
                 }, function ( yoke, resultElem ) {
@@ -381,14 +381,14 @@ function appendStacks( stacks, yoke ) {
     }, function ( moreToGo, yoke ) {
         if ( !moreToGo )
             return pkRet( yoke, pkNil );
-        return listMap( stacks, yoke, function ( stack, yoke ) {
+        return listMap( yoke, stacks, function ( yoke, stack ) {
             return pkRet( yoke,
                 stack.tag === "cons" ? stack.ind( 0 ) : pkNil );
-        }, function ( heads, yoke ) {
-            return listMap( stacks, yoke, function ( stack, yoke ) {
+        }, function ( yoke, heads ) {
+            return listMap( yoke, stacks, function ( yoke, stack ) {
                 return pkRet( yoke,
                     stack.tag === "cons" ? stack.ind( 1 ) : pkNil );
-            }, function ( tails, yoke ) {
+            }, function ( yoke, tails ) {
                 return listFlatten( yoke, heads,
                     function ( yoke, flatHead ) {
                     
@@ -501,9 +501,9 @@ function pkDup( pkRuntime, val, count, yoke ) {
             val.tagName, val.tag, args, !!"isLinear", {} );
     } );
     function withDups( args, reconstruct ) {
-        return listMap( args, yoke, function ( arg, yoke ) {
+        return listMap( yoke, args, function ( yoke, arg ) {
             return pkDup( pkRuntime, arg, count, yoke );
-        }, function ( argsDuplicates, yoke ) {
+        }, function ( yoke, argsDuplicates ) {
             return listMapMultiWithLen( count, argsDuplicates, yoke,
                 function ( args ) {
                 
@@ -929,7 +929,7 @@ PkRuntime.prototype.init_ = function () {
         var captures = listGet( args, 0 ).ind( 0 );
         var bodyBinding = listGet( args, 0 ).ind( 1 );
         var nonlocalCaptures = listGet( args, 1 );
-        return listMap( captures, yoke, function ( capture, yoke ) {
+        return listMap( yoke, captures, function ( yoke, capture ) {
             if ( capture.tag !== "yep" )
                 return pkRet( yoke, pkNil );
             return runWaitTry( yoke, function ( yoke ) {
@@ -939,7 +939,7 @@ PkRuntime.prototype.init_ = function () {
             }, function ( yoke, value ) {
                 return pkRet( yoke, pk( "yep", value ) );
             } );
-        }, function ( captures, yoke ) {
+        }, function ( yoke, captures ) {
             return pkRet( yoke, pkfnLinear( captures,
                 function ( yoke, captures, args ) {
                 
