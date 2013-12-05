@@ -305,23 +305,6 @@ function listMap( yoke, list, func, then ) {
         } );
     }
 }
-function natMap( nat, yoke, func, then ) {
-    return go( nat, pkNil, yoke );
-    function go( nat, revResults, yoke ) {
-        if ( nat.tag !== "succ" )
-            return listRevAppend( yoke, revResults, pkNil,
-                function ( yoke, results ) {
-                
-                return then( results, yoke );
-            } );
-        return runWaitTry( yoke, function ( yoke ) {
-            return func( nat, yoke );
-        }, function ( yoke, resultElem ) {
-            return go( nat.ind( 0 ),
-                pkCons( resultElem, revResults ), yoke );
-        } );
-    }
-}
 function listCount( list, yoke, func, then ) {
     return go( list, pkNil, yoke );
     function go( list, count, yoke ) {
