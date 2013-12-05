@@ -227,8 +227,15 @@ function listRevAppend( yoke, backwardFirst, forwardSecond, then ) {
             pkCons( backwardFirst.ind( 0 ), forwardSecond ), then );
     } );
 }
+function listRev( yoke, list, then ) {
+    return listRevAppend( yoke, list, pkNil,
+        function ( yoke, result ) {
+        
+        return then( yoke, result );
+    } );
+}
 function listAppend( yoke, a, b, then ) {
-    return listRevAppend( yoke, a, pkNil, function ( yoke, revA ) {
+    return listRev( yoke, a, function ( yoke, revA ) {
         return listRevAppend( yoke, revA, b,
             function ( yoke, result ) {
             
@@ -258,7 +265,7 @@ function listMap( yoke, list, func, then ) {
     return go( yoke, list, pkNil );
     function go( yoke, list, revResults ) {
         if ( list.tag !== "cons" )
-            return listRevAppend( yoke, revResults, pkNil,
+            return listRev( yoke, revResults,
                 function ( yoke, results ) {
                 
                 return then( yoke, results );
@@ -297,7 +304,7 @@ function listMapMultiWithLen( yoke, nat, lists, func, then ) {
     return go( yoke, nat, lists, pkNil );
     function go( yoke, nat, lists, revResults ) {
         if ( nat.tag !== "succ" )
-            return listRevAppend( yoke, revResults, pkNil,
+            return listRev( yoke, revResults,
                 function ( yoke, results ) {
                 
                 return then( yoke, results );
@@ -378,15 +385,13 @@ function lensPlusNats( yoke, lists, nats, then ) {
 function trimStack( yoke, lists ) {
     // Given a stack of lists, return the stack with all its trailing
     // nils removed.
-    return listRevAppend( yoke, lists, pkNil,
-        function ( yoke, revLists ) {
-        
+    return listRev( yoke, lists, function ( yoke, revLists ) {
         return go( yoke, revLists );
         function go( yoke, revLists ) {
             if ( revLists.tag !== "cons" )
                 return pkRet( yoke, pkNil );
             if ( revLists.ind( 0 ).tag === "cons" )
-                return listRevAppend( yoke, revLists, pkNil,
+                return listRev( yoke, revLists,
                     function ( yoke, lists ) {
                     
                     return pkRet( yoke, lists );
@@ -670,8 +675,8 @@ PkRuntime.prototype.init_ = function () {
                             revLocalCaptures ) {
                             
                             if ( nonlocalCaptures.tag !== "cons" )
-                                return listRevAppend(
-                                    yoke, revLocalCaptures, pkNil,
+                                return listRev(
+                                    yoke, revLocalCaptures,
                                     function ( yoke, localCaptures ) {
                                     
                                     return self.callMethod( yoke,
@@ -1206,15 +1211,13 @@ PkRuntime.prototype.nonMacroMacroexpander = function () {
                 revCapturesSoFar, revBindingsSoFar ) {
                 
                 if ( list.tag !== "cons" )
-                    return listRevAppend(
-                        yoke, revCapturesSoFar, pkNil,
+                    return listRev( yoke, revCapturesSoFar,
                         function ( yoke, captures ) {
                         
                         return appendStacks( yoke, captures,
                             function ( yoke, captures ) {
                             
-                            return listRevAppend(
-                                yoke, revBindingsSoFar, pkNil,
+                            return listRev( yoke, revBindingsSoFar,
                                 function ( yoke, bindings ) {
                                 
                                 return pkRet( yoke, pk( "getmac-fork",
