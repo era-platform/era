@@ -82,6 +82,52 @@ function pk( tag, var_args ) {
     var args = pkListFromArr( [].slice.call( arguments, 1 ) );
     return new Pk().init_( null, tag, args, args.isLinear(), {} );
 }
+function pkIsLeaf( x ) {
+    return x.tag === "fn" || x.special.dup !== void 0;
+}
+function pkGetArgs( val ) {
+    if ( pkIsLeaf( val ) )
+        throw new Error();
+    return val.tag === "cons" ?
+        pkList( val.ind( 0 ), val.ind( 1 ) ) : val.args_;
+}
+function pkReconstruct( val, args ) {
+    if ( pkIsLeaf( val ) )
+        throw new Error();
+    return val.tag === "cons" ?
+        pkCons( listGet( args, 0 ), listGet( args, 1 ) ) :
+        new Pk().init_(
+            val.tagName, val.tag, args, args.isLinear(), {} );
+}
+// TODO: Use pkGetLeaves() and pkMapLeaves() to define primitive
+// operations for the Penknkife language. Er, actually, provide
+// pkIsLeaf(), pkGetArgs(), and pkReconstruct() as primitives and
+// rewrite these tools and more in Penknife itself. The point is, when
+// implementing a multi-stage conditional, pkGetLeaves() will make it
+// possible to detect all the stages occurring in the value so we can
+// collect condition witnesses, and something like pkMapLeaves() will
+// be necessary to create the condition-masked values to use in each
+// branch.
+function pkGetLeaves( yoke, tree ) {
+    if ( pkIsLeaf( tree ) )
+        return pkRet( yoke, pkList( tree ) );
+    return listMappend( yoke, pkGetArgs( tree ),
+        function ( yoke, arg ) {
+        
+        return pkTaggedGetLeaves( yoke, arg );
+    }, function ( yoke, result ) {
+        return pkRet( yoke, result );
+    } );
+}
+function pkMapLeaves( yoke, tree, func ) {
+    if ( pkIsLeaf( tree ) )
+        return func( yoke, tree );
+    return listMap( yoke, pkGetArgs( tree ), function ( yoke, arg ) {
+        return pkMapLeaves( yoke, arg, func );
+    }, function ( yoke, newArgs ) {
+        return pkRet( yoke, pkReconstruct( tree, newArgs ) );
+    } );
+}
 function pkStr( jsStr ) {
     return new Pk().init_( null, "string", pkNil, !"isLinear",
         { jsStr: jsStr } );
@@ -243,14 +289,14 @@ function listAppend( yoke, a, b, then ) {
         } );
     } );
 }
-function listFlatten( yoke, list, then ) {
+function listFlattenOnce( yoke, list, then ) {
     // TODO: See if there's a more efficient way to do this.
     if ( list.tag !== "cons" )
         return then( yoke, pkNil );
     if ( list.ind( 1 ).tag !== "cons" )
         return then( yoke, list.ind( 0 ) );
     return runWaitOne( yoke, function ( yoke ) {
-        return listFlatten( yoke, list.ind( 1 ),
+        return listFlattenOnce( yoke, list.ind( 1 ),
             function ( yoke, flatTail ) {
             
             return listAppend( yoke, list.ind( 0 ), flatTail,
@@ -277,6 +323,17 @@ function listMap( yoke, list, func, then ) {
                 list.ind( 1 ), pkCons( resultElem, revResults ) );
         } );
     }
+}
+function listMappend( yoke, list, func, then ) {
+    return listMap( yoke, list, function ( yoke, arg ) {
+        return func( yoke, arg );
+    }, function ( yoke, resultLists ) {
+        return listFlattenOnce( yoke, resultLists,
+            function ( yoke, result ) {
+            
+            return then( yoke, result );
+        } );
+    } );
 }
 function listCount( yoke, list, func, then ) {
     return go( yoke, list, pkNil );
@@ -334,23 +391,18 @@ function appendStacks( yoke, stacks, then ) {
     }, function ( yoke, moreToGo ) {
         if ( !moreToGo )
             return then( yoke, pkNil );
-        return listMap( yoke, stacks, function ( yoke, stack ) {
+        return listMappend( yoke, stacks, function ( yoke, stack ) {
             return pkRet( yoke,
                 stack.tag === "cons" ? stack.ind( 0 ) : pkNil );
-        }, function ( yoke, heads ) {
+        }, function ( yoke, flatHead ) {
             return listMap( yoke, stacks, function ( yoke, stack ) {
                 return pkRet( yoke,
                     stack.tag === "cons" ? stack.ind( 1 ) : pkNil );
             }, function ( yoke, tails ) {
-                return listFlatten( yoke, heads,
-                    function ( yoke, flatHead ) {
+                return appendStacks( yoke, tails,
+                    function ( yoke, flatTail ) {
                     
-                    return appendStacks( yoke, tails,
-                        function ( yoke, flatTail ) {
-                        
-                        return then( yoke,
-                            pkCons( flatHead, flatTail ) );
-                    } );
+                    return then( yoke, pkCons( flatHead, flatTail ) );
                 } );
             } );
         } );
@@ -1039,12 +1091,6 @@ PkRuntime.prototype.pkDup = function ( yoke, val, count ) {
             return val;
         } );
     }
-    if ( val.tag === "cons" )
-        return withDups( pkList( val.ind( 0 ), val.ind( 1 ) ),
-            function ( args ) {
-            
-            return pkCons( listGet( args, 0 ), listGet( args, 1 ) );
-        } );
     if ( val.tag === "fn" )
         return withDups( val.special.captures, function ( captures ) {
             return new Pk().init_(
@@ -1070,9 +1116,8 @@ PkRuntime.prototype.pkDup = function ( yoke, val, count ) {
                 return pkRet( yoke, result );
             } );
         } );
-    return withDups( val.args, function ( args ) {
-        return new Pk().init_(
-            val.tagName, val.tag, args, !!"isLinear", {} );
+    return withDups( pkGetArgs( val ), function ( args ) {
+        return pkReconstruct( val, args );
     } );
     function withDups( args, reconstruct ) {
         return listMap( yoke, args, function ( yoke, arg ) {
