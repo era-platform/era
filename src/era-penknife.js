@@ -2,6 +2,81 @@
 // Copyright 2013 Ross Angle. Released under the MIT License.
 "use strict";
 
+
+// Penknife has only a few primitive kinds of first-class value, and
+// together they tackle a very expressive range of functionality:
+//
+// user-definable struct:
+//   public tag name
+//     The name which identifies the global data format definition
+//     associated with this struct. These tags are user-provided.
+//   public list of args
+//     The arbitrary content of this value, to be interpreted
+//     according to the meaning of the tag.
+// User-definable structs conveniently represent algebraic closed
+// products (by having multiple elements) and open sums (thanks to
+// their tag), so they're used in a style similar to ADTs. Penknife
+// methods do dynamic dispatch based on the first argument's tag, so
+// it's often useful to wrap values in custom-tagged structs even if
+// they fit one of these other categories.
+//
+// fn:
+//   private encapsulated value
+//     The hidden information associated with this function. When a
+//     function captures variables from its lexical context, those
+//     values are stored here.
+//   private JavaScript function
+//     Something which can process a "yoke," an argument list, and the
+//     encapsulated value and return a yoke and a result value. The
+//     yoke is typically a linear value, and transforming it this way
+//     represents imperative side effects. If this transformation uses
+//     any side effects, those effects correspond to some linear input
+//     value and some linear output value (typically the yoke).
+//     // TODO: Implement the ability to install arbitrary values as
+//     // yokes.
+//     // TODO: Make definition side effects wait in a queue, so that
+//     // definition-reading can be understood as a pure operation on
+//     // an immutable snapshot of the environment. Then we don't have
+//     // to say every linear value has access to definition-reading
+//     // side effects.
+//
+// nonlinear-as-linear:
+//   private inner value
+//     A value representing the linear value's contents.
+//   private duplicator
+//     A function which takes the inner value and a nat and returns a
+//     list of that many new inner values.
+//   private unwrapper
+//     A function which takes the inner value and returns an arbitrary
+//     output value. This way the contents aren't uselessly sealed off
+//     from the rest of the program.
+//     // TODO: Implement a reason for the unwrapper to exist--namely,
+//     // an unwrap function that applies to all nonlinear-as-linear
+//     // values.
+//
+// linear-as-nonlinear:
+//   public inner value
+//     A value which may have a linear duplication behavior. That
+//     behavior, if any, is ignored as long as the value is wrapped up
+//     in this container. That is to say, duplicating this container
+//     does not duplicate the inner value.
+//
+// string:
+//   private JavaScript string
+//     An efficiently implemented sequence of valid Unicode code
+//     points.
+//     // TODO: When creating a Penknife string, verify that the
+//     // JavaScript string has proper UTF-16 surrogate pairs.
+//
+// // TODO: Implement tokens. We don't have a use for them yet.
+// token:
+//   private JavaScript token
+//     A value which can be checked for equality and used as a lookup
+//     key, but which can't be serialized or transported. This is good
+//     for references to local effect-related resources that can't be
+//     transported anyway.
+
+
 function Pk() {}
 Pk.prototype.init_ = function (
     tagName, tagJsStr, args, isLinear, special ) {
@@ -78,12 +153,22 @@ function pkListFromArr( arr ) {
         result = pkCons( arr[ i ], result );
     return result;
 }
+function pkNonlinearAsLinear( innerValue, duplicator, unwrapper ) {
+    return new Pk().init_(
+        null, "nonlinear-as-linear", null, !!"isLinear",
+        { innerValue: innerValue, duplicator: duplicator,
+            unwrapper: unwrapper } );
+}
+function pkLinearAsNonlinear( innerValue ) {
+    return new Pk().init_( null, "linear-as-nonlinear",
+        pkList( innerValue ), !"isLinear", {} );
+}
 function pk( tag, var_args ) {
     var args = pkListFromArr( [].slice.call( arguments, 1 ) );
     return new Pk().init_( null, tag, args, args.isLinear(), {} );
 }
 function pkIsLeaf( x ) {
-    return x.tag === "fn" || x.special.dup !== void 0;
+    return x.tag === "fn" || x.tag === "nonlinear-as-linear";
 }
 function pkGetArgs( val ) {
     if ( pkIsLeaf( val ) )
@@ -516,6 +601,34 @@ PkRuntime.prototype.init_ = function () {
             return pkErr( yoke,
                 "Called string-name with a non-string" );
         return pkRet( yoke, pkStrNameRaw( listGet( args, 0 ) ) );
+    } ) );
+    defTag( "nonlinear-as-linear",
+        "inner-value", "duplicator", "unwrapper" );
+    defVal( "nonlinear-as-linear", pkfn( function ( yoke, args ) {
+        if ( !listLenIs( args, 3 ) )
+            return pkErrLen( yoke, args,
+                "Called nonlinear-as-linear" );
+        if ( isLinear( listGet( args, 1 ) ) )
+            return pkErr( yoke,
+                "Called nonlinear-as-linear with a duplicator " +
+                "function that was itself linear" );
+        if ( isLinear( listGet( args, 2 ) ) )
+            return pkErr( yoke,
+                "Called nonlinear-as-linear with an unwrapper " +
+                "function that was itself linear" );
+        return pkRet( yoke,
+            pkNonlinearAsLinear(
+                listGet( args, 0 ),
+                listGet( args, 1 ),
+                listGet( args, 2 ) ) );
+    } ) );
+    defTag( "linear-as-nonlinear", "inner-value" );
+    defVal( "linear-as-nonlinear", pkfn( function ( yoke, args ) {
+        if ( !listLenIs( args, 1 ) )
+            return pkErrLen( yoke, args,
+                "Called linear-as-nonlinear" );
+        return pkRet( yoke,
+            pkLinearAsNonlinear( listGet( args, 0 ) ) );
     } ) );
     defTag( "fn" );
     defVal( "fn", pkfn( function ( yoke, args ) {
@@ -990,23 +1103,6 @@ PkRuntime.prototype.init_ = function () {
         return runRet( yoke,
             self.defTag( listGet( args, 0 ), listGet( args, 1 ) ) );
     } ) );
-    defVal( "deflineartag", pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 3 ) )
-            return pkErrLen( yoke, args, "Called deftag" );
-        if ( !isName( listGet( args, 0 ) ) )
-            return pkErr( yoke,
-                "Called deflineartag with a non-name name" );
-        // TODO: Verify that the keys list contains only strings.
-        if ( !self.allowsDefs( yoke ) )
-            return pkErr( yoke,
-                "Called deflineartag without access to top-level " +
-                "definition side effects" );
-        return runRet( yoke,
-            self.defLinearTag(
-                listGet( args, 0 ),
-                listGet( args, 1 ),
-                listGet( args, 2 ) ) );
-    } ) );
     defVal( "defmethod", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 2 ) )
             return pkErrLen( yoke, args, "Called defmethod" );
@@ -1101,19 +1197,36 @@ PkRuntime.prototype.pkDup = function ( yoke, val, count ) {
                     string: val.special.string
                 } );
         } );
-    if ( val.special.dup !== void 0 )
+    if ( val.tag === "nonlinear-as-linear" )
         return runWaitTry( yoke, function ( yoke ) {
-            return self.callMethod( yoke, "call",
-                pkList( val.special.dup, pkList( val, count ) ) );
-        }, function ( yoke, result ) {
-            return listLenIsNat( yoke, result, count,
+            return self.callMethod( yoke, "call", pkList(
+                val.special.duplicator,
+                pkList( val.special.innerValue, count )
+            ) );
+        }, function ( yoke, innerValues ) {
+            if ( !isList( innerValues ) )
+                return pkErr( yoke,
+                    "Got a non-list from a linear value's custom " +
+                    "duplicator function." );
+            return listLenIsNat( yoke, innerValues, count,
                 function ( yoke, correct ) {
                 
                 if ( !correct )
                     return pkErr( yoke,
                         "Got a list of incorrect length from a " +
-                        "linear value's custom dup function." );
-                return pkRet( yoke, result );
+                        "linear value's custom duplicator function."
+                        );
+                return listMap( yoke, innerValues,
+                    function ( yoke, innerValue ) {
+                    
+                    return pkRet( yoke, pkNonlinearAsLinear(
+                        innerValue,
+                        val.special.duplicator,
+                        val.special.unwrapper
+                    ) );
+                }, function ( yoke, outerValues ) {
+                    return pkRet( yoke, outerValues );
+                } );
             } );
         } );
     return withDups( pkGetArgs( val ), function ( args ) {
@@ -1328,23 +1441,6 @@ PkRuntime.prototype.defTag = function ( name, keys ) {
             "Called deftag with a name that was already bound to a " +
             "tag" );
     meta.tagKeys = keys;
-    meta.dup = null;
-    return pk( "yep", pkNil );
-};
-PkRuntime.prototype.defLinearTag = function ( name, keys, dup ) {
-    if ( keys.isLinear() )
-        return pkRawErr(
-            "Called deflineartag with a linear args list" );
-    if ( dup.isLinear() )
-        return pkRawErr(
-            "Called deflineartag with a linear dup function" );
-    var meta = this.prepareMeta_( name );
-    if ( meta.tagKeys !== void 0 )
-        return pkRawErr(
-            "Called deflineartag with a name that was already " +
-            "bound to a tag" );
-    meta.tagKeys = keys;
-    meta.dup = dup;
     return pk( "yep", pkNil );
 };
 PkRuntime.prototype.defMethod = function ( name, args ) {
@@ -1449,8 +1545,8 @@ PkRuntime.prototype.getVal = function ( name ) {
                         name.tag === "string-name" ?
                             name.ind( 0 ).special.jsStr : null,
                         args,
-                        meta.dup !== null || args.isLinear(),
-                        meta.dup === null ? {} : { dup: meta.dup }
+                        args.isLinear(),
+                        {}
                     ) );
             } );
         } ) );
