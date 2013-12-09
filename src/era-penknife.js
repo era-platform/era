@@ -42,14 +42,16 @@
 //
 // nonlinear-as-linear:
 //   private inner value
-//     A value representing the linear value's contents.
+//     A nonlinear value representing the linear value's contents. (If
+//     the value needs to be linear, just wrap it in a
+//     linear-as-nonlinear value.)
 //   private duplicator
 //     A function which takes the inner value and a nat and returns a
 //     list of that many new inner values.
 //   private unwrapper
 //     A function which takes the inner value and returns an arbitrary
-//     output value. This way the contents aren't uselessly sealed off
-//     from the rest of the program.
+//     nonlinear output value. This way the contents aren't uselessly
+//     sealed off from the rest of the program.
 //     // TODO: Implement a reason for the unwrapper to exist--namely,
 //     // an unwrap function that applies to all nonlinear-as-linear
 //     // values.
@@ -167,51 +169,104 @@ function pk( tag, var_args ) {
     var args = pkListFromArr( [].slice.call( arguments, 1 ) );
     return new Pk().init_( null, tag, args, args.isLinear(), {} );
 }
-function pkIsLeaf( x ) {
-    return x.tag === "fn" || x.tag === "nonlinear-as-linear";
+function pkIsStruct( x ) {
+    return x.tag !== "fn" &&
+        x.tag !== "nonlinear-as-linear" &&
+        x.tag !== "linear-as-nonlinear" &&
+        x.tag !== "string";
+        // TODO: Once we have tokens, add this.
+//        x.tag !== "token";
 }
 function pkGetArgs( val ) {
-    if ( pkIsLeaf( val ) )
+    if ( !pkIsStruct( val ) )
         throw new Error();
-    return val.tag === "cons" ?
-        pkList( val.ind( 0 ), val.ind( 1 ) ) : val.args_;
+    return val.tag === "nil" ? pkNil :
+        val.tag === "cons" ? pkList( val.ind( 0 ), val.ind( 1 ) ) :
+            val.args_;
 }
-function pkReconstruct( val, args ) {
-    if ( pkIsLeaf( val ) )
+function pkRebuild( val, args ) {
+    if ( !pkIsStruct( val ) )
         throw new Error();
-    return val.tag === "cons" ?
-        pkCons( listGet( args, 0 ), listGet( args, 1 ) ) :
-        new Pk().init_(
-            val.tagName, val.tag, args, args.isLinear(), {} );
+    return val.tag === "nil" ? pkNil :
+        val.tag === "cons" ?
+            pkCons( listGet( args, 0 ), listGet( args, 1 ) ) :
+            new Pk().init_(
+                val.tagName, val.tag, args, args.isLinear(), {} );
 }
 // TODO: Use pkGetLeaves() and pkMapLeaves() to define primitive
-// operations for the Penknkife language. Er, actually, provide
-// pkIsLeaf(), pkGetArgs(), and pkReconstruct() as primitives and
-// rewrite these tools and more in Penknife itself. The point is, when
-// implementing a multi-stage conditional, pkGetLeaves() will make it
-// possible to detect all the stages occurring in the value so we can
-// collect condition witnesses, and something like pkMapLeaves() will
-// be necessary to create the condition-masked values to use in each
-// branch.
+// operations for the Penknkife language. When implementing a
+// multi-stage conditional, pkGetLeaves() will make it possible to
+// detect all the stages occurring in the value so we can collect
+// condition witnesses, and something like pkMapLeaves() will be
+// necessary to create the condition-masked values to use in each
+// branch. We can't just implement these in terms of pkIsStruct(),
+// getArgs(), etc. because they need to reach inside functions'
+// encapsulated values.
+//
+// TODO: Perhaps make all nonlinear-as-linear values provide a
+// tree.special.getDeepDeclarations() method, and define a Penknife
+// primitive "get-deep-declarations" that does pkGetLeaves() and then
+// that.
+//
 function pkGetLeaves( yoke, tree ) {
-    if ( pkIsLeaf( tree ) )
+    if ( tree.tag === "nonlinear-as-linear" )
         return pkRet( yoke, pkList( tree ) );
-    return listMappend( yoke, pkGetArgs( tree ),
-        function ( yoke, arg ) {
-        
-        return pkTaggedGetLeaves( yoke, arg );
-    }, function ( yoke, result ) {
-        return pkRet( yoke, result );
-    } );
+    if ( tree.tag === "linear-as-nonlinear"
+        || tree.tag === "string" )
+        // TODO: Once we have tokens, add this.
+//        || tree.tag === "token" )
+        return pkRet( yoke, pkNil );
+    if ( pkIsStruct( tree ) )
+        return listMappend( yoke, pkGetArgs( tree ),
+            function ( yoke, arg ) {
+            
+            return pkGetLeaves( yoke, arg );
+        }, function ( yoke, result ) {
+            return pkRet( yoke, result );
+        } );
+    if ( tree.tag === "fn" )
+        return listMappend( yoke, tree.special.captures,
+            function ( yoke, capture ) {
+            
+            if ( capture.tag !== "yep" )
+                return pkRet( yoke, pkNil );
+            return pkGetLeaves( yoke, capture.ind( 0 ) );
+        }, function ( yoke, result ) {
+            return pkRet( yoke, result );
+        } );
+    throw new Error();
 }
 function pkMapLeaves( yoke, tree, func ) {
-    if ( pkIsLeaf( tree ) )
+    if ( tree.tag === "nonlinear-as-linear" )
         return func( yoke, tree );
-    return listMap( yoke, pkGetArgs( tree ), function ( yoke, arg ) {
-        return pkMapLeaves( yoke, arg, func );
-    }, function ( yoke, newArgs ) {
-        return pkRet( yoke, pkReconstruct( tree, newArgs ) );
-    } );
+    if ( tree.tag === "linear-as-nonlinear"
+        || tree.tag === "string" )
+        // TODO: Once we have tokens, add this.
+//        || tree.tag === "token" )
+        return pkRet( yoke, tree );
+    if ( pkIsStruct( tree ) )
+        return listMap( yoke, pkGetArgs( tree ),
+            function ( yoke, arg ) {
+            
+            return pkMapLeaves( yoke, arg, func );
+        }, function ( yoke, newArgs ) {
+            return pkRet( yoke, pkRebuild( tree, newArgs ) );
+        } );
+    if ( tree.tag === "fn" )
+        return listMap( yoke, tree.special.captures,
+            function ( yoke, capture ) {
+            
+            if ( capture.tag !== "yep" )
+                return pkRet( yoke, pkNil );
+            return pkMapLeaves( yoke, capture.ind( 0 ), func );
+        }, function ( yoke, newCaptures ) {
+            return pkRet( yoke,
+                new Pk().init_(
+                    null, "fn", pkNil, newCaptures.isLinear(),
+                    { captures: newCaptures, call: tree.special.call,
+                        string: tree.special.string } ) );
+        } );
+    throw new Error();
 }
 function pkStr( jsStr ) {
     return new Pk().init_( null, "string", pkNil, !"isLinear",
@@ -608,6 +663,10 @@ PkRuntime.prototype.init_ = function () {
         if ( !listLenIs( args, 3 ) )
             return pkErrLen( yoke, args,
                 "Called nonlinear-as-linear" );
+        if ( isLinear( listGet( args, 0 ) ) )
+            return pkErr( yoke,
+                "Called nonlinear-as-linear with an inner value  " +
+                "that was itself linear" );
         if ( isLinear( listGet( args, 1 ) ) )
             return pkErr( yoke,
                 "Called nonlinear-as-linear with a duplicator " +
@@ -1230,16 +1289,16 @@ PkRuntime.prototype.pkDup = function ( yoke, val, count ) {
             } );
         } );
     return withDups( pkGetArgs( val ), function ( args ) {
-        return pkReconstruct( val, args );
+        return pkRebuild( val, args );
     } );
-    function withDups( args, reconstruct ) {
+    function withDups( args, rebuild ) {
         return listMap( yoke, args, function ( yoke, arg ) {
             return self.pkDup( yoke, arg, count );
         }, function ( yoke, argsDuplicates ) {
             return listMapMultiWithLen( yoke, count, argsDuplicates,
                 function ( yoke, args ) {
                 
-                return pkRet( yoke, reconstruct( args ) );
+                return pkRet( yoke, rebuild( args ) );
             }, function ( yoke, result ) {
                 return pkRet( yoke, result );
             } );
