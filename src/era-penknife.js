@@ -447,22 +447,54 @@ function listFlattenOnce( yoke, list, then ) {
         } );
     } );
 }
-function listMap( yoke, list, func, then ) {
-    return go( yoke, list, pkNil );
-    function go( yoke, list, revResults ) {
+function listFoldl( yoke, init, list, func, then ) {
+    return go( yoke, init, list );
+    function go( yoke, init, list ) {
         if ( list.tag !== "cons" )
-            return listRev( yoke, revResults,
-                function ( yoke, results ) {
-                
-                return then( yoke, results );
-            } );
+            return then( yoke, init );
         return runWaitTry( yoke, function ( yoke ) {
-            return func( yoke, list.ind( 0 ) );
-        }, function ( yoke, resultElem ) {
-            return go( yoke,
-                list.ind( 1 ), pkCons( resultElem, revResults ) );
+            return func( yoke, init, list.ind( 0 ) );
+        }, function ( yoke, newInit ) {
+            return go( yoke, newInit, list.ind( 1 ) );
         } );
     }
+}
+function listFoldlJs( yoke, init, list, func, then ) {
+    return go( yoke, init, list );
+    function go( yoke, init, list ) {
+        if ( list.tag !== "cons" )
+            return then( yoke, init );
+        return runWaitOne( yoke, function ( yoke ) {
+            return go( yoke,
+                func( init, list.ind( 0 ) ), list.ind( 1 ) );
+        } );
+    }
+}
+function listFoldrJs( yoke, list, init, func, then ) {
+    return listRev( yoke, list, function ( yoke, revList ) {
+        return listFoldlJs( yoke, init, list, function (
+            newInit, elem ) {
+            
+            return func( elem, newInit );
+        }, function ( yoke, newInit ) {
+            return then( yoke, newInit );
+        } );
+    } );
+}
+function listMap( yoke, list, func, then ) {
+    return listFoldl( yoke, pkNil, list, function (
+        yoke, revResults, origElem ) {
+        
+        return runWaitTry( yoke, function ( yoke ) {
+            return func( yoke, origElem );
+        }, function ( yoke, resultElem ) {
+            return pkRet( yoke, pkCons( resultElem, revResults ) );
+        } );
+    }, function ( yoke, revResults ) {
+        return listRev( yoke, revResults, function ( yoke, results ) {
+            return then( yoke, results );
+        } );
+    } );
 }
 function listMappend( yoke, list, func, then ) {
     return listMap( yoke, list, function ( yoke, arg ) {
@@ -476,16 +508,15 @@ function listMappend( yoke, list, func, then ) {
     } );
 }
 function listCount( yoke, list, func, then ) {
-    return go( yoke, list, pkNil );
-    function go( yoke, list, count ) {
-        if ( list.tag !== "cons" )
-            return then( yoke, count );
-        return runWaitOne( yoke, function ( yoke ) {
-            if ( func( list.ind( 0 ) ) )
-                return go( yoke, list.ind( 1 ), pk( "succ", count ) );
-            return go( yoke, list.ind( 1 ), count );
-        } );
-    }
+    return listFoldl( yoke, pkNil, list, function (
+        yoke, count, elem ) {
+        
+        if ( func( elem ) )
+            return pkRet( yoke, pk( "succ", count ) );
+        return pkRet( yoke, count );
+    }, function ( yoke, count ) {
+        return then( yoke, count );
+    } );
 }
 function listAny( yoke, list, func, then ) {
     if ( list.tag !== "cons" )
@@ -495,6 +526,13 @@ function listAny( yoke, list, func, then ) {
         return then( yoke, result );
     return runWaitOne( yoke, function ( yoke ) {
         return listAny( yoke, list.ind( 1 ), func, then );
+    } );
+}
+function listAll( yoke, list, func, then ) {
+    return listAny( yoke, list, function ( yoke, elem ) {
+        return !func( elem );
+    }, function ( yoke, failed ) {
+        return then( yoke, !failed );
     } );
 }
 function listMapMultiWithLen( yoke, nat, lists, func, then ) {
@@ -1122,6 +1160,122 @@ PkRuntime.prototype.init_ = function () {
         ) );
     } ) );
     
+    // TODO: When all the TODOs inside this macro definition are
+    // complete, remove this "if ( false )".
+    if ( false )
+    defMacro( "if-struct", pkfn( function ( yoke, args ) {
+        if ( !listLenIs( args, 4 ) )
+            return pkErrLen( yoke, args,
+                "Called if-struct's macroexpander" );
+        var fork = listGet( args, 0 );
+        var getFork = listGet( args, 1 );
+        var captureCounts = listGet( args, 2 );
+        var body = listGet( args, 3 );
+        if ( getFork.isLinear() )
+            return pkErr( yoke,
+                "Called if-struct's macroexpander with a linear " +
+                "get-fork" );
+        // TODO: Verify that `captureCounts` is a stack of nats.
+        if ( !isList( captureCounts ) )
+            return pkErr( yoke,
+                "Called if-struct's macroexpander with a non-list " +
+                "stack of capture counts" );
+        if ( !isList( body ) )
+            return pkErr( yoke,
+                "Called if-struct's macroexpander with a non-list " +
+                "macro body" );
+        if ( !listLenIs( body, 5 ) )
+            return pkErrLen( yoke, body, "Expanded if-struct" );
+        var tag = listGet( body, 0 );
+        var structArgs = listGet( body, 1 );
+        var origVal = listGet( body, 2 );
+        var thenExpr = listGet( body, 3 );
+        var elseExpr = listGet( body, 4 );
+        if ( !isList( structArgs ) )
+            return pkErr( yoke,
+                "Expanded if-struct with a non-list variable list" );
+        return listAll( yoke, structArgs, function ( v ) {
+            return v.tag === "string";
+        }, function ( yoke, correct ) {
+            if ( !correct )
+                return pkErr( yoke,
+                    "Expanded if-struct with a non-string variable" );
+            return listFoldrJs( yoke, structArgs,
+                function ( yoke, getFork, captureCounts, then ) {
+                    // TODO: Compile thenExpr here.
+                    return then( yoke, TODO, captureCounts );
+                },
+                function ( structArg, compileSubexpr ) {
+                
+                return function (
+                    yoke, getFork, captureCounts, then ) {
+                    
+                    // TODO: Implement compileFn.
+                    return compileFn( yoke, getFork, captureCounts,
+                        structArg,
+                        function (
+                            yoke, getFork, captureCounts, then ) {
+                            
+                            return compileSubexpr(
+                                yoke, getFork, captureCounts,
+                                function (
+                                    yoke, binding, captureCounts ) {
+                                
+                                return then(
+                                    yoke, binding, captureCounts );
+                            } );
+                        },
+                        function ( yoke, binding, captureCounts ) {
+                        
+                        return then( yoke, binding, captureCounts );
+                    } );
+                };
+            }, function ( yoke, compileExpr ) {
+                return compileExpr( yoke, getFork, captureCounts,
+                    function ( yoke, binding, captureCounts ) {
+                    
+                    // TODO: Compile elseExpr and put the two branches
+                    // together. Somehow, detect the variables
+                    // captured in both branches, deduplicate them,
+                    // and use that deduplicated list as a capture
+                    // list for the conditional expression itself.
+                    // This will be important for handling linear
+                    // values; we already duplicate values whenever
+                    // they're passed in as a function parameter, and
+                    // now we'll also duplicate them whenever a
+                    // conditional branch is taken.
+                    //
+                    // TODO: In order to make that happen, we probably
+                    // need to invert runWaitTryGetmacFork() and
+                    // related code. Instead of returning "captures"
+                    // as a stack of lists of maybes of bindings, we
+                    // should return it as a list of names, so that
+                    // this list can be deduplicated. Thus, we should
+                    // no longer call a getFork parameter and put its
+                    // resulting captures in our captures; we should
+                    // only call that getFork for the purpose of
+                    // handling macros. This will be some major
+                    // refactoring.
+                    //
+                    // NOTE: When a Penknife programmer makes their
+                    // own conditional syntaxes based on higher-order
+                    // techniques, they should *not* pass in multiple
+                    // functions, one for each branch. This technique
+                    // would cause the lexically captured values to be
+                    // duplicated for all the branches and then
+                    // dropped for each branch that's unused. If the
+                    // programmer instead passes in a single function
+                    // of the form (fn ... (if ...)), this unnecessary
+                    // duplication and dropping will be avoided, thus
+                    // accommodating linear values which prohibit
+                    // these operations.
+                    //
+                    return pkRet( yoke, TODO );
+                } );
+            } );
+        } );
+    } ) );
+    
     defVal( "defval", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 2 ) )
             return pkErrLen( yoke, args, "Called defval" );
@@ -1677,10 +1831,10 @@ PkRuntime.prototype.conveniences_macroexpand = function (
         
         // Verify `captures` is a stack of *empty* lists of maybes of
         // bindings.
-        return listAny( yoke, captures, function ( bindings ) {
-            return bindings.tag !== "nil";
-        }, function ( yoke, incorrect ) {
-            if ( incorrect )
+        return listAll( yoke, captures, function ( bindings ) {
+            return bindings.tag === "nil";
+        }, function ( yoke, correct ) {
+            if ( !correct )
                 return pkErr( yoke,
                     "Got a top-level macroexpansion result with " +
                     "captures" );
