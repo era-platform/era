@@ -2,6 +2,23 @@
 // Copyright 2013 Ross Angle. Released under the MIT License.
 "use strict";
 
+// TODO: Address all the comments that say "TODO X" and "TODO Y".
+// These mark all the refactoring needed to address the comments
+// marked as "TODO X FOCAL POINT". (The "TODO X" comments are a single
+// refactoring stage, and the "TODO Y" stage comes after that.)
+//
+// In these comments, the term "perforated get tine" means a
+// two-element list containing a list of names and a function that
+// takes a same-sized list of bindings and returns a binding. These
+// values will be used to represent the "get" mode of a fork.
+//
+// Forks already support a "get" mode, but they do so using a
+// different two values: A binding and a stack of lists of maybes of
+// bindings. This stack accomplishes variable captures inside many
+// nested lambdas, and the maybes represent either a capture of that
+// function's parameter or of the given binding as evaluated outside
+// of that function.
+
 
 // Penknife has only a few primitive kinds of first-class value, and
 // together they tackle a very expressive range of functionality:
@@ -746,11 +763,15 @@ PkRuntime.prototype.init_ = function () {
         );
     } );
     
+    // TODO X: Change getmac-fork so the `binding` and `captures`
+    // parameters become a single `get-tine` parameter that holds a
+    // "perforated get tine."
+    // TODO: Change the `macro` parameter to be called `maybe-macro`.
     defTag( "getmac-fork", "binding", "captures", "macro" );
     defVal( "getmac-fork", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 3 ) )
             return pkErrLen( yoke, args, "Called getmac-fork" );
-        // TODO: Verify that `listGet( args, 2 )` is a stack of lists
+        // TODO: Verify that `listGet( args, 1 )` is a stack of lists
         // of maybes of bindings.
         return pkRet( yoke,
             pk( "getmac-fork",
@@ -758,6 +779,9 @@ PkRuntime.prototype.init_ = function () {
                 listGet( args, 1 ),
                 listGet( args, 2 ) ) );
     } ) );
+    // TODO X: Change fork-to-getmac so the `binding` and `captures`
+    // results become a single `get-tine` result that holds a
+    // "perforated get tine."
     defMethod( "fork-to-getmac", "fork" );
     setStrictImpl( "fork-to-getmac", "getmac-fork",
         function ( yoke, args ) {
@@ -979,6 +1003,7 @@ PkRuntime.prototype.init_ = function () {
     setStrictImpl( "macroexpand-to-fork", "string",
         function ( yoke, args ) {
         
+        // TODO Y: Stop expecting to receive `captureCounts`.
         var expr = listGet( args, 0 );
         var getFork = listGet( args, 1 );
         var captureCounts = listGet( args, 2 );
@@ -991,6 +1016,7 @@ PkRuntime.prototype.init_ = function () {
                 "Called macroexpand-to-fork with a non-list stack " +
                 "of capture counts" );
         return runWaitOne( yoke, function ( yoke ) {
+            // TODO Y: Stop passing in `captureCounts`.
             return self.callMethod( yoke, "call",
                 pkList( getFork, pkList( expr, captureCounts ) ) );
         } );
@@ -998,6 +1024,7 @@ PkRuntime.prototype.init_ = function () {
     setStrictImpl( "macroexpand-to-fork", "cons",
         function ( yoke, args ) {
         
+        // TODO Y: Stop expecting to receive `captureCounts`.
         var expr = listGet( args, 0 );
         var getFork = listGet( args, 1 );
         var captureCounts = listGet( args, 2 );
@@ -1010,6 +1037,7 @@ PkRuntime.prototype.init_ = function () {
                 "Called macroexpand-to-fork with a non-list stack " +
                 "of capture counts" );
         return runWaitTry( yoke, function ( yoke ) {
+            // TODO Y: Stop passing in `captureCounts`.
             return self.callMethod( yoke, "macroexpand-to-fork",
                 pkList( expr.ind( 0 ), getFork, captureCounts ) );
         }, function ( yoke, opFork ) {
@@ -1019,6 +1047,10 @@ PkRuntime.prototype.init_ = function () {
                 
                 return pkRet( yoke, opFork );
             }, function ( yoke, binding, captures, maybeMacro ) {
+                // TODO X: Change this to stop expecting the `binding`
+                // and `captures` results and instead expect a
+                // `getTine` result that holds a "perforated get
+                // tine."
                 var macroexpander = maybeMacro.tag === "yep" ?
                     maybeMacro.ind( 0 ) :
                     self.nonMacroMacroexpander();
@@ -1027,6 +1059,7 @@ PkRuntime.prototype.init_ = function () {
                     pkList(
                         opFork,
                         getFork,
+                        // TODO Y: Stop passing in `captureCounts`.
                         captureCounts,
                         expr.ind( 1 )
                     )
@@ -1036,6 +1069,7 @@ PkRuntime.prototype.init_ = function () {
     } );
     
     defMacro( "fn", pkfn( function ( yoke, args ) {
+        // TODO Y: Stop expecting to receive `captureCounts`.
         if ( !listLenIs( args, 4 ) )
             return pkErrLen( yoke, args,
                 "Called fn's macroexpander" );
@@ -1068,6 +1102,8 @@ PkRuntime.prototype.init_ = function () {
                 
                 listGet( body, 1 ),
                 pkfn( function ( yoke, args ) {
+                    // TODO Y: Stop expecting to receive
+                    // `captureCounts`.
                     if ( !listLenIs( args, 2 ) )
                         return pkErrLen( yoke, args,
                             "Called a get-fork" );
@@ -1087,6 +1123,8 @@ PkRuntime.prototype.init_ = function () {
                         captureCounts = pkList( pkNil );
                     if ( jsName === name.special.jsStr )
                         return pkRet( yoke, pk( "getmac-fork",
+                            // TODO X: Change these first two
+                            // parameters to a "perforated get tine."
                             pk( "param-binding",
                                 captureCounts.ind( 0 ) ),
                             pkList( pkList( pkNil ) ),
@@ -1096,6 +1134,7 @@ PkRuntime.prototype.init_ = function () {
                         "a get-fork",
                         function ( yoke ) {
                         
+                        // TODO Y: Stop passing in `captureCounts`.
                         return self.callMethod( yoke, "call", pkList(
                             nonlocalGetFork,
                             pkList( name, captureCounts.ind( 1 ) )
@@ -1103,8 +1142,15 @@ PkRuntime.prototype.init_ = function () {
                     }, function (
                         yoke, captureBinding,
                         nonlocalCaptureFrames, maybeMacro ) {
+                        // TODO X: Change this to stop expecting the
+                        // `captureBinding` and
+                        // `nonlocalCaptureFrames` results and instead
+                        // expect a `getTine` result that holds a
+                        // "perforated get tine."
                         
                         return pkRet( yoke, pk( "getmac-fork",
+                            // TODO X: Change these first two
+                            // parameters to a "perforated get tine."
                             pk( "param-binding",
                                 captureCounts.ind( 0 ) ),
                             pkCons(
@@ -1114,14 +1160,21 @@ PkRuntime.prototype.init_ = function () {
                         ) );
                     } );
                 } ),
+                // TODO Y: Stop passing in this augmented
+                // `captureCounts`.
                 pkCons( pkNil, captureCounts )
             ) );
         }, function (
             yoke, bodyBinding, localCaptureFrames, maybeMacro ) {
+            // TODO X: Change this to stop expecting the `bodyBinding`
+            // and `localCaptureFrames` results and instead expect a
+            // `getTine` result that holds a "perforated get tine."
             
             if ( localCaptureFrames.tag === "nil" )
                 localCaptureFrames = pkList( pkNil );
             return pkRet( yoke, pk( "getmac-fork",
+                // TODO X: Change these first two parameters to a
+                // "perforated get tine."
                 pk( "fn-binding",
                     localCaptureFrames.ind( 0 ), bodyBinding ),
                 localCaptureFrames.ind( 1 ),
@@ -1131,6 +1184,7 @@ PkRuntime.prototype.init_ = function () {
     } ) );
     
     defMacro( "quote", pkfn( function ( yoke, args ) {
+        // TODO Y: Stop expecting to receive `captureCounts`.
         if ( !listLenIs( args, 4 ) )
             return pkErrLen( yoke, args,
                 "Called quote's macroexpander" );
@@ -1154,6 +1208,8 @@ PkRuntime.prototype.init_ = function () {
         if ( !listLenIs( body, 1 ) )
             return pkErrLen( yoke, body, "Expanded quote" );
         return pkRet( yoke, pk( "getmac-fork",
+            // TODO X: Change these first two parameters to a
+            // "perforated get tine."
             pk( "literal-binding", listGet( body, 0 ) ),
             pkNil,
             pkNil
@@ -1164,6 +1220,7 @@ PkRuntime.prototype.init_ = function () {
     // complete, remove this "if ( false )".
     if ( false )
     defMacro( "if-struct", pkfn( function ( yoke, args ) {
+        // TODO Y: Stop expecting to receive `captureCounts`.
         if ( !listLenIs( args, 4 ) )
             return pkErrLen( yoke, args,
                 "Called if-struct's macroexpander" );
@@ -1234,6 +1291,8 @@ PkRuntime.prototype.init_ = function () {
                 return compileExpr( yoke, getFork, captureCounts,
                     function ( yoke, binding, captureCounts ) {
                     
+                    // TODO X FOCAL POINT
+                    //
                     // TODO: Compile elseExpr and put the two branches
                     // together. Somehow, detect the variables
                     // captured in both branches, deduplicate them,
@@ -1462,6 +1521,7 @@ PkRuntime.prototype.pkDup = function ( yoke, val, count ) {
 PkRuntime.prototype.forkGetter = function ( nameForError ) {
     var self = this;
     return pkfn( function ( yoke, args ) {
+        // TODO Y: Stop expecting to receive `captureCounts`.
         if ( !listLenIs( args, 2 ) )
             return pkErrLen( yoke, args, "Called " + nameForError );
         var name = listGet( args, 0 );
@@ -1470,8 +1530,7 @@ PkRuntime.prototype.forkGetter = function ( nameForError ) {
             return pkErr( yoke,
                 "Called " + nameForError + " with a non-string name"
                 );
-        // TODO: Verify that `captureCounts` is a stack of
-        // nats.
+        // TODO: Verify that `captureCounts` is a stack of nats.
         if ( !isList( captureCounts ) )
             return pkErr( yoke,
                 "Called " + nameForError + " with a non-list stack " +
@@ -1490,6 +1549,8 @@ PkRuntime.prototype.forkGetter = function ( nameForError ) {
                 return runRet( yoke, self.getMacro( name ) );
             }, function ( yoke, maybeMacro ) {
                 return pkRet( yoke, pk( "getmac-fork",
+                    // TODO X: Change these first two parameters to a
+                    // "perforated get tine."
                     pk( "main-binding", name ),
                     pkNil,
                     maybeMacro
@@ -1509,6 +1570,9 @@ PkRuntime.prototype.runWaitTryGetmacFork = function (
             return self.callMethod( yoke, "fork-to-getmac",
                 pkList( fork ) );
         }, function ( yoke, results ) {
+            // TODO X: Change this to stop expecting the `opBinding`
+            // and `captures` results and instead expect a `getTine`
+            // result that holds a "perforated get tine."
             if ( !(isList( results ) && listLenIs( results, 3 )) )
                 return pkErr( yoke,
                     "Got a non-triple from " + nameForError );
@@ -1534,6 +1598,9 @@ PkRuntime.prototype.runWaitTryGetmacFork = function (
                     "Got a linear value for the macro result of " +
                     nameForError );
             }
+            // TODO X: Change this to stop returning the `opBinding`
+            // and `captures` results and instead return a `getTine`
+            // result that holds a "perforated get tine."
             return then( yoke, opBinding, captures, maybeMacro );
         } );
     } );
@@ -1541,6 +1608,7 @@ PkRuntime.prototype.runWaitTryGetmacFork = function (
 PkRuntime.prototype.nonMacroMacroexpander = function () {
     var self = this;
     return pkfn( function ( yoke, args ) {
+        // TODO Y: Stop expecting to receive `captureCounts`.
         if ( !listLenIs( args, 4 ) )
             return pkErrLen( yoke, args,
                 "Called a non-macro's macroexpander" );
@@ -1569,6 +1637,10 @@ PkRuntime.prototype.nonMacroMacroexpander = function () {
             return pkRet( yoke, fork );
         }, function (
             yoke, funcBinding, funcCaptures, funcMaybeMacro ) {
+            // TODO X: Change this to stop expecting the `funcBinding`
+            // and `funcCaptures` results and instead expect a
+            // `funcGetTine` result that holds a "perforated get
+            // tine."
             
             return lensPlusNats( yoke, funcCaptures, captureCounts,
                 function ( yoke, captureCounts ) {
@@ -1592,6 +1664,9 @@ PkRuntime.prototype.nonMacroMacroexpander = function () {
                                 function ( yoke, bindings ) {
                                 
                                 return pkRet( yoke, pk( "getmac-fork",
+                                    // TODO X: Change these first two
+                                    // parameters to a "perforated get
+                                    // tine."
                                     pk( "call-binding",
                                         funcBinding, bindings ),
                                     captures,
@@ -1604,11 +1679,17 @@ PkRuntime.prototype.nonMacroMacroexpander = function () {
                     "macroexpand-to-fork",
                     function ( yoke ) {
                     
+                    // TODO Y: Stop passing in `captureCounts`.
                     return self.callMethod( yoke,
                         "macroexpand-to-fork",
                         pkList(
                             list.ind( 0 ), getFork, captureCounts ) );
                 }, function ( yoke, binding, captures, maybeMacro ) {
+                    // TODO X: Change this to stop expecting the
+                    // `binding` and `captures` results and instead
+                    // expect a `getTine` result that holds a
+                    // "perforated get tine."
+                    
                     // TODO: Verify that `captures` is a stack of
                     // lists of maybes of bindings.
                     return lensPlusNats(
@@ -1825,9 +1906,13 @@ PkRuntime.prototype.conveniences_macroexpand = function (
         return self.callMethod( yoke, "macroexpand-to-fork", pkList(
             expr,
             self.forkGetter( "the top-level get-fork" ),
+            // TODO Y: Stop passing in this empty `captureCounts`.
             pkNil
         ) );
     }, function ( yoke, binding, captures, maybeMacro ) {
+        // TODO X: Change this to stop expecting the `binding` and
+        // `captures` results and instead expect a `getTine` result
+        // that holds a "perforated get tine."
         
         // Verify `captures` is a stack of *empty* lists of maybes of
         // bindings.
