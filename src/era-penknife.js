@@ -1136,79 +1136,54 @@ return runWaitTry( yoke, function ( yoke ) {
     // TODO: When all the TODOs inside this macro definition are
     // complete, remove this "if ( false )".
     if ( false )
-    defMacro( "if-struct", pkfn( function ( yoke, args ) {
+    defMacro( "if", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 3 ) )
             return pkErrLen( yoke, args,
-                "Called if-struct's macroexpander" );
+                "Called if's macroexpander" );
         var fork = listGet( args, 0 );
         var getFork = listGet( args, 1 );
         var body = listGet( args, 2 );
         if ( getFork.isLinear() )
             return pkErr( yoke,
-                "Called if-struct's macroexpander with a linear " +
-                "get-fork" );
+                "Called if's macroexpander with a linear get-fork" );
         if ( !isList( body ) )
             return pkErr( yoke,
-                "Called if-struct's macroexpander with a non-list " +
-                "macro body" );
-        if ( !listLenIs( body, 5 ) )
-            return pkErrLen( yoke, body, "Expanded if-struct" );
-        var tag = listGet( body, 0 );
-        var structArgs = listGet( body, 1 );
-        var origVal = listGet( body, 2 );
-        var thenExpr = listGet( body, 3 );
-        var elseExpr = listGet( body, 4 );
-        if ( !isList( structArgs ) )
-            return pkErr( yoke,
-                "Expanded if-struct with a non-list variable list" );
-        return listAll( yoke, structArgs, function ( v ) {
-            return v.tag === "string";
-        }, function ( yoke, correct ) {
-            if ( !correct )
-                return pkErr( yoke,
-                    "Expanded if-struct with a non-string variable" );
-            return listFoldrJs( yoke, structArgs,
-                // NOTE: This function is the `init` parameter of the
-                // listFoldrJs() call, not the combiner parameter.
-                function ( yoke, getFork, then ) {
-                    // TODO: Compile thenExpr here.
-                    return then( yoke, TODO );
-                },
-                // NOTE: The above function is the `init` parameter of
-                // the listFoldrJs() call. The below function is the
-                // combiner parameter.
-                function ( structArg, compileSubexpr ) {
+                "Called if's macroexpander with a non-list macro " +
+                "body" );
+        if ( !listLenIs( body, 3 ) )
+            return pkErrLen( yoke, body, "Expanded if" );
+        var condExpr = listGet( body, 0 );
+        var thenExpr = listGet( body, 1 );
+        var elseExpr = listGet( body, 2 );
+        function tryGetFork( yoke, expr, then ) {
+            return self.runWaitTryGetmacFork( yoke,
+                "macroexpand-to-fork",
+                function ( yoke ) {
                 
-                return function ( yoke, getFork, then ) {
+                return self.callMethod( yoke, "macroexpand-to-fork",
+                    pkList( expr, getFork ) );
+            }, function ( yoke, getTine, maybeMacro ) {
+                return then( yoke, getTine,
+                    listGet( getTine, 0 ), listGet( getTine, 1 ) );
+            } );
+        }
+        tryGetFork( yoke, condExpr, function (
+            yoke, condGetTine, condCaptures, condCont ) {
+            
+            tryGetFork( yoke, thenExpr, function (
+                yoke, thenGetTine, thenCaptures, thenCont ) {
+                
+                tryGetFork( yoke, elseExpr, function (
+                    yoke, elseGetTine, elseCaptures, elseCont ) {
                     
-                    // TODO: Implement compileFn.
-                    return compileFn( yoke, getFork, structArg,
-                        function ( yoke, getFork, then ) {
-                            return compileSubexpr( yoke, getFork,
-                                function ( yoke, binding ) {
-                                
-                                return then( yoke, binding );
-                            } );
-                        },
-                        function ( yoke, binding ) {
-                        
-                        return then( yoke, binding );
-                    } );
-                };
-            }, function ( yoke, compileExpr ) {
-                return compileExpr( yoke, getFork,
-                    function ( yoke, binding ) {
-                    
-                    // TODO: Compile elseExpr and put the two branches
-                    // together. Detect the variables captured in both
-                    // branches, deduplicate them, and use that
-                    // deduplicated list as a capture list for the
-                    // conditional expression itself. This will be
-                    // important for handling linear values; we
-                    // already duplicate values whenever they're
-                    // passed in as a function parameter, and now
-                    // we'll also duplicate them whenever a
-                    // conditional branch is taken.
+                    // Detect the variables captured in both branches,
+                    // deduplicate them, and use that deduplicated
+                    // list as a capture list for the conditional
+                    // expression itself. This is important for
+                    // handling linear values; we already duplicate a
+                    // value whenever it's passed in as a function
+                    // parameter, and now we'll also duplicate a value
+                    // whenever a conditional branch is taken.
                     //
                     // NOTE: When a Penknife programmer makes their
                     // own conditional syntaxes based on higher-order
@@ -1222,8 +1197,43 @@ return runWaitTry( yoke, function ( yoke ) {
                     // duplication and dropping will be avoided, thus
                     // accommodating linear values which prohibit
                     // these operations.
-                    //
-                    return pkRet( yoke, TODO );
+                    
+                    var branchCaps = strMap();
+                    return listAppend( yoke,
+                        thenCaptures, elseCaptures,
+                        function ( branchCaptures ) {
+                        
+                        var bcDedupMap = strMap();
+                        return listKeep( yoke, branchCaptures,
+                            function ( pkName ) {
+                            
+                            var jsName = pkName.special.jsStr;
+                            if ( bcDedupMap.has( jsName ) )
+                                return false;
+                            bcDedupMap.set( jsName, true );
+                            return true;
+                        }, function ( yoke, bcDedup ) {
+                            return listAppend( yoke,
+                                condCaptures, bcDedup,
+                                function ( yoke, outerCaptures ) {
+                                
+                                return pkRet( yoke, pk( "getmac-fork",
+                                    pkGetTine( outerCaptures,
+                                        function (
+                                            yoke, outerBindings ) {
+                                        
+                                        // <indentation-reset>
+// TODO: Implement this.
+// TODO: Implement binding-interpret for whatever conditional binding
+// type we return here.
+// TODO: After that, if we don't use listFoldrJs, remove it.
+                                        // </indentation-reset>
+                                    } ),
+                                    pkNil
+                                ) );
+                            } );
+                        } );
+                    } );
                 } );
             } );
         } );
@@ -1877,5 +1887,11 @@ function makePkRuntime() {
     return new PkRuntime().init_();
 }
 
-// TODO: Define more useful utilities, including conditionals and
-// assignment.
+// TODO: Define a destructuring let that raises an error if it doesn't
+// match. By doing this, it doesn't need to use condition-guarded
+// aliasing like the `if` macro does.
+// TODO: Define gensyms.
+// TODO: Define assignment.
+// TODO: Define a staged conditional, preferably from the Penknife
+// side.
+// TODO: Define other useful utilities.
