@@ -528,7 +528,7 @@ function listAny( yoke, list, func, then ) {
     } );
 }
 function listAll( yoke, list, func, then ) {
-    return listAny( yoke, list, function ( yoke, elem ) {
+    return listAny( yoke, list, function ( elem ) {
         return !func( elem );
     }, function ( yoke, failed ) {
         return then( yoke, !failed );
@@ -558,28 +558,6 @@ function listMapMultiWithLen( yoke, nat, lists, func, then ) {
             } );
         } );
     }
-}
-// TODO: Use this. It'll come in handy when receiving a stack from
-// user-supplied code.
-function trimStack( yoke, lists ) {
-    // Given a stack of lists, return the stack with all its trailing
-    // nils removed.
-    return listRev( yoke, lists, function ( yoke, revLists ) {
-        return go( yoke, revLists );
-        function go( yoke, revLists ) {
-            if ( revLists.tag !== "cons" )
-                return pkRet( yoke, pkNil );
-            if ( revLists.ind( 0 ).tag === "cons" )
-                return listRev( yoke, revLists,
-                    function ( yoke, lists ) {
-                    
-                    return pkRet( yoke, lists );
-                } );
-            return runWaitOne( yoke, function ( yoke ) {
-                return go( yoke, revLists.ind( 1 ) );
-            } );
-        }
-    } );
 }
 
 function isEnoughGetTineShallow( x ) {
@@ -1111,18 +1089,14 @@ PkRuntime.prototype.init_ = function () {
                                     function (
                                         yoke, innerOutBindings ) {
                                     
-                                    // TODO: Figure out the best way
-                                    // to format this code.
-                                    return runWaitTry( yoke, function ( yoke ) {
-                                        return self.callMethod( yoke, "call", pkList(
-                                            listGet( getTine, 1 ),
-                                            pkList( innerOutBindings )
-                                        ) );
-                                    }, function ( yoke, bodyBinding ) {
-                                        return pkRet( yoke,
-                                            pk( "fn-binding",
-                                                captures, bodyBinding ) );
-                                    } );
+                                    // <indentation-reset>
+return runWaitTry( yoke, function ( yoke ) {
+    return self.callMethod( yoke, "call",
+        pkList( listGet( getTine, 1 ), pkList( innerOutBindings ) ) );
+}, function ( yoke, bodyBinding ) {
+    return pkRet( yoke, pk( "fn-binding", captures, bodyBinding ) );
+} );
+                                    // </indentation-reset>
                                 } );
                             } );
                         } );
@@ -1200,7 +1174,9 @@ PkRuntime.prototype.init_ = function () {
                     // TODO: Compile thenExpr here.
                     return then( yoke, TODO );
                 },
-                // NOTE: This is the combiner.
+                // NOTE: The above function is the `init` parameter of
+                // the listFoldrJs() call. The below function is the
+                // combiner parameter.
                 function ( structArg, compileSubexpr ) {
                 
                 return function ( yoke, getFork, then ) {
@@ -1282,31 +1258,53 @@ PkRuntime.prototype.init_ = function () {
     defVal( "deftag", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 2 ) )
             return pkErrLen( yoke, args, "Called deftag" );
-        if ( !isName( listGet( args, 0 ) ) )
+        var name = listGet( args, 0 );
+        var argNames = listGet( args, 1 );
+        if ( !isName( name ) )
             return pkErr( yoke,
-                "Called deftag with a non-string name" );
-        // TODO: Verify that the keys list contains only strings.
-        if ( !self.allowsDefs( yoke ) )
+                "Called deftag with a non-name name" );
+        if ( !isList( argNames ) )
             return pkErr( yoke,
-                "Called deftag without access to top-level " +
-                "definition side effects" );
-        return runRet( yoke,
-            self.defTag( listGet( args, 0 ), listGet( args, 1 ) ) );
+                "Called deftag with a non-list list of argument " +
+                "names" );
+        return listAll( yoke, argNames, function ( argName ) {
+            return argName.tag === "string";
+        }, function ( yoke, valid ) {
+            if ( !valid )
+                return pkErr( yoke,
+                    "Called deftag with a non-string argument name" );
+            if ( !self.allowsDefs( yoke ) )
+                return pkErr( yoke,
+                    "Called deftag without access to top-level " +
+                    "definition side effects" );
+            return runRet( yoke, self.defTag( name, argNames ) );
+        } );
     } ) );
     defVal( "defmethod", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 2 ) )
             return pkErrLen( yoke, args, "Called defmethod" );
-        if ( !isName( listGet( args, 0 ) ) )
+        var name = listGet( args, 0 );
+        var argNames = listGet( args, 1 );
+        if ( !isName( name ) )
             return pkErr( yoke,
                 "Called defmethod with a non-name name" );
-        // TODO: Verify that the args list contains only strings.
-        if ( !self.allowsDefs( yoke ) )
+        if ( !isList( argNames ) )
             return pkErr( yoke,
-                "Called defmethod without access to top-level " +
-                "definition side effects" );
-        return runRet( yoke,
-            self.defMethod(
-                listGet( args, 0 ), listGet( args, 1 ) ) );
+                "Called defmethod with a non-list list of argument " +
+                "names" );
+        return listAll( yoke, argNames, function ( argName ) {
+            return argName.tag === "string";
+        }, function ( yoke, valid ) {
+            if ( !valid )
+                return pkErr( yoke,
+                    "Called defmethod with a non-string argument name"
+                    );
+            if ( !self.allowsDefs( yoke ) )
+                return pkErr( yoke,
+                    "Called defmethod without access to top-level " +
+                    "definition side effects" );
+            return runRet( yoke, self.defMethod( name, argNames ) );
+        } );
     } ) );
     defVal( "set-impl", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 3 ) )
@@ -1532,26 +1530,33 @@ PkRuntime.prototype.runWaitTryGetmacFork = function (
                     "Got a non-pair from " + nameForError );
             var getTine = listGet( results, 0 );
             var maybeMacro = listGet( results, 1 );
-            // TODO: See if we should use isEnoughGetTineDeep()
-            // instead. It would be inefficient, but it might be
-            // necessary sometimes. Perhaps a parameter to
-            // runWaitTryGetmacFork() should tell us whether or not to
-            // do this.
-            if ( !isEnoughGetTineShallow( getTine ) )
-                return pkErr( yoke,
-                    "Got an invalid get-tine from " + nameForError );
-            if ( maybeMacro.tag === "nil" ) {
-                // Do nothing.
-            } else if ( maybeMacro.tag !== "yep" ) {
-                return pkErr( yoke,
-                    "Got a non-maybe value for the macro result of " +
-                    nameForError );
-            } else if ( maybeMacro.isLinear() ) {
-                return pkErr( yoke,
-                    "Got a linear value for the macro result of " +
-                    nameForError );
-            }
-            return then( yoke, getTine, maybeMacro );
+            
+            // TODO: Using isEnoughGetTineDeep() like this might be
+            // inefficient, but in every place we call
+            // runWaitTryGetmacFork(), the getTine might be provided
+            // by user-defined code, so it might be invalid. See if we
+            // would be better off making a "get-tine" type which
+            // validates the list upon construction.
+            return isEnoughGetTineDeep( yoke, getTine,
+                function ( yoke, valid ) {
+                
+                if ( !valid )
+                    return pkErr( yoke,
+                        "Got an invalid get-tine from " + nameForError
+                        );
+                if ( maybeMacro.tag === "nil" ) {
+                    // Do nothing.
+                } else if ( maybeMacro.tag !== "yep" ) {
+                    return pkErr( yoke,
+                        "Got a non-maybe value for the macro " +
+                        "result of " + nameForError );
+                } else if ( maybeMacro.isLinear() ) {
+                    return pkErr( yoke,
+                        "Got a linear value for the macro result " +
+                        "of " + nameForError );
+                }
+                return then( yoke, getTine, maybeMacro );
+            } );
         } );
     } );
 };
@@ -1596,18 +1601,16 @@ PkRuntime.prototype.nonMacroMacroexpander = function () {
                                 pkGetTine( allNames,
                                     function ( yoke, allBindings ) {
                                     
-                                    return self.distributeGetTines(
-                                        yoke,
-                                        allGetTines, allBindings,
-                                        function (
-                                            yoke, allBindings ) {
-                                        
-                                        return pkRet( yoke,
-                                            pk( "call-binding",
-                                                allBindings.ind( 0 ),
-                                                allBindings.ind( 1 ) )
-                                            );
-                                    } );
+                                    // <indentation-reset>
+return self.distributeGetTines( yoke, allGetTines, allBindings,
+    function ( yoke, allBindings ) {
+    
+    return pkRet( yoke,
+        pk( "call-binding",
+            allBindings.ind( 0 ),
+            allBindings.ind( 1 ) ) );
+} );
+                                    // </indentation-reset>
                                 } ),
                                 pkNil
                             ) );
