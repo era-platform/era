@@ -2,9 +2,6 @@
 // Copyright 2013 Ross Angle. Released under the MIT License.
 "use strict";
 
-// TODO: Address all the comments that say "TODO Y". These mark some
-// cleanup tasks now that we've done some refactoring.
-
 
 // Penknife has only a few primitive kinds of first-class value, and
 // together they tackle a very expressive range of functionality:
@@ -391,14 +388,6 @@ function listLenIsNat( yoke, list, nat, then ) {
             yoke, list.ind( 1 ), nat.ind( 0 ), then );
     } );
 }
-function lenPlusNat( yoke, list, nat, then ) {
-    if ( list.tag !== "cons" )
-        return then( yoke, nat );
-    return runWaitOne( yoke, function ( yoke ) {
-        return lenPlusNat(
-            yoke, list.ind( 1 ), pk( "succ", nat ), then );
-    } );
-}
 function listGetNat( yoke, list, nat, then ) {
     if ( list.tag !== "cons" )
         return then( yoke, pkNil );
@@ -569,56 +558,6 @@ function listMapMultiWithLen( yoke, nat, lists, func, then ) {
             } );
         } );
     }
-}
-function appendStacks( yoke, stacks, then ) {
-    // Given a list of stacks of lists, where the stacks are
-    // conceptually infinite with nils at the end, return a stack that
-    // concatenates the lists in the original stacks.
-    return listAny( yoke, stacks, function ( stack ) {
-        return stack.tag === "cons";
-    }, function ( yoke, moreToGo ) {
-        if ( !moreToGo )
-            return then( yoke, pkNil );
-        return listMappend( yoke, stacks, function ( yoke, stack ) {
-            return pkRet( yoke,
-                stack.tag === "cons" ? stack.ind( 0 ) : pkNil );
-        }, function ( yoke, flatHead ) {
-            return listMap( yoke, stacks, function ( yoke, stack ) {
-                return pkRet( yoke,
-                    stack.tag === "cons" ? stack.ind( 1 ) : pkNil );
-            }, function ( yoke, tails ) {
-                return appendStacks( yoke, tails,
-                    function ( yoke, flatTail ) {
-                    
-                    return then( yoke, pkCons( flatHead, flatTail ) );
-                } );
-            } );
-        } );
-    } );
-}
-function lensPlusNats( yoke, lists, nats, then ) {
-    // Given a stack of lists and a stack of nats, where the stacks
-    // are conceptually infinite with empty lists or zeros at the end,
-    // return a stack of nats that sums the length of each list with
-    // the corresponding nat.
-    if ( !(lists.tag === "cons" || nats.tag === "cons") )
-        return then( yoke, pkNil );
-    if ( lists.tag !== "cons" )
-        lists = pkList( pkNil );
-    if ( nats.tag !== "cons" )
-        nats = pkList( pkNil );
-    
-    return runWaitOne( yoke, function ( yoke ) {
-        return lenPlusNat( yoke, lists.ind( 0 ), nats.ind( 0 ),
-            function ( yoke, head ) {
-            
-            return lensPlusNats( yoke, lists.ind( 1 ), nats.ind( 1 ),
-                function ( yoke, tail ) {
-                
-                return then( yoke, pkCons( head, tail ) );
-            } );
-        } );
-    } );
 }
 // TODO: Use this. It'll come in handy when receiving a stack from
 // user-supplied code.
@@ -1022,48 +961,31 @@ PkRuntime.prototype.init_ = function () {
         } );
     } );
     
-    defMethod( "macroexpand-to-fork",
-        "self", "get-fork", "capture-counts" );
+    defMethod( "macroexpand-to-fork", "self", "get-fork" );
     setStrictImpl( "macroexpand-to-fork", "string",
         function ( yoke, args ) {
         
-        // TODO Y: Stop expecting to receive `captureCounts`.
         var expr = listGet( args, 0 );
         var getFork = listGet( args, 1 );
-        var captureCounts = listGet( args, 2 );
         if ( getFork.isLinear() )
             return pkErr( yoke,
                 "Called macroexpand-to-fork with a linear get-fork" );
-        // TODO: Verify that `captureCounts` is a stack of nats.
-        if ( !isList( captureCounts ) )
-            return pkErr( yoke,
-                "Called macroexpand-to-fork with a non-list stack " +
-                "of capture counts" );
         return runWaitOne( yoke, function ( yoke ) {
-            // TODO Y: Stop passing in `captureCounts`.
             return self.callMethod( yoke, "call",
-                pkList( getFork, pkList( expr, captureCounts ) ) );
+                pkList( getFork, pkList( expr ) ) );
         } );
     } );
     setStrictImpl( "macroexpand-to-fork", "cons",
         function ( yoke, args ) {
         
-        // TODO Y: Stop expecting to receive `captureCounts`.
         var expr = listGet( args, 0 );
         var getFork = listGet( args, 1 );
-        var captureCounts = listGet( args, 2 );
         if ( getFork.isLinear() )
             return pkErr( yoke,
                 "Called macroexpand-to-fork with a linear get-fork" );
-        // TODO: Verify that `captureCounts` is a stack of nats.
-        if ( !isList( captureCounts ) )
-            return pkErr( yoke,
-                "Called macroexpand-to-fork with a non-list stack " +
-                "of capture counts" );
         return runWaitTry( yoke, function ( yoke ) {
-            // TODO Y: Stop passing in `captureCounts`.
             return self.callMethod( yoke, "macroexpand-to-fork",
-                pkList( expr.ind( 0 ), getFork, captureCounts ) );
+                pkList( expr.ind( 0 ), getFork ) );
         }, function ( yoke, opFork ) {
             return self.runWaitTryGetmacFork( yoke,
                 "macroexpand-to-fork",
@@ -1076,35 +998,22 @@ PkRuntime.prototype.init_ = function () {
                     self.nonMacroMacroexpander();
                 return self.callMethod( yoke, "call", pkList(
                     macroexpander,
-                    pkList(
-                        opFork,
-                        getFork,
-                        // TODO Y: Stop passing in `captureCounts`.
-                        captureCounts,
-                        expr.ind( 1 )
-                    )
+                    pkList( opFork, getFork, expr.ind( 1 ) )
                 ) );
             } );
         } );
     } );
     
     defMacro( "fn", pkfn( function ( yoke, args ) {
-        // TODO Y: Stop expecting to receive `captureCounts`.
-        if ( !listLenIs( args, 4 ) )
+        if ( !listLenIs( args, 3 ) )
             return pkErrLen( yoke, args,
                 "Called fn's macroexpander" );
         var fork = listGet( args, 0 );
         var nonlocalGetFork = listGet( args, 1 );
-        var captureCounts = listGet( args, 2 );
-        var body = listGet( args, 3 );
+        var body = listGet( args, 2 );
         if ( nonlocalGetFork.isLinear() )
             return pkErr( yoke,
                 "Called fn's macroexpander with a linear get-fork" );
-        // TODO: Verify that `captureCounts` is a stack of nats.
-        if ( !isList( captureCounts ) )
-            return pkErr( yoke,
-                "Called fn's macroexpander with a non-list stack " +
-                "of capture counts" );
         if ( !isList( body ) )
             return pkErr( yoke,
                 "Called fn's macroexpander with a non-list macro body"
@@ -1125,25 +1034,14 @@ PkRuntime.prototype.init_ = function () {
                 
                 listGet( body, 1 ),
                 pkfn( function ( yoke, args ) {
-                    // TODO Y: Stop expecting to receive
-                    // `captureCounts`.
-                    if ( !listLenIs( args, 2 ) )
+                    if ( !listLenIs( args, 1 ) )
                         return pkErrLen( yoke, args,
                             "Called a get-fork" );
                     var name = listGet( args, 0 );
-                    var captureCounts = listGet( args, 1 );
                     if ( name.tag !== "string" )
                         return pkErr( yoke,
                             "Called a get-fork with a non-string " +
                             "name" );
-                    // TODO: Verify that `captureCounts` is a stack of
-                    // nats.
-                    if ( !isList( captureCounts ) )
-                        return pkErr( yoke,
-                            "Called a get-fork with a non-list " +
-                            "stack of capture counts" );
-                    if ( captureCounts.tag === "nil" )
-                        captureCounts = pkList( pkNil );
                     if ( isParamName( name ) )
                         return pkRet( yoke, pk( "getmac-fork",
                             pkGetTine( pkList( name ),
@@ -1156,16 +1054,9 @@ PkRuntime.prototype.init_ = function () {
                         ) );
                     // TODO: See if we should verify the output of
                     // `nonlocalGetFork`.
-                    // TODO Y: Stop passing in this empty
-                    // `captureCounts`.
-                    return self.callMethod( yoke, "call", pkList(
-                        nonlocalGetFork,
-                        pkList( name, pkNil )
-                    ) );
-                } ),
-                // TODO Y: Stop passing in this augmented
-                // `captureCounts`.
-                pkCons( pkNil, captureCounts )
+                    return self.callMethod( yoke, "call",
+                        pkList( nonlocalGetFork, pkList( name ) ) );
+                } )
             ) );
         }, function ( yoke, getTine, maybeMacro ) {
             var outerNames = listGet( getTine, 0 );
@@ -1243,23 +1134,16 @@ PkRuntime.prototype.init_ = function () {
     } ) );
     
     defMacro( "quote", pkfn( function ( yoke, args ) {
-        // TODO Y: Stop expecting to receive `captureCounts`.
-        if ( !listLenIs( args, 4 ) )
+        if ( !listLenIs( args, 3 ) )
             return pkErrLen( yoke, args,
                 "Called quote's macroexpander" );
         var fork = listGet( args, 0 );
         var getFork = listGet( args, 1 );
-        var captureCounts = listGet( args, 2 );
-        var body = listGet( args, 3 );
+        var body = listGet( args, 2 );
         if ( getFork.isLinear() )
             return pkErr( yoke,
                 "Called quote's macroexpander with a linear get-fork"
                 );
-        // TODO: Verify that `captureCounts` is a stack of nats.
-        if ( !isList( captureCounts ) )
-            return pkErr( yoke,
-                "Called quote's macroexpander with a non-list " +
-                "stack of capture counts" );
         if ( !isList( body ) )
             return pkErr( yoke,
                 "Called quote's macroexpander with a non-list " +
@@ -1279,23 +1163,16 @@ PkRuntime.prototype.init_ = function () {
     // complete, remove this "if ( false )".
     if ( false )
     defMacro( "if-struct", pkfn( function ( yoke, args ) {
-        // TODO Y: Stop expecting to receive `captureCounts`.
-        if ( !listLenIs( args, 4 ) )
+        if ( !listLenIs( args, 3 ) )
             return pkErrLen( yoke, args,
                 "Called if-struct's macroexpander" );
         var fork = listGet( args, 0 );
         var getFork = listGet( args, 1 );
-        var captureCounts = listGet( args, 2 );
-        var body = listGet( args, 3 );
+        var body = listGet( args, 2 );
         if ( getFork.isLinear() )
             return pkErr( yoke,
                 "Called if-struct's macroexpander with a linear " +
                 "get-fork" );
-        // TODO: Verify that `captureCounts` is a stack of nats.
-        if ( !isList( captureCounts ) )
-            return pkErr( yoke,
-                "Called if-struct's macroexpander with a non-list " +
-                "stack of capture counts" );
         if ( !isList( body ) )
             return pkErr( yoke,
                 "Called if-struct's macroexpander with a non-list " +
@@ -1317,38 +1194,34 @@ PkRuntime.prototype.init_ = function () {
                 return pkErr( yoke,
                     "Expanded if-struct with a non-string variable" );
             return listFoldrJs( yoke, structArgs,
-                function ( yoke, getFork, captureCounts, then ) {
+                // NOTE: This function is the `init` parameter of the
+                // listFoldrJs() call, not the combiner parameter.
+                function ( yoke, getFork, then ) {
                     // TODO: Compile thenExpr here.
-                    return then( yoke, TODO, captureCounts );
+                    return then( yoke, TODO );
                 },
+                // NOTE: This is the combiner.
                 function ( structArg, compileSubexpr ) {
                 
-                return function (
-                    yoke, getFork, captureCounts, then ) {
+                return function ( yoke, getFork, then ) {
                     
                     // TODO: Implement compileFn.
-                    return compileFn( yoke, getFork, captureCounts,
-                        structArg,
-                        function (
-                            yoke, getFork, captureCounts, then ) {
-                            
-                            return compileSubexpr(
-                                yoke, getFork, captureCounts,
-                                function (
-                                    yoke, binding, captureCounts ) {
+                    return compileFn( yoke, getFork, structArg,
+                        function ( yoke, getFork, then ) {
+                            return compileSubexpr( yoke, getFork,
+                                function ( yoke, binding ) {
                                 
-                                return then(
-                                    yoke, binding, captureCounts );
+                                return then( yoke, binding );
                             } );
                         },
-                        function ( yoke, binding, captureCounts ) {
+                        function ( yoke, binding ) {
                         
-                        return then( yoke, binding, captureCounts );
+                        return then( yoke, binding );
                     } );
                 };
             }, function ( yoke, compileExpr ) {
-                return compileExpr( yoke, getFork, captureCounts,
-                    function ( yoke, binding, captureCounts ) {
+                return compileExpr( yoke, getFork,
+                    function ( yoke, binding ) {
                     
                     // TODO: Compile elseExpr and put the two branches
                     // together. Detect the variables captured in both
@@ -1612,20 +1485,13 @@ PkRuntime.prototype.distributeGetTines = function (
 PkRuntime.prototype.forkGetter = function ( nameForError ) {
     var self = this;
     return pkfn( function ( yoke, args ) {
-        // TODO Y: Stop expecting to receive `captureCounts`.
-        if ( !listLenIs( args, 2 ) )
+        if ( !listLenIs( args, 1 ) )
             return pkErrLen( yoke, args, "Called " + nameForError );
         var name = listGet( args, 0 );
-        var captureCounts = listGet( args, 1 );
         if ( name.tag !== "string" )
             return pkErr( yoke,
                 "Called " + nameForError + " with a non-string name"
                 );
-        // TODO: Verify that `captureCounts` is a stack of nats.
-        if ( !isList( captureCounts ) )
-            return pkErr( yoke,
-                "Called " + nameForError + " with a non-list stack " +
-                "of capture counts" );
         // TODO: If we ever have allowsGets() return false, uncomment
         // this code. Until then, it will only be a performance
         // burden.
@@ -1692,24 +1558,16 @@ PkRuntime.prototype.runWaitTryGetmacFork = function (
 PkRuntime.prototype.nonMacroMacroexpander = function () {
     var self = this;
     return pkfn( function ( yoke, args ) {
-        // TODO Y: Stop expecting to receive `captureCounts`.
-        if ( !listLenIs( args, 4 ) )
+        if ( !listLenIs( args, 3 ) )
             return pkErrLen( yoke, args,
                 "Called a non-macro's macroexpander" );
         var fork = listGet( args, 0 );
         var getFork = listGet( args, 1 );
-        var captureCounts = listGet( args, 2 );
-        var argsList = listGet( args, 3 );
+        var argsList = listGet( args, 2 );
         if ( getFork.isLinear() )
             return pkErr( yoke,
                 "Called a non-macro's macroexpander with a linear " +
                 "get-fork" );
-        // TODO: See if we should verify that `captureCounts` is a
-        // stack of nats.
-        if ( !isList( captureCounts ) )
-            return pkErr( yoke,
-                "Called a non-macro's macroexpander with a " +
-                "non-list stack of capture counts." );
         if ( !isList( argsList ) )
             return pkErr( yoke,
                 "Called a non-macro's macroexpander with a " +
@@ -1726,8 +1584,6 @@ PkRuntime.prototype.nonMacroMacroexpander = function () {
                     return listRev( yoke, revGetTinesSoFar,
                         function ( yoke, getTines ) {
                         
-                        // TODO Y: If appendStacks is unused, remove
-                        // it.
                         var allGetTines =
                             pkCons( funcGetTine, getTines );
                         return listMappend( yoke, allGetTines,
@@ -1761,13 +1617,10 @@ PkRuntime.prototype.nonMacroMacroexpander = function () {
                     "macroexpand-to-fork",
                     function ( yoke ) {
                     
-                    // TODO Y: Stop passing in this empty
-                    // `captureCounts`.
                     return self.callMethod( yoke,
                         "macroexpand-to-fork",
-                        pkList( list.ind( 0 ), getFork, pkNil ) );
+                        pkList( list.ind( 0 ), getFork ) );
                 }, function ( yoke, getTine, maybeMacro ) {
-                    // TODO Y: If lensPlusNats is unused, remove it.
                     return parseList(
                         yoke,
                         list.ind( 1 ),
@@ -1974,9 +1827,7 @@ PkRuntime.prototype.conveniences_macroexpand = function (
         
         return self.callMethod( yoke, "macroexpand-to-fork", pkList(
             expr,
-            self.forkGetter( "the top-level get-fork" ),
-            // TODO Y: Stop passing in this empty `captureCounts`.
-            pkNil
+            self.forkGetter( "the top-level get-fork" )
         ) );
     }, function ( yoke, getTine, maybeMacro ) {
         if ( !listLenIs( listGet( getTine, 0 ), 0 ) )
