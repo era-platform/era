@@ -1167,75 +1167,88 @@ return runWaitTry( yoke, function ( yoke ) {
                     listGet( getTine, 0 ), listGet( getTine, 1 ) );
             } );
         }
-        tryGetFork( yoke, condExpr, function (
-            yoke, condGetTine, condCaptures, condCont ) {
+        tryGetFork( yoke, condExpr,
+            function ( yoke, condGetTine, condCaptures, condCont ) {
+        tryGetFork( yoke, thenExpr,
+            function ( yoke, thenGetTine, thenCaptures, thenCont ) {
+        tryGetFork( yoke, elseExpr,
+            function ( yoke, elseGetTine, elseCaptures, elseCont ) {
+        
+        // Detect the variables captured in both branches, deduplicate
+        // them, and use that deduplicated list as a capture list for
+        // the conditional expression itself. This is important for
+        // handling linear values; we already duplicate a value
+        // whenever it's passed in as a function parameter, and now
+        // we'll also duplicate a value whenever a conditional branch
+        // is taken.
+        //
+        // NOTE: When a Penknife programmer makes their own
+        // conditional syntaxes based on higher-order techniques, they
+        // should *not* pass in multiple functions, one for each
+        // branch. This technique would cause the lexically captured
+        // values to be duplicated for all the branches and then
+        // dropped for each branch that's unused. If the programmer
+        // instead passes in a single function of the form
+        // (fn ... (if ...)), this unnecessary duplication and
+        // dropping will be avoided, thus accommodating linear values
+        // which prohibit these operations.
+        
+        return listAppend( yoke, thenCaptures, elseCaptures,
+            function ( branchCaptures ) {
+        
+        var bcDedupMap = strMap();
+        function bcDedupGet( jsName ) {
+            var count = bcDedupMap.get( jsName );
+            return count === void 0 ? pkNil : count;
+        }
+        return listKeep( yoke, branchCaptures,
+            function ( pkName ) {
             
-            tryGetFork( yoke, thenExpr, function (
-                yoke, thenGetTine, thenCaptures, thenCont ) {
+            var jsName = pkName.special.jsStr;
+            var count = bcDedupGet( jsName );
+            bcDedupMap.set( jsName,
+                pk( "succ", count ) );
+            return count.tag === "succ";
+        }, function ( yoke, bcDedup ) {
+        
+        return listAppend( yoke,
+            condCaptures, bcDedup,
+            function ( yoke, outerCaptures ) {
+        return pkRet( yoke, pk( "getmac-fork",
+            pkGetTine( outerCaptures,
+                function ( yoke, outerBindings ) {
                 
-                tryGetFork( yoke, elseExpr, function (
-                    yoke, elseGetTine, elseCaptures, elseCont ) {
-                    
-                    // Detect the variables captured in both branches,
-                    // deduplicate them, and use that deduplicated
-                    // list as a capture list for the conditional
-                    // expression itself. This is important for
-                    // handling linear values; we already duplicate a
-                    // value whenever it's passed in as a function
-                    // parameter, and now we'll also duplicate a value
-                    // whenever a conditional branch is taken.
-                    //
-                    // NOTE: When a Penknife programmer makes their
-                    // own conditional syntaxes based on higher-order
-                    // techniques, they should *not* pass in multiple
-                    // functions, one for each branch. This technique
-                    // would cause the lexically captured values to be
-                    // duplicated for all the branches and then
-                    // dropped for each branch that's unused. If the
-                    // programmer instead passes in a single function
-                    // of the form (fn ... (if ...)), this unnecessary
-                    // duplication and dropping will be avoided, thus
-                    // accommodating linear values which prohibit
-                    // these operations.
-                    
-                    var branchCaps = strMap();
-                    return listAppend( yoke,
-                        thenCaptures, elseCaptures,
-                        function ( branchCaptures ) {
-                        
-                        var bcDedupMap = strMap();
-                        return listKeep( yoke, branchCaptures,
-                            function ( pkName ) {
-                            
-                            var jsName = pkName.special.jsStr;
-                            if ( bcDedupMap.has( jsName ) )
-                                return false;
-                            bcDedupMap.set( jsName, true );
-                            return true;
-                        }, function ( yoke, bcDedup ) {
-                            return listAppend( yoke,
-                                condCaptures, bcDedup,
-                                function ( yoke, outerCaptures ) {
-                                
-                                return pkRet( yoke, pk( "getmac-fork",
-                                    pkGetTine( outerCaptures,
-                                        function (
-                                            yoke, outerBindings ) {
-                                        
-                                        // <indentation-reset>
-// TODO: Implement this.
-// TODO: Implement binding-interpret for whatever conditional binding
-// type we return here.
-// TODO: After that, if we don't use listFoldrJs, remove it.
-                                        // </indentation-reset>
-                                    } ),
-                                    pkNil
-                                ) );
-                            } );
-                        } );
-                    } );
+                return self.distributeOneGetTine( yoke,
+                    condGetTine, outerBindings,
+                    function ( yoke, condBinding, outerBindings ) {
+                
+                // TODO: Finish this. Have it return something of this
+                // form:
+                //
+                // (binding-for-if <condExpr>
+                //   <list of
+                //     (<maybe <binding>> <thenCount> <elseCount>)>
+                //   <thenExpr>
+                //   <elseExpr>)
+                //
+                // TODO: Implement a Penknife-side constructor for
+                // binding-for-if.
+                // TODO: Implement binding-interpret for
+                // binding-for-if.
+                // TODO: After that, if we don't use listFoldrJs,
+                // remove it.
                 } );
-            } );
+            } ),
+            pkNil
+        ) );
+        } );
+        
+        } );
+        
+        } );
+        
+        } );
+        } );
         } );
     } ) );
     
@@ -1444,21 +1457,18 @@ PkRuntime.prototype.pkDup = function ( yoke, val, count ) {
         } );
     }
 };
-// TODO: Think of a better name for this than "distributeGetTines".
-PkRuntime.prototype.distributeGetTines = function (
-    yoke, getTines, bindings, then ) {
+// TODO: Think of a better name for this than "distributeOneGetTine".
+PkRuntime.prototype.distributeOneGetTine = function (
+    yoke, getTine, bindings, then ) {
     
     var self = this;
-    if ( getTines.tag !== "cons" )
-        return then( yoke, pkNil );
-    var getTine = getTines.ind( 0 );
     return listFoldl( yoke,
         pkList( pkNil, bindings ), listGet( getTine, 0 ),
         function ( yoke, takenRevAndNot, name ) {
             var notTaken = listGet( takenRevAndNot, 1 );
             if ( notTaken.tag !== "cons" )
                 return pkErr( yoke,
-                    "An internal distributeGetTines operation " +
+                    "An internal distributeOneGetTine operation " +
                     "encountered fewer input bindings than " +
                     "required by the get-tines." );
             return pkRet( yoke, pkList(
@@ -1477,15 +1487,31 @@ PkRuntime.prototype.distributeGetTines = function (
                     pkList( taken )
                 ) );
             }, function ( yoke, resultBinding ) {
-                return self.distributeGetTines( yoke,
-                    getTines.ind( 1 ), listGet( takenRevAndNot, 1 ),
-                    function ( yoke, resultBindings ) {
-                    
-                    return runWaitOne( yoke, function ( yoke ) {
-                        return then( yoke,
-                            pkCons( resultBinding, resultBindings ) );
-                    } );
-                } );
+                return then( yoke,
+                    resultBinding, listGet( takenRevAndNot, 1 ) );
+            } );
+        } );
+    } );
+};
+// TODO: Think of a better name for this than "distributeGetTines".
+PkRuntime.prototype.distributeGetTines = function (
+    yoke, getTines, bindings, then ) {
+    
+    var self = this;
+    if ( getTines.tag !== "cons" )
+        return then( yoke, pkNil, bindings );
+    return self.distributeOneGetTine( yoke,
+        getTines.ind( 0 ), bindings,
+        function ( yoke, outBinding, inBindingsRemaining ) {
+        
+        return self.distributeGetTines( yoke,
+            getTines.ind( 1 ), inBindingsRemaining,
+            function ( yoke, outBindings, inBindingsRemaining ) {
+            
+            return runWaitOne( yoke, function ( yoke ) {
+                return then( yoke,
+                    pkCons( outBinding, outBindings ),
+                    inBindingsRemaining );
             } );
         } );
     } );
@@ -1613,8 +1639,10 @@ PkRuntime.prototype.nonMacroMacroexpander = function () {
                                     
                                     // <indentation-reset>
 return self.distributeGetTines( yoke, allGetTines, allBindings,
-    function ( yoke, allBindings ) {
+    function ( yoke, allBindings, inBindingsRemaining ) {
     
+    if ( !listLenIs( inBindingsRemaining, 0 ) )
+        throw new Error();
     return pkRet( yoke,
         pk( "call-binding",
             allBindings.ind( 0 ),
