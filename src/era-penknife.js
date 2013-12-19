@@ -1159,8 +1159,8 @@ return runWaitTry( yoke, function ( yoke ) {
         ) );
     } ) );
     
-    // TODO: When all the TODOs inside this macro definition are
-    // complete, remove this "if ( false )".
+    // TODO: When all the "TODO X" comments inside this macro
+    // definition are complete, remove this "if ( false )".
     if ( false )
     defMacro( "if", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 3 ) )
@@ -1193,6 +1193,7 @@ return runWaitTry( yoke, function ( yoke ) {
                     listGet( getTine, 0 ), listGet( getTine, 1 ) );
             } );
         }
+        
         tryGetFork( yoke, condExpr,
             function ( yoke, condGetTine, condCaptures, condCont ) {
         tryGetFork( yoke, thenExpr,
@@ -1220,40 +1221,89 @@ return runWaitTry( yoke, function ( yoke ) {
         // which prohibit these operations.
         
         return listMap( yoke, thenCaptures, function ( yoke, capt ) {
-            return pkRet( yoke, pkList( pk( "yep", pkNil ), capt ) );
+            return pkRet( yoke, pkList( capt, pk( "yep", pkNil ) ) );
         }, function ( yoke, notedThenCaptures ) {
         return listMap( yoke, elseCaptures, function ( yoke, capt ) {
-            return pkRet( yoke, pkList( pkNil, capt ) );
+            return pkRet( yoke, pkList( capt, pkNil ) );
         }, function ( yoke, notedElseCaptures ) {
         return listAppend( yoke, notedThenCaptures, notedElseCaptures,
             function ( yoke, notedBranchCaptures ) {
         
-        // TODO: See if there's a way to do this without mutability
+        // TODO: See if there's a way to do this without mutation
         // without our time performance becoming a quadratic (or
         // worse) function of the number of `notedBranchCaptures`.
         var bcDedupMap = strMap();
-        function bcDedupGet( jsName ) {
-            var count = bcDedupMap.get( jsName );
-            return count === void 0 ?
-                { then: pkNil, els: pkNil } : count;
-        }
         return listKeep( yoke, notedBranchCaptures,
             function ( frame ) {
             
-            var isThen = listGet( frame, 0 );
-            var pkName = listGet( frame, 1 );
+            var pkName = listGet( frame, 0 );
+            var isThenPk = listGet( frame, 1 );
             
+            var isThenJs = isThenPk.tag === "yep";
             var jsName = pkName.special.jsStr;
-            var counts = bcDedupGet( jsName );
-            bcDedupMap.set( jsName, isThen.tag === "yep" ?
-                { then: pk( "succ", counts.then ), els: counts.els } :
-                { then: counts.then, els: pk( "succ", counts.els ) }
-                );
-            return count.tag === "succ";
+            var entry = bcDedupMap.get( jsName );
+            if ( entry === void 0 )
+                bcDedupMap.set( jsName, entry = {
+                    then: pkNil,
+                    els: pkNil,
+                    "revThenInBindings": pkNil,
+                    "revElseInBindings": pkNil
+                } );
+            var i = isThenJs ? entry.then : entry.els;
+            if ( isThenJs )
+                entry.then = pk( "succ", i );
+            else
+                entry.els = pk( "succ", i );
+            return i.tag !== "succ";
         }, function ( yoke, notedBcDedup ) {
+        // TODO: Instead of passing in `captures` and `cont`, just
+        // pass in a get tine.
+        function doCont(
+            captures, cont, revInBindingsProperty, then ) {
+            
+            return listFoldlJs( yoke, pkNil, captures,
+                function ( i, pkName ) {
+                
+                var jsName = pkName.special.jsStr;
+                var entry = bcDedupMap.get( jsName );
+                if ( entry === void 0 )
+                    throw new Error();
+                // NOTE: Mind the mutation!
+                entry[ revInBindingsProperty ] = pkCons(
+                    pk( "param-binding", i ),
+                    entry[ revInBindingsProperty ] );
+                return pk( "succ", i );
+            }, function ( yoke, ignored ) {
+                return listMappend( yoke, captures,
+                    function ( yoke, pkName ) {
+                    
+                    var jsName = pkName.special.jsStr;
+                    var entry = bcDedupMap.get( jsName );
+                    if ( entry === void 0 )
+                        throw new Error();
+                    return listRev( yoke,
+                        entry[ revInBindingsProperty ],
+                        function ( yoke, theseInBindings ) {
+                        
+                        return pkRet( yoke, theseInBindings );
+                    } );
+                }, function ( yoke, inBindings ) {
+                    return runWaitTry( yoke, function ( yoke ) {
+                        return self.callMethod( yoke, "call",
+                            pkList( cont, pkList( inBindings ) ) );
+                    }, function ( yoke, outBinding ) {
+                        return then( yoke, outBinding );
+                    } );
+                } );
+            } );
+        }
+        return doCont( thenCaptures, thenCont, "revThenInBindings",
+            function ( yoke, thenOutBinding ) {
+        return doCont( thenCaptures, elseCont, "revElseInBindings",
+            function ( yoke, elseOutBinding ) {
         
         return listMap( yoke, notedBcDedup, function ( yoke, frame ) {
-            return pkRet( yoke, listGet( frame, 1 ) );
+            return pkRet( yoke, listGet( frame, 0 ) );
         }, function ( yoke, bcDedup ) {
         return listAppend( yoke, condCaptures, bcDedup,
             function ( yoke, outerCaptures ) {
@@ -1264,32 +1314,41 @@ return runWaitTry( yoke, function ( yoke ) {
                 return self.distributeOneGetTine( yoke,
                     condGetTine, outerBindings,
                     function ( yoke, condBinding, outerBindings ) {
-                return listMapTwo( yoke, bcDedup, outerBindings,
-                    function ( yoke, frame ) {
                     
-                    var pkName = listGet( frame, 0 );
-                    var binding = listGet( frame, 1 );
-                    var jsName = pkName.special.jsStr;
-                    var counts = bcDedupGet( jsName );
-                    return pkRet( yoke,
-                        pkList( binding, counts.then, counts.els ) );
-                }, function ( yoke, outerBindingsAndCounts ) {
-                
-                // TODO: Finish this. Have it return something of this
-                // form:
-                //
-                // (binding-for-if <condExpr>
-                //   <list of (<binding> <thenCount> <elseCount>)>
-                //   <thenExpr>
-                //   <elseExpr>)
-                //
-                // TODO: Implement a Penknife-side constructor for
-                // binding-for-if.
-                // TODO: Implement binding-interpret for
-                // binding-for-if.
-                // TODO: After that, if we don't use listFoldrJs or
-                // listMapTwo, remove them.
-                } );
+                    return listMapTwo( yoke, bcDedup, outerBindings,
+                        function ( yoke, frame ) {
+                        
+                        var pkName = listGet( frame, 0 );
+                        var binding = listGet( frame, 1 );
+                        var jsName = pkName.special.jsStr;
+                        var entry = bcDedup.get( jsName );
+                        if ( entry === void 0 )
+                            throw new Error();
+                        return pkRet( yoke,
+                            pkList( binding, entry.then, entry.els )
+                            );
+                    }, function ( yoke, outerBindingsAndCounts ) {
+                        
+                        // NOTE: This overall result is of this form:
+                        //
+                        // (binding-for-if <condExpr>
+                        //   <list of
+                        //     (<binding> <thenCount> <elseCount>)>
+                        //   <thenExpr>
+                        //   <elseExpr>)
+                        //
+                        return pkRet( yoke, pk( "binding-for-if",
+                            outerBindingsAndCounts,
+                            thenOutBinding,
+                            elseOutBinding
+                        ) );
+                        // TODO X: Implement a Penknife-side
+                        // constructor for binding-for-if.
+                        // TODO X: Implement binding-interpret for
+                        // binding-for-if.
+                        // TODO X: After that, if we don't use
+                        // listFoldrJs or listZipTwo, remove them.
+                    } );
                 } );
             } ),
             pkNil
@@ -1297,6 +1356,8 @@ return runWaitTry( yoke, function ( yoke ) {
         } );
         } );
         
+        } );
+        } );
         } );
         
         } );
