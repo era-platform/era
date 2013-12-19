@@ -517,6 +517,13 @@ function listCount( yoke, list, func, then ) {
         return then( yoke, count );
     } );
 }
+function listLen( yoke, list, then ) {
+    return listCount( yoke, list, function ( elem ) {
+        return true;
+    }, function ( yoke, count ) {
+        return then( yoke, count );
+    } );
+}
 function listAny( yoke, list, func, then ) {
     if ( list.tag !== "cons" )
         return then( yoke, false );
@@ -558,6 +565,25 @@ function listMapMultiWithLen( yoke, nat, lists, func, then ) {
             } );
         } );
     }
+}
+function listMapTwo( yoke, a, b, func, then ) {
+    return listLen( yoke, a, function ( yoke, len ) {
+        return listMapMultiWithLen( yoke, len, pkList( a, b ),
+            function ( yoke, elems ) {
+            
+            return func( yoke,
+                listGet( elems, 0 ), listGet( elems, 1 ) );
+        }, function ( yoke, result ) {
+            return then( yoke, result );
+        } );
+    } );
+}
+function listZipTwo( yoke, a, b, func, then ) {
+    return listMapTwo( yoke, a, b, function ( yoke, aElem, bElem ) {
+        return pkRet( yoke, pkList( aElem, bElem ) );
+    }, function ( yoke, result ) {
+        return then( yoke, result );
+    } );
 }
 
 function isEnoughGetTineShallow( x ) {
@@ -1193,26 +1219,43 @@ return runWaitTry( yoke, function ( yoke ) {
         // dropping will be avoided, thus accommodating linear values
         // which prohibit these operations.
         
-        return listAppend( yoke, thenCaptures, elseCaptures,
-            function ( branchCaptures ) {
+        return listMap( yoke, thenCaptures, function ( yoke, capt ) {
+            return pkRet( yoke, pkList( pk( "yep", pkNil ), capt ) );
+        }, function ( yoke, notedThenCaptures ) {
+        return listMap( yoke, elseCaptures, function ( yoke, capt ) {
+            return pkRet( yoke, pkList( pkNil, capt ) );
+        }, function ( yoke, notedElseCaptures ) {
+        return listAppend( yoke, notedThenCaptures, notedElseCaptures,
+            function ( yoke, notedBranchCaptures ) {
         
+        // TODO: See if there's a way to do this without mutability
+        // without our time performance becoming a quadratic (or
+        // worse) function of the number of `notedBranchCaptures`.
         var bcDedupMap = strMap();
         function bcDedupGet( jsName ) {
             var count = bcDedupMap.get( jsName );
-            return count === void 0 ? pkNil : count;
+            return count === void 0 ?
+                { then: pkNil, els: pkNil } : count;
         }
-        return listKeep( yoke, branchCaptures,
-            function ( pkName ) {
+        return listKeep( yoke, notedBranchCaptures,
+            function ( frame ) {
+            
+            var isThen = listGet( frame, 0 );
+            var pkName = listGet( frame, 1 );
             
             var jsName = pkName.special.jsStr;
-            var count = bcDedupGet( jsName );
-            bcDedupMap.set( jsName,
-                pk( "succ", count ) );
+            var counts = bcDedupGet( jsName );
+            bcDedupMap.set( jsName, isThen.tag === "yep" ?
+                { then: pk( "succ", counts.then ), els: counts.els } :
+                { then: counts.then, els: pk( "succ", counts.els ) }
+                );
             return count.tag === "succ";
-        }, function ( yoke, bcDedup ) {
+        }, function ( yoke, notedBcDedup ) {
         
-        return listAppend( yoke,
-            condCaptures, bcDedup,
+        return listMap( yoke, notedBcDedup, function ( yoke, frame ) {
+            return pkRet( yoke, listGet( frame, 1 ) );
+        }, function ( yoke, bcDedup ) {
+        return listAppend( yoke, condCaptures, bcDedup,
             function ( yoke, outerCaptures ) {
         return pkRet( yoke, pk( "getmac-fork",
             pkGetTine( outerCaptures,
@@ -1221,13 +1264,22 @@ return runWaitTry( yoke, function ( yoke ) {
                 return self.distributeOneGetTine( yoke,
                     condGetTine, outerBindings,
                     function ( yoke, condBinding, outerBindings ) {
+                return listMapTwo( yoke, bcDedup, outerBindings,
+                    function ( yoke, frame ) {
+                    
+                    var pkName = listGet( frame, 0 );
+                    var binding = listGet( frame, 1 );
+                    var jsName = pkName.special.jsStr;
+                    var counts = bcDedupGet( jsName );
+                    return pkRet( yoke,
+                        pkList( binding, counts.then, counts.els ) );
+                }, function ( yoke, outerBindingsAndCounts ) {
                 
                 // TODO: Finish this. Have it return something of this
                 // form:
                 //
                 // (binding-for-if <condExpr>
-                //   <list of
-                //     (<maybe <binding>> <thenCount> <elseCount>)>
+                //   <list of (<binding> <thenCount> <elseCount>)>
                 //   <thenExpr>
                 //   <elseExpr>)
                 //
@@ -1235,16 +1287,20 @@ return runWaitTry( yoke, function ( yoke ) {
                 // binding-for-if.
                 // TODO: Implement binding-interpret for
                 // binding-for-if.
-                // TODO: After that, if we don't use listFoldrJs,
-                // remove it.
+                // TODO: After that, if we don't use listFoldrJs or
+                // listMapTwo, remove them.
+                } );
                 } );
             } ),
             pkNil
         ) );
         } );
+        } );
         
         } );
         
+        } );
+        } );
         } );
         
         } );
