@@ -462,17 +462,6 @@ function listFoldlJs( yoke, init, list, func, then ) {
         } );
     }
 }
-function listFoldrJs( yoke, list, init, func, then ) {
-    return listRev( yoke, list, function ( yoke, revList ) {
-        return listFoldlJs( yoke, init, list, function (
-            newInit, elem ) {
-            
-            return func( elem, newInit );
-        }, function ( yoke, newInit ) {
-            return then( yoke, newInit );
-        } );
-    } );
-}
 function listMap( yoke, list, func, then ) {
     return listFoldl( yoke, pkNil, list, function (
         yoke, revResults, origElem ) {
@@ -576,13 +565,6 @@ function listMapTwo( yoke, a, b, func, then ) {
         }, function ( yoke, result ) {
             return then( yoke, result );
         } );
-    } );
-}
-function listZipTwo( yoke, a, b, func, then ) {
-    return listMapTwo( yoke, a, b, function ( yoke, aElem, bElem ) {
-        return pkRet( yoke, pkList( aElem, bElem ) );
-    }, function ( yoke, result ) {
-        return then( yoke, result );
     } );
 }
 
@@ -737,7 +719,7 @@ PkRuntime.prototype.init_ = function () {
     
     defTag( "getmac-fork", "get-tine", "maybe-macro" );
     defVal( "getmac-fork", pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 3 ) )
+        if ( !listLenIs( args, 2 ) )
             return pkErrLen( yoke, args, "Called getmac-fork" );
         return isEnoughGetTineDeep( yoke, listGet( args, 0 ),
             function ( yoke, valid ) {
@@ -800,6 +782,39 @@ PkRuntime.prototype.init_ = function () {
         // we can remove this restriction.
         return pkErr( yoke,
             "The fn-binding function has no behavior" );
+    } ) );
+    defTag( "binding-for-if", "cond-binding",
+        "bindings-and-counts", "then-binding", "else-binding" );
+    defVal( "binding-for-if", pkfn( function ( yoke, args ) {
+        // NOTE: The overall structure of a `binding-for-if` is like
+        // this:
+        //
+        // (binding-for-if <condBinding>
+        //   <list of (<captureBinding> <thenCount> <elseCount>)>
+        //   <thenBinding>
+        //   <elseBinding>)
+        //
+        if ( !listLenIs( args, 4 ) )
+            return pkErrLen( yoke, args, "Called binding-for-if" );
+        return listAll( yoke, listGet( args, 1 ),
+            function ( bindingAndCounts ) {
+            
+            return isList( bindingAndCounts ) &&
+                listLenIs( bindingAndCounts, 3 ) &&
+                isNat( listGet( bindingAndCounts, 1 ) ) &&
+                isNat( listGet( bindingAndCounts, 2 ) );
+        }, function ( yoke, valid ) {
+            if ( !valid )
+                return pkErr( yoke,
+                    "Called binding-for-if with an invalid " +
+                    "bindings-and-counts" );
+            return pkRet( yoke,
+                pk( "binding-for-if",
+                    listGet( args, 0 ),
+                    listGet( args, 1 ),
+                    listGet( args, 2 ),
+                    listGet( args, 3 ) ) );
+        } );
     } ) );
     
     // NOTE: We respect linearity in binding-interpret already, but it
@@ -962,6 +977,48 @@ PkRuntime.prototype.init_ = function () {
                     } );
                 } );
             } ) );
+        } );
+    } );
+    setStrictImpl( "binding-interpret", "binding-for-if",
+        function ( yoke, args ) {
+        
+        var outerCaptures = listGet( args, 1 );
+        if ( !isList( outerCaptures ) )
+            return pkErr( yoke,
+                "Called binding-interpret with a non-list list of " +
+                "captured values" );
+        // TODO: See if we should respect linearity by dropping
+        // `condBinding`. Heck, see if we should be doing that for
+        // lots of other parameters of other utilities.
+        var condBinding = listGet( args, 0 ).ind( 0 );
+        var bindingsAndCounts = listGet( args, 0 ).ind( 1 );
+        var thenBinding = listGet( args, 0 ).ind( 2 );
+        var elseBinding = listGet( args, 0 ).ind( 3 );
+        return runWaitTry( yoke, function ( yoke ) {
+            return self.callMethod( yoke, "binding-interpret",
+                pkList( condBinding, outerCaptures ) );
+        }, function ( yoke, condValue ) {
+            if ( condValue.tag !== "nil" ) {
+                var branchBinding = thenBinding;
+                var getCount = function ( bindingAndCounts ) {
+                    return listGet( bindingAndCounts, 1 );
+                };
+            } else {
+                var branchBinding = elseBinding;
+                var getCount = function ( bindingAndCounts ) {
+                    return listGet( bindingAndCounts, 2 );
+                };
+            }
+            return listMappend( yoke, bindingsAndCounts,
+                function ( yoke, bindingAndCounts ) {
+                
+                return self.pkDup( yoke,
+                    listGet( bindingAndCounts, 0 ),
+                    getCount( bindingAndCounts ) );
+            }, function ( yoke, innerCaptures ) {
+                return self.callMethod( yoke, "binding-interpret",
+                    pkList( branchBinding, innerCaptures ) );
+            } );
         } );
     } );
     
@@ -1159,9 +1216,6 @@ return runWaitTry( yoke, function ( yoke ) {
         ) );
     } ) );
     
-    // TODO: When all the "TODO X" comments inside this macro
-    // definition are complete, remove this "if ( false )".
-    if ( false )
     defMacro( "if", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 3 ) )
             return pkErrLen( yoke, args,
@@ -1256,10 +1310,40 @@ return runWaitTry( yoke, function ( yoke ) {
                 entry.els = pk( "succ", i );
             return i.tag !== "succ";
         }, function ( yoke, notedBcDedup ) {
+        return listMap( yoke, notedBcDedup, function ( yoke, frame ) {
+            return pkRet( yoke, listGet( frame, 0 ) );
+        }, function ( yoke, bcDedup ) {
         // TODO: Instead of passing in `captures` and `cont`, just
         // pass in a get tine.
         function doCont(
             captures, cont, revInBindingsProperty, then ) {
+            
+            // NOTE: Here's an example of how this works:
+            //
+            // Suppose `captures` contains abbaac and `bcDedup`
+            // contains abcd. Eventually, in the implementation of
+            // `binding-interpret` for `binding-for-if`, we're going
+            // to do a listMappend to pkDup each element of abcd,
+            // giving us aaabbc. Thus the bindings we want to insert
+            // into `cont` are `param-binding` values with indices
+            // 034125. (The 0--12- in here looks up aaa---, the -34---
+            // in here looks up ---bb-, and the -----5 in here looks
+            // up -----c, so we end up with a--aa-, -bb---, and
+            // -----c, or abbaac.
+            //
+            // In order to get this sequence, 034125, we iterate over
+            // abbaac and for each variable, we push our iteration
+            // index onto a stack associated with that variable. We
+            // get cons lists that look like this:
+            //
+            // a 430
+            // b 21
+            // c 5
+            // d (empty)
+            //
+            // Then we reverse these and concatenate them in abcd
+            // order, giving us the concatenation of 034, 21, and 5,
+            // which is 034215 as we needed.
             
             return listFoldlJs( yoke, pkNil, captures,
                 function ( i, pkName ) {
@@ -1274,7 +1358,7 @@ return runWaitTry( yoke, function ( yoke ) {
                     entry[ revInBindingsProperty ] );
                 return pk( "succ", i );
             }, function ( yoke, ignored ) {
-                return listMappend( yoke, captures,
+                return listMappend( yoke, bcDedup,
                     function ( yoke, pkName ) {
                     
                     var jsName = pkName.special.jsStr;
@@ -1299,12 +1383,9 @@ return runWaitTry( yoke, function ( yoke ) {
         }
         return doCont( thenCaptures, thenCont, "revThenInBindings",
             function ( yoke, thenOutBinding ) {
-        return doCont( thenCaptures, elseCont, "revElseInBindings",
+        return doCont( elseCaptures, elseCont, "revElseInBindings",
             function ( yoke, elseOutBinding ) {
         
-        return listMap( yoke, notedBcDedup, function ( yoke, frame ) {
-            return pkRet( yoke, listGet( frame, 0 ) );
-        }, function ( yoke, bcDedup ) {
         return listAppend( yoke, condCaptures, bcDedup,
             function ( yoke, outerCaptures ) {
         return pkRet( yoke, pk( "getmac-fork",
@@ -1329,33 +1410,19 @@ return runWaitTry( yoke, function ( yoke ) {
                             );
                     }, function ( yoke, outerBindingsAndCounts ) {
                         
-                        // NOTE: This overall result is of this form:
-                        //
-                        // (binding-for-if <condExpr>
-                        //   <list of
-                        //     (<binding> <thenCount> <elseCount>)>
-                        //   <thenExpr>
-                        //   <elseExpr>)
-                        //
                         return pkRet( yoke, pk( "binding-for-if",
                             outerBindingsAndCounts,
                             thenOutBinding,
                             elseOutBinding
                         ) );
-                        // TODO X: Implement a Penknife-side
-                        // constructor for binding-for-if.
-                        // TODO X: Implement binding-interpret for
-                        // binding-for-if.
-                        // TODO X: After that, if we don't use
-                        // listFoldrJs or listZipTwo, remove them.
                     } );
                 } );
             } ),
             pkNil
         ) );
         } );
-        } );
         
+        } );
         } );
         } );
         } );
