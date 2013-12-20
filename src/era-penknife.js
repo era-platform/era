@@ -1460,7 +1460,7 @@ PkRuntime.prototype.init_ = function () {
             pkGetTine( outerCaptures,
                 function ( yoke, outerBindings ) {
                 
-                return self.distributeOneGetTine( yoke,
+                return self.fulfillGetTine( yoke,
                     condGetTine, outerBindings,
                     function ( yoke, condBinding, outerBindings ) {
                     
@@ -1722,8 +1722,7 @@ PkRuntime.prototype.pkDrop = function ( yoke, val, then ) {
         return then( yoke );
     } );
 };
-// TODO: Think of a better name for this than "distributeOneGetTine".
-PkRuntime.prototype.distributeOneGetTine = function (
+PkRuntime.prototype.fulfillGetTine = function (
     yoke, getTine, bindings, then ) {
     
     var self = this;
@@ -1733,7 +1732,7 @@ PkRuntime.prototype.distributeOneGetTine = function (
             var notTaken = listGet( takenRevAndNot, 1 );
             if ( notTaken.tag !== "cons" )
                 return pkErr( yoke,
-                    "An internal distributeOneGetTine operation " +
+                    "An internal fulfillGetTine operation " +
                     "encountered fewer input bindings than " +
                     "required by the get-tines." );
             return pkRet( yoke, pkList(
@@ -1758,18 +1757,16 @@ PkRuntime.prototype.distributeOneGetTine = function (
         } );
     } );
 };
-// TODO: Think of a better name for this than "distributeGetTines".
-PkRuntime.prototype.distributeGetTines = function (
+PkRuntime.prototype.fulfillGetTines = function (
     yoke, getTines, bindings, then ) {
     
     var self = this;
     if ( getTines.tag !== "cons" )
         return then( yoke, pkNil, bindings );
-    return self.distributeOneGetTine( yoke,
-        getTines.ind( 0 ), bindings,
+    return self.fulfillGetTine( yoke, getTines.ind( 0 ), bindings,
         function ( yoke, outBinding, inBindingsRemaining ) {
         
-        return self.distributeGetTines( yoke,
+        return self.fulfillGetTines( yoke,
             getTines.ind( 1 ), inBindingsRemaining,
             function ( yoke, outBindings, inBindingsRemaining ) {
             
@@ -1904,8 +1901,7 @@ return pkRet( yoke, pk( "getmac-fork",
         function ( yoke, captures, allInBindings ) {
         
         var allGetTines = listGet( captures, 0 ).ind( 0 );
-        return self.distributeGetTines( yoke,
-            allGetTines, allInBindings,
+        return self.fulfillGetTines( yoke, allGetTines, allInBindings,
             function ( yoke, allOutBindings, inBindingsRemaining ) {
             
             if ( !listLenIs( inBindingsRemaining, 0 ) )
