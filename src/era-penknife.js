@@ -581,8 +581,10 @@ function isEnoughGetTineDeep( yoke, x, then ) {
         return then( yoke, result );
     } );
 }
-function pkGetTine( names, func ) {
-    return pkList( names, pkfn( function ( yoke, args ) {
+function pkGetTineLinear( names, captures, func ) {
+    return pkList( names, pkfnLinear( captures,
+        function ( yoke, captures, args ) {
+        
         if ( !listLenIs( args, 1 ) )
             return pkErrLen( yoke, args,
                 "Called a get-tine function" );
@@ -599,9 +601,16 @@ function pkGetTine( names, func ) {
                     "Called a get-tine function with a list of " +
                     "bindings that wasn't the right length" );
             
-            return func( yoke, bindings );
+            return func( yoke, captures, bindings );
         } );
     } ) );
+}
+function pkGetTine( names, func ) {
+    return pkGetTineLinear( names, pkNil,
+        function ( yoke, captures, bindings ) {
+        
+        return func( yoke, bindings );
+    } );
 }
 
 function PkRuntime() {}
@@ -625,9 +634,9 @@ PkRuntime.prototype.init_ = function () {
     function defMacro( name, macro ) {
         self.defMacro( pkStrName( name ), macro );
     }
-    function setStrictImpl( methodName, tagName, macro ) {
+    function setStrictImpl( methodName, tagName, call ) {
         self.setStrictImpl(
-            pkStrName( methodName ), pkStrName( tagName ), macro );
+            pkStrName( methodName ), pkStrName( tagName ), call );
     }
     
     self.meta_ = strMap();
@@ -672,15 +681,15 @@ PkRuntime.prototype.init_ = function () {
         if ( !listLenIs( args, 3 ) )
             return pkErrLen( yoke, args,
                 "Called nonlinear-as-linear" );
-        if ( isLinear( listGet( args, 0 ) ) )
+        if ( listGet( args, 0 ).isLinear() )
             return pkErr( yoke,
                 "Called nonlinear-as-linear with an inner value  " +
                 "that was itself linear" );
-        if ( isLinear( listGet( args, 1 ) ) )
+        if ( listGet( args, 1 ).isLinear() )
             return pkErr( yoke,
                 "Called nonlinear-as-linear with a duplicator " +
                 "function that was itself linear" );
-        if ( isLinear( listGet( args, 2 ) ) )
+        if ( listGet( args, 2 ).isLinear() )
             return pkErr( yoke,
                 "Called nonlinear-as-linear with an unwrapper " +
                 "function that was itself linear" );
@@ -808,6 +817,14 @@ PkRuntime.prototype.init_ = function () {
                 return pkErr( yoke,
                     "Called binding-for-if with an invalid " +
                     "bindings-and-counts" );
+            if ( listGet( args, 2 ).isLinear() )
+                return pkErr( yoke,
+                    "Called binding-for-if with a linear " +
+                    "then-binding" );
+            if ( listGet( args, 3 ).isLinear() )
+                return pkErr( yoke,
+                    "Called binding-for-if with a linear " +
+                    "else-binding" );
             return pkRet( yoke,
                 pk( "binding-for-if",
                     listGet( args, 0 ),
@@ -867,8 +884,10 @@ PkRuntime.prototype.init_ = function () {
                 return interpretList( yoke, list.ind( 1 ),
                     function ( yoke, interpretedTail ) {
                     
-                    return then( yoke,
-                        pkCons( elem, interpretedTail ) );
+                    return runWaitOne( yoke, function ( yoke ) {
+                        return then( yoke,
+                            pkCons( elem, interpretedTail ) );
+                    } );
                 } );
             } );
         }
@@ -907,13 +926,13 @@ PkRuntime.prototype.init_ = function () {
     setStrictImpl( "binding-interpret", "fn-binding",
         function ( yoke, args ) {
         
-        if ( !isList( listGet( args, 1 ) ) )
+        var nonlocalCaptures = listGet( args, 1 );
+        if ( !isList( nonlocalCaptures ) )
             return pkErr( yoke,
                 "Called binding-interpret with a non-list list of " +
                 "captured values" );
         var captures = listGet( args, 0 ).ind( 0 );
         var bodyBinding = listGet( args, 0 ).ind( 1 );
-        var nonlocalCaptures = listGet( args, 1 );
         return listMap( yoke, captures, function ( yoke, capture ) {
             if ( capture.tag !== "yep" )
                 return pkRet( yoke, pkNil );
@@ -924,8 +943,13 @@ PkRuntime.prototype.init_ = function () {
                 return pkRet( yoke, pk( "yep", value ) );
             } );
         }, function ( yoke, captures ) {
-            return pkRet( yoke, pkfnLinear( captures,
-                function ( yoke, captures, args ) {
+            return pkRet( yoke, pkfnLinear(
+                pkCons( pk( "yep", bodyBinding ), captures ),
+                function ( yoke, bodyBindingAndCaptures, args ) {
+                
+                var bodyBinding =
+                    bodyBindingAndCaptures.ind( 0 ).ind( 0 );
+                var captures = bodyBindingAndCaptures.ind( 1 );
                 
                 return listCount( yoke, captures,
                     function ( maybeCapturedVal ) {
@@ -987,9 +1011,6 @@ PkRuntime.prototype.init_ = function () {
             return pkErr( yoke,
                 "Called binding-interpret with a non-list list of " +
                 "captured values" );
-        // TODO: See if we should respect linearity by dropping
-        // `condBinding`. Heck, see if we should be doing that for
-        // lots of other parameters of other utilities.
         var condBinding = listGet( args, 0 ).ind( 0 );
         var bindingsAndCounts = listGet( args, 0 ).ind( 1 );
         var thenBinding = listGet( args, 0 ).ind( 2 );
@@ -998,6 +1019,13 @@ PkRuntime.prototype.init_ = function () {
             return self.callMethod( yoke, "binding-interpret",
                 pkList( condBinding, outerCaptures ) );
         }, function ( yoke, condValue ) {
+            // TODO: See if there's a better way for us to respect
+            // linearity here. Maybe we should explicitly drop
+            // condValue.
+            if ( condValue.isLinear() )
+                return pkErr( yoke,
+                    "Used binding-for-if to branch on a condition " +
+                    "that was linear" );
             if ( condValue.tag !== "nil" ) {
                 var branchBinding = thenBinding;
                 var getCount = function ( bindingAndCounts ) {
@@ -1048,6 +1076,10 @@ PkRuntime.prototype.init_ = function () {
             return self.callMethod( yoke, "macroexpand-to-fork",
                 pkList( expr.ind( 0 ), getFork ) );
         }, function ( yoke, opFork ) {
+            if ( opFork.isLinear() )
+                return pkErr( yoke,
+                    "Got a linear fork for the operator when doing " +
+                    "macroexpand-to-fork for a cons" );
             return self.runWaitTryGetmacFork( yoke,
                 "macroexpand-to-fork",
                 function ( yoke ) {
@@ -1087,6 +1119,10 @@ PkRuntime.prototype.init_ = function () {
         function isParamName( name ) {
             return paramName.special.jsStr === name.special.jsStr;
         }
+        
+        // TODO: Indent this better.
+        return self.pkDrop( yoke, fork, function ( yoke ) {
+        
         return self.runWaitTryGetmacFork( yoke, "macroexpand-to-fork",
             function ( yoke ) {
             
@@ -1187,7 +1223,9 @@ return runWaitTry( yoke, function ( yoke ) {
                     pkNil
                 ) );
             } );
-       } );
+        } );
+        
+        } );
     } ) );
     
     defMacro( "quote", pkfn( function ( yoke, args ) {
@@ -1207,13 +1245,19 @@ return runWaitTry( yoke, function ( yoke ) {
                 "macro body" );
         if ( !listLenIs( body, 1 ) )
             return pkErrLen( yoke, body, "Expanded quote" );
-        return pkRet( yoke, pk( "getmac-fork",
-            pkGetTine( pkNil, function ( yoke, bindings ) {
-                return pkRet( yoke,
-                    pk( "literal-binding", listGet( body, 0 ) ) );
-            } ),
-            pkNil
-        ) );
+        return self.pkDrop( yoke, fork, function ( yoke ) {
+            return pkRet( yoke, pk( "getmac-fork",
+                pkGetTineLinear( pkNil,
+                    pkList( pk( "yep", listGet( body, 0 ) ) ),
+                    function ( yoke, captures, bindings ) {
+                    
+                    return pkRet( yoke,
+                        pk( "literal-binding",
+                            listGet( captures, 0 ).ind( 0 ) ) );
+                } ),
+                pkNil
+            ) );
+        } );
     } ) );
     
     defMacro( "if", pkfn( function ( yoke, args ) {
@@ -1235,6 +1279,9 @@ return runWaitTry( yoke, function ( yoke ) {
         var condExpr = listGet( body, 0 );
         var thenExpr = listGet( body, 1 );
         var elseExpr = listGet( body, 2 );
+        
+        return self.pkDrop( yoke, fork, function ( yoke ) {
+        
         function tryGetFork( yoke, expr, then ) {
             return self.runWaitTryGetmacFork( yoke,
                 "macroexpand-to-fork",
@@ -1247,7 +1294,6 @@ return runWaitTry( yoke, function ( yoke ) {
                     listGet( getTine, 0 ), listGet( getTine, 1 ) );
             } );
         }
-        
         tryGetFork( yoke, condExpr,
             function ( yoke, condGetTine, condCaptures, condCont ) {
         tryGetFork( yoke, thenExpr,
@@ -1313,6 +1359,7 @@ return runWaitTry( yoke, function ( yoke ) {
         return listMap( yoke, notedBcDedup, function ( yoke, frame ) {
             return pkRet( yoke, listGet( frame, 0 ) );
         }, function ( yoke, bcDedup ) {
+        
         // TODO: Instead of passing in `captures` and `cont`, just
         // pass in a get tine.
         function doCont(
@@ -1381,10 +1428,22 @@ return runWaitTry( yoke, function ( yoke ) {
                 } );
             } );
         }
+        
         return doCont( thenCaptures, thenCont, "revThenInBindings",
             function ( yoke, thenOutBinding ) {
+        
+        if ( thenOutBinding.isLinear() )
+            return pkErr( yoke,
+                "Got a linear then-binding for binding-for-if " +
+                "during if's macroexpander" );
+        
         return doCont( elseCaptures, elseCont, "revElseInBindings",
             function ( yoke, elseOutBinding ) {
+        
+        if ( thenOutBinding.isLinear() )
+            return pkErr( yoke,
+                "Got a linear else-binding for binding-for-if " +
+                "during if's macroexpander" );
         
         return listAppend( yoke, condCaptures, bcDedup,
             function ( yoke, outerCaptures ) {
@@ -1411,6 +1470,7 @@ return runWaitTry( yoke, function ( yoke ) {
                     }, function ( yoke, outerBindingsAndCounts ) {
                         
                         return pkRet( yoke, pk( "binding-for-if",
+                            condBinding,
                             outerBindingsAndCounts,
                             thenOutBinding,
                             elseOutBinding
@@ -1423,7 +1483,9 @@ return runWaitTry( yoke, function ( yoke ) {
         } );
         
         } );
+        
         } );
+        
         } );
         } );
         
@@ -1433,6 +1495,8 @@ return runWaitTry( yoke, function ( yoke ) {
         
         } );
         } );
+        } );
+        
         } );
     } ) );
     
@@ -1641,6 +1705,14 @@ PkRuntime.prototype.pkDup = function ( yoke, val, count ) {
         } );
     }
 };
+PkRuntime.prototype.pkDrop = function ( yoke, val, then ) {
+    var self = this;
+    return runWaitTry( yoke, function ( yoke ) {
+        return self.pkDup( yoke, val, pkNil );
+    }, function ( yoke, nothing ) {
+        return then( yoke );
+    } );
+};
 // TODO: Think of a better name for this than "distributeOneGetTine".
 PkRuntime.prototype.distributeOneGetTine = function (
     yoke, getTine, bindings, then ) {
@@ -1817,25 +1889,27 @@ PkRuntime.prototype.nonMacroMacroexpander = function () {
                             return pkRet( yoke,
                                 listGet( getTine, 0 ) );
                         }, function ( yoke, allNames ) {
-                            return pkRet( yoke, pk( "getmac-fork",
-                                pkGetTine( allNames,
-                                    function ( yoke, allBindings ) {
-                                    
-                                    // <indentation-reset>
-return self.distributeGetTines( yoke, allGetTines, allBindings,
-    function ( yoke, allBindings, inBindingsRemaining ) {
-    
-    if ( !listLenIs( inBindingsRemaining, 0 ) )
-        throw new Error();
-    return pkRet( yoke,
-        pk( "call-binding",
-            allBindings.ind( 0 ),
-            allBindings.ind( 1 ) ) );
-} );
-                                    // </indentation-reset>
-                                } ),
-                                pkNil
-                            ) );
+                            // <indentation-reset>
+return pkRet( yoke, pk( "getmac-fork",
+    pkGetTineLinear( allNames, pkList( pk( "yep", allGetTines ) ),
+        function ( yoke, captures, allInBindings ) {
+        
+        var allGetTines = listGet( captures, 0 ).ind( 0 );
+        return self.distributeGetTines( yoke,
+            allGetTines, allInBindings,
+            function ( yoke, allOutBindings, inBindingsRemaining ) {
+            
+            if ( !listLenIs( inBindingsRemaining, 0 ) )
+                throw new Error();
+            return pkRet( yoke,
+                pk( "call-binding",
+                    allOutBindings.ind( 0 ),
+                    allOutBindings.ind( 1 ) ) );
+        } );
+    } ),
+    pkNil
+) );
+                            // </indentation-reset>
                         } );
                     } );
                 return self.runWaitTryGetmacFork( yoke,
