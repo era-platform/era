@@ -616,6 +616,10 @@ function pkGetTine( names, func ) {
 function PkRuntime() {}
 PkRuntime.prototype.init_ = function () {
     var self = this;
+    self.meta_ = strMap();
+    self.defQueueTail_ = { end: true };
+    self.defQueueHead_ = self.defQueueTail_;
+    
     function defTag( name, var_args ) {
         self.defTag( pkStrName( name ), pkListFromArr(
             arrMap( [].slice.call( arguments, 1 ), function ( s ) {
@@ -639,7 +643,6 @@ PkRuntime.prototype.init_ = function () {
             pkStrName( methodName ), pkStrName( tagName ), call );
     }
     
-    self.meta_ = strMap();
     defTag( "cons", "first", "rest" );
     defVal( "cons", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 2 ) )
@@ -1512,15 +1515,20 @@ PkRuntime.prototype.init_ = function () {
     defVal( "defval", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 2 ) )
             return pkErrLen( yoke, args, "Called defval" );
-        if ( !isName( listGet( args, 0 ) ) )
+        var name = listGet( args, 0 );
+        var val = listGet( args, 1 );
+        if ( !isName( name ) )
             return pkErr( yoke,
                 "Called defval with a non-name name" );
+        if ( val.isLinear() )
+            return pkRawErr( "Called defval with a linear value" );
         if ( !self.allowsDefs( yoke ) )
             return pkErr( yoke,
                 "Called defval without access to top-level " +
                 "definition side effects" );
-        return runRet( yoke,
-            self.defVal( listGet( args, 0 ), listGet( args, 1 ) ) );
+        return self.enqueueDef_( yoke, function () {
+            return self.defVal( name, val );
+        } );
     } ) );
     defVal( "defmacro", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 2 ) )
@@ -1934,9 +1942,30 @@ return pkRet( yoke, pk( "getmac-fork",
         } );
     } );
 };
+PkRuntime.prototype.enqueueDef_ = function ( yoke, body ) {
+    this.defQueueTail_.end = false;
+    this.defQueueTail_.def = body;
+    this.defQueueTail_.next = { end: true };
+    this.defQueueTail_ = this.defQueueTail_.next;
+    return pkRet( yoke, pkNil );
+};
+PkRuntime.prototype.runDefinitions = function ( yoke ) {
+    var queue = this.defQueueHead_;
+    this.defQueueHead_ =
+    this.defQueueTail_ = { end: true };
+    
+    return go( yoke, queue );
+    function go( yoke, queue ) {
+        if ( queue.end )
+            return pkRet( yoke, pkNil );
+        return runWaitTry( yoke, function ( yoke ) {
+            return runRet( yoke, queue.def.call( {} ) );
+        }, function ( yoke, ignored ) {
+            return go( yoke, queue.next );
+        } );
+    }
+};
 PkRuntime.prototype.defVal = function ( name, val ) {
-    if ( val.isLinear() )
-        return pkRawErr( "Called defval with a linear value" );
     var meta = this.prepareMeta_( name, "val" );
     if ( meta === null )
         return pkRawErr(
@@ -2163,6 +2192,13 @@ PkRuntime.prototype.conveniences_macroexpandArrays = function (
     return this.conveniences_macroexpand(
         arraysToConses( arrayExpr ), opt_yoke );
 };
+PkRuntime.prototype.conveniences_pkDrop = function ( val, opt_yoke ) {
+    if ( opt_yoke === void 0 )
+        opt_yoke = this.conveniences_syncYoke;
+    return this.pkDrop( opt_yoke, val, function ( yoke ) {
+        return pkRet( yoke, pkNil );
+    } );
+};
 PkRuntime.prototype.conveniences_interpretBinding = function (
     binding, opt_yoke ) {
     
@@ -2173,6 +2209,14 @@ PkRuntime.prototype.conveniences_interpretBinding = function (
         return self.callMethod( yoke, "binding-interpret",
             pkList( binding, pkNil ) );
     } );
+};
+PkRuntime.prototype.conveniences_runDefinitions = function (
+    opt_yoke ) {
+    
+    var self = this;
+    if ( opt_yoke === void 0 )
+        opt_yoke = self.conveniences_syncYoke;
+    return self.runDefinitions( opt_yoke );
 };
 function makePkRuntime() {
     return new PkRuntime().init_();

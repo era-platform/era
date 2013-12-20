@@ -97,6 +97,22 @@ window.onload = function () {
             } );
         }
         function show( results ) {
+            function reportError( result, errorIntro ) {
+                if ( result.tag === "nope" ) {
+                    displays.push(
+                        "" + errorIntro + " error: " +
+                        result.ind( 0 ) );
+                    return true;
+                } else if ( result.tag !== "yep" ) {
+                    displays.push(
+                        "" + errorIntro + " error " +
+                        "(poorly wrapped): " + result );
+                    return true;
+                } else {
+                    // This is a triumph.
+                    return false;
+                }
+            }
             var displays = [];
             for ( var i = 0, n = results.length; i < n; i++ ) {
                 var result = results[ i ];
@@ -107,41 +123,44 @@ window.onload = function () {
                 var macroexpanded =
                     penknife.conveniences_macroexpandArrays(
                         result.val ).result;
-                if ( macroexpanded.tag === "nope" ) {
-                    displays.push(
-                        "Macroexpansion error: " +
-                        macroexpanded.ind( 0 ) );
-                    break;
-                } else if ( macroexpanded.tag !== "yep" ) {
-                    displays.push(
-                        "Poorly wrapped macroexpansion error: " +
-                        macroexpanded );
+                if ( reportError( macroexpanded,
+                    "Macroexpansion" ) ) {
                     break;
                 } else {
 //                    displays.push(
 //                        "Macroexpansion: " +
 //                        macroexpanded.ind( 0 ) );
                 }
+                var macroexpandedDrop = penknife.conveniences_pkDrop(
+                    macroexpanded ).result;
+                if ( reportError( macroexpandedDrop,
+                    "Macroexpansion result drop" ) )
+                    break;
+                
                 var interpreted =
                     penknife.conveniences_interpretBinding(
                         macroexpanded.ind( 0 ) ).result;
-                if ( interpreted.tag === "nope" ) {
-                    displays.push(
-                        "Interpretation error: " +
-                        interpreted.ind( 0 ) );
-                    break;
-                } else if ( interpreted.tag !== "yep" ) {
-                    displays.push(
-                        "Poorly wrapped interpretation error: " +
-                        interpreted );
+                if ( reportError( interpreted, "Interpretation" ) ) {
                     break;
                 } else {
                     displays.push( "" + interpreted.ind( 0 ) );
 //                    displays.push( "" );
                 }
-                // NOTE: We respect linearity already. A linear value
-                // won't be returned from macroexpansion or
-                // interpretation because no linear values go in.
+                var interpretedDrop = penknife.conveniences_pkDrop(
+                    interpreted ).result;
+                if ( reportError( interpretedDrop,
+                    "Interpretation result drop" ) )
+                    break;
+                
+                var defined =
+                    penknife.conveniences_runDefinitions().result;
+                if ( reportError( defined, "Definition" ) )
+                    break;
+                var definedDrop =
+                    penknife.conveniences_pkDrop( defined ).result;
+                if ( reportError( definedDrop,
+                    "Definition result drop" ) )
+                    break;
             }
             document.getElementById( "result" ).value =
                 displays.join( "\n" );
