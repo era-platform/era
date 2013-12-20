@@ -1021,7 +1021,10 @@ PkRuntime.prototype.init_ = function () {
         }, function ( yoke, condValue ) {
             // TODO: See if there's a better way for us to respect
             // linearity here. Maybe we should explicitly drop
-            // condValue.
+            // condValue. One graceful option would be to bind a
+            // variable to the condition value so there's still
+            // exactly one reference to it, but that would complicate
+            // this code (not to mention breaking its symmetry).
             if ( condValue.isLinear() )
                 return pkErr( yoke,
                     "Used binding-for-if to branch on a condition " +
@@ -1120,7 +1123,6 @@ PkRuntime.prototype.init_ = function () {
             return paramName.special.jsStr === name.special.jsStr;
         }
         
-        // TODO: Indent this better.
         return self.pkDrop( yoke, fork, function ( yoke ) {
         
         return self.runWaitTryGetmacFork( yoke, "macroexpand-to-fork",
@@ -1149,80 +1151,88 @@ PkRuntime.prototype.init_ = function () {
                             } ),
                             pkNil
                         ) );
-                    // TODO: See if we should verify the output of
-                    // `nonlocalGetFork`.
+                    // NOTE: We don't verify the output of
+                    // nonlocalGetFork. Forks are anything that works
+                    // with the fork-to-getmac method and possibly
+                    // other methods, and if we sanitize this output
+                    // using fork-to-getmac followed by getmac-fork,
+                    // we inhibit support for those other methods.
+                    // (By "other methods," I don't necessarily mean
+                    // methods that are part of this language
+                    // implementation; the user can define methods
+                    // too, and the user's own macros can pass forks
+                    // to them.)
                     return self.callMethod( yoke, "call",
                         pkList( nonlocalGetFork, pkList( name ) ) );
                 } )
             ) );
         }, function ( yoke, getTine, maybeMacro ) {
-            var outerNames = listGet( getTine, 0 );
-            return listKeep( yoke, outerNames, function ( name ) {
-                return !isParamName( name );
-            }, function ( yoke, innerNames ) {
-                return pkRet( yoke, pk( "getmac-fork",
-                    pkGetTine( innerNames,
-                        function ( yoke, innerInBindings ) {
-                        
-                        return listFoldl( yoke,
-                            pkList( pkNil, pkNil, pkNil,
-                                innerInBindings ),
-                            outerNames,
-                            function ( yoke, frame, outerName ) {
-                            
-                            var revCaptures = listGet( frame, 0 );
-                            var revInnerOutBindings =
-                                listGet( frame, 1 );
-                            var i = listGet( frame, 2 );
-                            var innerInBindingsLeft =
-                                listGet( frame, 3 );
-                            
-                            var newRevInnerOutBindings =
-                                pkCons( pk( "param-binding", i ),
-                                    revInnerOutBindings );
-                            var newI = pk( "succ", i );
-                            if ( isParamName( outerName ) )
-                                return pkRet( yoke, pkList(
-                                    pkCons( pkNil, revCaptures ),
-                                    newRevInnerOutBindings,
-                                    newI,
-                                    innerInBindingsLeft
-                                ) );
-                            var capture = pk( "yep",
-                                innerInBindingsLeft.ind( 0 ) );
-                            return pkRet( yoke, pkList(
-                                pkCons( capture, revCaptures ),
-                                newRevInnerOutBindings,
-                                newI,
-                                innerInBindingsLeft.ind( 1 )
-                            ) );
-                        }, function ( yoke, frame ) {
-                            var revCaptures = listGet( frame, 0 );
-                            var revInnerOutBindings =
-                                listGet( frame, 1 );
-                            return listRev( yoke, revCaptures,
-                                function ( yoke, captures ) {
-                                
-                                return listRev( yoke,
-                                    revInnerOutBindings,
-                                    function (
-                                        yoke, innerOutBindings ) {
-                                    
-                                    // <indentation-reset>
-return runWaitTry( yoke, function ( yoke ) {
-    return self.callMethod( yoke, "call",
-        pkList( listGet( getTine, 1 ), pkList( innerOutBindings ) ) );
-}, function ( yoke, bodyBinding ) {
-    return pkRet( yoke, pk( "fn-binding", captures, bodyBinding ) );
-} );
-                                    // </indentation-reset>
-                                } );
-                            } );
-                        } );
-                    } ),
-                    pkNil
-                ) );
-            } );
+        
+        var outerNames = listGet( getTine, 0 );
+        return listKeep( yoke, outerNames, function ( name ) {
+            return !isParamName( name );
+        }, function ( yoke, innerNames ) {
+        
+        return pkRet( yoke, pk( "getmac-fork",
+            pkGetTine( innerNames,
+                function ( yoke, innerInBindings ) {
+                
+                return listFoldl( yoke,
+                    pkList( pkNil, pkNil, pkNil, innerInBindings ),
+                    outerNames,
+                    function ( yoke, frame, outerName ) {
+                    
+                    var revCaptures = listGet( frame, 0 );
+                    var revInnerOutBindings = listGet( frame, 1 );
+                    var i = listGet( frame, 2 );
+                    var innerInBindingsLeft = listGet( frame, 3 );
+                    
+                    var newRevInnerOutBindings =
+                        pkCons( pk( "param-binding", i ),
+                            revInnerOutBindings );
+                    var newI = pk( "succ", i );
+                    if ( isParamName( outerName ) )
+                        return pkRet( yoke, pkList(
+                            pkCons( pkNil, revCaptures ),
+                            newRevInnerOutBindings,
+                            newI,
+                            innerInBindingsLeft
+                        ) );
+                    return pkRet( yoke, pkList(
+                        pkCons(
+                            pk( "yep", innerInBindingsLeft.ind( 0 ) ),
+                            revCaptures ),
+                        newRevInnerOutBindings,
+                        newI,
+                        innerInBindingsLeft.ind( 1 )
+                    ) );
+                }, function ( yoke, frame ) {
+                
+                return listRev( yoke, listGet( frame, 0 ),
+                    function ( yoke, captures ) {
+                return listRev( yoke, listGet( frame, 1 ),
+                    function ( yoke, innerOutBindings ) {
+                
+                return runWaitTry( yoke, function ( yoke ) {
+                    return self.callMethod( yoke, "call", pkList(
+                        listGet( getTine, 1 ),
+                        pkList( innerOutBindings )
+                    ) );
+                }, function ( yoke, bodyBinding ) {
+                    return pkRet( yoke,
+                        pk( "fn-binding", captures, bodyBinding ) );
+                } );
+                
+                } );
+                } );
+                
+                } );
+            } ),
+            pkNil
+        ) );
+        
+        } );
+        
         } );
         
         } );
