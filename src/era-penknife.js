@@ -34,11 +34,6 @@
 //     value and some linear output value (typically the yoke).
 //     // TODO: Implement the ability to install arbitrary values as
 //     // yokes.
-//     // TODO: Make definition side effects wait in a queue, so that
-//     // definition-reading can be understood as a pure operation on
-//     // an immutable snapshot of the environment. Then we don't have
-//     // to say every linear value has access to definition-reading
-//     // side effects.
 //
 // nonlinear-as-linear:
 //   private inner value
@@ -617,6 +612,10 @@ function PkRuntime() {}
 PkRuntime.prototype.init_ = function () {
     var self = this;
     self.meta_ = strMap();
+    // NOTE: We make definition side effects wait in a queue, so that
+    // definition-reading can be understood as a pure operation on an
+    // immutable snapshot of the environment. Then we don't have to
+    // say every yoke has access to definition-reading side effects.
     self.defQueueTail_ = { end: true };
     self.defQueueHead_ = self.defQueueTail_;
     
@@ -858,15 +857,10 @@ PkRuntime.prototype.init_ = function () {
             return pkErr( yoke,
                 "Called binding-interpret with a non-list list of " +
                 "captured values" );
-        // TODO: If we ever have allowsGets() return false, and if we
-        // ever allow calling methods (like this one) when it's false,
-        // then uncomment this code. Until then, it will only be a
-        // performance burden.
-//        if ( !self.allowsGets( yoke ) )
-//            return pkErr( yoke,
-//                "Called binding-interpret on a main-binding " +
-//                "without access to top-level definition-reading " +
-//                "side effects" );
+        // NOTE: This reads definitions. We maintain the metaphor that
+        // we work with an immutable snapshot of the definitions, so
+        // we may want to refactor this to be closer to that metaphor
+        // someday.
         return runRet( yoke,
             self.getVal( listGet( args, 0 ).ind( 0 ) ) );
     } );
@@ -1813,13 +1807,10 @@ PkRuntime.prototype.forkGetter = function ( nameForError ) {
             return pkErr( yoke,
                 "Called " + nameForError + " with a non-string name"
                 );
-        // TODO: If we ever have allowsGets() return false, uncomment
-        // this code. Until then, it will only be a performance
-        // burden.
-//        if ( !self.allowsGets( yoke ) )
-//            return pkErr( yoke,
-//                "Called " + nameForError + " without access to " +
-//                "top-level definition-reading side effects" );
+        // NOTE: This reads definitions. We maintain the metaphor that
+        // we work with an immutable snapshot of the definitions, so
+        // we may want to refactor this to be closer to that metaphor
+        // someday.
         return runWaitTry( yoke, function ( yoke ) {
             return runRet( yoke, self.getName( name ) );
         }, function ( yoke, name ) {
@@ -2022,12 +2013,9 @@ PkRuntime.prototype.defMethod = function ( name, args ) {
 PkRuntime.prototype.callMethodRaw = function (
     yoke, methodName, args ) {
     
-    // TODO: If we ever have allowsGets() return false, uncomment this
-    // code. Until then, it will only be a performance burden.
-//    if ( !this.allowsGets( yoke ) )
-//        return pkErr( yoke,
-//            "Called method " + methodName + " without access to " +
-//            "top-level definition-reading side effects" );
+    // NOTE: This reads definitions. We maintain the metaphor that we
+    // work with an immutable snapshot of the definitions, so we may
+    // want to refactor this to be closer to that metaphor someday.
     if ( listLenIs( args, 0 ) )
         return pkErrLen( yoke, args, "Called method " + methodName );
     var meta = this.getMeta_( methodName );
@@ -2133,11 +2121,6 @@ PkRuntime.prototype.getMacro = function ( name ) {
     
     return pkRawErr( "Unbound variable " + name );
 };
-// TODO: If this will ever be false, uncomment it. Until then, nothing
-// actually tries to call it.
-//PkRuntime.prototype.allowsGets = function ( yoke ) {
-//    return true;
-//};
 PkRuntime.prototype.allowsDefs = function ( yoke ) {
     return yoke.allowsDefs;
 };
