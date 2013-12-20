@@ -1300,16 +1300,15 @@ PkRuntime.prototype.init_ = function () {
                 return self.callMethod( yoke, "macroexpand-to-fork",
                     pkList( expr, getFork ) );
             }, function ( yoke, getTine, maybeMacro ) {
-                return then( yoke, getTine,
-                    listGet( getTine, 0 ), listGet( getTine, 1 ) );
+                return then( yoke, getTine, listGet( getTine, 0 ) );
             } );
         }
         tryGetFork( yoke, condExpr,
-            function ( yoke, condGetTine, condCaptures, condCont ) {
+            function ( yoke, condGetTine, condCaptures ) {
         tryGetFork( yoke, thenExpr,
-            function ( yoke, thenGetTine, thenCaptures, thenCont ) {
+            function ( yoke, thenGetTine, thenCaptures ) {
         tryGetFork( yoke, elseExpr,
-            function ( yoke, elseGetTine, elseCaptures, elseCont ) {
+            function ( yoke, elseGetTine, elseCaptures ) {
         
         // Detect the variables captured in both branches, deduplicate
         // them, and use that deduplicated list as a capture list for
@@ -1370,10 +1369,7 @@ PkRuntime.prototype.init_ = function () {
             return pkRet( yoke, listGet( frame, 0 ) );
         }, function ( yoke, bcDedup ) {
         
-        // TODO: Instead of passing in `captures` and `cont`, just
-        // pass in a get tine.
-        function doCont(
-            captures, cont, revInBindingsProperty, then ) {
+        function fulfill( getTine, revInBindingsProperty, then ) {
             
             // NOTE: Here's an example of how this works:
             //
@@ -1401,6 +1397,9 @@ PkRuntime.prototype.init_ = function () {
             // Then we reverse these and concatenate them in abcd
             // order, giving us the concatenation of 034, 21, and 5,
             // which is 034215 as we needed.
+            
+            var captures = listGet( getTine, 0 );
+            var cont = listGet( getTine, 1 );
             
             return listFoldlJs( yoke, pkNil, captures,
                 function ( i, pkName ) {
@@ -1439,7 +1438,7 @@ PkRuntime.prototype.init_ = function () {
             } );
         }
         
-        return doCont( thenCaptures, thenCont, "revThenInBindings",
+        return fulfill( thenGetTine, "revThenInBindings",
             function ( yoke, thenOutBinding ) {
         
         if ( thenOutBinding.isLinear() )
@@ -1447,7 +1446,7 @@ PkRuntime.prototype.init_ = function () {
                 "Got a linear then-binding for binding-for-if " +
                 "during if's macroexpander" );
         
-        return doCont( elseCaptures, elseCont, "revElseInBindings",
+        return fulfill( elseGetTine, "revElseInBindings",
             function ( yoke, elseOutBinding ) {
         
         if ( thenOutBinding.isLinear() )
