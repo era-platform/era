@@ -1521,7 +1521,7 @@ PkRuntime.prototype.init_ = function () {
             return pkErr( yoke,
                 "Called defval with a non-name name" );
         if ( val.isLinear() )
-            return pkRawErr( "Called defval with a linear value" );
+            return pkErr( yoke, "Called defval with a linear value" );
         if ( !self.allowsDefs( yoke ) )
             return pkErr( yoke,
                 "Called defval without access to top-level " +
@@ -1533,15 +1533,21 @@ PkRuntime.prototype.init_ = function () {
     defVal( "defmacro", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 2 ) )
             return pkErrLen( yoke, args, "Called defmacro" );
-        if ( !isName( listGet( args, 0 ) ) )
+        var name = listGet( args, 0 );
+        var macro = listGet( args, 1 );
+        if ( !isName( name ) )
             return pkErr( yoke,
                 "Called defmacro with a non-name name" );
+        if ( macro.isLinear() )
+            return pkErr( yoke,
+                "Called defmacro with a linear macro" );
         if ( !self.allowsDefs( yoke ) )
             return pkErr( yoke,
                 "Called defmacro without access to top-level " +
                 "definition side effects" );
-        return runRet( yoke,
-            self.defMacro( listGet( args, 0 ), listGet( args, 1 ) ) );
+        return self.enqueueDef_( yoke, function () {
+            return self.defMacro( name, macro );
+        } );
     } ) );
     defVal( "deftag", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 2 ) )
@@ -1561,11 +1567,16 @@ PkRuntime.prototype.init_ = function () {
             if ( !valid )
                 return pkErr( yoke,
                     "Called deftag with a non-string argument name" );
+            if ( keys.isLinear() )
+                return pkErr( yoke,
+                    "Called deftag with a linear args list" );
             if ( !self.allowsDefs( yoke ) )
                 return pkErr( yoke,
                     "Called deftag without access to top-level " +
                     "definition side effects" );
-            return runRet( yoke, self.defTag( name, argNames ) );
+            return self.enqueueDef_( yoke, function () {
+                return self.defTag( name, argNames );
+            } );
         } );
     } ) );
     defVal( "defmethod", pkfn( function ( yoke, args ) {
@@ -1587,11 +1598,16 @@ PkRuntime.prototype.init_ = function () {
                 return pkErr( yoke,
                     "Called defmethod with a non-string argument name"
                     );
+            if ( argNames.isLinear() )
+                return pkErr( yoke,
+                    "Called defmethod with a linear args list" );
             if ( !self.allowsDefs( yoke ) )
                 return pkErr( yoke,
                     "Called defmethod without access to top-level " +
                     "definition side effects" );
-            return runRet( yoke, self.defMethod( name, argNames ) );
+            return self.enqueueDef_( yoke, function () {
+                return self.defMethod( name, argNames );
+            } );
         } );
     } ) );
     defVal( "set-impl", pkfn( function ( yoke, args ) {
@@ -1610,14 +1626,15 @@ PkRuntime.prototype.init_ = function () {
             return pkErr( yoke,
                 "Called set-impl without access to top-level " +
                 "definition side effects" );
-        return runRet( yoke,
-            self.setImpl(
+        return self.enqueueDef_( yoke, function () {
+            return self.setImpl(
                 listGet( args, 0 ),
                 listGet( args, 1 ),
                 function ( yoke, args ) {
                     return self.callMethod( yoke, "call",
                         pkList( listGet( args, 2 ), args ) );
-                } ) );
+                } );
+        } );
     } ) );
     
     defVal( "raise", pkfn( function ( yoke, args ) {
@@ -1975,15 +1992,11 @@ PkRuntime.prototype.defVal = function ( name, val ) {
     return pk( "yep", pkNil );
 };
 PkRuntime.prototype.defMacro = function ( name, macro ) {
-    if ( macro.isLinear() )
-        return pkRawErr( "Called defmacro with a linear macro" );
     var meta = this.prepareMeta_( name );
     meta.macro = macro;
     return pk( "yep", pkNil );
 };
 PkRuntime.prototype.defTag = function ( name, keys ) {
-    if ( keys.isLinear() )
-        return pkRawErr( "Called deftag with a linear args list" );
     var meta = this.prepareMeta_( name );
     if ( meta.tagKeys !== void 0 )
         return pkRawErr(
@@ -1993,9 +2006,6 @@ PkRuntime.prototype.defTag = function ( name, keys ) {
     return pk( "yep", pkNil );
 };
 PkRuntime.prototype.defMethod = function ( name, args ) {
-    if ( args.isLinear() )
-        return pkRawErr(
-            "Called defmethod with a linear args list" );
     var meta = this.prepareMeta_( name, "method" );
     if ( meta === null )
         return pkRawErr(
