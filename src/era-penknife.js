@@ -417,22 +417,22 @@ function listAppend( yoke, a, b, then ) {
     } );
 }
 function listFlattenOnce( yoke, list, then ) {
-    // TODO: See if there's a more efficient way to do this.
-    if ( list.tag !== "cons" )
-        return then( yoke, pkNil );
-    if ( list.ind( 1 ).tag !== "cons" )
-        return then( yoke, list.ind( 0 ) );
-    return runWaitOne( yoke, function ( yoke ) {
-        return listFlattenOnce( yoke, list.ind( 1 ),
-            function ( yoke, flatTail ) {
-            
-            return listAppend( yoke, list.ind( 0 ), flatTail,
+    return go( yoke, list, pkNil );
+    function go( yoke, list, revResult ) {
+        if ( list.tag !== "cons" )
+            return listRev( yoke, revResult,
                 function ( yoke, result ) {
                 
                 return then( yoke, result );
             } );
+        return listRevAppend( yoke, list.ind( 0 ), revResult,
+            function ( yoke, revResult ) {
+            
+            return runWaitOne( yoke, function ( yoke ) {
+                return go( yoke, list.ind( 1 ), revResult );
+            } );
         } );
-    } );
+    }
 }
 function listFoldl( yoke, init, list, func, then ) {
     return go( yoke, init, list );
