@@ -123,7 +123,7 @@ Pk.prototype.toString = function () {
         // TODO: See if this toString behavior still makes sense when
         // the name contains spaces, parentheses, quotation marks,
         // etc., or when the name is "nil".
-        return "" + this.ind( 0 );
+        return "" + this.ind( 0 ).special.jsStr;
     }
     if ( this.tag === "string" )
         return JSON.stringify( this.special.jsStr );
