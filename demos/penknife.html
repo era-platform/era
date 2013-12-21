@@ -25,10 +25,10 @@ textarea { display: block; }
 ((fn x (cons x x)) (nil) (nil))
 ((fn x ((fn x (cons x x)) x x)) (nil) (nil))
 
-(defval (string-name quote.list) /fn x x)
+(defval quote.list /fn x x)
 (list quote.a quote.b)
 
-(defval (string-name quote.curried-example) /fn x /fn y (cons y x))
+(defval quote.curried-example /fn x /fn y (cons y x))
 ((curried-example (nil)) (yep/nil))
 </textarea>
 <button id="go">Execute</button>

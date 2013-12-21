@@ -571,7 +571,7 @@ function isEnoughGetTineDeep( yoke, x, then ) {
     if ( !isEnoughGetTineShallow( x ) )
         return then( yoke, false );
     return listAll( yoke, listGet( x, 0 ), function ( name ) {
-        return name.tag === "string";
+        return isName( name );
     }, function ( yoke, result ) {
         return then( yoke, result );
     } );
@@ -622,13 +622,13 @@ PkRuntime.prototype.init_ = function () {
     function defTag( name, var_args ) {
         self.defTag( pkStrName( name ), pkListFromArr(
             arrMap( [].slice.call( arguments, 1 ), function ( s ) {
-                return pkStr( s );
+                return pkStrName( s );
             } ) ) );
     }
     function defMethod( name, var_args ) {
         self.defMethod( pkStrName( name ), pkListFromArr(
             arrMap( [].slice.call( arguments, 1 ), function ( s ) {
-                return pkStr( s );
+                return pkStrName( s );
             } ) ) );
     }
     function defVal( name, val ) {
@@ -758,7 +758,7 @@ PkRuntime.prototype.init_ = function () {
             return pkErrLen( yoke, args, "Called main-binding" );
         if ( !isName( listGet( args, 0 ) ) )
             return pkErr( yoke,
-                "Called main-binding with a non-name name" );
+                "Called main-binding with a non-name" );
         return pkRet( yoke,
             pk( "main-binding", listGet( args, 0 ) ) );
     } ) );
@@ -1065,7 +1065,7 @@ PkRuntime.prototype.init_ = function () {
     } );
     
     defMethod( "macroexpand-to-fork", "self", "get-fork" );
-    setStrictImpl( "macroexpand-to-fork", "string",
+    setStrictImpl( "macroexpand-to-fork", "string-name",
         function ( yoke, args ) {
         
         var expr = listGet( args, 0 );
@@ -1128,10 +1128,11 @@ PkRuntime.prototype.init_ = function () {
         if ( !listLenIs( body, 2 ) )
             return pkErrLen( yoke, body, "Expanded fn" );
         var paramName = listGet( body, 0 );
-        if ( paramName.tag !== "string" )
-            return pkErr( yoke, "Expanded fn with a non-string var" );
+        if ( !isName( paramName ) )
+            return pkErr( yoke, "Expanded fn with a non-name var" );
         function isParamName( name ) {
-            return paramName.special.jsStr === name.special.jsStr;
+            return paramName.special.nameJson ===
+                name.special.nameJson;
         }
         
         return self.pkDrop( yoke, fork, function ( yoke ) {
@@ -1148,10 +1149,9 @@ PkRuntime.prototype.init_ = function () {
                         return pkErrLen( yoke, args,
                             "Called a get-fork" );
                     var name = listGet( args, 0 );
-                    if ( name.tag !== "string" )
+                    if ( !isName( name ) )
                         return pkErr( yoke,
-                            "Called a get-fork with a non-string " +
-                            "name" );
+                            "Called a get-fork with a non-name" );
                     if ( isParamName( name ) )
                         return pkRet( yoke, pk( "getmac-fork",
                             pkGetTine( pkList( name ),
@@ -1570,11 +1570,11 @@ PkRuntime.prototype.init_ = function () {
                 "Called deftag with a non-list list of argument " +
                 "names" );
         return listAll( yoke, argNames, function ( argName ) {
-            return argName.tag === "string";
+            return !isName( argName );
         }, function ( yoke, valid ) {
             if ( !valid )
                 return pkErr( yoke,
-                    "Called deftag with a non-string argument name" );
+                    "Called deftag with a non-name argument name" );
             if ( keys.isLinear() )
                 return pkErr( yoke,
                     "Called deftag with a linear args list" );
@@ -1600,11 +1600,11 @@ PkRuntime.prototype.init_ = function () {
                 "Called defmethod with a non-list list of argument " +
                 "names" );
         return listAll( yoke, argNames, function ( argName ) {
-            return argName.tag === "string";
+            return !isName( argName );
         }, function ( yoke, valid ) {
             if ( !valid )
                 return pkErr( yoke,
-                    "Called defmethod with a non-string argument name"
+                    "Called defmethod with a non-name argument name"
                     );
             if ( argNames.isLinear() )
                 return pkErr( yoke,
@@ -1817,16 +1817,15 @@ PkRuntime.prototype.forkGetter = function ( nameForError ) {
         if ( !listLenIs( args, 1 ) )
             return pkErrLen( yoke, args, "Called " + nameForError );
         var name = listGet( args, 0 );
-        if ( name.tag !== "string" )
+        if ( !isName( name ) )
             return pkErr( yoke,
-                "Called " + nameForError + " with a non-string name"
-                );
+                "Called " + nameForError + " with a non-name" );
         // NOTE: This reads definitions. We maintain the metaphor that
         // we work with an immutable snapshot of the definitions, so
         // we may want to refactor this to be closer to that metaphor
         // someday.
         return runWaitTry( yoke, function ( yoke ) {
-            return runRet( yoke, self.getName( name ) );
+            return runRet( yoke, self.qualifyName( name ) );
         }, function ( yoke, name ) {
             return runWaitTry( yoke, function ( yoke ) {
                 return runRet( yoke, self.getMacro( name ) );
@@ -2114,10 +2113,10 @@ PkRuntime.prototype.getVal = function ( name ) {
     // NOTE: If (meta.macro !== void 0), we don't do anything special.
     return pkRawErr( "Unbound variable " + name );
 };
-PkRuntime.prototype.getName = function ( nameStr ) {
+PkRuntime.prototype.qualifyName = function ( name ) {
     // TODO: If we ever implement namespaces, complicate this method
     // to handle them.
-    return pk( "yep", pkStrNameRaw( nameStr ) );
+    return pk( "yep", name );
 };
 PkRuntime.prototype.getMacro = function ( name ) {
     var meta = this.getMeta_( name );
@@ -2188,7 +2187,7 @@ PkRuntime.prototype.conveniences_macroexpandArrays = function (
     function arraysToConses( arrayExpr ) {
         // TODO: Use something like Lathe.js's _.likeArray() here.
         if ( typeof arrayExpr === "string" )
-            return pkStr( arrayExpr );
+            return pkStrName( arrayExpr );
         else if ( arrayExpr instanceof Array )
             return pkListFromArr(
                 arrMap( arrayExpr, arraysToConses ) );
