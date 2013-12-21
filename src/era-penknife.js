@@ -837,46 +837,59 @@ PkRuntime.prototype.init_ = function () {
     } ) );
     
     // NOTE: We respect linearity in binding-interpret already, but it
-    // has a strange contract. Each binding-interpret call consumes
-    // only part of the list of captured values, but a top-level call
-    // to binding-interpret should always consume the whole thing.
+    // follows an unusual contract. Usually a function will consume or
+    // return all of its linear parameters, but each binding-interpret
+    // call consumes only part of the list of captured values. To be
+    // consistent in this "consume or return" policy, we take each
+    // captured value in the form of a linear-as-nonlinear wrapped
+    // value, so it's technically nonlinear and we have the option to
+    // ignore it.
+    //
+    // NOTE: We don't sanity-check for the linear-as-nonlinear
+    // wrappers, but we do raise an error if we're about to unwrap and
+    // the wrapper isn't there.
+    //
     defMethod( "binding-interpret", "self", "list-of-captured-vals" );
-    setStrictImpl( "binding-interpret", "literal-binding",
-        function ( yoke, args ) {
+    function defBindingInterpret( tag, body ) {
+        setStrictImpl( "binding-interpret", tag,
+            function ( yoke, args ) {
+            
+            var binding = listGet( args, 0 );
+            var captures = listGet( args, 1 );
+            if ( !isList( listGet( args, 1 ) ) )
+                return pkErr( yoke,
+                    "Called binding-interpret with a non-list list " +
+                    "of captured values" );
+            if ( listGet( args, 1 ).isLinear() )
+                return pkErr( yoke,
+                    "Called binding-interpret with a linear list " +
+                    "of captured values" );
+            return body( yoke, binding, captures );
+        } );
+    }
+    defBindingInterpret( "literal-binding",
+        function ( yoke, binding, captures ) {
         
-        if ( !isList( listGet( args, 1 ) ) )
-            return pkErr( yoke,
-                "Called binding-interpret with a non-list list of " +
-                "captured values" );
-        return pkRet( yoke, listGet( args, 0 ).ind( 0 ) );
+        return pkRet( yoke, binding.ind( 0 ) );
     } );
-    setStrictImpl( "binding-interpret", "main-binding",
-        function ( yoke, args ) {
+    defBindingInterpret( "main-binding",
+        function ( yoke, binding, captures ) {
         
-        if ( !isList( listGet( args, 1 ) ) )
-            return pkErr( yoke,
-                "Called binding-interpret with a non-list list of " +
-                "captured values" );
         // NOTE: This reads definitions. We maintain the metaphor that
         // we work with an immutable snapshot of the definitions, so
         // we may want to refactor this to be closer to that metaphor
         // someday.
-        return runRet( yoke,
-            self.getVal( listGet( args, 0 ).ind( 0 ) ) );
+        return runRet( yoke, self.getVal( binding.ind( 0 ) ) );
     } );
-    setStrictImpl( "binding-interpret", "call-binding",
-        function ( yoke, args ) {
+    defBindingInterpret( "call-binding",
+        function ( yoke, binding, captures ) {
         
-        if ( !isList( listGet( args, 1 ) ) )
-            return pkErr( yoke,
-                "Called binding-interpret with a non-list list of " +
-                "captured values" );
         function interpretList( yoke, list, then ) {
             if ( list.tag !== "cons" )
                 return then( yoke, pkNil );
             return runWaitTry( yoke, function ( yoke ) {
                 return self.callMethod( yoke, "binding-interpret",
-                    pkList( list.ind( 0 ), listGet( args, 1 ) ) );
+                    pkList( list.ind( 0 ), captures ) );
             }, function ( yoke, elem ) {
                 return interpretList( yoke, list.ind( 1 ),
                     function ( yoke, interpretedTail ) {
@@ -889,12 +902,10 @@ PkRuntime.prototype.init_ = function () {
             } );
         }
         return runWaitTry( yoke, function ( yoke ) {
-            return self.callMethod( yoke, "binding-interpret", pkList(
-                listGet( args, 0 ).ind( 0 ),
-                listGet( args, 1 )
-            ) );
+            return self.callMethod( yoke, "binding-interpret",
+                pkList( binding.ind( 0 ), captures ) );
         }, function ( yoke, op ) {
-            return interpretList( yoke, listGet( args, 0 ).ind( 1 ),
+            return interpretList( yoke, binding.ind( 1 ),
                 function ( yoke, args ) {
                 
                 return self.callMethod( yoke, "call",
@@ -902,34 +913,31 @@ PkRuntime.prototype.init_ = function () {
             } );
         } );
     } );
-    setStrictImpl( "binding-interpret", "param-binding",
-        function ( yoke, args ) {
+    defBindingInterpret( "param-binding",
+        function ( yoke, binding, captures ) {
         
-        if ( !isList( listGet( args, 1 ) ) )
-            return pkErr( yoke,
-                "Called binding-interpret with a non-list list of " +
-                "captured values" );
-        return listGetNat(
-            yoke, listGet( args, 1 ), listGet( args, 0 ).ind( 0 ),
-            function ( yoke, result ) {
+        return listGetNat( yoke, captures, binding.ind( 0 ),
+            function ( yoke, maybeNonlinearValue ) {
             
-            if ( result.tag !== "yep" )
+            if ( maybeNonlinearValue.tag !== "yep" )
                 return pkErr( yoke,
                     "Tried to interpret a param-binding that fell " +
                     "off the end of the list of captured values" );
-            return pkRet( yoke, result.ind( 0 ) );
+            var nonlinearValue = maybeNonlinearValue.ind( 0 );
+            if ( nonlinearValue.tag !== "linear-as-nonlinear" )
+                return pkErr( yoke,
+                    "Tried to interpret a param-binding, but the " +
+                    "captured value turned out not to be wrapped " +
+                    "up as a linear-as-nonlinear value" );
+            var value = nonlinearValue.ind( 0 );
+            return pkRet( yoke, value );
         } );
     } );
-    setStrictImpl( "binding-interpret", "fn-binding",
-        function ( yoke, args ) {
+    defBindingInterpret( "fn-binding",
+        function ( yoke, binding, nonlocalCaptures ) {
         
-        var nonlocalCaptures = listGet( args, 1 );
-        if ( !isList( nonlocalCaptures ) )
-            return pkErr( yoke,
-                "Called binding-interpret with a non-list list of " +
-                "captured values" );
-        var captures = listGet( args, 0 ).ind( 0 );
-        var bodyBinding = listGet( args, 0 ).ind( 1 );
+        var captures = binding.ind( 0 );
+        var bodyBinding = binding.ind( 1 );
         return listMap( yoke, captures, function ( yoke, capture ) {
             if ( capture.tag !== "yep" )
                 return pkRet( yoke, pkNil );
@@ -979,20 +987,23 @@ PkRuntime.prototype.init_ = function () {
                                 var maybeNlc =
                                     nonlocalCaptures.ind( 0 );
                                 if ( maybeNlc.tag === "yep" )
+                                    return next( argsDuplicates,
+                                        maybeNlc.ind( 0 ) );
+                                return next( argsDuplicates.ind( 1 ),
+                                    argsDuplicates.ind( 0 ) );
+                                function next( argsDuplicates,
+                                    localCapture ) {
+                                    
                                     return go(
                                         yoke,
                                         nonlocalCaptures.ind( 1 ),
                                         argsDuplicates,
-                                        pkCons( maybeNlc.ind( 0 ),
+                                        pkCons(
+                                            pkLinearAsNonlinear(
+                                                localCapture ),
                                             revLocalCaptures )
                                     );
-                                return go(
-                                    yoke,
-                                    nonlocalCaptures.ind( 1 ),
-                                    argsDuplicates.ind( 1 ),
-                                    pkCons( argsDuplicates.ind( 0 ),
-                                        revLocalCaptures )
-                                );
+                                }
                             } );
                         }
                     } );
@@ -1000,18 +1011,13 @@ PkRuntime.prototype.init_ = function () {
             } ) );
         } );
     } );
-    setStrictImpl( "binding-interpret", "binding-for-if",
-        function ( yoke, args ) {
+    defBindingInterpret( "binding-for-if",
+        function ( yoke, binding, outerCaptures ) {
         
-        var outerCaptures = listGet( args, 1 );
-        if ( !isList( outerCaptures ) )
-            return pkErr( yoke,
-                "Called binding-interpret with a non-list list of " +
-                "captured values" );
-        var condBinding = listGet( args, 0 ).ind( 0 );
-        var bindingsAndCounts = listGet( args, 0 ).ind( 1 );
-        var thenBinding = listGet( args, 0 ).ind( 2 );
-        var elseBinding = listGet( args, 0 ).ind( 3 );
+        var condBinding = binding.ind( 0 );
+        var bindingsAndCounts = binding.ind( 1 );
+        var thenBinding = binding.ind( 2 );
+        var elseBinding = binding.ind( 3 );
         return runWaitTry( yoke, function ( yoke ) {
             return self.callMethod( yoke, "binding-interpret",
                 pkList( condBinding, outerCaptures ) );
@@ -1044,8 +1050,16 @@ PkRuntime.prototype.init_ = function () {
                     listGet( bindingAndCounts, 0 ),
                     getCount( bindingAndCounts ) );
             }, function ( yoke, innerCaptures ) {
-                return self.callMethod( yoke, "binding-interpret",
-                    pkList( branchBinding, innerCaptures ) );
+                return listMap( yoke, innerCaptures,
+                    function ( yoke, innerCapture ) {
+                    
+                    return pkRet( yoke,
+                        pkLinearAsNonlinear( innerCapture ) );
+                }, function ( yoke, wrappedInnerCaptures ) {
+                    return self.callMethod( yoke, "binding-interpret",
+                        pkList(
+                            branchBinding, wrappedInnerCaptures ) );
+                } );
             } );
         } );
     } );
