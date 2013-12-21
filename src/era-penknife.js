@@ -483,9 +483,18 @@ function listMappend( yoke, list, func, then ) {
         } );
     } );
 }
-function listKeep( yoke, list, func, then ) {
+function listKeepAsync( yoke, list, func, then ) {
     return listMappend( yoke, list, function ( yoke, elem ) {
-        return pkRet( yoke, func( elem ) ? pkList( elem ) : pkNil );
+        return func( yoke, elem, function ( yoke, keep ) {
+            return pkRet( yoke, keep ? pkList( elem ) : pkNil );
+        } );
+    }, function ( yoke, result ) {
+        return then( yoke, result );
+    } );
+}
+function listKeep( yoke, list, func, then ) {
+    return listKeepAsync( yoke, list, function ( yoke, elem, then ) {
+        return then( yoke, func( elem ) );
     }, function ( yoke, result ) {
         return then( yoke, result );
     } );
@@ -508,14 +517,22 @@ function listLen( yoke, list, then ) {
         return then( yoke, count );
     } );
 }
-function listAny( yoke, list, func, then ) {
+function listAnyAsync( yoke, list, func, then ) {
     if ( list.tag !== "cons" )
         return then( yoke, false );
-    var result = func( list.ind( 0 ) );
-    if ( result )
+    return func( yoke, list.ind( 0 ), function ( yoke, result ) {
+        if ( result )
+            return then( yoke, result );
+        return runWaitOne( yoke, function ( yoke ) {
+            return listAnyAsync( yoke, list.ind( 1 ), func, then );
+        } );
+    } );
+}
+function listAny( yoke, list, func, then ) {
+    return listAnyAsync( yoke, list, function ( yoke, elem, then ) {
+        return then( yoke, func( elem ) );
+    }, function ( yoke, result ) {
         return then( yoke, result );
-    return runWaitOne( yoke, function ( yoke ) {
-        return listAny( yoke, list.ind( 1 ), func, then );
     } );
 }
 function listAll( yoke, list, func, then ) {
@@ -835,6 +852,32 @@ PkRuntime.prototype.init_ = function () {
                     listGet( args, 3 ) ) );
         } );
     } ) );
+    defTag( "let-list-binding",
+        "numbers-of-dups", "source-binding", "body-binding" );
+    defVal( "let-list-binding", pkfn( function ( yoke, args ) {
+        if ( !listLenIs( args, 3 ) )
+            return pkErrLen( yoke, args, "Called len-list-binding" );
+        var numbersOfDups = listGet( args, 0 );
+        var sourceBinding = listGet( args, 1 );
+        var bodyBinding = listGet( args, 2 );
+        if ( !isList( numbersOfDups ) )
+            return pkErr( yoke,
+                "Called len-list-binding with a non-list list of " +
+                "numbers of duplicates" );
+        return listAll( yoke, numbersOfDups,
+            function ( numberOfDups ) {
+            
+            return isNat( numberOfDups );
+        }, function ( yoke, valid ) {
+            if ( !valid )
+                return pkErr( yoke,
+                    "Called len-list-binding with a non-nat number " +
+                    "of duplicates" );
+            return pkRet( yoke,
+                pk( "let-list-binding",
+                    numbersOfDups, sourceBinding, bodyBinding ) );
+        } );
+    } ) );
     
     // NOTE: We respect linearity in binding-interpret already, but it
     // follows an unusual contract. Usually a function will consume or
@@ -1063,6 +1106,54 @@ PkRuntime.prototype.init_ = function () {
             } );
         } );
     } );
+    defBindingInterpret( "let-list-binding",
+        function ( yoke, binding, outerCaptures ) {
+        
+        var numbersOfDups = binding.ind( 0 );
+        var sourceBinding = binding.ind( 1 );
+        var bodyBinding = binding.ind( 2 );
+        return runWaitTry( yoke, function ( yoke ) {
+            return self.callMethod( yoke, "binding-interpret",
+                pkList( sourceBinding, outerCaptures ) );
+        }, function ( yoke, sourceValue ) {
+            return listLenEq( yoke, sourceValue, numbersOfDups,
+                function ( yoke, valid ) {
+                
+                if ( !valid )
+                    return pkErr( yoke,
+                        "Got the wrong number of elements when " +
+                        "destructuring a list" );
+                
+                return listMapTwo( yoke, sourceValue, numbersOfDups,
+                    function ( yoke, sourceElem, numberOfDups ) {
+                    
+                    return self.pkDup( yoke,
+                        sourceElem, numberOfDups );
+                }, function ( yoke, dupsPerElem ) {
+                    return listFlattenOnce( yoke, dupsPerElem,
+                        function ( yoke, dups ) {
+                        
+                        return listMap( yoke, dups,
+                            function ( yoke, dup ) {
+                            
+                            return pkRet( yoke,
+                                pkLinearAsNonlinear( dup ) );
+                        }, function ( yoke, sourceCaptures ) {
+                            return listAppend( yoke,
+                                sourceCaptures, outerCaptures,
+                                function ( yoke, innerCaptures ) {
+                                
+                                return self.callMethod( yoke,
+                                    "binding-interpret",
+                                    pkList( bodyBinding,
+                                        innerCaptures ) );
+                            } );
+                        } );
+                    } );
+                } );
+            } );
+        } );
+    } );
     
     defMethod( "macroexpand-to-fork", "self", "get-fork" );
     setStrictImpl( "macroexpand-to-fork", "string-name",
@@ -1144,37 +1235,10 @@ PkRuntime.prototype.init_ = function () {
                 pkList(
                 
                 listGet( body, 1 ),
-                pkfn( function ( yoke, args ) {
-                    if ( !listLenIs( args, 1 ) )
-                        return pkErrLen( yoke, args,
-                            "Called a get-fork" );
-                    var name = listGet( args, 0 );
-                    if ( !isName( name ) )
-                        return pkErr( yoke,
-                            "Called a get-fork with a non-name" );
-                    if ( isParamName( name ) )
-                        return pkRet( yoke, pk( "getmac-fork",
-                            pkGetTine( pkList( name ),
-                                function ( yoke, bindings ) {
-                                
-                                return pkRet( yoke,
-                                    listGet( bindings, 0 ) );
-                            } ),
-                            pkNil
-                        ) );
-                    // NOTE: We don't verify the output of
-                    // nonlocalGetFork. Forks are anything that works
-                    // with the fork-to-getmac method and possibly
-                    // other methods, and if we sanitize this output
-                    // using fork-to-getmac followed by getmac-fork,
-                    // we inhibit support for those other methods.
-                    // (By "other methods," I don't necessarily mean
-                    // methods that are part of this language
-                    // implementation; the user can define methods
-                    // too, and the user's own macros can pass forks
-                    // to them.)
-                    return self.callMethod( yoke, "call",
-                        pkList( nonlocalGetFork, pkList( name ) ) );
+                self.deriveGetFork_( nonlocalGetFork,
+                    function ( yoke, name, then ) {
+                    
+                    return then( yoke, isParamName( name ) );
                 } )
             ) );
         }, function ( yoke, getTine, maybeMacro ) {
@@ -1476,10 +1540,8 @@ PkRuntime.prototype.init_ = function () {
                     function ( yoke, condBinding, outerBindings ) {
                     
                     return listMapTwo( yoke, bcDedup, outerBindings,
-                        function ( yoke, frame ) {
+                        function ( yoke, pkName, binding ) {
                         
-                        var pkName = listGet( frame, 0 );
-                        var binding = listGet( frame, 1 );
                         var jsName = pkName.special.jsStr;
                         var entry = bcDedup.get( jsName );
                         if ( entry === void 0 )
@@ -1515,6 +1577,114 @@ PkRuntime.prototype.init_ = function () {
         
         } );
         } );
+        } );
+        
+        } );
+    } ) );
+    
+    if ( false )
+    defMacro( "let-list", pkfn( function ( yoke, args ) {
+        if ( !listLenIs( args, 3 ) )
+            return pkErrLen( yoke, args,
+                "Called let-list's macroexpander" );
+        var fork = listGet( args, 0 );
+        var nonlocalGetFork = listGet( args, 1 );
+        var body = listGet( args, 2 );
+        if ( nonlocalGetFork.isLinear() )
+            return pkErr( yoke,
+                "Called let-list's macroexpander with a linear " +
+                "get-fork" );
+        if ( !isList( body ) )
+            return pkErr( yoke,
+                "Called let-list's macroexpander with a non-list " +
+                "macro body" );
+        if ( !listLenIs( body, 3 ) )
+            return pkErrLen( yoke, body, "Expanded let-list" );
+        var varNames = listGet( body, 0 );
+        var sourceExpr = listGet( body, 1 );
+        var bodyExpr = listGet( body, 2 );
+        
+        if ( !isList( varNames ) )
+            return pkErr( yoke,
+                "Expanded let-list with a non-list list of element " +
+                "variables" );
+        
+        return listAll( yoke, varNames, function ( varName ) {
+            return isName( varName );
+        }, function ( yoke, valid ) {
+        
+        if ( !valid )
+            return pkErr( yoke,
+                "Expanded let-list with a non-name variable name" );
+        
+        return self.pkDrop( yoke, fork, function ( yoke ) {
+        
+        return self.runWaitTryGetmacFork( yoke, "macroexpand-to-fork",
+            function ( yoke ) {
+            
+            return self.callMethod( yoke, "macroexpand-to-fork",
+                pkList( sourceExpr, nonlocalGetFork ) );
+        }, function ( yoke, sourceGetTine, maybeMacro ) {
+        
+        function isParamName( yoke, name, then ) {
+            return listAny( yoke, varNames, function ( varName ) {
+                return varName.special.nameJson ===
+                    name.special.nameJson;
+            }, function ( yoke, result ) {
+                return then( yoke, result );
+            } );
+        }
+        
+        return self.runWaitTryGetmacFork( yoke, "macroexpand-to-fork",
+            function ( yoke ) {
+            
+            return self.callMethod( yoke, "macroexpand-to-fork",
+                pkList( bodyExpr,
+                    self.deriveGetFork_( nonlocalGetFork,
+                        function ( yoke, name, then ) {
+                            return isParamName( yoke, name,
+                                function ( yoke, matched ) {
+                                
+                                return then( yoke, matched )
+                            } );
+                        } ) ) );
+        }, function ( yoke, bodyGetTine, maybeMacro ) {
+        
+        var bodyCaptures = listGet( bodyGetTine, 0 );
+        return listKeepAsync( yoke, bodyCaptures,
+            function ( yoke, bodyCapture, then ) {
+            
+            return isParamName( yoke, name,
+                function ( yoke, matched ) {
+                
+                return then( yoke, !matched );
+            } );
+        }, function ( yoke, outerBodyCaptures ) {
+        
+        return listAppend( yoke, sourceCaptures, outerBodyCaptures,
+            function ( yoke, outerCaptures ) {
+        return pkRet( yoke, pk( "getmac-fork",
+            pkGetTine( outerCaptures,
+                function ( yoke, outerBindings ) {
+                
+                return self.fulfillGetTine( yoke,
+                    sourceGetTine, outerBindings,
+                    function ( yoke, sourceBinding, outerBindings ) {
+                    
+                    // TODO: Finish implementing this. Once we do,
+                    // remove the "if ( false )" above.
+                } );
+            } ),
+            pkNil
+        ) );
+        } );
+        
+        } );
+        
+        } );
+        
+        } );
+        
         } );
         
         } );
@@ -1837,6 +2007,42 @@ PkRuntime.prototype.forkGetter = function ( nameForError ) {
                     } ),
                     maybeMacro
                 ) );
+            } );
+        } );
+    } );
+};
+PkRuntime.prototype.deriveGetFork_ = function (
+    nonlocalGetFork, isLocalName ) {
+    
+    var self = this;
+    return pkfn( function ( yoke, args ) {
+        if ( !listLenIs( args, 1 ) )
+            return pkErrLen( yoke, args, "Called a get-fork" );
+        var name = listGet( args, 0 );
+        if ( !isName( name ) )
+            return pkErr( yoke, "Called a get-fork with a non-name" );
+        return isLocalName( yoke, name, function ( yoke, isLocal ) {
+            if ( isLocal )
+                return pkRet( yoke, pk( "getmac-fork",
+                    pkGetTine( pkList( name ),
+                        function ( yoke, bindings ) {
+                        
+                        return pkRet( yoke, listGet( bindings, 0 ) );
+                    } ),
+                    pkNil
+                ) );
+            // NOTE: We don't verify the output of nonlocalGetFork.
+            // Forks are anything that works with the fork-to-getmac
+            // method and possibly other methods, and if we sanitize
+            // this output using fork-to-getmac followed by
+            // getmac-fork, we inhibit support for those other
+            // methods. (By "other methods," I don't necessarily mean
+            // methods that are part of this language implementation;
+            // the user can define methods too, and the user's own
+            // macros can pass forks to them.)
+            return runWaitOne( yoke, function ( yoke ) {
+                return self.callMethod( yoke, "call",
+                    pkList( nonlocalGetFork, pkList( name ) ) );
             } );
         } );
     } );
@@ -2228,9 +2434,9 @@ function makePkRuntime() {
     return new PkRuntime().init_();
 }
 
-// TODO: Define a destructuring let that raises an error if it doesn't
-// match. By doing this, it doesn't need to use condition-guarded
-// aliasing like the `if` macro does.
+// TODO: Finish defining `let-list`, a destructuring let that raises
+// an error if it doesn't match. By doing this, it doesn't need to use
+// condition-guarded aliasing like the `if` macro does.
 // TODO: Define gensyms.
 // TODO: Define assignment.
 // TODO: Define a staged conditional, preferably from the Penknife
