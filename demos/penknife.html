@@ -30,6 +30,8 @@ textarea { display: block; }
 
 (defval quote.curried-example /fn x /fn y (cons y x))
 ((curried-example (nil)) (yep/nil))
+
+(let-list (a b) (list quote.foo quote.bar) a)
 </textarea>
 <button id="go">Execute</button>
 <textarea id="result" disabled cols="80" rows="24"></textarea>

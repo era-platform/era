@@ -1140,7 +1140,7 @@ PkRuntime.prototype.init_ = function () {
                                 pkLinearAsNonlinear( dup ) );
                         }, function ( yoke, sourceCaptures ) {
                             return listAppend( yoke,
-                                sourceCaptures, outerCaptures,
+                                outerCaptures, sourceCaptures,
                                 function ( yoke, innerCaptures ) {
                                 
                                 return self.callMethod( yoke,
@@ -1582,7 +1582,6 @@ PkRuntime.prototype.init_ = function () {
         } );
     } ) );
     
-    if ( false )
     defMacro( "let-list", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 3 ) )
             return pkErrLen( yoke, args,
@@ -1615,7 +1614,8 @@ PkRuntime.prototype.init_ = function () {
         
         if ( !valid )
             return pkErr( yoke,
-                "Expanded let-list with a non-name variable name" );
+                "Expanded let-list with a non-name element variable"
+                );
         
         return self.pkDrop( yoke, fork, function ( yoke ) {
         
@@ -1626,42 +1626,15 @@ PkRuntime.prototype.init_ = function () {
                 pkList( sourceExpr, nonlocalGetFork ) );
         }, function ( yoke, sourceGetTine, maybeMacro ) {
         
-        function isParamName( yoke, name, then ) {
-            return listAny( yoke, varNames, function ( varName ) {
-                return varName.special.nameJson ===
-                    name.special.nameJson;
-            }, function ( yoke, result ) {
-                return then( yoke, result );
-            } );
-        }
+        var sourceCaptures = listGet( sourceGetTine, 0 );
         
-        return self.runWaitTryGetmacFork( yoke, "macroexpand-to-fork",
-            function ( yoke ) {
-            
-            return self.callMethod( yoke, "macroexpand-to-fork",
-                pkList( bodyExpr,
-                    self.deriveGetFork_( nonlocalGetFork,
-                        function ( yoke, name, then ) {
-                            return isParamName( yoke, name,
-                                function ( yoke, matched ) {
-                                
-                                return then( yoke, matched )
-                            } );
-                        } ) ) );
-        }, function ( yoke, bodyGetTine, maybeMacro ) {
+        return self.makeGetTineUnderMappendedArgs_(
+            yoke, nonlocalGetFork, bodyExpr, varNames,
+            function ( yoke, bodyDupsList, bodyGetTine ) {
         
         var bodyCaptures = listGet( bodyGetTine, 0 );
-        return listKeepAsync( yoke, bodyCaptures,
-            function ( yoke, bodyCapture, then ) {
-            
-            return isParamName( yoke, name,
-                function ( yoke, matched ) {
-                
-                return then( yoke, !matched );
-            } );
-        }, function ( yoke, outerBodyCaptures ) {
         
-        return listAppend( yoke, sourceCaptures, outerBodyCaptures,
+        return listAppend( yoke, sourceCaptures, bodyCaptures,
             function ( yoke, outerCaptures ) {
         return pkRet( yoke, pk( "getmac-fork",
             pkGetTine( outerCaptures,
@@ -1670,15 +1643,22 @@ PkRuntime.prototype.init_ = function () {
                 return self.fulfillGetTine( yoke,
                     sourceGetTine, outerBindings,
                     function ( yoke, sourceBinding, outerBindings ) {
-                    
-                    // TODO: Finish implementing this. Once we do,
-                    // remove the "if ( false )" above.
+                return self.fulfillGetTine( yoke,
+                    bodyGetTine, outerBindings,
+                    function ( yoke, bodyBinding, outerBindings ) {
+                
+                if ( !listLenIs( outerBindings, 0 ) )
+                    throw new Error();
+                
+                return pkRet( yoke,
+                    pk( "let-list-binding",
+                        bodyDupsList, sourceBinding, bodyBinding ) );
+                
+                } );
                 } );
             } ),
             pkNil
         ) );
-        } );
-        
         } );
         
         } );
@@ -1979,6 +1959,158 @@ PkRuntime.prototype.fulfillGetTines = function (
                     inBindingsRemaining );
             } );
         } );
+    } );
+};
+PkRuntime.prototype.makeGetTineUnderMappendedArgs_ = function (
+    yoke, nonlocalGetFork, expr, argList, then ) {
+    
+    // TODO: Use this for `binding-for-if`, not just
+    // `let-list-binding`.
+    
+    // Here's an example of how this works:
+    //
+    // Suppose `captures` contains abbaac and `argList` contains abcd,
+    // and suppose `lenNonlocalNames` is 0. Eventually, when we get to
+    // the `binding-interpret` behavior for `binding-for-if` or
+    // `let-list-binding`, we're going to do a listMappend to pkDup
+    // each element of abcd, giving us aaabbc. Thus the bindings we
+    // want to insert into `cont` are `param-binding` values with
+    // indices 034125. (The 0--12- in here looks up aaa---, the -34---
+    // in here looks up ---bb-, and the -----5 in here looks up
+    // -----c, so we end up with a--aa-, -bb---, and -----c, or
+    // abbaac.
+    //
+    // In order to get this sequence, 034125, we iterate over abbaac
+    // and for each variable, we push our iteration index onto a stack
+    // associated with that variable. We get cons lists that look like
+    // this:
+    //
+    // a 430
+    // b 21
+    // c 5
+    // d (empty)
+    //
+    // Then we reverse these and concatenate them in abcd order,
+    // giving us the concatenation of 034, 21, and 5, which is 034215
+    // as we needed.
+    
+    var self = this;
+    
+    // TODO: See if there's a way to do this without mutation without
+    // our time performance becoming a quadratic (or worse) function
+    // of the length of `latestOccurrenceArgList`.
+    var map = strMap();
+    function getEntry( pkName ) {
+        var jsName = pkName.special.jsStr;
+        return map.get( jsName );
+    }
+    
+    // Build an deduplicated version of `argList`, where a duplicated
+    // name only appears in its last occurrence. For instance, abac
+    // becomes bac. The result is `latestOccurrenceArgList`. While
+    // building this result, also initialize `map` so we can easily
+    // detect whether a name in `captures` is local or nonlocal later
+    // on.
+    return listRev( yoke, argList, function ( yoke, revArgList ) {
+    return listMap( yoke, revArgList, function ( yoke, pkName ) {
+        
+        var jsName = pkName.special.jsStr;
+        var entry = map.get( jsName );
+        if ( entry === void 0 ) {
+            entry = { dups: pkNil, revInBindings: pkNil };
+            map.set( jsName, entry );
+            return pkRet( yoke, pkNil );
+        } else {
+            entry.dups = pk( "succ", entry.dups );
+            return pkRet( yoke, pk( "yep", pkName ) );
+        }
+    }, function ( yoke, revMaybeArgList ) {
+    return listRev( yoke, revMaybeArgList,
+        function ( yoke, maybeArgList ) {
+    return listMap( yoke, maybeArgList,
+        function ( yoke, maybePkName ) {
+        
+        if ( maybePkName.tag === "yep" )
+            return pkRet( yoke,
+                getEntry( maybePkName.ind( 0 ) ).dups );
+        else
+            return pkRet( yoke, pkNil );
+    }, function ( yoke, dupsList ) {
+    return listMappend( yoke, maybeArgList,
+        function ( yoke, maybePkName ) {
+        
+        if ( maybePkName.tag === "yep" )
+            return pkRet( yoke, pkList( maybePkName.ind( 0 ) ) );
+        else
+            return pkRet( yoke, pkNil );
+    }, function ( yoke, latestOccurrenceArgList ) {
+    
+    return self.runWaitTryGetmacFork( yoke, "macroexpand-to-fork",
+        function ( yoke ) {
+        
+        return self.callMethod( yoke, "macroexpand-to-fork", pkList(
+            expr,
+            self.deriveGetFork_( nonlocalGetFork,
+                function ( yoke, name, then ) {
+                    return then( yoke, getEntry( name ) !== void 0 );
+                } )
+        ) );
+    }, function ( yoke, innerGetTine, maybeMacro ) {
+    
+    var captures = listGet( innerGetTine, 0 );
+    var cont = listGet( innerGetTine, 1 );
+    
+    return listKeep( yoke, captures, function ( pkName ) {
+        return getEntry( pkName ) === void 0;
+    }, function ( yoke, nonlocalNames ) {
+    return listLen( yoke, nonlocalNames,
+        function ( yoke, lenNonlocalNames ) {
+    
+    return listFoldlJs( yoke, lenNonlocalNames, captures,
+        function ( i, pkName ) {
+        
+        var entry = getEntry( pkName );
+        if ( entry === void 0 )  // nonlocal
+            return i;
+        entry.revInBindings =
+            pkCons( pk( "param-binding", i ), entry.revInBindings );
+        return pk( "succ", i );
+    }, function ( yoke, stopIndex ) {
+    
+    return listMappend( yoke, latestOccurrenceArgList,
+        function ( yoke, pkName ) {
+        
+        return listRev( yoke, getEntry( pkName ),
+            function ( yoke, theseInBindings ) {
+            
+            return pkRet( yoke, theseInBindings );
+        } );
+    }, function ( yoke, localInBindings ) {
+    
+    return then( yoke, dupsList, pkGetTine( nonlocalNames,
+        function ( yoke, nonlocalInBindings ) {
+        
+        return listAppend( yoke, nonlocalInBindings, localInBindings,
+            function ( yoke, inBindings ) {
+            
+            return self.callMethod( yoke, "call",
+                pkList( cont, pkList( inBindings ) ) );
+        } );
+    } ) );
+    
+    } );
+    
+    } );
+    
+    } );
+    } );
+    
+    } );
+    
+    } );
+    } );
+    } );
+    } );
     } );
 };
 PkRuntime.prototype.forkGetter = function ( nameForError ) {
