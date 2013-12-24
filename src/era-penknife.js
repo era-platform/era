@@ -542,6 +542,14 @@ function listAll( yoke, list, func, then ) {
         return then( yoke, !failed );
     } );
 }
+function listEach( yoke, list, func, then ) {
+    return listAny( yoke, list, function ( elem ) {
+        func( elem );
+        return false;
+    }, function ( yoke, ignored ) {
+        return then( yoke );
+    } );
+}
 function listMapMultiWithLen( yoke, nat, lists, func, then ) {
     return go( yoke, nat, lists, pkNil );
     function go( yoke, nat, lists, revResults ) {
@@ -1424,7 +1432,7 @@ PkRuntime.prototype.init_ = function () {
             var isThenPk = listGet( frame, 1 );
             
             var isThenJs = isThenPk.tag === "yep";
-            var jsName = pkName.special.jsStr;
+            var jsName = pkName.special.nameJson;
             var entry = bcDedupMap.get( jsName );
             if ( entry === void 0 )
                 bcDedupMap.set( jsName, entry = {
@@ -1479,7 +1487,7 @@ PkRuntime.prototype.init_ = function () {
             return listFoldlJs( yoke, pkNil, captures,
                 function ( i, pkName ) {
                 
-                var jsName = pkName.special.jsStr;
+                var jsName = pkName.special.nameJson;
                 var entry = bcDedupMap.get( jsName );
                 if ( entry === void 0 )
                     throw new Error();
@@ -1492,7 +1500,7 @@ PkRuntime.prototype.init_ = function () {
                 return listMappend( yoke, bcDedup,
                     function ( yoke, pkName ) {
                     
-                    var jsName = pkName.special.jsStr;
+                    var jsName = pkName.special.nameJson;
                     var entry = bcDedupMap.get( jsName );
                     if ( entry === void 0 )
                         throw new Error();
@@ -1542,7 +1550,7 @@ PkRuntime.prototype.init_ = function () {
                     return listMapTwo( yoke, bcDedup, outerBindings,
                         function ( yoke, pkName, binding ) {
                         
-                        var jsName = pkName.special.jsStr;
+                        var jsName = pkName.special.nameJson;
                         var entry = bcDedup.get( jsName );
                         if ( entry === void 0 )
                             throw new Error();
@@ -2001,7 +2009,7 @@ PkRuntime.prototype.makeGetTineUnderMappendedArgs_ = function (
     // of the length of `latestOccurrenceArgList`.
     var map = strMap();
     function getEntry( pkName ) {
-        var jsName = pkName.special.jsStr;
+        var jsName = pkName.special.nameJson;
         return map.get( jsName );
     }
     
@@ -2014,28 +2022,17 @@ PkRuntime.prototype.makeGetTineUnderMappendedArgs_ = function (
     return listRev( yoke, argList, function ( yoke, revArgList ) {
     return listMap( yoke, revArgList, function ( yoke, pkName ) {
         
-        var jsName = pkName.special.jsStr;
+        var jsName = pkName.special.nameJson;
         var entry = map.get( jsName );
         if ( entry === void 0 ) {
-            entry = { dups: pkNil, revInBindings: pkNil };
-            map.set( jsName, entry );
-            return pkRet( yoke, pkNil );
-        } else {
-            entry.dups = pk( "succ", entry.dups );
+            map.set( jsName, { dups: pkNil, revInBindings: pkNil } );
             return pkRet( yoke, pk( "yep", pkName ) );
+        } else {
+            return pkRet( yoke, pkNil );
         }
     }, function ( yoke, revMaybeArgList ) {
     return listRev( yoke, revMaybeArgList,
         function ( yoke, maybeArgList ) {
-    return listMap( yoke, maybeArgList,
-        function ( yoke, maybePkName ) {
-        
-        if ( maybePkName.tag === "yep" )
-            return pkRet( yoke,
-                getEntry( maybePkName.ind( 0 ) ).dups );
-        else
-            return pkRet( yoke, pkNil );
-    }, function ( yoke, dupsList ) {
     return listMappend( yoke, maybeArgList,
         function ( yoke, maybePkName ) {
         
@@ -2060,6 +2057,21 @@ PkRuntime.prototype.makeGetTineUnderMappendedArgs_ = function (
     var captures = listGet( innerGetTine, 0 );
     var cont = listGet( innerGetTine, 1 );
     
+    return listEach( yoke, captures, function ( pkName ) {
+        var entry = getEntry( pkName );
+        if ( entry !== void 0 )
+            entry.dups = pk( "succ", entry.dups );
+    }, function ( yoke ) {
+    return listMap( yoke, maybeArgList,
+        function ( yoke, maybePkName ) {
+        
+        if ( maybePkName.tag === "yep" )
+            return pkRet( yoke,
+                getEntry( maybePkName.ind( 0 ) ).dups );
+        else
+            return pkRet( yoke, pkNil );
+    }, function ( yoke, dupsList ) {
+    
     return listKeep( yoke, captures, function ( pkName ) {
         return getEntry( pkName ) === void 0;
     }, function ( yoke, nonlocalNames ) {
@@ -2080,7 +2092,7 @@ PkRuntime.prototype.makeGetTineUnderMappendedArgs_ = function (
     return listMappend( yoke, latestOccurrenceArgList,
         function ( yoke, pkName ) {
         
-        return listRev( yoke, getEntry( pkName ),
+        return listRev( yoke, getEntry( pkName ).revInBindings,
             function ( yoke, theseInBindings ) {
             
             return pkRet( yoke, theseInBindings );
@@ -2106,8 +2118,10 @@ PkRuntime.prototype.makeGetTineUnderMappendedArgs_ = function (
     } );
     
     } );
+    } );
     
     } );
+    
     } );
     } );
     } );
