@@ -32,8 +32,10 @@
 //     represents imperative side effects. If this transformation uses
 //     any side effects, those effects correspond to some linear input
 //     value and some linear output value (typically the yoke).
-//     // TODO: Implement the ability to install arbitrary values as
-//     // yokes.
+//     //
+//     // TODO: Actually, `yoke-top-level-definer` supports side
+//     // effects and isn't linear. See if we can redesign it to be
+//     // linear.
 //
 // nonlinear-as-linear:
 //   private inner value
@@ -65,7 +67,6 @@
 //     // TODO: When creating a Penknife string, verify that the
 //     // JavaScript string has proper UTF-16 surrogate pairs.
 //
-// // TODO: Implement tokens. We don't have a use for them yet.
 // token:
 //   private JavaScript token
 //     A value which can be checked for equality and used as a lookup
@@ -160,6 +161,10 @@ function pkLinearAsNonlinear( innerValue ) {
     return new Pk().init_( null, "linear-as-nonlinear",
         pkList( innerValue ), !"isLinear", {} );
 }
+function pkToken( jsObj ) {
+    return new Pk().init_(
+        null, "token", pkNil, !"isLinear", { jsObj: jsObj } );
+}
 function pk( tag, var_args ) {
     var args = pkListFromArr( [].slice.call( arguments, 1 ) );
     return new Pk().init_( null, tag, args, args.isLinear(), {} );
@@ -168,9 +173,8 @@ function pkIsStruct( x ) {
     return x.tag !== "fn" &&
         x.tag !== "nonlinear-as-linear" &&
         x.tag !== "linear-as-nonlinear" &&
-        x.tag !== "string";
-        // TODO: Once we have tokens, add this.
-//        x.tag !== "token";
+        x.tag !== "string" &&
+        x.tag !== "token";
 }
 function pkGetArgs( val ) {
     if ( !pkIsStruct( val ) )
@@ -207,9 +211,8 @@ function pkGetLeaves( yoke, tree ) {
     if ( tree.tag === "nonlinear-as-linear" )
         return pkRet( yoke, pkList( tree ) );
     if ( tree.tag === "linear-as-nonlinear"
-        || tree.tag === "string" )
-        // TODO: Once we have tokens, add this.
-//        || tree.tag === "token" )
+        || tree.tag === "string"
+        || tree.tag === "token" )
         return pkRet( yoke, pkNil );
     if ( pkIsStruct( tree ) )
         return listMappend( yoke, pkGetArgs( tree ),
@@ -235,9 +238,8 @@ function pkMapLeaves( yoke, tree, func ) {
     if ( tree.tag === "nonlinear-as-linear" )
         return func( yoke, tree );
     if ( tree.tag === "linear-as-nonlinear"
-        || tree.tag === "string" )
-        // TODO: Once we have tokens, add this.
-//        || tree.tag === "token" )
+        || tree.tag === "string"
+        || tree.tag === "token" )
         return pkRet( yoke, tree );
     if ( pkIsStruct( tree ) )
         return listMap( yoke, pkGetArgs( tree ),
@@ -301,6 +303,9 @@ function isNat( x ) {
 function isName( x ) {
     return x.tag === "string-name";
 }
+function tokenEq( a, b ) {
+    return a.special.jsObj === b.special.jsObj;
+}
 function listGet( x, i ) {
     for ( ; 0 < i; i-- ) {
         if ( x.tag !== "cons" )
@@ -340,6 +345,13 @@ function pkErrLen( yoke, args, message ) {
         len === null ? "way too many args" :
         len === 1 ? "1 arg" :
             "" + len + " args") );
+}
+function yokeWithRider( yoke, rider ) {
+    return {
+        yokeRider: rider,
+        definerToken: yoke.definerToken,
+        runWaitLinear: yoke.runWaitLinear
+    };
 }
 function runWait( yoke, func, then ) {
     return yoke.runWaitLinear( function ( yoke ) {
@@ -785,6 +797,22 @@ PkRuntime.prototype.init_ = function () {
             listGet( args, 0 ).special.captures,
             listGet( args, 1 )
         );
+    } );
+    
+    defTag( "sync-yoke" );
+    defTag( "top-level-definer-yoke", "definer-token" );
+    defMethod( "yoke-get-top-level-definer-token", "yoke" );
+    setStrictImpl( "yoke-get-top-level-definer-token", "sync-yoke",
+        function ( yoke, args ) {
+        
+        return pkRet( yoke, pkNil );
+    } );
+    setStrictImpl( "yoke-get-top-level-definer-token",
+        "top-level-definer-yoke",
+        function ( yoke, args ) {
+        
+        return pkRet( yoke,
+            pk( "yep", listGet( args, 0 ).ind( 0 ) ) );
     } );
     
     defTag( "getmac-fork", "get-tine", "maybe-macro" );
@@ -1639,6 +1667,16 @@ PkRuntime.prototype.init_ = function () {
         } );
     } ) );
     
+    // This takes an explicit input and installs it as the implicit
+    // yoke. It also takes the old implicit yoke and returns it as the
+    // explict output.
+    defVal( "yoke-trade", pkfn( function ( yoke, args ) {
+        if ( !listLenIs( args, 1 ) )
+            return pkErrLen( yoke, args, "Called yoke-trade" );
+        var newYoke = yokeWithRider( yoke, listGet( args, 0 ) );
+        return pkRet( newYoke, yoke.yokeRider );
+    } ) );
+    
     defVal( "defval", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 2 ) )
             return pkErrLen( yoke, args, "Called defval" );
@@ -1649,12 +1687,14 @@ PkRuntime.prototype.init_ = function () {
                 "Called defval with a non-name name" );
         if ( val.isLinear() )
             return pkErr( yoke, "Called defval with a linear value" );
-        if ( !self.allowsDefs( yoke ) )
-            return pkErr( yoke,
-                "Called defval without access to top-level " +
-                "definition side effects" );
-        return self.enqueueDef_( yoke, function () {
-            return self.defVal( name, val );
+        return self.allowsDefs( yoke, function ( yoke, valid ) {
+            if ( !valid )
+                return pkErr( yoke,
+                    "Called defval without access to top-level " +
+                    "definition side effects" );
+            return self.enqueueDef_( yoke, function () {
+                return self.defVal( name, val );
+            } );
         } );
     } ) );
     defVal( "defmacro", pkfn( function ( yoke, args ) {
@@ -1668,12 +1708,14 @@ PkRuntime.prototype.init_ = function () {
         if ( macro.isLinear() )
             return pkErr( yoke,
                 "Called defmacro with a linear macro" );
-        if ( !self.allowsDefs( yoke ) )
-            return pkErr( yoke,
-                "Called defmacro without access to top-level " +
-                "definition side effects" );
-        return self.enqueueDef_( yoke, function () {
-            return self.defMacro( name, macro );
+        return self.allowsDefs( yoke, function ( yoke, valid ) {
+            if ( !valid )
+                return pkErr( yoke,
+                    "Called defmacro without access to top-level " +
+                    "definition side effects" );
+            return self.enqueueDef_( yoke, function () {
+                return self.defMacro( name, macro );
+            } );
         } );
     } ) );
     defVal( "deftag", pkfn( function ( yoke, args ) {
@@ -1697,12 +1739,14 @@ PkRuntime.prototype.init_ = function () {
             if ( keys.isLinear() )
                 return pkErr( yoke,
                     "Called deftag with a linear args list" );
-            if ( !self.allowsDefs( yoke ) )
-                return pkErr( yoke,
-                    "Called deftag without access to top-level " +
-                    "definition side effects" );
-            return self.enqueueDef_( yoke, function () {
-                return self.defTag( name, argNames );
+            return self.allowsDefs( yoke, function ( yoke, valid ) {
+                if ( !valid )
+                    return pkErr( yoke,
+                        "Called deftag without access to top-level " +
+                        "definition side effects" );
+                return self.enqueueDef_( yoke, function () {
+                    return self.defTag( name, argNames );
+                } );
             } );
         } );
     } ) );
@@ -1728,12 +1772,14 @@ PkRuntime.prototype.init_ = function () {
             if ( argNames.isLinear() )
                 return pkErr( yoke,
                     "Called defmethod with a linear args list" );
-            if ( !self.allowsDefs( yoke ) )
-                return pkErr( yoke,
-                    "Called defmethod without access to top-level " +
-                    "definition side effects" );
-            return self.enqueueDef_( yoke, function () {
-                return self.defMethod( name, argNames );
+            return self.allowsDefs( yoke, function ( yoke, valid ) {
+                if ( !valid )
+                    return pkErr( yoke,
+                        "Called defmethod without access to " +
+                        "top-level definition side effects" );
+                return self.enqueueDef_( yoke, function () {
+                    return self.defMethod( name, argNames );
+                } );
             } );
         } );
     } ) );
@@ -1749,18 +1795,20 @@ PkRuntime.prototype.init_ = function () {
         if ( listGet( args, 2 ).isLinear() )
             return pkErr( yoke,
                 "Called set-impl with a linear function" );
-        if ( !self.allowsDefs( yoke ) )
-            return pkErr( yoke,
-                "Called set-impl without access to top-level " +
-                "definition side effects" );
-        return self.enqueueDef_( yoke, function () {
-            return self.setImpl(
-                listGet( args, 0 ),
-                listGet( args, 1 ),
-                function ( yoke, args ) {
-                    return self.callMethod( yoke, "call",
-                        pkList( listGet( args, 2 ), args ) );
-                } );
+        return self.allowsDefs( yoke, function ( yoke, valid ) {
+            if ( !valid )
+                return pkErr( yoke,
+                    "Called set-impl without access to top-level " +
+                    "definition side effects" );
+            return self.enqueueDef_( yoke, function () {
+                return self.setImpl(
+                    listGet( args, 0 ),
+                    listGet( args, 1 ),
+                    function ( yoke, args ) {
+                        return self.callMethod( yoke, "call",
+                            pkList( listGet( args, 2 ), args ) );
+                    } );
+            } );
         } );
     } ) );
     
@@ -2438,27 +2486,62 @@ PkRuntime.prototype.getMacro = function ( name ) {
     
     return pkRawErr( "Unbound variable " + name );
 };
-PkRuntime.prototype.allowsDefs = function ( yoke ) {
-    return yoke.allowsDefs;
+PkRuntime.prototype.allowsDefs = function ( yoke, then ) {
+    var self = this;
+    var yokeRider = yoke.yokeRider;
+    var pureYoke = yokeWithRider( yoke, pk( "pure-yoke" ) );
+    return runWaitTry( pureYoke, function ( pureYoke ) {
+        return self.callMethod( pureYoke,
+            "yoke-get-top-level-definer-token", pkList( yokeRider ) );
+    }, function ( pureYoke, maybeDefinerToken ) {
+        var yoke = yokeWithRider( pureYoke, yokeRider );
+        if ( maybeDefinerToken.tag === "yep" ) {
+            var definerToken = maybeDefinerToken.ind( 0 );
+            if ( definerToken.tag !== "token" )
+                return pkErr( yoke,
+                    "Got a non-token from " +
+                    "yoke-get-top-level-definer-token" );
+            return then( yoke,
+                yoke.definerToken !== null &&
+                    tokenEq( yoke.definerToken, definerToken ) );
+        } else if ( maybeDefinerToken.tag === "nil" ) {
+            return then( yoke, false );
+        } else {
+            return pkErr( yoke,
+                "Got a non-maybe from " +
+                "yoke-get-top-level-definer-token" );
+        }
+    } );
 };
 // TODO: Figure out if we should manage `allowsDefs` in a more
 // encapsulated and/or generalized way.
+// TODO: See if we should be temporarily augmenting the available side
+// effects, rather than temporarily replacing them.
 PkRuntime.prototype.withAllowsDefs = function ( yoke, body ) {
+    var definerToken = pkToken( {} );
     var empoweredYoke = {
-        allowsDefs: true,
+        yokeRider: pk( "top-level-definer-yoke", definerToken ),
+        definerToken: definerToken,
         runWaitLinear: yoke.runWaitLinear
     };
-    var yokeAndResult = body( empoweredYoke );
-    var disempoweredYoke = {
-        allowsDefs: yoke.allowsDefs,
-        runWaitLinear: yokeAndResult.yoke.runWaitLinear
-    };
-    return runRet( disempoweredYoke, yokeAndResult.result );
+    return runWait( empoweredYoke, function ( empoweredYoke ) {
+        return body( empoweredYoke );
+    }, function ( empoweredYoke, result ) {
+        var disempoweredYoke = {
+            yokeRider: yoke.yokeRider,
+            definerToken: yoke.definerToken,
+            runWaitLinear: empoweredYoke.runWaitLinear
+        };
+        return runRet( disempoweredYoke, result );
+    } );
 };
-PkRuntime.prototype.conveniences_syncYoke =
-    { allowsDefs: false, runWaitLinear: function ( step, then ) {
+PkRuntime.prototype.conveniences_syncYoke = {
+    yokeRider: pk( "pure-yoke" ),
+    definerToken: null,
+    runWaitLinear: function ( step, then ) {
         return then( step( this ) );
-    } };
+    }
+};
 PkRuntime.prototype.conveniences_macroexpand = function (
     expr, opt_yoke ) {
     
