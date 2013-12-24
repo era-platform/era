@@ -599,16 +599,26 @@ function listMapMultiWithLen( yoke, nat, lists, func, then ) {
         } );
     }
 }
-function listMapTwo( yoke, a, b, func, then ) {
-    return listLen( yoke, a, function ( yoke, len ) {
-        return listMapMultiWithLen( yoke, len, pkList( a, b ),
+function listMapMulti( yoke, lists, func, then ) {
+    if ( lists.tag !== "cons" )
+        throw new Error();
+    return listLen( yoke, lists.ind( 0 ), function ( yoke, len ) {
+        return listMapMultiWithLen( yoke, len, lists,
             function ( yoke, elems ) {
             
-            return func( yoke,
-                listGet( elems, 0 ), listGet( elems, 1 ) );
+            return func( yoke, elems );
         }, function ( yoke, result ) {
             return then( yoke, result );
         } );
+    } );
+}
+function listMapTwo( yoke, a, b, func, then ) {
+    return listMapMulti( yoke, pkList( a, b ),
+        function ( yoke, elems ) {
+        
+        return func( yoke, listGet( elems, 0 ), listGet( elems, 1 ) );
+    }, function ( yoke, result ) {
+        return then( yoke, result );
     } );
 }
 
@@ -1121,9 +1131,14 @@ PkRuntime.prototype.init_ = function () {
             return listMappend( yoke, bindingsAndCounts,
                 function ( yoke, bindingAndCounts ) {
                 
-                return self.pkDup( yoke,
-                    listGet( bindingAndCounts, 0 ),
-                    getCount( bindingAndCounts ) );
+                var binding = listGet( bindingAndCounts, 0 );
+                var count = getCount( bindingAndCounts );
+                return runWaitTry( yoke, function ( yoke ) {
+                    return self.callMethod( yoke, "binding-interpret",
+                        pkList( binding, outerCaptures ) );
+                }, function ( yoke, value ) {
+                    return self.pkDup( yoke, value, count );
+                } );
             }, function ( yoke, innerCaptures ) {
                 return listMap( yoke, innerCaptures,
                     function ( yoke, innerCapture ) {
@@ -1410,11 +1425,11 @@ PkRuntime.prototype.init_ = function () {
                 return then( yoke, getTine, listGet( getTine, 0 ) );
             } );
         }
-        tryGetFork( yoke, condExpr,
+        return tryGetFork( yoke, condExpr,
             function ( yoke, condGetTine, condCaptures ) {
-        tryGetFork( yoke, thenExpr,
+        return tryGetFork( yoke, thenExpr,
             function ( yoke, thenGetTine, thenCaptures ) {
-        tryGetFork( yoke, elseExpr,
+        return tryGetFork( yoke, elseExpr,
             function ( yoke, elseGetTine, elseCaptures ) {
         
         // Detect the variables captured in both branches, deduplicate
@@ -1436,126 +1451,48 @@ PkRuntime.prototype.init_ = function () {
         // dropping will be avoided, thus accommodating linear values
         // which prohibit these operations.
         
-        return listMap( yoke, thenCaptures, function ( yoke, capt ) {
-            return pkRet( yoke, pkList( capt, pk( "yep", pkNil ) ) );
-        }, function ( yoke, notedThenCaptures ) {
-        return listMap( yoke, elseCaptures, function ( yoke, capt ) {
-            return pkRet( yoke, pkList( capt, pkNil ) );
-        }, function ( yoke, notedElseCaptures ) {
-        return listAppend( yoke, notedThenCaptures, notedElseCaptures,
-            function ( yoke, notedBranchCaptures ) {
+        return listAppend( yoke, thenCaptures, elseCaptures,
+            function ( yoke, branchCaptures ) {
         
         // TODO: See if there's a way to do this without mutation
         // without our time performance becoming a quadratic (or
-        // worse) function of the number of `notedBranchCaptures`.
+        // worse) function of the number of `branchCaptures`.
         var bcDedupMap = strMap();
-        return listKeep( yoke, notedBranchCaptures,
-            function ( frame ) {
-            
-            var pkName = listGet( frame, 0 );
-            var isThenPk = listGet( frame, 1 );
-            
-            var isThenJs = isThenPk.tag === "yep";
+        return listKeep( yoke, branchCaptures, function ( pkName ) {
             var jsName = pkName.special.nameJson;
             var entry = bcDedupMap.get( jsName );
-            if ( entry === void 0 )
-                bcDedupMap.set( jsName, entry = {
-                    then: pkNil,
-                    els: pkNil,
-                    "revThenInBindings": pkNil,
-                    "revElseInBindings": pkNil
-                } );
-            var i = isThenJs ? entry.then : entry.els;
-            if ( isThenJs )
-                entry.then = pk( "succ", i );
-            else
-                entry.els = pk( "succ", i );
-            return i.tag !== "succ";
-        }, function ( yoke, notedBcDedup ) {
-        return listMap( yoke, notedBcDedup, function ( yoke, frame ) {
-            return pkRet( yoke, listGet( frame, 0 ) );
+            if ( entry !== void 0 )
+                return false;
+            bcDedupMap.set( jsName, true );
+            return true;
         }, function ( yoke, bcDedup ) {
         
-        function fulfill( getTine, revInBindingsProperty, then ) {
-            
-            // NOTE: Here's an example of how this works:
-            //
-            // Suppose `captures` contains aabba and `bcDedup`
-            // contains ab. Eventually, in the implementation of
-            // `binding-interpret` for `binding-for-if`, we're going
-            // to do a listMappend to pkDup each element of ab, giving
-            // us aaabb. Thus the bindings we want to insert into
-            // `cont` are `param-binding` values with indices 01342.
-            // (The 01--2 in here looks up aaa--, and the --34- in
-            // here looks up --bb-, so we end up with aa--a and --bb-,
-            // or aabba.)
-            //
-            // In order to get this sequence, 01342, we iterate over
-            // aabba and for each variable, we push our iteration
-            // index onto a stack associated with that variable. We
-            // get cons lists that look like this:
-            //
-            // a 410
-            // b 32
-            //
-            // Then we reverse these and concatenate them in abcd
-            // order, giving us the concatenation of 014 and 23, which
-            // is 01423. This is NOT the 01342 we needed.
-            //
-            // TODO: Since we know this is a broken example, stop
-            // using this code and use
-            // makeGetTineUnderMappendedArgs_() instead.
-            
-            var captures = listGet( getTine, 0 );
-            var cont = listGet( getTine, 1 );
-            
-            return listFoldlJs( yoke, pkNil, captures,
-                function ( i, pkName ) {
+        function fulfill( getTine, then ) {
+            return self.makeGetTineUnderMappendedArgs_(
+                yoke, null, getTine, bcDedup,
+                function ( yoke, thenDupsList, getTine ) {
                 
-                var jsName = pkName.special.nameJson;
-                var entry = bcDedupMap.get( jsName );
-                if ( entry === void 0 )
+                if ( !listLenIs( listGet( getTine, 0 ), 0 ) )
                     throw new Error();
-                // NOTE: Mind the mutation!
-                entry[ revInBindingsProperty ] = pkCons(
-                    pk( "param-binding", i ),
-                    entry[ revInBindingsProperty ] );
-                return pk( "succ", i );
-            }, function ( yoke, ignored ) {
-                return listMappend( yoke, bcDedup,
-                    function ( yoke, pkName ) {
+                return self.fulfillGetTine( yoke, getTine, pkNil,
+                    function (
+                        yoke, outBinding, inBindingsRemaining ) {
                     
-                    var jsName = pkName.special.nameJson;
-                    var entry = bcDedupMap.get( jsName );
-                    if ( entry === void 0 )
-                        throw new Error();
-                    return listRev( yoke,
-                        entry[ revInBindingsProperty ],
-                        function ( yoke, theseInBindings ) {
-                        
-                        return pkRet( yoke, theseInBindings );
-                    } );
-                }, function ( yoke, inBindings ) {
-                    return runWaitTry( yoke, function ( yoke ) {
-                        return self.callMethod( yoke, "call",
-                            pkList( cont, pkList( inBindings ) ) );
-                    }, function ( yoke, outBinding ) {
-                        return then( yoke, outBinding );
-                    } );
+                    return then( yoke, thenDupsList, outBinding );
                 } );
             } );
         }
         
-        return fulfill( thenGetTine, "revThenInBindings",
-            function ( yoke, thenOutBinding ) {
+        return fulfill( thenGetTine,
+            function ( yoke, thenDupsList, thenOutBinding ) {
         
         if ( thenOutBinding.isLinear() )
             return pkErr( yoke,
                 "Got a linear then-binding for binding-for-if " +
                 "during if's macroexpander" );
         
-        return fulfill( elseGetTine, "revElseInBindings",
-            function ( yoke, elseOutBinding ) {
+        return fulfill( elseGetTine,
+            function ( yoke, elseDupsList, elseOutBinding ) {
         
         if ( thenOutBinding.isLinear() )
             return pkErr( yoke,
@@ -1572,18 +1509,13 @@ PkRuntime.prototype.init_ = function () {
                     condGetTine, outerBindings,
                     function ( yoke, condBinding, outerBindings ) {
                     
-                    return listMapTwo( yoke, bcDedup, outerBindings,
-                        function ( yoke, pkName, binding ) {
-                        
-                        var jsName = pkName.special.nameJson;
-                        var entry = bcDedup.get( jsName );
-                        if ( entry === void 0 )
-                            throw new Error();
-                        return pkRet( yoke,
-                            pkList( binding, entry.then, entry.els )
-                            );
+                    return listMapMulti( yoke, pkList(
+                        outerBindings,
+                        thenDupsList,
+                        elseDupsList
+                    ), function ( yoke, elems ) {
+                        return pkRet( yoke, elems );
                     }, function ( yoke, outerBindingsAndCounts ) {
-                        
                         return pkRet( yoke, pk( "binding-for-if",
                             condBinding,
                             outerBindingsAndCounts,
@@ -1602,10 +1534,7 @@ PkRuntime.prototype.init_ = function () {
         } );
         
         } );
-        } );
         
-        } );
-        } );
         } );
         
         } );
@@ -1664,8 +1593,8 @@ PkRuntime.prototype.init_ = function () {
         
         var sourceCaptures = listGet( sourceGetTine, 0 );
         
-        return self.makeGetTineUnderMappendedArgs_(
-            yoke, nonlocalGetFork, bodyExpr, varNames,
+        return self.makeGetTineUnderMappendedArgs_( yoke,
+            nonlocalGetFork, bodyExpr, varNames,
             function ( yoke, bodyDupsList, bodyGetTine ) {
         
         var bodyCaptures = listGet( bodyGetTine, 0 );
@@ -2002,13 +1931,13 @@ PkRuntime.prototype.fulfillGetTines = function (
     } );
 };
 PkRuntime.prototype.makeGetTineUnderMappendedArgs_ = function (
-    yoke, nonlocalGetFork, expr, argList, then ) {
+    yoke, nonlocalGetForkOrNull, expr, argList, then ) {
     
     var self = this;
     
     // TODO: See if there's a way to do this without mutation without
     // our time performance becoming a quadratic (or worse) function
-    // of the length of `latestOccurrenceArgList`.
+    // of the length of `argList`.
     var map = strMap();
     function getEntry( pkName ) {
         var jsName = pkName.special.nameJson;
@@ -2044,17 +1973,22 @@ PkRuntime.prototype.makeGetTineUnderMappendedArgs_ = function (
             return pkRet( yoke, pkNil );
     }, function ( yoke, latestOccurrenceArgList ) {
     
+    if ( nonlocalGetForkOrNull === null )
+        return next( yoke, expr );
     return self.runWaitTryGetmacFork( yoke, "macroexpand-to-fork",
         function ( yoke ) {
         
         return self.callMethod( yoke, "macroexpand-to-fork", pkList(
             expr,
-            self.deriveGetFork_( nonlocalGetFork,
+            self.deriveGetFork_( nonlocalGetForkOrNull,
                 function ( yoke, name, then ) {
                     return then( yoke, getEntry( name ) !== void 0 );
                 } )
         ) );
     }, function ( yoke, innerGetTine, maybeMacro ) {
+        return next( yoke, innerGetTine );
+    } );
+    function next( yoke, innerGetTine ) {
     
     var captures = listGet( innerGetTine, 0 );
     var cont = listGet( innerGetTine, 1 );
@@ -2138,7 +2072,7 @@ PkRuntime.prototype.makeGetTineUnderMappendedArgs_ = function (
     } );
     } );
     
-    } );
+    }
     
     } );
     } );

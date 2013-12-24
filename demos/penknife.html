@@ -33,6 +33,13 @@ textarea { display: block; }
 
 (let-list (a b) (list quote.foo quote.bar) a)
 (let-list (a b) (list quote.foo quote.bar) (list a a b b a))
+
+(if (nil) quote.foo quote.bar)
+(if (yep/nil) quote.foo quote.bar)
+(let-list (a b) (list quote.foo quote.bar)
+  (if (nil)
+    (list a a b)
+    (list b b a)))
 </textarea>
 <button id="go">Execute</button>
 <textarea id="result" disabled cols="80" rows="24"></textarea>
