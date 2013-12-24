@@ -446,16 +446,40 @@ function listFoldl( yoke, init, list, func, then ) {
         } );
     }
 }
-function listFoldlJs( yoke, init, list, func, then ) {
+function listFoldlJsAsync( yoke, init, list, func, then ) {
     return go( yoke, init, list );
     function go( yoke, init, list ) {
         if ( list.tag !== "cons" )
             return then( yoke, init );
         return runWaitOne( yoke, function ( yoke ) {
-            return go( yoke,
-                func( init, list.ind( 0 ) ), list.ind( 1 ) );
+            return func( yoke, init, list.ind( 0 ),
+                function ( yoke, combined ) {
+                
+                return go( yoke, combined, list.ind( 1 ) );
+            } );
         } );
     }
+}
+function listFoldNatJsAsync( yoke, init, nat, func, then ) {
+    return go( yoke, init, nat );
+    function go( yoke, init, nat ) {
+        if ( nat.tag !== "succ" )
+            return then( yoke, init );
+        return runWaitOne( yoke, function ( yoke ) {
+            return func( yoke, init, function ( yoke, combined ) {
+                return go( yoke, combined, nat.ind( 0 ) );
+            } );
+        } );
+    }
+}
+function listFoldlJs( yoke, init, list, func, then ) {
+    return listFoldlJsAsync( yoke, init, list,
+        function ( yoke, init, elem, then ) {
+        
+        return then( yoke, func( init, elem ) );
+    }, function ( yoke, result ) {
+        return then( yoke, result );
+    } );
 }
 function listMap( yoke, list, func, then ) {
     return listFoldl( yoke, pkNil, list, function (
@@ -1456,30 +1480,31 @@ PkRuntime.prototype.init_ = function () {
             
             // NOTE: Here's an example of how this works:
             //
-            // Suppose `captures` contains abbaac and `bcDedup`
-            // contains abcd. Eventually, in the implementation of
+            // Suppose `captures` contains aabba and `bcDedup`
+            // contains ab. Eventually, in the implementation of
             // `binding-interpret` for `binding-for-if`, we're going
-            // to do a listMappend to pkDup each element of abcd,
-            // giving us aaabbc. Thus the bindings we want to insert
-            // into `cont` are `param-binding` values with indices
-            // 034125. (The 0--12- in here looks up aaa---, the -34---
-            // in here looks up ---bb-, and the -----5 in here looks
-            // up -----c, so we end up with a--aa-, -bb---, and
-            // -----c, or abbaac.
+            // to do a listMappend to pkDup each element of ab, giving
+            // us aaabb. Thus the bindings we want to insert into
+            // `cont` are `param-binding` values with indices 01342.
+            // (The 01--2 in here looks up aaa--, and the --34- in
+            // here looks up --bb-, so we end up with aa--a and --bb-,
+            // or aabba.)
             //
-            // In order to get this sequence, 034125, we iterate over
-            // abbaac and for each variable, we push our iteration
+            // In order to get this sequence, 01342, we iterate over
+            // aabba and for each variable, we push our iteration
             // index onto a stack associated with that variable. We
             // get cons lists that look like this:
             //
-            // a 430
-            // b 21
-            // c 5
-            // d (empty)
+            // a 410
+            // b 32
             //
             // Then we reverse these and concatenate them in abcd
-            // order, giving us the concatenation of 034, 21, and 5,
-            // which is 034215 as we needed.
+            // order, giving us the concatenation of 014 and 23, which
+            // is 01423. This is NOT the 01342 we needed.
+            //
+            // TODO: Since we know this is a broken example, stop
+            // using this code and use
+            // makeGetTineUnderMappendedArgs_() instead.
             
             var captures = listGet( getTine, 0 );
             var cont = listGet( getTine, 1 );
@@ -1590,6 +1615,9 @@ PkRuntime.prototype.init_ = function () {
         } );
     } ) );
     
+    // NOTE: The `let-list` macro is a destructuring let that raises
+    // an error if it doesn't match. By doing this, it doesn't need to
+    // use condition-guarded aliasing like the `if` macro does.
     defMacro( "let-list", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 3 ) )
             return pkErrLen( yoke, args,
@@ -1972,36 +2000,6 @@ PkRuntime.prototype.fulfillGetTines = function (
 PkRuntime.prototype.makeGetTineUnderMappendedArgs_ = function (
     yoke, nonlocalGetFork, expr, argList, then ) {
     
-    // TODO: Use this for `binding-for-if`, not just
-    // `let-list-binding`.
-    
-    // Here's an example of how this works:
-    //
-    // Suppose `captures` contains abbaac and `argList` contains abcd,
-    // and suppose `lenNonlocalNames` is 0. Eventually, when we get to
-    // the `binding-interpret` behavior for `binding-for-if` or
-    // `let-list-binding`, we're going to do a listMappend to pkDup
-    // each element of abcd, giving us aaabbc. Thus the bindings we
-    // want to insert into `cont` are `param-binding` values with
-    // indices 034125. (The 0--12- in here looks up aaa---, the -34---
-    // in here looks up ---bb-, and the -----5 in here looks up
-    // -----c, so we end up with a--aa-, -bb---, and -----c, or
-    // abbaac.
-    //
-    // In order to get this sequence, 034125, we iterate over abbaac
-    // and for each variable, we push our iteration index onto a stack
-    // associated with that variable. We get cons lists that look like
-    // this:
-    //
-    // a 430
-    // b 21
-    // c 5
-    // d (empty)
-    //
-    // Then we reverse these and concatenate them in abcd order,
-    // giving us the concatenation of 034, 21, and 5, which is 034215
-    // as we needed.
-    
     var self = this;
     
     // TODO: See if there's a way to do this without mutation without
@@ -2025,7 +2023,7 @@ PkRuntime.prototype.makeGetTineUnderMappendedArgs_ = function (
         var jsName = pkName.special.nameJson;
         var entry = map.get( jsName );
         if ( entry === void 0 ) {
-            map.set( jsName, { dups: pkNil, revInBindings: pkNil } );
+            map.set( jsName, { dups: pkNil, indices: pkNil } );
             return pkRet( yoke, pk( "yep", pkName ) );
         } else {
             return pkRet( yoke, pkNil );
@@ -2057,11 +2055,54 @@ PkRuntime.prototype.makeGetTineUnderMappendedArgs_ = function (
     var captures = listGet( innerGetTine, 0 );
     var cont = listGet( innerGetTine, 1 );
     
+    return listKeep( yoke, captures, function ( pkName ) {
+        return getEntry( pkName ) === void 0;
+    }, function ( yoke, nonlocalNames ) {
+    return listLen( yoke, nonlocalNames,
+        function ( yoke, lenNonlocalNames ) {
+    
     return listEach( yoke, captures, function ( pkName ) {
         var entry = getEntry( pkName );
-        if ( entry !== void 0 )
+        if ( entry !== void 0 ) {
+            entry.indices = pkCons( entry.dups, entry.indices );
             entry.dups = pk( "succ", entry.dups );
+        }
     }, function ( yoke ) {
+    return listFoldlJsAsync( yoke,
+        lenNonlocalNames,
+        latestOccurrenceArgList,
+        function ( yoke, i, pkName, then ) {
+        
+        var entry = getEntry( pkName );
+        return listFoldNatJsAsync( yoke,
+            { i: i, revIndices: pkNil },
+            entry.dups,
+            function ( yoke, frame, then ) {
+            
+            return then( yoke, {
+                i: pk( "succ", frame.i ),
+                revIndices: pkCons( frame.i, frame.revIndices )
+            } );
+        }, function ( yoke, frame ) {
+            return listRev( yoke, frame.revIndices,
+                function ( yoke, indices ) {
+                
+                entry.indices = indices;
+                return then( yoke, frame.i );
+            } );
+        } );
+    }, function ( yoke, stopIndex ) {
+    return listMappend( yoke, captures, function ( yoke, pkName ) {
+        
+        var entry = getEntry( pkName );
+        if ( entry === void 0 )  // nonlocal
+            return pkRet( yoke, pkNil );
+        if ( entry.indices.tag !== "cons" )
+            throw new Error();
+        var i = entry.indices.ind( 0 );
+        entry.indices = entry.indices.ind( 1 );
+        return pkRet( yoke, pkList( pk( "param-binding", i ) ) );
+    }, function ( yoke, localInBindings ) {
     return listMap( yoke, maybeArgList,
         function ( yoke, maybePkName ) {
         
@@ -2071,33 +2112,6 @@ PkRuntime.prototype.makeGetTineUnderMappendedArgs_ = function (
         else
             return pkRet( yoke, pkNil );
     }, function ( yoke, dupsList ) {
-    
-    return listKeep( yoke, captures, function ( pkName ) {
-        return getEntry( pkName ) === void 0;
-    }, function ( yoke, nonlocalNames ) {
-    return listLen( yoke, nonlocalNames,
-        function ( yoke, lenNonlocalNames ) {
-    
-    return listFoldlJs( yoke, lenNonlocalNames, captures,
-        function ( i, pkName ) {
-        
-        var entry = getEntry( pkName );
-        if ( entry === void 0 )  // nonlocal
-            return i;
-        entry.revInBindings =
-            pkCons( pk( "param-binding", i ), entry.revInBindings );
-        return pk( "succ", i );
-    }, function ( yoke, stopIndex ) {
-    
-    return listMappend( yoke, latestOccurrenceArgList,
-        function ( yoke, pkName ) {
-        
-        return listRev( yoke, getEntry( pkName ).revInBindings,
-            function ( yoke, theseInBindings ) {
-            
-            return pkRet( yoke, theseInBindings );
-        } );
-    }, function ( yoke, localInBindings ) {
     
     return then( yoke, dupsList, pkGetTine( nonlocalNames,
         function ( yoke, nonlocalInBindings ) {
@@ -2111,9 +2125,7 @@ PkRuntime.prototype.makeGetTineUnderMappendedArgs_ = function (
     } ) );
     
     } );
-    
     } );
-    
     } );
     } );
     
@@ -2580,9 +2592,6 @@ function makePkRuntime() {
     return new PkRuntime().init_();
 }
 
-// TODO: Finish defining `let-list`, a destructuring let that raises
-// an error if it doesn't match. By doing this, it doesn't need to use
-// condition-guarded aliasing like the `if` macro does.
 // TODO: Define gensyms.
 // TODO: Define assignment.
 // TODO: Define a staged conditional, preferably from the Penknife

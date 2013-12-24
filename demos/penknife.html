@@ -32,9 +32,6 @@ textarea { display: block; }
 ((curried-example (nil)) (yep/nil))
 
 (let-list (a b) (list quote.foo quote.bar) a)
-
-; TODO: Figure out why this returns (foo foo bar foo bar) instead of
-; (foo foo bar bar foo).
 (let-list (a b) (list quote.foo quote.bar) (list a a b b a))
 </textarea>
 <button id="go">Execute</button>
@@ -134,8 +131,7 @@ window.onload = function () {
                     break;
                 } else {
 //                    displays.push(
-//                        "Macroexpansion: " +
-//                        macroexpanded.ind( 0 ) );
+//                        "Macroexpansion: " + macroexpanded.ind( 0 ) );
                 }
                 var macroexpandedDrop = penknife.conveniences_pkDrop(
                     macroexpanded ).result;
