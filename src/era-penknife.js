@@ -1673,8 +1673,12 @@ PkRuntime.prototype.init_ = function () {
         return listAppend( yoke, sourceCaptures, bodyCaptures,
             function ( yoke, outerCaptures ) {
         return pkRet( yoke, pk( "getmac-fork",
-            pkGetTine( outerCaptures,
-                function ( yoke, outerBindings ) {
+            pkGetTineLinear( outerCaptures, pkList(
+                pk( "yep", sourceGetTine ),
+                pk( "yep", bodyGetTine )
+            ), function ( yoke, captures, outerBindings ) {
+                var sourceGetTine = listGet( captures, 0 ).ind( 0 );
+                var bodyGetTine = listGet( captures, 1 ).ind( 0 );
                 
                 return self.fulfillGetTine( yoke,
                     sourceGetTine, outerBindings,
@@ -2113,9 +2117,11 @@ PkRuntime.prototype.makeGetTineUnderMappendedArgs_ = function (
             return pkRet( yoke, pkNil );
     }, function ( yoke, dupsList ) {
     
-    return then( yoke, dupsList, pkGetTine( nonlocalNames,
-        function ( yoke, nonlocalInBindings ) {
+    return then( yoke, dupsList, pkGetTineLinear( nonlocalNames,
+        pkList( pk( "yep", cont ) ),
+        function ( yoke, captures, nonlocalInBindings ) {
         
+        var cont = listGet( captures, 0 ).ind( 0 );
         return listAppend( yoke, nonlocalInBindings, localInBindings,
             function ( yoke, inBindings ) {
             
