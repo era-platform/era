@@ -2598,8 +2598,9 @@ PkRuntime.prototype.mapDefiner_ = function ( yoke, func ) {
                                     "Called " + us + " with a " +
                                     "value that wasn't a wrapped " +
                                     "token" );
-                            if ( !tokenEq(
-                                yoke.definerToken, definerToken ) )
+                            if ( yoke.definerToken === null
+                                || !tokenEq( yoke.definerToken,
+                                    definerToken ) )
                                 return pkErr( pureYoke,
                                     "Called " + us + " with a " +
                                     "token that wasn't the current " +
