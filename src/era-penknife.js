@@ -32,10 +32,6 @@
 //     represents imperative side effects. If this transformation uses
 //     any side effects, those effects correspond to some linear input
 //     value and some linear output value (typically the yoke).
-//     //
-//     // TODO: Actually, `yoke-top-level-definer` supports side
-//     // effects and isn't linear. See if we can redesign it to be
-//     // linear.
 //
 // nonlinear-as-linear:
 //   private inner value
@@ -49,9 +45,6 @@
 //     A function which takes the inner value and returns an arbitrary
 //     nonlinear output value. This way the contents aren't uselessly
 //     sealed off from the rest of the program.
-//     // TODO: Implement a reason for the unwrapper to exist--namely,
-//     // an unwrap function that applies to all nonlinear-as-linear
-//     // values.
 //
 // linear-as-nonlinear:
 //   public inner value
@@ -164,6 +157,32 @@ function pkLinearAsNonlinear( innerValue ) {
 function pkToken( jsObj ) {
     return new Pk().init_(
         null, "token", pkNil, !"isLinear", { jsObj: jsObj } );
+}
+function makeDefinerToken() {
+    // NOTE: Whenever we do side effects, we roughly understand them
+    // as transformations of some linear value that represents the
+    // outside world. That's why we wrap up the definer token as a
+    // linear value here; we're representing a world of definitions.
+    var token = pkToken( {} );
+    var result = {};
+    result.unwrapped = token;
+    result.wrapped = pkNonlinearAsLinear(
+        token,
+        pkfn( function ( yoke, args ) {
+            if ( !listLenIs( args, 2 ) )
+                return pkErrLen( pureYoke, args,
+                    "Called a duplicator" );
+            return pkErr( yoke,
+                "Can't duplicate or drop a definer token" );
+        } ),
+        pkfn( function ( yoke, args ) {
+            if ( !listLenIs( args, 1 ) )
+                return pkErrLen( pureYoke, args,
+                    "Called an unwrapper" );
+            return pkRet( yoke, listGet( args, 0 ) );
+        } )
+    );
+    return result;
 }
 function pk( tag, var_args ) {
     var args = pkListFromArr( [].slice.call( arguments, 1 ) );
@@ -799,20 +818,48 @@ PkRuntime.prototype.init_ = function () {
         );
     } );
     
-    defTag( "sync-yoke" );
-    defTag( "top-level-definer-yoke", "definer-token" );
-    defMethod( "yoke-get-top-level-definer-token", "yoke" );
-    setStrictImpl( "yoke-get-top-level-definer-token", "sync-yoke",
+    defTag( "pure-yoke" );
+    defTag( "top-level-definer-yoke", "wrapped-definer-token" );
+    defMethod( "yoke-map-top-level-definer", "yoke", "func" );
+    setStrictImpl( "yoke-map-top-level-definer", "pure-yoke",
         function ( yoke, args ) {
         
-        return pkRet( yoke, pkNil );
+        var firstClassYoke = listGet( args, 0 );
+        var func = listGet( args, 1 );
+        return runWaitTry( yoke, function ( yoke ) {
+            return self.callMethod( yoke, "call",
+                pkList( func, pkList( pkNil ) ) );
+        }, function ( yoke, replacementYoke ) {
+            if ( replacementYoke.tag !== "nil" )
+                return pkErr( yoke,
+                    "During a yoke-map-top-level-definer of a " +
+                    "pure-yoke, received a non-nil replacement " +
+                    "definer token." );
+            return pkRet( yoke, firstClassYoke );
+        } );
     } );
-    setStrictImpl( "yoke-get-top-level-definer-token",
+    setStrictImpl( "yoke-map-top-level-definer",
         "top-level-definer-yoke",
         function ( yoke, args ) {
         
-        return pkRet( yoke,
-            pk( "yep", listGet( args, 0 ).ind( 0 ) ) );
+        var firstClassYoke = listGet( args, 0 );
+        var func = listGet( args, 1 );
+        var wrappedDefinerToken = firstClassYoke.ind( 0 );
+        return runWaitTry( yoke, function ( yoke ) {
+            return self.callMethod( yoke, "call", pkList(
+                func,
+                pkList( pk( "yep", wrappedDefinerToken ) )
+            ) );
+        }, function ( yoke, maybeNewWrappedDefinerToken ) {
+            if ( maybeNewWrappedDefinerToken.tag !== "yep" )
+                return pkErr( yoke,
+                    "During a yoke-map-top-level-definer of a " +
+                    "top-level-definer-yoke, received a non-yep " +
+                    "replacement definer token." );
+            return pkRet( yoke,
+                pk( "top-level-definer-yoke",
+                    maybeNewWrappedDefinerToken.ind( 0 ) ) );
+        } );
     } );
     
     defTag( "getmac-fork", "get-tine", "maybe-macro" );
@@ -1687,8 +1734,8 @@ PkRuntime.prototype.init_ = function () {
                 "Called defval with a non-name name" );
         if ( val.isLinear() )
             return pkErr( yoke, "Called defval with a linear value" );
-        return self.allowsDefs( yoke, function ( yoke, valid ) {
-            if ( !valid )
+        return self.mapDefiner_( yoke, function ( yoke, hasDefiner ) {
+            if ( !hasDefiner )
                 return pkErr( yoke,
                     "Called defval without access to top-level " +
                     "definition side effects" );
@@ -1708,10 +1755,10 @@ PkRuntime.prototype.init_ = function () {
         if ( macro.isLinear() )
             return pkErr( yoke,
                 "Called defmacro with a linear macro" );
-        return self.allowsDefs( yoke, function ( yoke, valid ) {
-            if ( !valid )
+        return self.mapDefiner_( yoke, function ( yoke, hasDefiner ) {
+            if ( !hasDefiner )
                 return pkErr( yoke,
-                    "Called defmacro without access to top-level " +
+                    "Called defval without access to top-level " +
                     "definition side effects" );
             return self.enqueueDef_( yoke, function () {
                 return self.defMacro( name, macro );
@@ -1739,8 +1786,10 @@ PkRuntime.prototype.init_ = function () {
             if ( keys.isLinear() )
                 return pkErr( yoke,
                     "Called deftag with a linear args list" );
-            return self.allowsDefs( yoke, function ( yoke, valid ) {
-                if ( !valid )
+            return self.mapDefiner_( yoke,
+                function ( yoke, hasDefiner ) {
+                
+                if ( !hasDefiner )
                     return pkErr( yoke,
                         "Called deftag without access to top-level " +
                         "definition side effects" );
@@ -1772,8 +1821,10 @@ PkRuntime.prototype.init_ = function () {
             if ( argNames.isLinear() )
                 return pkErr( yoke,
                     "Called defmethod with a linear args list" );
-            return self.allowsDefs( yoke, function ( yoke, valid ) {
-                if ( !valid )
+            return self.mapDefiner_( yoke,
+                function ( yoke, hasDefiner ) {
+                
+                if ( !hasDefiner )
                     return pkErr( yoke,
                         "Called defmethod without access to " +
                         "top-level definition side effects" );
@@ -1795,8 +1846,8 @@ PkRuntime.prototype.init_ = function () {
         if ( listGet( args, 2 ).isLinear() )
             return pkErr( yoke,
                 "Called set-impl with a linear function" );
-        return self.allowsDefs( yoke, function ( yoke, valid ) {
-            if ( !valid )
+        return self.mapDefiner_( yoke, function ( yoke, hasDefiner ) {
+            if ( !hasDefiner )
                 return pkErr( yoke,
                     "Called set-impl without access to top-level " +
                     "definition side effects" );
@@ -1816,6 +1867,16 @@ PkRuntime.prototype.init_ = function () {
         if ( !listLenIs( args, 1 ) )
             return pkErrLen( yoke, args, "Called raise" );
         return pkRet( yoke, pk( "nope", listGet( args, 0 ) ) );
+    } ) );
+    
+    defVal( "unwrap", pkfn( function ( yoke, args ) {
+        if ( !listLenIs( args, 1 ) )
+            return pkErrLen( yoke, args, "Called unwrap" );
+        return self.pkUnwrap( yoke, listGet( args, 0 ),
+            function ( yoke, unwrapped ) {
+            
+            return pkRet( yoke, unwrapped );
+        } );
     } ) );
     
     return self;
@@ -1920,6 +1981,25 @@ PkRuntime.prototype.pkDrop = function ( yoke, val, then ) {
         return self.pkDup( yoke, val, pkNil );
     }, function ( yoke, nothing ) {
         return then( yoke );
+    } );
+};
+PkRuntime.prototype.pkUnwrap = function ( yoke, val, then ) {
+    var self = this;
+    
+    if ( val.tag !== "nonlinear-as-linear" )
+        return pkErr( yoke,
+            "Tried to unwrap a value that wasn't a " +
+            "nonlinear-as-linear" );
+    return runWaitTry( yoke, function ( yoke ) {
+        return self.callMethod( yoke, "call", pkList(
+            val.special.unwrapper,
+            pkList( val.special.innerValue )
+        ) );
+    }, function ( yoke, unwrapped ) {
+        if ( unwrapped.isLinear() )
+            return pkErr( yoke,
+                "Unwrapped a value and got a linear value" );
+        return then( yoke, unwrapped );
     } );
 };
 PkRuntime.prototype.fulfillGetTine = function (
@@ -2486,42 +2566,108 @@ PkRuntime.prototype.getMacro = function ( name ) {
     
     return pkRawErr( "Unbound variable " + name );
 };
-PkRuntime.prototype.allowsDefs = function ( yoke, then ) {
+PkRuntime.prototype.mapDefiner_ = function ( yoke, func ) {
     var self = this;
     var yokeRider = yoke.yokeRider;
     var pureYoke = yokeWithRider( yoke, pk( "pure-yoke" ) );
     return runWaitTry( pureYoke, function ( pureYoke ) {
         return self.callMethod( pureYoke,
-            "yoke-get-top-level-definer-token", pkList( yokeRider ) );
-    }, function ( pureYoke, maybeDefinerToken ) {
-        var yoke = yokeWithRider( pureYoke, yokeRider );
-        if ( maybeDefinerToken.tag === "yep" ) {
-            var definerToken = maybeDefinerToken.ind( 0 );
-            if ( definerToken.tag !== "token" )
-                return pkErr( yoke,
-                    "Got a non-token from " +
-                    "yoke-get-top-level-definer-token" );
-            return then( yoke,
-                yoke.definerToken !== null &&
-                    tokenEq( yoke.definerToken, definerToken ) );
-        } else if ( maybeDefinerToken.tag === "nil" ) {
-            return then( yoke, false );
-        } else {
-            return pkErr( yoke,
-                "Got a non-maybe from " +
-                "yoke-get-top-level-definer-token" );
-        }
+            "yoke-map-top-level-definer",
+            pkList(
+                yokeRider,
+                pkfn( function ( pureYoke, args ) {
+                    var us = "a yoke-map-top-level-definer callback";
+                    if ( !listLenIs( args, 1 ) )
+                        return pkErrLen( pureYoke, args,
+                            "Called " + us );
+                    var maybeWrappedDefinerToken = listGet( args, 0 );
+                    if ( maybeWrappedDefinerToken.tag === "yep" ) {
+                        var wrappedDefinerToken =
+                            maybeWrappedDefinerToken.ind( 0 );
+                        if ( wrappedDefinerToken.tag
+                            !== "nonlinear-as-linear" )
+                            return pkErr( pureYoke,
+                                "Called " + us + " with a value " +
+                                "that wasn't a nonlinear-as-linear" );
+                        return self.pkUnwrap( pureYoke,
+                            wrappedDefinerToken,
+                            function ( pureYoke, definerToken ) {
+                            
+                            if ( definerToken.tag !== "token" )
+                                return pkErr( pureYoke,
+                                    "Called " + us + " with a " +
+                                    "value that wasn't a wrapped " +
+                                    "token" );
+                            if ( !tokenEq(
+                                yoke.definerToken, definerToken ) )
+                                return pkErr( pureYoke,
+                                    "Called " + us + " with a " +
+                                    "token that wasn't the current " +
+                                    "definer token" );
+                            return runWaitTry( pureYoke,
+                                function ( pureYoke ) {
+                                
+                                return func( pureYoke,
+                                    !!"hasDefiner" );
+                            }, function ( pureYoke, ignoredNil ) {
+                                if ( ignoredNil.tag !== "nil" )
+                                    return pkErr( pureYoke,
+                                        "Internally used " +
+                                        "mapDefiner_ with a " +
+                                        "function that returned a " +
+                                        "non-nil value" );
+                                var newDefinerToken =
+                                    makeDefinerToken();
+                                var updatedYoke = {
+                                    yokeRider: pureYoke.yokeRider,
+                                    definerToken:
+                                        newDefinerToken.unwrapped,
+                                    runWaitLinear:
+                                        pureYoke.runWaitLinear
+                                };
+                                return pkRet( yoke,
+                                    pk( "yep",
+                                        newDefinerToken.wrapped ) );
+                            } );
+                        } );
+                        
+                    } else if (
+                        maybeWrappedDefinerToken.tag === "nil" ) {
+                        
+                        return runWaitTry( pureYoke,
+                            function ( pureYoke ) {
+                            
+                            return func( pureYoke, !"hasDefiner" );
+                        }, function ( pureYoke, ignoredNil ) {
+                            if ( ignoredNil.tag !== "nil" )
+                                return pkErr( pureYoke,
+                                    "Internally used mapDefiner_ " +
+                                    "with a function that returned " +
+                                    "a non-nil value" );
+                            return pkRet( yoke, pkNil );
+                        } );
+                    } else {
+                        return pkErr( pureYoke,
+                            "Called " + us + " with a non-maybe" );
+                    }
+                } )
+            )
+        );
+    }, function ( pureYoke, newYokeRider ) {
+        var yoke = yokeWithRider( pureYoke, newYokeRider );
+        return pkRet( yoke, pkNil );
     } );
 };
-// TODO: Figure out if we should manage `allowsDefs` in a more
+// TODO: Figure out if we should manage `withDefiner` in a more
 // encapsulated and/or generalized way.
 // TODO: See if we should be temporarily augmenting the available side
 // effects, rather than temporarily replacing them.
-PkRuntime.prototype.withAllowsDefs = function ( yoke, body ) {
-    var definerToken = pkToken( {} );
+PkRuntime.prototype.withDefiner = function ( yoke, body ) {
+    var definerToken = makeDefinerToken();
     var empoweredYoke = {
-        yokeRider: pk( "top-level-definer-yoke", definerToken ),
-        definerToken: definerToken,
+        yokeRider:
+            pk( "top-level-definer-yoke", definerToken.wrapped ),
+        definerToken: definerToken.unwrapped,
         runWaitLinear: yoke.runWaitLinear
     };
     return runWait( empoweredYoke, function ( empoweredYoke ) {
@@ -2598,7 +2744,7 @@ PkRuntime.prototype.conveniences_interpretBinding = function (
     var self = this;
     if ( opt_yoke === void 0 )
         opt_yoke = self.conveniences_syncYoke;
-    return self.withAllowsDefs( opt_yoke, function ( yoke ) {
+    return self.withDefiner( opt_yoke, function ( yoke ) {
         return self.callMethod( yoke, "binding-interpret",
             pkList( binding, pkNil ) );
     } );
