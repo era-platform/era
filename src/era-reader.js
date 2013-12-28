@@ -3,13 +3,6 @@
 "use strict";
 
 
-// TODO: This reader is currently entangled with JavaScript's notion
-// of string. It's probably good and fast for sequences of 16-bit
-// values, but it doesn't go out of its way to parse UTF-16 surrogate
-// pairs, and thus it's a few specificational kludges away from
-// Unicode. Figure out whether to make the spec simple, or to keep the
-// code and its performance simple.
-
 // $.stream.readc
 // $.stream.peekc
 // $.then
@@ -32,8 +25,9 @@ function reader( $ ) {
     } );
 }
 function addReaderMacros( readerMacros, string, func ) {
-    for ( var i = 0, n = string.length; i < n; i++ )
-        readerMacros.set( string.charAt( i ), func );
+    eachUnicodeCodePoint( string, function ( codePointInfo ) {
+        readerMacros.set( codePointInfo.charString, func );
+    } );
 }
 function bankInfix( $, minInfixLevel ) {
     var result = $.infixState.type === "ready" &&
@@ -265,23 +259,27 @@ defineInfixOperator( ".", 2,
 } );
 
 function stringStream( string ) {
+    if ( !isValidUnicode( string ) )
+        throw new Error();
     var i = 0, n = string.length;
+    function readOrPeek( isReading, then ) {
+        defer( function () {
+            if ( n <= i )
+                return void then( "" );
+            var charCodeInfo =
+                getUnicodeCodePointAtCodeUnitIndex( string, i );
+            var result = charCodeInfo.charString;
+            if ( isReading )
+                i += result.length;
+            then( result );
+        } );
+    }
     var stream = {};
     stream.peekc = function ( then ) {
-        defer( function () {
-            if ( i < n )
-                then( string.charAt( i ) );
-            else
-                then( "" );
-        } );
+        readOrPeek( !"isReading", then );
     };
     stream.readc = function ( then ) {
-        defer( function () {
-            if ( i < n )
-                then( string.charAt( i++ ) );
-            else
-                then( "" );
-        } );
+        readOrPeek( !!"isReading", then );
     };
     return stream;
 }

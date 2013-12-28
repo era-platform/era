@@ -114,6 +114,81 @@ function jsStr( string ) {
     } ).join( "\\\\" ) + "\"";
 }
 
+// TODO: Put utilities like these in lathe.js.
+function getUnicodeCodePointAtCodeUnitIndex( string, codeUnitIndex ) {
+    function inRange( min, pastMax ) {
+        return function ( n ) {
+            return min <= n && n < pastMax;
+        };
+    }
+    var isHead = inRange( 0xD800, 0xDC00 );
+    var isTrail = inRange( 0xDC00, 0xE000 );
+    var replacement = {
+        isReplaced: true,
+        codePoint: 0xFFFD,
+        charString: "\uFFFD"
+    };
+    function getCodeUnit( codeUnitIndex ) {
+        if ( string.length < codeUnitIndex )
+            return null;
+        return {
+            codeUnit: string.charCodeAt( codeUnitIndex ),
+            charString: string.charAt( codeUnitIndex )
+        };
+    }
+    var first = getCodeUnit( codeUnitIndex );
+    if ( first === null )
+        throw new Error();
+    if ( isHead( first.codeUnit ) ) {
+        var second = getCodeUnit( codeUnitIndex + 1 );
+        if ( second === null ) {
+            return replacement;
+        } else if ( isHead( second.codeUnit ) ) {
+            return replacement;
+        } else if ( isTrail( second.codeUnit ) ) {
+            return {
+                isReplaced: false,
+                codePoint: 0x10000 +
+                    ((first.codeUnit - 0xD800) << 10) +
+                    (second.codeUnit - 0xDC00),
+                charString: first.charString + second.charString
+            };
+        } else {
+            return replacement;
+        }
+    } else if ( isTrail( first.codeUnit ) ) {
+        return replacement;
+    } else {
+        return {
+            isReplaced: false,
+            codePoint: first.codeUnit,
+            charString: first.charString
+        };
+    }
+}
+function anyUnicodeCodePoint( string, func ) {
+    for ( var i = 0, n = string.length; i < n; ) {
+        var codePointInfo =
+            getUnicodeCodePointAtCodeUnitIndex( string, i );
+        var result = func( codePointInfo );
+        if ( result )
+            return result;
+        i += codePointInfo.charString.length;
+    }
+    return false;
+}
+function eachUnicodeCodePoint( string, func ) {
+    anyUnicodeCodePoint( string, function ( codePointInfo ) {
+        func( codePointInfo );
+        return false;
+    } );
+}
+function isValidUnicode( string ) {
+    return !anyUnicodeCodePoint( string, function ( codePointInfo ) {
+        return codePointInfo.isReplaced;
+    } );
+}
+
 // TODO: Come up with something better than this.
 var naiveIsoCases = [];
 function naiveIso( a, b ) {

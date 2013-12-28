@@ -57,8 +57,6 @@
 //   private JavaScript string
 //     An efficiently implemented sequence of valid Unicode code
 //     points.
-//     // TODO: When creating a Penknife string, verify that the
-//     // JavaScript string has proper UTF-16 surrogate pairs.
 //
 // token:
 //   private JavaScript token
@@ -285,6 +283,14 @@ function pkMapLeaves( yoke, tree, func ) {
     throw new Error();
 }
 function pkStr( jsStr ) {
+    // NOTE: This sanity check is just here in case some code happens
+    // to be buggy. We always have valid Unicode by the time we get
+    // here, even if that means we do a sanity check beforehand. (See
+    // conveniences_macroexpandArrays(), for example.) If we ever
+    // can't afford to do this linear-time check of all the
+    // characters, we should consider removing this.
+    if ( !isValidUnicode( jsStr ) )
+        throw new Error();
     return new Pk().init_( null, "string", pkNil, !"isLinear",
         { jsStr: jsStr } );
 }
@@ -2458,6 +2464,9 @@ PkRuntime.prototype.defMethod = function ( name, args ) {
 PkRuntime.prototype.callMethodRaw = function (
     yoke, methodName, args ) {
     
+    // TODO: These error messages implicitly use Pk#toString(), which
+    // is hackishly designed. Figure out what kind of externalization
+    // we really want here.
     // NOTE: This reads definitions. We maintain the metaphor that we
     // work with an immutable snapshot of the definitions, so we may
     // want to refactor this to be closer to that metaphor someday.
@@ -2504,6 +2513,9 @@ PkRuntime.prototype.setStrictImpl = function (
         return listLenEq( yoke, args, methodMeta.methodArgs,
             function ( yoke, areEq ) {
             
+            // TODO: This error message implicitly uses Pk#toString(),
+            // which is hackishly designed. Figure out what kind of
+            // externalization we really want here.
             if ( !areEq )
                 return pkErrLen( yoke, args, "Called " + methodName );
             return call( yoke, args );
@@ -2528,6 +2540,10 @@ PkRuntime.prototype.getVal = function ( name ) {
             return listLenEq( yoke, args, meta.tagKeys,
                 function ( yoke, areEq ) {
                 
+                // TODO: This error message implicitly uses
+                // Pk#toString(), which is hackishly designed. Figure
+                // out what kind of externalization we really want
+                // here.
                 if ( !areEq )
                     return pkErrLen( yoke, args,
                         "Can't make " + name );
@@ -2720,7 +2736,8 @@ PkRuntime.prototype.conveniences_macroexpandArrays = function (
     
     function arraysToConses( arrayExpr ) {
         // TODO: Use something like Lathe.js's _.likeArray() here.
-        if ( typeof arrayExpr === "string" )
+        if ( typeof arrayExpr === "string"
+            && isValidUnicode( arrayExpr ) )
             return pkStrName( arrayExpr );
         else if ( arrayExpr instanceof Array )
             return pkListFromArr(
