@@ -1000,13 +1000,21 @@ PkRuntime.prototype.init_ = function () {
         } );
     } ) );
     defTag( "let-list-binding",
-        "numbers-of-dups", "source-binding", "body-binding" );
+        "source-binding",
+        "captures",
+        "numbers-of-dups",
+        "body-binding" );
     defVal( "let-list-binding", pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 3 ) )
+        if ( !listLenIs( args, 4 ) )
             return pkErrLen( yoke, args, "Called len-list-binding" );
-        var numbersOfDups = listGet( args, 0 );
-        var sourceBinding = listGet( args, 1 );
-        var bodyBinding = listGet( args, 2 );
+        var sourceBinding = listGet( args, 0 );
+        var captures = listGet( args, 1 );
+        var numbersOfDups = listGet( args, 2 );
+        var bodyBinding = listGet( args, 3 );
+        if ( !isList( captures ) )
+            return pkErr( yoke,
+                "Called len-list-binding with a non-list list of " +
+                "captures" );
         if ( !isList( numbersOfDups ) )
             return pkErr( yoke,
                 "Called len-list-binding with a non-list list of " +
@@ -1022,7 +1030,10 @@ PkRuntime.prototype.init_ = function () {
                     "of duplicates" );
             return pkRet( yoke,
                 pk( "let-list-binding",
-                    numbersOfDups, sourceBinding, bodyBinding ) );
+                    sourceBinding,
+                    captures,
+                    numbersOfDups,
+                    bodyBinding ) );
         } );
     } ) );
     
@@ -1074,28 +1085,12 @@ PkRuntime.prototype.init_ = function () {
     defBindingInterpret( "call-binding",
         function ( yoke, binding, captures ) {
         
-        function interpretList( yoke, list, then ) {
-            if ( list.tag !== "cons" )
-                return then( yoke, pkNil );
-            return runWaitTry( yoke, function ( yoke ) {
-                return self.callMethod( yoke, "binding-interpret",
-                    pkList( list.ind( 0 ), captures ) );
-            }, function ( yoke, elem ) {
-                return interpretList( yoke, list.ind( 1 ),
-                    function ( yoke, interpretedTail ) {
-                    
-                    return runWaitOne( yoke, function ( yoke ) {
-                        return then( yoke,
-                            pkCons( elem, interpretedTail ) );
-                    } );
-                } );
-            } );
-        }
         return runWaitTry( yoke, function ( yoke ) {
             return self.callMethod( yoke, "binding-interpret",
                 pkList( binding.ind( 0 ), captures ) );
         }, function ( yoke, op ) {
-            return interpretList( yoke, binding.ind( 1 ),
+            return self.interpretList_( yoke,
+                binding.ind( 1 ), captures,
                 function ( yoke, args ) {
                 
                 return self.callMethod( yoke, "call",
@@ -1261,49 +1256,50 @@ PkRuntime.prototype.init_ = function () {
     defBindingInterpret( "let-list-binding",
         function ( yoke, binding, outerCaptures ) {
         
-        var numbersOfDups = binding.ind( 0 );
-        var sourceBinding = binding.ind( 1 );
-        var bodyBinding = binding.ind( 2 );
+        var sourceBinding = binding.ind( 0 );
+        var captureBindings = binding.ind( 1 );
+        var numbersOfDups = binding.ind( 2 );
+        var bodyBinding = binding.ind( 3 );
         return runWaitTry( yoke, function ( yoke ) {
             return self.callMethod( yoke, "binding-interpret",
                 pkList( sourceBinding, outerCaptures ) );
         }, function ( yoke, sourceValue ) {
-            return listLenEq( yoke, sourceValue, numbersOfDups,
-                function ( yoke, valid ) {
-                
-                if ( !valid )
-                    return pkErr( yoke,
-                        "Got the wrong number of elements when " +
-                        "destructuring a list" );
-                
-                return listMapTwo( yoke, sourceValue, numbersOfDups,
-                    function ( yoke, sourceElem, numberOfDups ) {
-                    
-                    return self.pkDup( yoke,
-                        sourceElem, numberOfDups );
-                }, function ( yoke, dupsPerElem ) {
-                    return listFlattenOnce( yoke, dupsPerElem,
-                        function ( yoke, dups ) {
-                        
-                        return listMap( yoke, dups,
-                            function ( yoke, dup ) {
-                            
-                            return pkRet( yoke,
-                                pkLinearAsNonlinear( dup ) );
-                        }, function ( yoke, sourceCaptures ) {
-                            return listAppend( yoke,
-                                outerCaptures, sourceCaptures,
-                                function ( yoke, innerCaptures ) {
-                                
-                                return self.callMethod( yoke,
-                                    "binding-interpret",
-                                    pkList( bodyBinding,
-                                        innerCaptures ) );
-                            } );
-                        } );
-                    } );
-                } );
-            } );
+        return listLenEq( yoke, sourceValue, numbersOfDups,
+            function ( yoke, valid ) {
+        
+        if ( !valid )
+            return pkErr( yoke,
+                "Got the wrong number of elements when " +
+                "destructuring a list" );
+        
+        return self.interpretList_( yoke,
+            captureBindings, outerCaptures,
+            function ( yoke, evaluatedOuterCaptures ) {
+        return listMapTwo( yoke, sourceValue, numbersOfDups,
+            function ( yoke, sourceElem, numberOfDups ) {
+            
+            return self.pkDup( yoke, sourceElem, numberOfDups );
+        }, function ( yoke, dupsPerElem ) {
+        return listFlattenOnce( yoke, dupsPerElem,
+            function ( yoke, dups ) {
+        
+        return listMap( yoke, dups, function ( yoke, dup ) {
+            return pkRet( yoke, pkLinearAsNonlinear( dup ) );
+        }, function ( yoke, sourceCaptures ) {
+        return listAppend( yoke,
+            evaluatedOuterCaptures, sourceCaptures,
+            function ( yoke, innerCaptures ) {
+            
+            return self.callMethod( yoke, "binding-interpret",
+                pkList( bodyBinding, innerCaptures ) );
+        } );
+        } );
+        
+        } );
+        } );
+        } );
+        
+        } );
         } );
     } );
     
@@ -1573,18 +1569,13 @@ PkRuntime.prototype.init_ = function () {
         }, function ( yoke, bcDedup ) {
         
         function fulfill( getTine, then ) {
-            return self.makeGetTineUnderMappendedArgs_(
+            return self.makeSubBindingUnderMappendedArgs_(
                 yoke, null, getTine, bcDedup,
-                function ( yoke, thenDupsList, getTine ) {
+                function ( yoke, captures, dupsList, outBinding ) {
                 
-                if ( !listLenIs( listGet( getTine, 0 ), 0 ) )
+                if ( !listLenIs( captures, 0 ) )
                     throw new Error();
-                return self.fulfillGetTine( yoke, getTine, pkNil,
-                    function (
-                        yoke, outBinding, inBindingsRemaining ) {
-                    
-                    return then( yoke, thenDupsList, outBinding );
-                } );
+                return then( yoke, dupsList, outBinding );
             } );
         }
         
@@ -1698,37 +1689,32 @@ PkRuntime.prototype.init_ = function () {
         
         var sourceCaptures = listGet( sourceGetTine, 0 );
         
-        return self.makeGetTineUnderMappendedArgs_( yoke,
+        return self.makeSubBindingUnderMappendedArgs_( yoke,
             nonlocalGetFork, bodyExpr, varNames,
-            function ( yoke, bodyDupsList, bodyGetTine ) {
-        
-        var bodyCaptures = listGet( bodyGetTine, 0 );
+            function ( yoke,
+                bodyCaptures, bodyDupsList, bodyBinding ) {
         
         return listAppend( yoke, sourceCaptures, bodyCaptures,
             function ( yoke, outerCaptures ) {
         return pkRet( yoke, pk( "getmac-fork",
             pkGetTineLinear( outerCaptures, pkList(
-                pk( "yep", sourceGetTine ),
-                pk( "yep", bodyGetTine )
+                pk( "yep", sourceGetTine )
             ), function ( yoke, captures, outerBindings ) {
                 var sourceGetTine = listGet( captures, 0 ).ind( 0 );
-                var bodyGetTine = listGet( captures, 1 ).ind( 0 );
                 
                 return self.fulfillGetTine( yoke,
                     sourceGetTine, outerBindings,
                     function ( yoke, sourceBinding, outerBindings ) {
-                return self.fulfillGetTine( yoke,
-                    bodyGetTine, outerBindings,
-                    function ( yoke, bodyBinding, outerBindings ) {
                 
-                if ( !listLenIs( outerBindings, 0 ) )
-                    throw new Error();
+                var bodyCaptureBindings = outerBindings;
                 
                 return pkRet( yoke,
                     pk( "let-list-binding",
-                        bodyDupsList, sourceBinding, bodyBinding ) );
+                        sourceBinding,
+                        bodyCaptureBindings,
+                        bodyDupsList,
+                        bodyBinding ) );
                 
-                } );
                 } );
             } ),
             pkNil
@@ -2314,7 +2300,7 @@ PkRuntime.prototype.fulfillGetTines = function (
         } );
     } );
 };
-PkRuntime.prototype.makeGetTineUnderMappendedArgs_ = function (
+PkRuntime.prototype.makeSubBindingUnderMappendedArgs_ = function (
     yoke, nonlocalGetForkOrNull, expr, argList, then ) {
     
     var self = this;
@@ -2380,15 +2366,26 @@ PkRuntime.prototype.makeGetTineUnderMappendedArgs_ = function (
     return listKeep( yoke, captures, function ( pkName ) {
         return getEntry( pkName ) === void 0;
     }, function ( yoke, nonlocalNames ) {
-    return listLen( yoke, nonlocalNames,
-        function ( yoke, lenNonlocalNames ) {
+    return listFoldlJsAsync( yoke,
+        { i: pkNil, revNonlocalInBindings: pkNil },
+        nonlocalNames,
+        function ( yoke, frame, pkName, then ) {
+        
+        return then( yoke, {
+            i: pk( "succ", frame.i ),
+            revNonlocalInBindings:
+                pkCons( pk( "param-binding", frame.i ),
+                    frame.revNonlocalInBindings )
+        } );
+    }, function ( yoke, frame ) {
+    var lenNonlocalNames = frame.i;
+    return listRev( yoke, frame.revNonlocalInBindings,
+        function ( yoke, nonlocalInBindings ) {
     
     return listEach( yoke, captures, function ( pkName ) {
         var entry = getEntry( pkName );
-        if ( entry !== void 0 ) {
-            entry.indices = pkCons( entry.dups, entry.indices );
+        if ( entry !== void 0 )  // local
             entry.dups = pk( "succ", entry.dups );
-        }
     }, function ( yoke ) {
     return listFoldlJsAsync( yoke,
         lenNonlocalNames,
@@ -2425,6 +2422,12 @@ PkRuntime.prototype.makeGetTineUnderMappendedArgs_ = function (
         entry.indices = entry.indices.ind( 1 );
         return pkRet( yoke, pkList( pk( "param-binding", i ) ) );
     }, function ( yoke, localInBindings ) {
+    return listAppend( yoke, nonlocalInBindings, localInBindings,
+        function ( yoke, inBindings ) {
+    return runWaitTry( yoke, function ( yoke ) {
+        return self.callMethod( yoke, "call",
+            pkList( cont, pkList( inBindings ) ) );
+    }, function ( yoke, outBinding ) {
     return listMap( yoke, maybeArgList,
         function ( yoke, maybePkName ) {
         
@@ -2435,24 +2438,16 @@ PkRuntime.prototype.makeGetTineUnderMappendedArgs_ = function (
             return pkRet( yoke, pkNil );
     }, function ( yoke, dupsList ) {
     
-    return then( yoke, dupsList, pkGetTineLinear( nonlocalNames,
-        pkList( pk( "yep", cont ) ),
-        function ( yoke, captures, nonlocalInBindings ) {
-        
-        var cont = listGet( captures, 0 ).ind( 0 );
-        return listAppend( yoke, nonlocalInBindings, localInBindings,
-            function ( yoke, inBindings ) {
-            
-            return self.callMethod( yoke, "call",
-                pkList( cont, pkList( inBindings ) ) );
-        } );
-    } ) );
+    return then( yoke, nonlocalNames, dupsList, outBinding );
     
     } );
     } );
     } );
     } );
+    } );
+    } );
     
+    } );
     } );
     } );
     
@@ -2648,6 +2643,27 @@ return pkRet( yoke, pk( "getmac-fork",
                         pkCons( getTine, revGetTinesSoFar ) );
                 } );
             }
+        } );
+    } );
+};
+PkRuntime.prototype.interpretList_ = function (
+    yoke, list, captures, then ) {
+    
+    // TODO: Use a fold here.
+    var self = this;
+    if ( list.tag !== "cons" )
+        return then( yoke, pkNil );
+    return runWaitTry( yoke, function ( yoke ) {
+        return self.callMethod( yoke, "binding-interpret",
+            pkList( list.ind( 0 ), captures ) );
+    }, function ( yoke, elem ) {
+        return self.interpretList_( yoke, list.ind( 1 ), captures,
+            function ( yoke, interpretedTail ) {
+            
+            return runWaitOne( yoke, function ( yoke ) {
+                return then( yoke,
+                    pkCons( elem, interpretedTail ) );
+            } );
         } );
     } );
 };
