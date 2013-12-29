@@ -2847,8 +2847,27 @@ function makePkRuntime() {
     return new PkRuntime().init_();
 }
 
-// TODO: Define gensyms.
-// TODO: Define assignment.
+// TODO: Define assignment. It'll need operations like these:
+//
+// - Create a new environment for manipulating a world of mutable
+//   boxes, call a function, and invalidate that environment once the
+//   function has completed.
+// - Create a fresh mutable box in a valid environment.
+// - Detect whether a value is a mutable box. (Inessential.)
+// - Detect whether a mutable box belongs to a given valid
+//   environment. (Inessential.)
+// - Compare two mutable boxes in a single valid environment. (This is
+//   important for graph algorithms.)
+// - Write to a mutable box in a valid environment.
+// - Read from a mutable box in a valid environment.
+
+// TODO: Define gensyms. They'll need to be names (for the purposes of
+// isName()), and they'll need operations like these:
+//
+// - Create a fresh gensym.
+// - Compare two gensyms.
+
 // TODO: Define a staged conditional, preferably from the Penknife
 // side.
+
 // TODO: Define other useful utilities.
