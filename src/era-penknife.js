@@ -160,6 +160,21 @@ function pkToken( jsPayload ) {
     return new Pk().init_(
         null, "token", pkNil, !"isLinear", { jsPayload: jsPayload } );
 }
+var dummyMutableEnvironment;
+(function () {
+    var dummyContents;
+    dummyMutableEnvironment = pkToken( dummyContents = {
+        comparable: false,
+        mutableBoxState: pkNil,
+        mutableBoxEnvironment: null,
+        isValidMutableEnvironment: false,
+        effects: {
+            canUseImperativeCapabilities: false,
+            canDefine: false
+        }
+    } );
+    dummyContents.mutableBoxEnvironment = dummyMutableEnvironment;
+})();
 function makeEffectToken( jsPayloadEffects ) {
     // NOTE: Whenever we do side effects, we roughly understand them
     // as transformations of some linear value that represents the
@@ -167,6 +182,9 @@ function makeEffectToken( jsPayloadEffects ) {
     // linear value here.
     var token = pkToken( {
         comparable: false,
+        mutableBoxState: pkNil,
+        mutableBoxEnvironment: dummyMutableEnvironment,
+        isValidMutableEnvironment: false,
         effects: jsPayloadEffects
     } );
     var result = {};
@@ -832,7 +850,7 @@ PkRuntime.prototype.init_ = function () {
     } );
     
     defTag( "pure-yoke" );
-    defTag( "top-level-definer-yoke", "wrapped-effect-token" );
+    defTag( "imperative-yoke", "wrapped-effect-token" );
     defMethod( "yoke-map-wrapped-effect-token", "yoke", "func" );
     setStrictImpl( "yoke-map-wrapped-effect-token", "pure-yoke",
         function ( yoke, args ) {
@@ -851,8 +869,7 @@ PkRuntime.prototype.init_ = function () {
             return pkRet( yoke, firstClassYoke );
         } );
     } );
-    setStrictImpl( "yoke-map-wrapped-effect-token",
-        "top-level-definer-yoke",
+    setStrictImpl( "yoke-map-wrapped-effect-token", "imperative-yoke",
         function ( yoke, args ) {
         
         var firstClassYoke = listGet( args, 0 );
@@ -866,11 +883,11 @@ PkRuntime.prototype.init_ = function () {
         }, function ( yoke, maybeNewWrappedEffectToken ) {
             if ( maybeNewWrappedEffectToken.tag !== "yep" )
                 return pkErr( yoke,
-                    "During a yoke-map-wrapped-effect-token of a " +
-                    "top-level-definer-yoke, received a non-yep " +
+                    "During a yoke-map-wrapped-effect-token of an " +
+                    "imperative-yoke, received a non-yep " +
                     "replacement token" );
             return pkRet( yoke,
-                pk( "top-level-definer-yoke",
+                pk( "imperative-yoke",
                     maybeNewWrappedEffectToken.ind( 0 ) ) );
         } );
     } );
@@ -1742,18 +1759,20 @@ PkRuntime.prototype.init_ = function () {
     // references to effect tokens (either by unwrapping the wrapped
     // ones or by storing the wrapped ones inside linear-as-nonlinear
     // wrappers), this will install a fresh effect token so that all
-    // the old references are useless. Most of the other
-    // side-effectful operations accomplish this as well, but that's
-    // just an implementation detail.
+    // the old references are useless. Other operations with
+    // imperative side effects accomplish this as well, because that's
+    // what effect tokens are really for; however, if someone's goal
+    // is only to invalidate old effect tokens, this utility is up to
+    // that task.
     defVal( "update-the-effect-token", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 0 ) )
             return pkErrLen( yoke, args,
                 "Called update-the-effect-token" );
         return self.mapEffect_( yoke, function ( yoke, effects ) {
-            if ( !effects.canUpdateTheEffectToken )
+            if ( !effects.canUseImperativeCapabilities )
                 return pkErr( yoke,
                     "Called update-the-effect-token without access " +
-                    "to that side effect" );
+                    "to imperative side effects" );
             return pkRet( yoke, pkNil );
         } );
     } ) );
@@ -1916,6 +1935,184 @@ PkRuntime.prototype.init_ = function () {
     function pkBoolean( jsBoolean ) {
         return jsBoolean ? pk( "yep", pkNil ) : pkNil;
     }
+    
+    // We support mutable boxes by way of these operations:
+    //
+    // - Create a new environment for manipulating a world of mutable
+    //   boxes, call a function, and invalidate that environment once
+    //   the function has completed.
+    // - Create a fresh mutable box in a valid environment.
+    // - Compare two mutable boxes in a single valid environment.
+    //   (This is important for graph algorithms.)
+    // - Write to a mutable box in a valid environment.
+    // - Read from a mutable box in a valid environment.
+    //
+    defVal( "call-with-mbox-env", pkfn( function ( yoke, args ) {
+        if ( !listLenIs( args, 1 ) )
+            return pkErrLen( yoke, args,
+                "Called call-with-mbox-env" );
+        var body = listGet( args, 0 );
+        var mboxEnvContents;
+        var mboxEnv = pkToken( mboxEnvContents = {
+            comparable: false,
+            mutableBoxState: pkNil,
+            mutableBoxEnvironment: dummyMutableEnvironment,
+            isValidMutableEnvironment: true,
+            effects: {
+                canUseImperativeCapabilities: false,
+                canDefine: false
+            }
+        } );
+        // TODO: See if we should be temporarily augmenting the
+        // available side effects, rather than temporarily replacing
+        // them.
+        return self.withAvailableEffectsReplaced( yoke, {
+            canUseImperativeCapabilities: true,
+            canDefine: false
+        }, function ( innerYoke ) {
+            return runWaitTry( innerYoke, function ( innerYoke ) {
+                return self.callMethod( innerYoke, "call", pkList(
+                    body,
+                    pkList( mboxEnv )
+                ) );
+            }, function ( innerYoke, result ) {
+                mboxEnvContents.isValidMutableEnvironment = false;
+                return pkRet( innerYoke, result );
+            } );
+        } );
+    } ) );
+    defVal( "mbox-new", pkfn( function ( yoke, args ) {
+        if ( !listLenIs( args, 2 ) )
+            return pkErrLen( yoke, args, "Called mbox-eq" );
+        var mboxEnv = listGet( args, 0 );
+        var initState = listGet( args, 1 );
+        if ( mboxEnv.tag !== "token" )
+            return pkErr( yoke,
+                "Called mbox-new with a non-token environment" );
+        if ( initState.isLinear() )
+            return pkErr( yoke,
+                "Called mbox-new with a linear assigned value" );
+        return runWaitTry( yoke, function ( yoke ) {
+            return self.mapEffect_( yoke, function ( yoke, effects ) {
+                if ( !effects.canUseImperativeCapabilities )
+                    return pkErr( yoke,
+                        "Called mbox-new without access to " +
+                        "imperative side effects" );
+                return pkRet( yoke, pkNil );
+            } );
+        }, function ( yoke, ignoredNil ) {
+            if ( !mboxEnv.special.isValidMutableEnvironment )
+                return pkErr( yoke,
+                    "Called mbox-new with an invalid environment" );
+            return pkRet( yoke, pkToken( {
+                comparable: false,
+                mutableBoxState: initState,
+                mutableBoxEnvironment: mboxEnv,
+                isValidMutableEnvironment: false,
+                effects: {
+                    canUseImperativeCapabilities: false,
+                    canDefine: false
+                }
+            } ) );
+        } );
+    } ) );
+    defVal( "mbox-eq", pkfn( function ( yoke, args ) {
+        if ( !listLenIs( args, 3 ) )
+            return pkErrLen( yoke, args, "Called mbox-eq" );
+        var mboxEnv = listGet( args, 0 );
+        var mboxA = listGet( args, 1 );
+        var mboxB = listGet( args, 2 );
+        if ( mboxEnv.tag !== "token" )
+            return pkErr( yoke,
+                "Called mbox-eq with a non-token environment" );
+        if ( !(mboxA.tag === "token" && mboxB.tag === "token") )
+            return pkErr( yoke,
+                "Called mbox-eq with a non-token box" );
+        return runWaitTry( yoke, function ( yoke ) {
+            return self.mapEffect_( yoke, function ( yoke, effects ) {
+                if ( !effects.canUseImperativeCapabilities )
+                    return pkErr( yoke,
+                        "Called mbox-eq without access to " +
+                        "imperative side effects" );
+                return pkRet( yoke, pkNil );
+            } );
+        }, function ( yoke, ignoredNil ) {
+            if ( !mboxEnv.special.isValidMutableEnvironment )
+                return pkErr( yoke,
+                    "Called mbox-eq with an invalid environment" );
+            if ( !(true
+                && tokenEq(
+                    mboxEnv, mboxA.special.mutableBoxEnvironment )
+                && tokenEq(
+                    mboxEnv, mboxB.special.mutableBoxEnvironment )
+            ) )
+                return pkErr( yoke,
+                    "Called mbox-eq with an incorrect environment" );
+            return pkRet( yoke,
+                pkBoolean( tokenEq( mboxA, mboxB ) ) );
+        } );
+    } ) );
+    defVal( "mbox-get", pkfn( function ( yoke, args ) {
+        if ( !listLenIs( args, 2 ) )
+            return pkErrLen( yoke, args, "Called mbox-get" );
+        var mboxEnv = listGet( args, 0 );
+        var mbox = listGet( args, 1 );
+        if ( mboxEnv.tag !== "token" )
+            return pkErr( yoke,
+                "Called mbox-get with a non-token environment" );
+        if ( mbox.tag !== "token" )
+            return pkErr( yoke,
+                "Called mbox-get with a non-token box" );
+        return runWaitTry( yoke, function ( yoke ) {
+            return self.mapEffect_( yoke, function ( yoke, effects ) {
+                if ( !effects.canUseImperativeCapabilities )
+                    return pkErr( yoke,
+                        "Called mbox-get without access to " +
+                        "imperative side effects" );
+                return pkRet( yoke, pkNil );
+            } );
+        }, function ( yoke, ignoredNil ) {
+            if ( !mboxEnv.special.isValidMutableEnvironment )
+                return pkErr( yoke,
+                    "Called mbox-get with an invalid environment" );
+            if ( !tokenEq(
+                mboxEnv, mbox.special.mutableBoxEnvironment ) )
+                return pkErr( yoke,
+                    "Called mbox-get with an incorrect environment" );
+            return pkRet( yoke, mbox.special.mutableBoxState );
+        } );
+    } ) );
+    defVal( "mbox-set", pkfn( function ( yoke, args ) {
+        if ( !listLenIs( args, 3 ) )
+            return pkErrLen( yoke, args, "Called mbox-set" );
+        var mboxEnv = listGet( args, 0 );
+        var mbox = listGet( args, 1 );
+        var newState = listGet( args, 3 );
+        if ( mboxEnv.tag !== "token" )
+            return pkErr( yoke,
+                "Called mbox-set with a non-token environment" );
+        if ( mbox.tag !== "token" )
+            return pkErr( yoke,
+                "Called mbox-set with a non-token box" );
+        if ( newState.isLinear() )
+            return pkErr( yoke,
+                "Called mbox-set with a linear assigned value" );
+        return self.mapEffect_( yoke, function ( yoke, effects ) {
+            if ( !effects.canUseImperativeCapabilities )
+                return pkErr( yoke,
+                    "Called mbox-set without access to imperative " +
+                    "side effects" );
+            if ( !mboxEnv.special.isValidMutableEnvironment )
+                return pkErr( yoke,
+                    "Called mbox-set with an invalid environment" );
+            if ( !tokenEq(
+                mboxEnv, mbox.special.mutableBoxEnvironment ) )
+                return pkErr( yoke,
+                    "Called mbox-set with an incorrect environment" );
+            mbox.special.mutableBoxState = newState;
+            return pkRet( yoke, pkNil );
+        } );
+    } ) );
     
     defVal( "is-a-comparable-token", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 1 ) )
@@ -2676,11 +2873,11 @@ PkRuntime.prototype.mapEffect_ = function ( yoke, func ) {
                                     "token that wasn't the current " +
                                     "effect token" );
                             if ( !effectToken.special.jsPayload.
-                                effects.canUpdateTheEffectToken )
+                                effects.canUseImperativeCapabilities )
                                 return pkErr( pureYoke,
                                     "Called " + us + " without " +
-                                    "access to the side effect of " +
-                                    "updating the effect token" );
+                                    "access to imperative side " +
+                                    "effects" );
                             return runWaitTry( pureYoke,
                                 function ( pureYoke ) {
                                 
@@ -2717,7 +2914,7 @@ PkRuntime.prototype.mapEffect_ = function ( yoke, func ) {
                             function ( pureYoke ) {
                             
                             return func( pureYoke, {
-                                canUpdateTheEffectToken: false,
+                                canUseImperativeCapabilities: false,
                                 canDefine: false
                             } );
                         }, function ( pureYoke, ignoredNil ) {
@@ -2740,18 +2937,16 @@ PkRuntime.prototype.mapEffect_ = function ( yoke, func ) {
         return pkRet( yoke, pkNil );
     } );
 };
-// TODO: Figure out if we should manage `withDefiner` in a more
-// encapsulated and/or generalized way.
-// TODO: See if we should be temporarily augmenting the available side
-// effects, rather than temporarily replacing them.
-PkRuntime.prototype.withDefiner = function ( yoke, body ) {
-    var effectToken = makeEffectToken( {
-        canUpdateTheEffectToken: true,
-        canDefine: true
-    } );
+// TODO: Figure out if we should manage `withAvailableEffectsReplaced`
+// in a more encapsulated and/or generalized way.
+// TODO: Figure out if we should allow users to pass in arbitrary
+// `effects` values like this.
+PkRuntime.prototype.withAvailableEffectsReplaced = function (
+    yoke, effects, body ) {
+    
+    var effectToken = makeEffectToken( effects );
     var empoweredYoke = {
-        yokeRider:
-            pk( "top-level-definer-yoke", effectToken.wrapped ),
+        yokeRider: pk( "imperative-yoke", effectToken.wrapped ),
         effectToken: effectToken.unwrapped,
         runWaitLinear: yoke.runWaitLinear
     };
@@ -2830,7 +3025,12 @@ PkRuntime.prototype.conveniences_interpretBinding = function (
     var self = this;
     if ( opt_yoke === void 0 )
         opt_yoke = self.conveniences_syncYoke;
-    return self.withDefiner( opt_yoke, function ( yoke ) {
+    // TODO: See if we should be temporarily augmenting the available
+    // side effects, rather than temporarily replacing them.
+    return self.withAvailableEffectsReplaced( opt_yoke, {
+        canUseImperativeCapabilities: true,
+        canDefine: true
+    }, function ( yoke ) {
         return self.callMethod( yoke, "binding-interpret",
             pkList( binding, pkNil ) );
     } );
@@ -2846,20 +3046,6 @@ PkRuntime.prototype.conveniences_runDefinitions = function (
 function makePkRuntime() {
     return new PkRuntime().init_();
 }
-
-// TODO: Define assignment. It'll need operations like these:
-//
-// - Create a new environment for manipulating a world of mutable
-//   boxes, call a function, and invalidate that environment once the
-//   function has completed.
-// - Create a fresh mutable box in a valid environment.
-// - Detect whether a value is a mutable box. (Inessential.)
-// - Detect whether a mutable box belongs to a given valid
-//   environment. (Inessential.)
-// - Compare two mutable boxes in a single valid environment. (This is
-//   important for graph algorithms.)
-// - Write to a mutable box in a valid environment.
-// - Read from a mutable box in a valid environment.
 
 // TODO: Define gensyms. They'll need to be names (for the purposes of
 // isName()), and they'll need operations like these:
