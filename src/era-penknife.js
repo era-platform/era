@@ -156,11 +156,11 @@ function pkToken( jsObj ) {
     return new Pk().init_(
         null, "token", pkNil, !"isLinear", { jsObj: jsObj } );
 }
-function makeDefinerToken() {
+function makeEffectToken() {
     // NOTE: Whenever we do side effects, we roughly understand them
     // as transformations of some linear value that represents the
-    // outside world. That's why we wrap up the definer token as a
-    // linear value here; we're representing a world of definitions.
+    // outside world. That's why we wrap up the effect token as a
+    // linear value here.
     var token = pkToken( {} );
     var result = {};
     result.unwrapped = token;
@@ -171,7 +171,7 @@ function makeDefinerToken() {
                 return pkErrLen( pureYoke, args,
                     "Called a duplicator" );
             return pkErr( yoke,
-                "Can't duplicate or drop a definer token" );
+                "Can't duplicate or drop a wrapped effect token" );
         } ),
         pkfn( function ( yoke, args ) {
             if ( !listLenIs( args, 1 ) )
@@ -374,7 +374,7 @@ function pkErrLen( yoke, args, message ) {
 function yokeWithRider( yoke, rider ) {
     return {
         yokeRider: rider,
-        definerToken: yoke.definerToken,
+        effectToken: yoke.effectToken,
         runWaitLinear: yoke.runWaitLinear
     };
 }
@@ -825,9 +825,9 @@ PkRuntime.prototype.init_ = function () {
     } );
     
     defTag( "pure-yoke" );
-    defTag( "top-level-definer-yoke", "wrapped-definer-token" );
-    defMethod( "yoke-map-top-level-definer", "yoke", "func" );
-    setStrictImpl( "yoke-map-top-level-definer", "pure-yoke",
+    defTag( "top-level-definer-yoke", "wrapped-effect-token" );
+    defMethod( "yoke-map-wrapped-effect-token", "yoke", "func" );
+    setStrictImpl( "yoke-map-wrapped-effect-token", "pure-yoke",
         function ( yoke, args ) {
         
         var firstClassYoke = listGet( args, 0 );
@@ -838,33 +838,33 @@ PkRuntime.prototype.init_ = function () {
         }, function ( yoke, replacementYoke ) {
             if ( replacementYoke.tag !== "nil" )
                 return pkErr( yoke,
-                    "During a yoke-map-top-level-definer of a " +
+                    "During a yoke-map-wrapped-effect-token of a " +
                     "pure-yoke, received a non-nil replacement " +
-                    "definer token." );
+                    "token" );
             return pkRet( yoke, firstClassYoke );
         } );
     } );
-    setStrictImpl( "yoke-map-top-level-definer",
+    setStrictImpl( "yoke-map-wrapped-effect-token",
         "top-level-definer-yoke",
         function ( yoke, args ) {
         
         var firstClassYoke = listGet( args, 0 );
         var func = listGet( args, 1 );
-        var wrappedDefinerToken = firstClassYoke.ind( 0 );
+        var wrappedEffectToken = firstClassYoke.ind( 0 );
         return runWaitTry( yoke, function ( yoke ) {
             return self.callMethod( yoke, "call", pkList(
                 func,
-                pkList( pk( "yep", wrappedDefinerToken ) )
+                pkList( pk( "yep", wrappedEffectToken ) )
             ) );
-        }, function ( yoke, maybeNewWrappedDefinerToken ) {
-            if ( maybeNewWrappedDefinerToken.tag !== "yep" )
+        }, function ( yoke, maybeNewWrappedEffectToken ) {
+            if ( maybeNewWrappedEffectToken.tag !== "yep" )
                 return pkErr( yoke,
-                    "During a yoke-map-top-level-definer of a " +
+                    "During a yoke-map-wrapped-effect-token of a " +
                     "top-level-definer-yoke, received a non-yep " +
-                    "replacement definer token." );
+                    "replacement token" );
             return pkRet( yoke,
                 pk( "top-level-definer-yoke",
-                    maybeNewWrappedDefinerToken.ind( 0 ) ) );
+                    maybeNewWrappedEffectToken.ind( 0 ) ) );
         } );
     } );
     
@@ -2588,39 +2588,40 @@ PkRuntime.prototype.mapDefiner_ = function ( yoke, func ) {
     var pureYoke = yokeWithRider( yoke, pk( "pure-yoke" ) );
     return runWaitTry( pureYoke, function ( pureYoke ) {
         return self.callMethod( pureYoke,
-            "yoke-map-top-level-definer",
+            "yoke-map-wrapped-effect-token",
             pkList(
                 yokeRider,
                 pkfn( function ( pureYoke, args ) {
-                    var us = "a yoke-map-top-level-definer callback";
+                    var us =
+                        "a yoke-map-wrapped-effect-token callback";
                     if ( !listLenIs( args, 1 ) )
                         return pkErrLen( pureYoke, args,
                             "Called " + us );
-                    var maybeWrappedDefinerToken = listGet( args, 0 );
-                    if ( maybeWrappedDefinerToken.tag === "yep" ) {
-                        var wrappedDefinerToken =
-                            maybeWrappedDefinerToken.ind( 0 );
-                        if ( wrappedDefinerToken.tag
+                    var maybeWrappedEffectToken = listGet( args, 0 );
+                    if ( maybeWrappedEffectToken.tag === "yep" ) {
+                        var wrappedEffectToken =
+                            maybeWrappedEffectToken.ind( 0 );
+                        if ( wrappedEffectToken.tag
                             !== "nonlinear-as-linear" )
                             return pkErr( pureYoke,
                                 "Called " + us + " with a value " +
                                 "that wasn't a nonlinear-as-linear" );
                         return self.pkUnwrap( pureYoke,
-                            wrappedDefinerToken,
-                            function ( pureYoke, definerToken ) {
+                            wrappedEffectToken,
+                            function ( pureYoke, effectToken ) {
                             
-                            if ( definerToken.tag !== "token" )
+                            if ( effectToken.tag !== "token" )
                                 return pkErr( pureYoke,
                                     "Called " + us + " with a " +
                                     "value that wasn't a wrapped " +
                                     "token" );
-                            if ( yoke.definerToken === null
-                                || !tokenEq( yoke.definerToken,
-                                    definerToken ) )
+                            if ( yoke.effectToken === null
+                                || !tokenEq( yoke.effectToken,
+                                    effectToken ) )
                                 return pkErr( pureYoke,
                                     "Called " + us + " with a " +
                                     "token that wasn't the current " +
-                                    "definer token" );
+                                    "effect token" );
                             return runWaitTry( pureYoke,
                                 function ( pureYoke ) {
                                 
@@ -2633,23 +2634,23 @@ PkRuntime.prototype.mapDefiner_ = function ( yoke, func ) {
                                         "mapDefiner_ with a " +
                                         "function that returned a " +
                                         "non-nil value" );
-                                var newDefinerToken =
-                                    makeDefinerToken();
+                                var newEffectToken =
+                                    makeEffectToken();
                                 var updatedYoke = {
                                     yokeRider: pureYoke.yokeRider,
-                                    definerToken:
-                                        newDefinerToken.unwrapped,
+                                    effectToken:
+                                        newEffectToken.unwrapped,
                                     runWaitLinear:
                                         pureYoke.runWaitLinear
                                 };
                                 return pkRet( yoke,
                                     pk( "yep",
-                                        newDefinerToken.wrapped ) );
+                                        newEffectToken.wrapped ) );
                             } );
                         } );
                         
                     } else if (
-                        maybeWrappedDefinerToken.tag === "nil" ) {
+                        maybeWrappedEffectToken.tag === "nil" ) {
                         
                         return runWaitTry( pureYoke,
                             function ( pureYoke ) {
@@ -2680,11 +2681,11 @@ PkRuntime.prototype.mapDefiner_ = function ( yoke, func ) {
 // TODO: See if we should be temporarily augmenting the available side
 // effects, rather than temporarily replacing them.
 PkRuntime.prototype.withDefiner = function ( yoke, body ) {
-    var definerToken = makeDefinerToken();
+    var effectToken = makeEffectToken();
     var empoweredYoke = {
         yokeRider:
-            pk( "top-level-definer-yoke", definerToken.wrapped ),
-        definerToken: definerToken.unwrapped,
+            pk( "top-level-definer-yoke", effectToken.wrapped ),
+        effectToken: effectToken.unwrapped,
         runWaitLinear: yoke.runWaitLinear
     };
     return runWait( empoweredYoke, function ( empoweredYoke ) {
@@ -2692,7 +2693,7 @@ PkRuntime.prototype.withDefiner = function ( yoke, body ) {
     }, function ( empoweredYoke, result ) {
         var disempoweredYoke = {
             yokeRider: yoke.yokeRider,
-            definerToken: yoke.definerToken,
+            effectToken: yoke.effectToken,
             runWaitLinear: empoweredYoke.runWaitLinear
         };
         return runRet( disempoweredYoke, result );
@@ -2700,7 +2701,7 @@ PkRuntime.prototype.withDefiner = function ( yoke, body ) {
 };
 PkRuntime.prototype.conveniences_syncYoke = {
     yokeRider: pk( "pure-yoke" ),
-    definerToken: null,
+    effectToken: null,
     runWaitLinear: function ( step, then ) {
         return then( step( this ) );
     }
