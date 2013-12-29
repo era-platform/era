@@ -63,7 +63,11 @@
 //     A value which can be checked for equality and used as a lookup
 //     key, but which can't be serialized or transported. This is good
 //     for references to local effect-related resources that can't be
-//     transported anyway.
+//     transported anyway. For some tokens ("comparable" ones), pure
+//     code can compare them to each other; for others, only the
+//     internal workings of side-effectful operations will do the
+//     comparison.
+//     // TODO: Add some way to actually make comparable tokens.
 
 
 function Pk() {}
@@ -152,16 +156,19 @@ function pkLinearAsNonlinear( innerValue ) {
     return new Pk().init_( null, "linear-as-nonlinear",
         pkList( innerValue ), !"isLinear", {} );
 }
-function pkToken( jsObj ) {
+function pkToken( jsPayload ) {
     return new Pk().init_(
-        null, "token", pkNil, !"isLinear", { jsObj: jsObj } );
+        null, "token", pkNil, !"isLinear", { jsPayload: jsPayload } );
 }
-function makeEffectToken() {
+function makeEffectToken( jsPayloadEffects ) {
     // NOTE: Whenever we do side effects, we roughly understand them
     // as transformations of some linear value that represents the
     // outside world. That's why we wrap up the effect token as a
     // linear value here.
-    var token = pkToken( {} );
+    var token = pkToken( {
+        comparable: false,
+        effects: jsPayloadEffects
+    } );
     var result = {};
     result.unwrapped = token;
     result.wrapped = pkNonlinearAsLinear(
@@ -329,7 +336,7 @@ function isName( x ) {
     return x.tag === "string-name";
 }
 function tokenEq( a, b ) {
-    return a.special.jsObj === b.special.jsObj;
+    return a.special.jsPayload === b.special.jsPayload;
 }
 function listGet( x, i ) {
     for ( ; 0 < i; i-- ) {
@@ -1730,6 +1737,27 @@ PkRuntime.prototype.init_ = function () {
         return pkRet( newYoke, yoke.yokeRider );
     } ) );
     
+    // NOTE: This does nothing visible in a program that respects
+    // linearity, but if a program has been keeping nonlinear
+    // references to effect tokens (either by unwrapping the wrapped
+    // ones or by storing the wrapped ones inside linear-as-nonlinear
+    // wrappers), this will install a fresh effect token so that all
+    // the old references are useless. Most of the other
+    // side-effectful operations accomplish this as well, but that's
+    // just an implementation detail.
+    defVal( "update-the-effect-token", pkfn( function ( yoke, args ) {
+        if ( !listLenIs( args, 0 ) )
+            return pkErrLen( yoke, args,
+                "Called update-the-effect-token" );
+        return self.mapEffect_( yoke, function ( yoke, effects ) {
+            if ( !effects.canUpdateTheEffectToken )
+                return pkErr( yoke,
+                    "Called update-the-effect-token without access " +
+                    "to that side effect" );
+            return pkRet( yoke, pkNil );
+        } );
+    } ) );
+    
     defVal( "defval", pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 2 ) )
             return pkErrLen( yoke, args, "Called defval" );
@@ -1740,8 +1768,8 @@ PkRuntime.prototype.init_ = function () {
                 "Called defval with a non-name name" );
         if ( val.isLinear() )
             return pkErr( yoke, "Called defval with a linear value" );
-        return self.mapDefiner_( yoke, function ( yoke, hasDefiner ) {
-            if ( !hasDefiner )
+        return self.mapEffect_( yoke, function ( yoke, effects ) {
+            if ( !effects.canDefine )
                 return pkErr( yoke,
                     "Called defval without access to top-level " +
                     "definition side effects" );
@@ -1761,8 +1789,8 @@ PkRuntime.prototype.init_ = function () {
         if ( macro.isLinear() )
             return pkErr( yoke,
                 "Called defmacro with a linear macro" );
-        return self.mapDefiner_( yoke, function ( yoke, hasDefiner ) {
-            if ( !hasDefiner )
+        return self.mapEffect_( yoke, function ( yoke, effects ) {
+            if ( !effects.canDefine )
                 return pkErr( yoke,
                     "Called defval without access to top-level " +
                     "definition side effects" );
@@ -1792,10 +1820,8 @@ PkRuntime.prototype.init_ = function () {
             if ( keys.isLinear() )
                 return pkErr( yoke,
                     "Called deftag with a linear args list" );
-            return self.mapDefiner_( yoke,
-                function ( yoke, hasDefiner ) {
-                
-                if ( !hasDefiner )
+            return self.mapEffect_( yoke, function ( yoke, effects ) {
+                if ( !effects.canDefine )
                     return pkErr( yoke,
                         "Called deftag without access to top-level " +
                         "definition side effects" );
@@ -1827,10 +1853,8 @@ PkRuntime.prototype.init_ = function () {
             if ( argNames.isLinear() )
                 return pkErr( yoke,
                     "Called defmethod with a linear args list" );
-            return self.mapDefiner_( yoke,
-                function ( yoke, hasDefiner ) {
-                
-                if ( !hasDefiner )
+            return self.mapEffect_( yoke, function ( yoke, effects ) {
+                if ( !effects.canDefine )
                     return pkErr( yoke,
                         "Called defmethod without access to " +
                         "top-level definition side effects" );
@@ -1852,8 +1876,8 @@ PkRuntime.prototype.init_ = function () {
         if ( listGet( args, 2 ).isLinear() )
             return pkErr( yoke,
                 "Called set-impl with a linear function" );
-        return self.mapDefiner_( yoke, function ( yoke, hasDefiner ) {
-            if ( !hasDefiner )
+        return self.mapEffect_( yoke, function ( yoke, effects ) {
+            if ( !effects.canDefine )
                 return pkErr( yoke,
                     "Called set-impl without access to top-level " +
                     "definition side effects" );
@@ -1883,6 +1907,35 @@ PkRuntime.prototype.init_ = function () {
             
             return pkRet( yoke, unwrapped );
         } );
+    } ) );
+    
+    // TODO: See if these utilities should be at the top level.
+    function isComparableToken( x ) {
+        return x.tag === "token" && x.special.jsPayload.comparable;
+    }
+    function pkBoolean( jsBoolean ) {
+        return jsBoolean ? pk( "yep", pkNil ) : pkNil;
+    }
+    
+    defVal( "is-a-comparable-token", pkfn( function ( yoke, args ) {
+        if ( !listLenIs( args, 1 ) )
+            return pkErrLen( yoke, args,
+                "Called token-is-comparable" );
+        return pkRet( yoke,
+            pkBoolean( isComparableToken( listGet( args, 0 ) ) ) );
+    } ) );
+    
+    defVal( "comparable-token-eq", pkfn( function ( yoke, args ) {
+        if ( !listLenIs( args, 2 ) )
+            return pkErrLen( yoke, args,
+                "Called comparable-token-eq" );
+        var a = listGet( args, 0 );
+        var b = listGet( args, 1 );
+        if ( !(isComparableToken( a ) && isComparableToken( b )) )
+            return pkErr( yoke,
+                "Called comparable-token-eq with a value that " +
+                "wasn't a comparable token" );
+        return pkRet( yoke, pkBoolean( tokenEq( a, b ) ) );
     } ) );
     
     return self;
@@ -2582,7 +2635,7 @@ PkRuntime.prototype.getMacro = function ( name ) {
     
     return pkRawErr( "Unbound variable " + name );
 };
-PkRuntime.prototype.mapDefiner_ = function ( yoke, func ) {
+PkRuntime.prototype.mapEffect_ = function ( yoke, func ) {
     var self = this;
     var yokeRider = yoke.yokeRider;
     var pureYoke = yokeWithRider( yoke, pk( "pure-yoke" ) );
@@ -2622,20 +2675,28 @@ PkRuntime.prototype.mapDefiner_ = function ( yoke, func ) {
                                     "Called " + us + " with a " +
                                     "token that wasn't the current " +
                                     "effect token" );
+                            if ( !effectToken.special.jsPayload.
+                                effects.canUpdateTheEffectToken )
+                                return pkErr( pureYoke,
+                                    "Called " + us + " without " +
+                                    "access to the side effect of " +
+                                    "updating the effect token" );
                             return runWaitTry( pureYoke,
                                 function ( pureYoke ) {
                                 
                                 return func( pureYoke,
-                                    !!"hasDefiner" );
+                                    effectToken.special.jsPayload.
+                                        effects );
                             }, function ( pureYoke, ignoredNil ) {
                                 if ( ignoredNil.tag !== "nil" )
                                     return pkErr( pureYoke,
                                         "Internally used " +
-                                        "mapDefiner_ with a " +
+                                        "mapEffect_ with a " +
                                         "function that returned a " +
                                         "non-nil value" );
-                                var newEffectToken =
-                                    makeEffectToken();
+                                var newEffectToken = makeEffectToken(
+                                    effectToken.special.jsPayload.
+                                        effects );
                                 var updatedYoke = {
                                     yokeRider: pureYoke.yokeRider,
                                     effectToken:
@@ -2655,11 +2716,14 @@ PkRuntime.prototype.mapDefiner_ = function ( yoke, func ) {
                         return runWaitTry( pureYoke,
                             function ( pureYoke ) {
                             
-                            return func( pureYoke, !"hasDefiner" );
+                            return func( pureYoke, {
+                                canUpdateTheEffectToken: false,
+                                canDefine: false
+                            } );
                         }, function ( pureYoke, ignoredNil ) {
                             if ( ignoredNil.tag !== "nil" )
                                 return pkErr( pureYoke,
-                                    "Internally used mapDefiner_ " +
+                                    "Internally used mapEffect_ " +
                                     "with a function that returned " +
                                     "a non-nil value" );
                             return pkRet( yoke, pkNil );
@@ -2681,7 +2745,10 @@ PkRuntime.prototype.mapDefiner_ = function ( yoke, func ) {
 // TODO: See if we should be temporarily augmenting the available side
 // effects, rather than temporarily replacing them.
 PkRuntime.prototype.withDefiner = function ( yoke, body ) {
-    var effectToken = makeEffectToken();
+    var effectToken = makeEffectToken( {
+        canUpdateTheEffectToken: true,
+        canDefine: true
+    } );
     var empoweredYoke = {
         yokeRider:
             pk( "top-level-definer-yoke", effectToken.wrapped ),
