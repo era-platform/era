@@ -40,6 +40,12 @@ textarea { display: block; }
   (if (nil)
     (list a a b)
     (list b b a)))
+
+; TODO: Fix this. For some reason it returns #(nil) rather than nil.
+( (fn args
+    (let-list (a) args
+      a))
+  (nil))
 </textarea>
 <button id="go">Execute</button>
 <textarea id="result" disabled cols="80" rows="24"></textarea>
