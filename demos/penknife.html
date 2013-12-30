@@ -44,6 +44,15 @@ textarea { display: block; }
     (let-list (a) args
       a))
   (nil))
+
+(call-with-mbox-env/fn args /let-list (mbox-env) args
+/let-list (my-mbox) (list/mbox-new mbox-env (succ/nil))
+/let-list (a) (list/mbox-get mbox-env my-mbox)
+/let-list (-) (list/mbox-set mbox-env my-mbox succ.a)
+/let-list (b) (list/mbox-get mbox-env my-mbox)
+/let-list (-) (list/mbox-set mbox-env my-mbox succ.b)
+/let-list (c) (list/mbox-get mbox-env my-mbox)
+/list a b c)
 </textarea>
 <button id="go">Execute</button>
 <textarea id="result" disabled cols="80" rows="24"></textarea>

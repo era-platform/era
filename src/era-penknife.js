@@ -131,6 +131,8 @@ Pk.prototype.toString = function () {
         return "#(" + spaceBetween( this ) + ")";
     if ( this.tag === "succ" )
         return "" + toJsNum( this );
+    if ( this.tag === "token" )
+        return "#token(" + this.special.jsPayload.stringRep + ")";
     return "(" + this.getTagName() + spaceBefore( this.args_ ) + ")";
 };
 var pkNil =
@@ -164,6 +166,7 @@ var dummyMutableEnvironment;
 (function () {
     var dummyContents;
     dummyMutableEnvironment = pkToken( dummyContents = {
+        stringRep: "dummyEnv",
         comparable: false,
         mutableBoxState: pkNil,
         mutableBoxEnvironment: null,
@@ -181,6 +184,7 @@ function makeEffectToken( jsPayloadEffects ) {
     // outside world. That's why we wrap up the effect token as a
     // linear value here.
     var token = pkToken( {
+        stringRep: "effect",
         comparable: false,
         mutableBoxState: pkNil,
         mutableBoxEnvironment: dummyMutableEnvironment,
@@ -1283,12 +1287,13 @@ PkRuntime.prototype.init_ = function () {
         return listFlattenOnce( yoke, dupsPerElem,
             function ( yoke, dups ) {
         
-        return listMap( yoke, dups, function ( yoke, dup ) {
-            return pkRet( yoke, pkLinearAsNonlinear( dup ) );
-        }, function ( yoke, sourceCaptures ) {
-        return listAppend( yoke,
-            evaluatedOuterCaptures, sourceCaptures,
+        return listAppend( yoke, evaluatedOuterCaptures, dups,
             function ( yoke, innerCaptures ) {
+        return listMap( yoke, innerCaptures,
+            function ( yoke, capture ) {
+            
+            return pkRet( yoke, pkLinearAsNonlinear( capture ) );
+        }, function ( yoke, innerCaptures ) {
             
             return self.callMethod( yoke, "binding-interpret",
                 pkList( bodyBinding, innerCaptures ) );
@@ -1940,6 +1945,7 @@ PkRuntime.prototype.init_ = function () {
         var body = listGet( args, 0 );
         var mboxEnvContents;
         var mboxEnv = pkToken( mboxEnvContents = {
+            stringRep: "env",
             comparable: false,
             mutableBoxState: pkNil,
             mutableBoxEnvironment: dummyMutableEnvironment,
@@ -1987,10 +1993,12 @@ PkRuntime.prototype.init_ = function () {
                 return pkRet( yoke, pkNil );
             } );
         }, function ( yoke, ignoredNil ) {
-            if ( !mboxEnv.special.isValidMutableEnvironment )
+            if ( !mboxEnv.special.jsPayload.
+                isValidMutableEnvironment )
                 return pkErr( yoke,
                     "Called mbox-new with an invalid environment" );
             return pkRet( yoke, pkToken( {
+                stringRep: "mbox",
                 comparable: false,
                 mutableBoxState: initState,
                 mutableBoxEnvironment: mboxEnv,
@@ -2023,14 +2031,15 @@ PkRuntime.prototype.init_ = function () {
                 return pkRet( yoke, pkNil );
             } );
         }, function ( yoke, ignoredNil ) {
-            if ( !mboxEnv.special.isValidMutableEnvironment )
+            if ( !mboxEnv.special.jsPayload.
+                isValidMutableEnvironment )
                 return pkErr( yoke,
                     "Called mbox-eq with an invalid environment" );
             if ( !(true
-                && tokenEq(
-                    mboxEnv, mboxA.special.mutableBoxEnvironment )
-                && tokenEq(
-                    mboxEnv, mboxB.special.mutableBoxEnvironment )
+                && tokenEq( mboxEnv,
+                    mboxA.special.jsPayload.mutableBoxEnvironment )
+                && tokenEq( mboxEnv,
+                    mboxB.special.jsPayload.mutableBoxEnvironment )
             ) )
                 return pkErr( yoke,
                     "Called mbox-eq with an incorrect environment" );
@@ -2058,14 +2067,16 @@ PkRuntime.prototype.init_ = function () {
                 return pkRet( yoke, pkNil );
             } );
         }, function ( yoke, ignoredNil ) {
-            if ( !mboxEnv.special.isValidMutableEnvironment )
+            if ( !mboxEnv.special.jsPayload.
+                isValidMutableEnvironment )
                 return pkErr( yoke,
                     "Called mbox-get with an invalid environment" );
-            if ( !tokenEq(
-                mboxEnv, mbox.special.mutableBoxEnvironment ) )
+            if ( !tokenEq( mboxEnv,
+                mbox.special.jsPayload.mutableBoxEnvironment ) )
                 return pkErr( yoke,
                     "Called mbox-get with an incorrect environment" );
-            return pkRet( yoke, mbox.special.mutableBoxState );
+            return pkRet( yoke,
+                mbox.special.jsPayload.mutableBoxState );
         } );
     } ) );
     defVal( "mbox-set", pkfn( function ( yoke, args ) {
@@ -2073,7 +2084,7 @@ PkRuntime.prototype.init_ = function () {
             return pkErrLen( yoke, args, "Called mbox-set" );
         var mboxEnv = listGet( args, 0 );
         var mbox = listGet( args, 1 );
-        var newState = listGet( args, 3 );
+        var newState = listGet( args, 2 );
         if ( mboxEnv.tag !== "token" )
             return pkErr( yoke,
                 "Called mbox-set with a non-token environment" );
@@ -2088,14 +2099,15 @@ PkRuntime.prototype.init_ = function () {
                 return pkErr( yoke,
                     "Called mbox-set without access to imperative " +
                     "side effects" );
-            if ( !mboxEnv.special.isValidMutableEnvironment )
+            if ( !mboxEnv.special.jsPayload.
+                isValidMutableEnvironment )
                 return pkErr( yoke,
                     "Called mbox-set with an invalid environment" );
-            if ( !tokenEq(
-                mboxEnv, mbox.special.mutableBoxEnvironment ) )
+            if ( !tokenEq( mboxEnv,
+                mbox.special.jsPayload.mutableBoxEnvironment ) )
                 return pkErr( yoke,
                     "Called mbox-set with an incorrect environment" );
-            mbox.special.mutableBoxState = newState;
+            mbox.special.jsPayload.mutableBoxState = newState;
             return pkRet( yoke, pkNil );
         } );
     } ) );
@@ -2366,21 +2378,8 @@ PkRuntime.prototype.makeSubBindingUnderMappendedArgs_ = function (
     return listKeep( yoke, captures, function ( pkName ) {
         return getEntry( pkName ) === void 0;
     }, function ( yoke, nonlocalNames ) {
-    return listFoldlJsAsync( yoke,
-        { i: pkNil, revNonlocalInBindings: pkNil },
-        nonlocalNames,
-        function ( yoke, frame, pkName, then ) {
-        
-        return then( yoke, {
-            i: pk( "succ", frame.i ),
-            revNonlocalInBindings:
-                pkCons( pk( "param-binding", frame.i ),
-                    frame.revNonlocalInBindings )
-        } );
-    }, function ( yoke, frame ) {
-    var lenNonlocalNames = frame.i;
-    return listRev( yoke, frame.revNonlocalInBindings,
-        function ( yoke, nonlocalInBindings ) {
+    return listLen( yoke, nonlocalNames,
+        function ( yoke, lenNonlocalNames ) {
     
     return listEach( yoke, captures, function ( pkName ) {
         var entry = getEntry( pkName );
@@ -2411,18 +2410,35 @@ PkRuntime.prototype.makeSubBindingUnderMappendedArgs_ = function (
             } );
         } );
     }, function ( yoke, stopIndex ) {
-    return listMappend( yoke, captures, function ( yoke, pkName ) {
+    return listFoldlJsAsync( yoke,
+        { nonlocalI: pkNil, revInBindings: pkNil },
+        captures,
+        function ( yoke, frame, pkName, then ) {
         
         var entry = getEntry( pkName );
-        if ( entry === void 0 )  // nonlocal
-            return pkRet( yoke, pkNil );
-        if ( entry.indices.tag !== "cons" )
-            throw new Error();
-        var i = entry.indices.ind( 0 );
-        entry.indices = entry.indices.ind( 1 );
-        return pkRet( yoke, pkList( pk( "param-binding", i ) ) );
-    }, function ( yoke, localInBindings ) {
-    return listAppend( yoke, nonlocalInBindings, localInBindings,
+        if ( entry === void 0 ) {
+            // nonlocal
+            return then( yoke, {
+                nonlocalI: pk( "succ", frame.nonlocalI ),
+                revInBindings:
+                    pkCons( pk( "param-binding", frame.nonlocalI ),
+                        frame.revInBindings )
+            } );
+        } else {
+            // local
+            if ( entry.indices.tag !== "cons" )
+                throw new Error();
+            var localI = entry.indices.ind( 0 );
+            entry.indices = entry.indices.ind( 1 );
+            return then( yoke, {
+                nonlocalI: frame.nonlocalI,
+                revInBindings:
+                    pkCons( pk( "param-binding", localI ),
+                        frame.revInBindings )
+            } );
+        }
+    }, function ( yoke, frame ) {
+    return listRev( yoke, frame.revInBindings,
         function ( yoke, inBindings ) {
     return runWaitTry( yoke, function ( yoke ) {
         return self.callMethod( yoke, "call",
@@ -2447,7 +2463,6 @@ PkRuntime.prototype.makeSubBindingUnderMappendedArgs_ = function (
     } );
     } );
     
-    } );
     } );
     } );
     
@@ -2917,7 +2932,7 @@ PkRuntime.prototype.mapEffect_ = function ( yoke, func ) {
                                     runWaitLinear:
                                         pureYoke.runWaitLinear
                                 };
-                                return pkRet( yoke,
+                                return pkRet( updatedYoke,
                                     pk( "yep",
                                         newEffectToken.wrapped ) );
                             } );
