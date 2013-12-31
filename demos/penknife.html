@@ -17,7 +17,20 @@ textarea { display: block; }
 <p><a href="https://github.com/rocketnia/penknife"
     >View the old Penknife project on GitHub.</a></p>
 
-<textarea id="code" cols="80" rows="24">
+<script type="text/plain" id="pk-prelude">
+(defval quote.list /fn x x)
+
+(defmacro quote.fn-with-args /fn args
+/let-list (op-fork body get-fork gensym-base) args
+/let-list (arglist body) body
+/let-list (g-args) (list/pair-name gensym-base quote.foo)
+/macroexpand-to-fork
+  (list quote.fn g-args (list quote.let-list arglist g-args body))
+  get-fork
+  (pair-name gensym-base quote.body-of-fn-with-args))
+</script>
+
+<textarea id="code-in-textarea" cols="80" rows="24">
 (nil)
 (yep (nil))
 (cons (nil) (nil))
@@ -25,7 +38,6 @@ textarea { display: block; }
 ((fn x (cons x x)) (nil) (nil))
 ((fn x ((fn x (cons x x)) x x)) (nil) (nil))
 
-(defval quote.list /fn x x)
 (list quote.a quote.b)
 
 (defval quote.curried-example /fn x /fn y (cons y x))
@@ -44,6 +56,10 @@ textarea { display: block; }
     (let-list (a) args
       a))
   (nil))
+
+( (fn-with-args (a b c)
+    (list b b c))
+  quote.foo quote.bar quote.baz)
 
 (call-with-mbox-env/fn args /let-list (mbox-env) args
 /let-list (my-mbox) (list/mbox-new mbox-env (succ/nil))
@@ -74,7 +90,7 @@ function runDeferTrampoline() {
         deferTrampolineEvents.pop()();
 };
 
-window.onload = function () {
+function pkReadAll( string, then ) {
     function read( stream, onEnd, onFailure, onSuccess ) {
         reader( {
             stream: stream,
@@ -103,93 +119,111 @@ window.onload = function () {
         } );
         runDeferTrampoline();
     }
-    function readAll() {
+    var stream = stringStream( string );
+    readNext( [] );
+    function readNext( resultsSoFar ) {
+        read( stream, function () {  // onEnd
+            then( resultsSoFar );
+        }, function ( message ) {  // onFailure
+            then( resultsSoFar.concat(
+                [ { ok: false, msg: message } ] ) );
+        }, function ( result ) {  // onSuccess
+            readNext( resultsSoFar.concat(
+                [ { ok: true, val: result } ] ) );
+        } );
+    }
+}
+
+window.onload = function () {
+    function generateOutput() {
         var penknife = makePkRuntime();
-        var stream = stringStream(
-            document.getElementById( "code" ).value );
-        readNext( [] );
-        function readNext( resultsSoFar ) {
-            read( stream, function () {  // onEnd
-                show( resultsSoFar );
-            }, function ( message ) {  // onFailure
-                show( resultsSoFar.concat(
-                    [ { ok: false, msg: message } ] ) );
-            }, function ( result ) {  // onSuccess
-                readNext( resultsSoFar.concat(
-                    [ { ok: true, val: result } ] ) );
-            } );
-        }
-        function show( results ) {
-            function reportError( result, errorIntro ) {
-                if ( result.tag === "nope" ) {
-                    displays.push(
-                        "" + errorIntro + " error: " +
-                        result.ind( 0 ) );
-                    return true;
-                } else if ( result.tag !== "yep" ) {
-                    displays.push(
-                        "" + errorIntro + " error " +
-                        "(poorly wrapped): " + result );
-                    return true;
-                } else {
-                    // This is a triumph.
-                    return false;
-                }
+        pkReadAll(
+            document.getElementById( "pk-prelude" ).firstChild.data,
+            function ( preludeResults ) {
+        pkReadAll(
+            document.getElementById( "code-in-textarea" ).value,
+            function ( textareaResults ) {
+        
+        var results = [].concat(
+            arrMap( preludeResults, function ( result ) {
+                return { result: result, displayThisResult: false };
+            } ),
+            arrMap( textareaResults, function ( result ) {
+                return { result: result, displayThisResult: true };
+            } )
+        );
+        
+        function reportError( result, errorIntro ) {
+            if ( result.tag === "nope" ) {
+                displays.push(
+                    "" + errorIntro + " error: " + result.ind( 0 ) );
+                return true;
+            } else if ( result.tag !== "yep" ) {
+                displays.push(
+                    "" + errorIntro + " error (poorly wrapped): " +
+                    result );
+                return true;
+            } else {
+                // This is a triumph.
+                return false;
             }
-            var displays = [];
-            for ( var i = 0, n = results.length; i < n; i++ ) {
-                var result = results[ i ];
-                if ( !result.ok ) {
-                    displays.push( "Parse error: " + result.msg );
-                    break;
-                }
-                var macroexpanded =
-                    penknife.conveniences_macroexpandArrays(
-                        result.val ).result;
-                if ( reportError( macroexpanded,
-                    "Macroexpansion" ) ) {
-                    break;
-                } else {
-//                    displays.push(
-//                        "Macroexpansion: " + macroexpanded.ind( 0 ) );
-                }
-                var macroexpandedDrop = penknife.conveniences_pkDrop(
-                    macroexpanded ).result;
-                if ( reportError( macroexpandedDrop,
-                    "Macroexpansion result drop" ) )
-                    break;
-                
-                var interpreted =
-                    penknife.conveniences_interpretBinding(
-                        macroexpanded.ind( 0 ) ).result;
-                if ( reportError( interpreted, "Interpretation" ) ) {
-                    break;
-                } else {
+        }
+        var displays = [];
+        for ( var i = 0, n = results.length; i < n; i++ ) {
+            var result = results[ i ];
+            if ( !result.result.ok ) {
+                displays.push( "Parse error: " + result.result.msg );
+                break;
+            }
+            var macroexpanded =
+                penknife.conveniences_macroexpandArrays(
+                    result.result.val ).result;
+            if ( reportError( macroexpanded, "Macroexpansion" ) ) {
+                break;
+            } else {
+//                displays.push(
+//                    "Macroexpansion: " + macroexpanded.ind( 0 ) );
+            }
+            var macroexpandedDrop =
+                penknife.conveniences_pkDrop( macroexpanded ).result;
+            if ( reportError( macroexpandedDrop,
+                "Macroexpansion result drop" ) )
+                break;
+            
+            var interpreted = penknife.conveniences_interpretBinding(
+                macroexpanded.ind( 0 ) ).result;
+            if ( reportError( interpreted, "Interpretation" ) ) {
+                break;
+            } else {
+                if ( result.displayThisResult ) {
                     displays.push( "" + interpreted.ind( 0 ) );
 //                    displays.push( "" );
                 }
-                var interpretedDrop = penknife.conveniences_pkDrop(
-                    interpreted ).result;
-                if ( reportError( interpretedDrop,
-                    "Interpretation result drop" ) )
-                    break;
-                
-                var defined =
-                    penknife.conveniences_runDefinitions().result;
-                if ( reportError( defined, "Definition" ) )
-                    break;
-                var definedDrop =
-                    penknife.conveniences_pkDrop( defined ).result;
-                if ( reportError( definedDrop,
-                    "Definition result drop" ) )
-                    break;
             }
-            document.getElementById( "result" ).value =
-                displays.join( "\n" );
+            var interpretedDrop =
+                penknife.conveniences_pkDrop( interpreted ).result;
+            if ( reportError( interpretedDrop,
+                "Interpretation result drop" ) )
+                break;
+            
+            var defined =
+                penknife.conveniences_runDefinitions().result;
+            if ( reportError( defined, "Definition" ) )
+                break;
+            var definedDrop =
+                penknife.conveniences_pkDrop( defined ).result;
+            if ( reportError( definedDrop,
+                "Definition result drop" ) )
+                break;
         }
+        document.getElementById( "result" ).value =
+            displays.join( "\n" );
+        
+        } );
+        } );
     }
-    document.getElementById( "go" ).onclick = readAll;
-    readAll();
+    document.getElementById( "go" ).onclick = generateOutput;
+    generateOutput();
 };
 </script>
 </body>
