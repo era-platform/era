@@ -331,6 +331,14 @@ function pkStrNameRaw( str ) {
 function pkStrName( jsStr ) {
     return pkStrNameRaw( pkStr( jsStr ) );
 }
+function pkPairName( first, second ) {
+    return new Pk().init_(
+        null, "pair-name", pkList( first, second ), !"isLinear",
+        { nameJson:
+            "[\"pair-name\"," +
+                first.special.nameJson + "," +
+                second.special.nameJson + "]" } );
+}
 function pkfnLinear( captures, call ) {
     return new Pk().init_( null, "fn", pkNil, captures.isLinear(),
         { captures: captures, call: call, string: "" + call } );
@@ -355,7 +363,11 @@ function isNat( x ) {
     return x.tag === "succ" || x.tag === "nil";
 }
 function isName( x ) {
-    return x.tag === "string-name";
+    // NOTE: For now, isName( x ) implies x.isLinear(). If we ever
+    // extend it to include linear values, we should take a look at
+    // any code that calls isName() to see if it needs to change to
+    // respect linearity.
+    return x.tag === "string-name" || x.tag === "pair-name";
 }
 function tokenEq( a, b ) {
     return a.special.jsPayload === b.special.jsPayload;
@@ -759,8 +771,31 @@ PkRuntime.prototype.init_ = function () {
     function defVal( name, val ) {
         self.defVal( pkStrName( name ), val );
     }
-    function defMacro( name, macro ) {
-        self.defMacro( pkStrName( name ), macro );
+    function defMacro( name, body ) {
+        self.defMacro( pkStrName( name ),
+            pkfn( function ( yoke, args ) {
+            
+            if ( !listLenIs( args, 4 ) )
+                return pkErrLen( yoke, args,
+                    "Called " + name + "'s macroexpander" );
+            var fork = listGet( args, 0 );
+            var macroBody = listGet( args, 1 );
+            var getFork = listGet( args, 2 );
+            var gensymBase = listGet( args, 3 );
+            if ( !isList( macroBody ) )
+                return pkErr( yoke,
+                    "Called " + name + "'s macroexpander with a " +
+                    "non-list macro body" );
+            if ( getFork.isLinear() )
+                return pkErr( yoke,
+                    "Called " + name + "'s macroexpander with a " +
+                    "linear get-fork" );
+            if ( !isName( gensymBase ) )
+                return pkErr( yoke,
+                    "Called " + name + "'s macroexpander with a " +
+                    "non-name gensym base" );
+            return body( yoke, fork, macroBody, getFork, gensymBase );
+        } ) );
     }
     function setStrictImpl( methodName, tagName, call ) {
         self.setStrictImpl(
@@ -801,6 +836,17 @@ PkRuntime.prototype.init_ = function () {
             return pkErr( yoke,
                 "Called string-name with a non-string" );
         return pkRet( yoke, pkStrNameRaw( listGet( args, 0 ) ) );
+    } ) );
+    defTag( "pair-name", "first", "second" );
+    defVal( "pair-name", pkfn( function ( yoke, args ) {
+        if ( !listLenIs( args, 2 ) )
+            return pkErrLen( yoke, args, "Called pair-name" );
+        var first = listGet( args, 0 );
+        var second = listGet( args, 1 );
+        if ( !(isName( first ) && isName( second )) )
+            return pkErr( yoke,
+                "Called pair-name with a non-name element" );
+        return pkRet( yoke, pkPairName( first, second ) );
     } ) );
     defTag( "nonlinear-as-linear",
         "inner-value", "duplicator", "unwrapper" );
@@ -1308,31 +1354,42 @@ PkRuntime.prototype.init_ = function () {
         } );
     } );
     
-    defMethod( "macroexpand-to-fork", "self", "get-fork" );
-    setStrictImpl( "macroexpand-to-fork", "string-name",
-        function ( yoke, args ) {
-        
-        var expr = listGet( args, 0 );
-        var getFork = listGet( args, 1 );
-        if ( getFork.isLinear() )
-            return pkErr( yoke,
-                "Called macroexpand-to-fork with a linear get-fork" );
-        return runWaitOne( yoke, function ( yoke ) {
-            return self.callMethod( yoke, "call",
-                pkList( getFork, pkList( expr ) ) );
+    defMethod( "macroexpand-to-fork",
+        "self", "get-fork", "gensym-base" );
+    function defMacroexpandToFork( tag, body ) {
+        setStrictImpl( "macroexpand-to-fork", tag,
+            function ( yoke, args ) {
+            
+            var expr = listGet( args, 0 );
+            var getFork = listGet( args, 1 );
+            var gensymBase = listGet( args, 2 );
+            if ( getFork.isLinear() )
+                return pkErr( yoke,
+                    "Called macroexpand-to-fork with a linear " +
+                    "get-fork" );
+            if ( !isName( gensymBase ) )
+                return pkErr( yoke,
+                    "Called macroexpand-to-fork with a non-name " +
+                    "gensym base" );
+            return body( yoke, expr, getFork, gensymBase );
+        } );
+    }
+    arrEach( [ "string-name", "pair-name" ], function ( nameTag ) {
+        defMacroexpandToFork( nameTag,
+            function ( yoke, expr, getFork, gensymBase ) {
+            
+            return runWaitOne( yoke, function ( yoke ) {
+                return self.callMethod( yoke, "call",
+                    pkList( getFork, pkList( expr ) ) );
+            } );
         } );
     } );
-    setStrictImpl( "macroexpand-to-fork", "cons",
-        function ( yoke, args ) {
+    defMacroexpandToFork( "cons",
+        function ( yoke, expr, getFork, gensymBase ) {
         
-        var expr = listGet( args, 0 );
-        var getFork = listGet( args, 1 );
-        if ( getFork.isLinear() )
-            return pkErr( yoke,
-                "Called macroexpand-to-fork with a linear get-fork" );
         return runWaitTry( yoke, function ( yoke ) {
             return self.callMethod( yoke, "macroexpand-to-fork",
-                pkList( expr.ind( 0 ), getFork ) );
+                pkList( expr.ind( 0 ), getFork, gensymBase ) );
         }, function ( yoke, opFork ) {
             if ( opFork.isLinear() )
                 return pkErr( yoke,
@@ -1349,26 +1406,16 @@ PkRuntime.prototype.init_ = function () {
                     self.nonMacroMacroexpander();
                 return self.callMethod( yoke, "call", pkList(
                     macroexpander,
-                    pkList( opFork, getFork, expr.ind( 1 ) )
+                    pkList(
+                        opFork, expr.ind( 1 ), getFork, gensymBase )
                 ) );
             } );
         } );
     } );
     
-    defMacro( "fn", pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 3 ) )
-            return pkErrLen( yoke, args,
-                "Called fn's macroexpander" );
-        var fork = listGet( args, 0 );
-        var nonlocalGetFork = listGet( args, 1 );
-        var body = listGet( args, 2 );
-        if ( nonlocalGetFork.isLinear() )
-            return pkErr( yoke,
-                "Called fn's macroexpander with a linear get-fork" );
-        if ( !isList( body ) )
-            return pkErr( yoke,
-                "Called fn's macroexpander with a non-list macro body"
-                );
+    defMacro( "fn",
+        function ( yoke, fork, body, nonlocalGetFork, gensymBase ) {
+        
         if ( !listLenIs( body, 2 ) )
             return pkErrLen( yoke, body, "Expanded fn" );
         var paramName = listGet( body, 0 );
@@ -1392,7 +1439,8 @@ PkRuntime.prototype.init_ = function () {
                     function ( yoke, name, then ) {
                     
                     return then( yoke, isParamName( name ) );
-                } )
+                } ),
+                gensymBase
             ) );
         }, function ( yoke, getTine, maybeMacro ) {
         
@@ -1464,23 +1512,11 @@ PkRuntime.prototype.init_ = function () {
         } );
         
         } );
-    } ) );
+    } );
     
-    defMacro( "quote", pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 3 ) )
-            return pkErrLen( yoke, args,
-                "Called quote's macroexpander" );
-        var fork = listGet( args, 0 );
-        var getFork = listGet( args, 1 );
-        var body = listGet( args, 2 );
-        if ( getFork.isLinear() )
-            return pkErr( yoke,
-                "Called quote's macroexpander with a linear get-fork"
-                );
-        if ( !isList( body ) )
-            return pkErr( yoke,
-                "Called quote's macroexpander with a non-list " +
-                "macro body" );
+    defMacro( "quote",
+        function ( yoke, fork, body, getFork, gensymBase ) {
+        
         if ( !listLenIs( body, 1 ) )
             return pkErrLen( yoke, body, "Expanded quote" );
         return self.pkDrop( yoke, fork, function ( yoke ) {
@@ -1496,22 +1532,11 @@ PkRuntime.prototype.init_ = function () {
                 pkNil
             ) );
         } );
-    } ) );
+    } );
     
-    defMacro( "if", pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 3 ) )
-            return pkErrLen( yoke, args,
-                "Called if's macroexpander" );
-        var fork = listGet( args, 0 );
-        var getFork = listGet( args, 1 );
-        var body = listGet( args, 2 );
-        if ( getFork.isLinear() )
-            return pkErr( yoke,
-                "Called if's macroexpander with a linear get-fork" );
-        if ( !isList( body ) )
-            return pkErr( yoke,
-                "Called if's macroexpander with a non-list macro " +
-                "body" );
+    defMacro( "if",
+        function ( yoke, fork, body, getFork, gensymBase ) {
+        
         if ( !listLenIs( body, 3 ) )
             return pkErrLen( yoke, body, "Expanded if" );
         var condExpr = listGet( body, 0 );
@@ -1526,7 +1551,7 @@ PkRuntime.prototype.init_ = function () {
                 function ( yoke ) {
                 
                 return self.callMethod( yoke, "macroexpand-to-fork",
-                    pkList( expr, getFork ) );
+                    pkList( expr, getFork, gensymBase ) );
             }, function ( yoke, getTine, maybeMacro ) {
                 return then( yoke, getTine, listGet( getTine, 0 ) );
             } );
@@ -1575,7 +1600,7 @@ PkRuntime.prototype.init_ = function () {
         
         function fulfill( getTine, then ) {
             return self.makeSubBindingUnderMappendedArgs_(
-                yoke, null, getTine, bcDedup,
+                yoke, getTine, null, gensymBase, bcDedup,
                 function ( yoke, captures, dupsList, outBinding ) {
                 
                 if ( !listLenIs( captures, 0 ) )
@@ -1643,26 +1668,14 @@ PkRuntime.prototype.init_ = function () {
         } );
         
         } );
-    } ) );
+    } );
     
     // NOTE: The `let-list` macro is a destructuring let that raises
     // an error if it doesn't match. By doing this, it doesn't need to
     // use condition-guarded aliasing like the `if` macro does.
-    defMacro( "let-list", pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 3 ) )
-            return pkErrLen( yoke, args,
-                "Called let-list's macroexpander" );
-        var fork = listGet( args, 0 );
-        var nonlocalGetFork = listGet( args, 1 );
-        var body = listGet( args, 2 );
-        if ( nonlocalGetFork.isLinear() )
-            return pkErr( yoke,
-                "Called let-list's macroexpander with a linear " +
-                "get-fork" );
-        if ( !isList( body ) )
-            return pkErr( yoke,
-                "Called let-list's macroexpander with a non-list " +
-                "macro body" );
+    defMacro( "let-list",
+        function ( yoke, fork, body, nonlocalGetFork, gensymBase ) {
+        
         if ( !listLenIs( body, 3 ) )
             return pkErrLen( yoke, body, "Expanded let-list" );
         var varNames = listGet( body, 0 );
@@ -1689,13 +1702,13 @@ PkRuntime.prototype.init_ = function () {
             function ( yoke ) {
             
             return self.callMethod( yoke, "macroexpand-to-fork",
-                pkList( sourceExpr, nonlocalGetFork ) );
+                pkList( sourceExpr, nonlocalGetFork, gensymBase ) );
         }, function ( yoke, sourceGetTine, maybeMacro ) {
         
         var sourceCaptures = listGet( sourceGetTine, 0 );
         
         return self.makeSubBindingUnderMappendedArgs_( yoke,
-            nonlocalGetFork, bodyExpr, varNames,
+            bodyExpr, nonlocalGetFork, gensymBase, varNames,
             function ( yoke,
                 bodyCaptures, bodyDupsList, bodyBinding ) {
         
@@ -1733,7 +1746,7 @@ PkRuntime.prototype.init_ = function () {
         } );
         
         } );
-    } ) );
+    } );
     
     // This takes an explicit input and installs it as the implicit
     // yoke. It also takes the old implicit yoke and returns it as the
@@ -2164,8 +2177,8 @@ PkRuntime.prototype.pkDup = function ( yoke, val, count ) {
         return pkRet( yoke, pkList( val ) );
     
     if ( !val.isLinear() ) {
-        // NOTE: This includes tags "nil", "string", and
-        // "string-name".
+        // NOTE: This includes tags "nil", "string", "string-name",
+        // and "pair-name".
         return withDups( pkNil, function ( ignored ) {
             return val;
         } );
@@ -2313,7 +2326,7 @@ PkRuntime.prototype.fulfillGetTines = function (
     } );
 };
 PkRuntime.prototype.makeSubBindingUnderMappendedArgs_ = function (
-    yoke, nonlocalGetForkOrNull, expr, argList, then ) {
+    yoke, expr, nonlocalGetForkOrNull, gensymBase, argList, then ) {
     
     var self = this;
     
@@ -2365,7 +2378,8 @@ PkRuntime.prototype.makeSubBindingUnderMappendedArgs_ = function (
             self.deriveGetFork_( nonlocalGetForkOrNull,
                 function ( yoke, name, then ) {
                     return then( yoke, getEntry( name ) !== void 0 );
-                } )
+                } ),
+            gensymBase
         ) );
     }, function ( yoke, innerGetTine, maybeMacro ) {
         return next( yoke, innerGetTine );
@@ -2588,20 +2602,25 @@ PkRuntime.prototype.runWaitTryGetmacFork = function (
 PkRuntime.prototype.nonMacroMacroexpander = function () {
     var self = this;
     return pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 3 ) )
+        if ( !listLenIs( args, 4 ) )
             return pkErrLen( yoke, args,
                 "Called a non-macro's macroexpander" );
         var fork = listGet( args, 0 );
-        var getFork = listGet( args, 1 );
-        var argsList = listGet( args, 2 );
-        if ( getFork.isLinear() )
-            return pkErr( yoke,
-                "Called a non-macro's macroexpander with a linear " +
-                "get-fork" );
+        var argsList = listGet( args, 1 );
+        var getFork = listGet( args, 2 );
+        var gensymBase = listGet( args, 3 );
         if ( !isList( argsList ) )
             return pkErr( yoke,
                 "Called a non-macro's macroexpander with a " +
                 "non-list args list" );
+        if ( getFork.isLinear() )
+            return pkErr( yoke,
+                "Called a non-macro's macroexpander with a linear " +
+                "get-fork" );
+        if ( !isName( gensymBase ) )
+            return pkErr( yoke,
+                "Called a non-macro's macroexpander with a " +
+                "non-name gensym base" );
         return self.runWaitTryGetmacFork( yoke,
             "the fork parameter to a non-macro's macroexpander",
             function ( yoke ) {
@@ -2650,7 +2669,8 @@ return pkRet( yoke, pk( "getmac-fork",
                     
                     return self.callMethod( yoke,
                         "macroexpand-to-fork",
-                        pkList( list.ind( 0 ), getFork ) );
+                        pkList(
+                            list.ind( 0 ), getFork, gensymBase ) );
                 }, function ( yoke, getTine, maybeMacro ) {
                     return parseList(
                         yoke,
@@ -3010,7 +3030,8 @@ PkRuntime.prototype.conveniences_macroexpand = function (
         
         return self.callMethod( yoke, "macroexpand-to-fork", pkList(
             expr,
-            self.forkGetter( "the top-level get-fork" )
+            self.forkGetter( "the top-level get-fork" ),
+            pkStrName( "root-gensym-base" )
         ) );
     }, function ( yoke, getTine, maybeMacro ) {
         if ( !listLenIs( listGet( getTine, 0 ), 0 ) )
@@ -3077,12 +3098,6 @@ PkRuntime.prototype.conveniences_runDefinitions = function (
 function makePkRuntime() {
     return new PkRuntime().init_();
 }
-
-// TODO: Define gensyms. They'll need to be names (for the purposes of
-// isName()), and they'll need operations like these:
-//
-// - Create a fresh gensym.
-// - Compare two gensyms.
 
 // TODO: Define a staged conditional, preferably from the Penknife
 // side.
