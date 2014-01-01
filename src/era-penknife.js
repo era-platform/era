@@ -355,6 +355,9 @@ function pkfn( call ) {
 function pkList( var_args ) {
     return pkListFromArr( arguments );
 }
+function pkBoolean( jsBoolean ) {
+    return jsBoolean ? pk( "yep", pkNil ) : pkNil;
+}
 
 function isList( x ) {
     return x.tag === "cons" || x.tag === "nil";
@@ -386,6 +389,16 @@ function listLenBounded( x, maxLen ) {
     for ( var n = 0; n <= maxLen; n++ ) {
         if ( x.tag !== "cons" )
             return n;
+        x = x.ind( 1 );
+    }
+    return null;
+}
+function listToArrBounded( x, maxLen ) {
+    var result = [];
+    for ( var n = 0; n <= maxLen; n++ ) {
+        if ( x.tag !== "cons" )
+            return result;
+        result.push( x.ind( 0 ) );
         x = x.ind( 1 );
     }
     return null;
@@ -771,6 +784,19 @@ PkRuntime.prototype.init_ = function () {
     function defVal( name, val ) {
         self.defVal( pkStrName( name ), val );
     }
+    function defFunc( name, arity, jsFunc ) {
+        defVal( name, pkfn( function ( yoke, args ) {
+            if ( !listLenIs( args, arity ) )
+                return pkErrLen( yoke, args, "Called " + name );
+            return jsFunc.apply( {},
+                [ yoke ].concat( listToArrBounded( args, arity ) ) );
+        } ) );
+    }
+    function defPredicate( name, jsFunc ) {
+        defFunc( name, 1, function ( yoke, x ) {
+            return pkRet( yoke, pkBoolean( jsFunc( x ) ) );
+        } );
+    }
     function defMacro( name, body ) {
         self.defMacro( pkStrName( name ),
             pkfn( function ( yoke, args ) {
@@ -803,24 +829,19 @@ PkRuntime.prototype.init_ = function () {
     }
     
     defTag( "cons", "first", "rest" );
-    defVal( "cons", pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 2 ) )
-            return pkErrLen( yoke, args, "Called cons" );
-        if ( !isList( listGet( args, 1 ) ) )
+    defFunc( "cons", 2, function ( yoke, first, rest ) {
+        if ( !isList( rest ) )
             return pkErr( yoke,
                 "Called cons with a rest that wasn't a list" );
-        return pkRet( yoke,
-            pkCons( listGet( args, 0 ), listGet( args, 1 ) ) );
-    } ) );
+        return pkRet( yoke, pkCons( first, rest ) );
+    } );
     defTag( "succ", "pred" );
-    defVal( "succ", pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 1 ) )
-            return pkErrLen( yoke, args, "Called succ" );
-        if ( !isNat( listGet( args, 0 ) ) )
+    defFunc( "succ", 1, function ( yoke, pred ) {
+        if ( !isNat( pred ) )
             return pkErr( yoke,
                 "Called succ with a predecessor that wasn't a nat" );
-        return pkRet( yoke, pk( "succ", listGet( args, 0 ) ) );
-    } ) );
+        return pkRet( yoke, pk( "succ", pred ) );
+    } );
     defTag( "yep", "val" );
     defTag( "nope", "val" );
     defTag( "nil" );
@@ -829,57 +850,44 @@ PkRuntime.prototype.init_ = function () {
         return pkErr( yoke, "The string function has no behavior" );
     } ) );
     defTag( "string-name", "string" );
-    defVal( "string-name", pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 1 ) )
-            return pkErrLen( yoke, args, "Called string-name" );
-        if ( listGet( args, 0 ).tag !== "string" )
+    defFunc( "string-name", 1, function ( yoke, string ) {
+        if ( string.tag !== "string" )
             return pkErr( yoke,
                 "Called string-name with a non-string" );
-        return pkRet( yoke, pkStrNameRaw( listGet( args, 0 ) ) );
-    } ) );
+        return pkRet( yoke, pkStrNameRaw( string ) );
+    } );
     defTag( "pair-name", "first", "second" );
-    defVal( "pair-name", pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 2 ) )
-            return pkErrLen( yoke, args, "Called pair-name" );
-        var first = listGet( args, 0 );
-        var second = listGet( args, 1 );
+    defFunc( "pair-name", 2, function ( yoke, first, second ) {
         if ( !(isName( first ) && isName( second )) )
             return pkErr( yoke,
                 "Called pair-name with a non-name element" );
         return pkRet( yoke, pkPairName( first, second ) );
-    } ) );
+    } );
     defTag( "nonlinear-as-linear",
         "inner-value", "duplicator", "unwrapper" );
-    defVal( "nonlinear-as-linear", pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 3 ) )
-            return pkErrLen( yoke, args,
-                "Called nonlinear-as-linear" );
-        if ( listGet( args, 0 ).isLinear() )
+    defFunc( "nonlinear-as-linear", 3,
+        function ( yoke, innerValue, duplicator, unwrapper ) {
+        
+        if ( innerValue.isLinear() )
             return pkErr( yoke,
                 "Called nonlinear-as-linear with an inner value  " +
                 "that was itself linear" );
-        if ( listGet( args, 1 ).isLinear() )
+        if ( duplicator.isLinear() )
             return pkErr( yoke,
                 "Called nonlinear-as-linear with a duplicator " +
                 "function that was itself linear" );
-        if ( listGet( args, 2 ).isLinear() )
+        if ( unwrapper.isLinear() )
             return pkErr( yoke,
                 "Called nonlinear-as-linear with an unwrapper " +
                 "function that was itself linear" );
         return pkRet( yoke,
             pkNonlinearAsLinear(
-                listGet( args, 0 ),
-                listGet( args, 1 ),
-                listGet( args, 2 ) ) );
-    } ) );
+                innerValue, duplicator, unwrapper ) );
+    } );
     defTag( "linear-as-nonlinear", "inner-value" );
-    defVal( "linear-as-nonlinear", pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 1 ) )
-            return pkErrLen( yoke, args,
-                "Called linear-as-nonlinear" );
-        return pkRet( yoke,
-            pkLinearAsNonlinear( listGet( args, 0 ) ) );
-    } ) );
+    defFunc( "linear-as-nonlinear", 1, function ( yoke, innerValue ) {
+        return pkRet( yoke, pkLinearAsNonlinear( innerValue ) );
+    } );
     defTag( "fn" );
     defVal( "fn", pkfn( function ( yoke, args ) {
         return pkErr( yoke, "The fn function has no behavior" );
@@ -943,20 +951,19 @@ PkRuntime.prototype.init_ = function () {
     } );
     
     defTag( "getmac-fork", "get-tine", "maybe-macro" );
-    defVal( "getmac-fork", pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 2 ) )
-            return pkErrLen( yoke, args, "Called getmac-fork" );
-        return isEnoughGetTineDeep( yoke, listGet( args, 0 ),
+    defFunc( "getmac-fork", 2,
+        function ( yoke, getTine, maybeMacro ) {
+        
+        return isEnoughGetTineDeep( yoke, getTine,
             function ( yoke, valid ) {
             
             if ( !valid )
                 return pkErr( yoke,
                     "Called getmac-fork with an invalid get-tine" );
             return pkRet( yoke,
-                pk( "getmac-fork",
-                    listGet( args, 0 ), listGet( args, 1 ) ) );
+                pk( "getmac-fork", getTine, maybeMacro ) );
         } );
-    } ) );
+    } );
     defMethod( "fork-to-getmac", "fork" );
     setStrictImpl( "fork-to-getmac", "getmac-fork",
         function ( yoke, args ) {
@@ -967,36 +974,26 @@ PkRuntime.prototype.init_ = function () {
     
     defTag( "literal-binding", "literal-val" );
     defTag( "main-binding", "name" );
-    defVal( "main-binding", pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 1 ) )
-            return pkErrLen( yoke, args, "Called main-binding" );
-        if ( !isName( listGet( args, 0 ) ) )
+    defFunc( "main-binding", 1, function ( yoke, name ) {
+        if ( !isName( name ) )
             return pkErr( yoke,
                 "Called main-binding with a non-name" );
-        return pkRet( yoke,
-            pk( "main-binding", listGet( args, 0 ) ) );
-    } ) );
+        return pkRet( yoke, pk( "main-binding", name ) );
+    } );
     defTag( "call-binding", "op", "args" );
-    defVal( "call-binding", pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 2 ) )
-            return pkErrLen( yoke, args, "Called call-binding" );
-        if ( !isList( listGet( args, 1 ) ) )
+    defFunc( "call-binding", 2, function ( yoke, op, args ) {
+        if ( !isList( args ) )
             return pkErr( yoke,
                 "Called call-binding with a non-list args list" );
-        return pkRet( yoke,
-            pk( "call-binding",
-                listGet( args, 0 ), listGet( args, 1 ) ) );
-    } ) );
+        return pkRet( yoke, pk( "call-binding", op, args ) );
+    } );
     defTag( "param-binding", "index" );
-    defVal( "param-binding", pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 1 ) )
-            return pkErrLen( yoke, args, "Called param-binding" );
-        if ( !isNat( listGet( args, 0 ) ) )
+    defFunc( "param-binding", 1, function ( yoke, index ) {
+        if ( !isNat( index ) )
             return pkErr( yoke,
                 "Called param-binding with a non-nat index" );
-        return pkRet( yoke,
-            pk( "param-binding", listGet( args, 0 ) ) );
-    } ) );
+        return pkRet( yoke, pk( "param-binding", index ) );
+    } );
     defTag( "fn-binding", "captures", "body-binding" );
     defVal( "fn-binding", pkfn( function ( yoke, args ) {
         // NOTE: By blocking this function, we preserve the invariant
@@ -1010,7 +1007,10 @@ PkRuntime.prototype.init_ = function () {
     } ) );
     defTag( "binding-for-if", "cond-binding",
         "bindings-and-counts", "then-binding", "else-binding" );
-    defVal( "binding-for-if", pkfn( function ( yoke, args ) {
+    defFunc( "binding-for-if", 4,
+        function ( yoke, condBinding,
+            bindingsAndCounts, thenBinding, elseBinding ) {
+        
         // NOTE: The overall structure of a `binding-for-if` is like
         // this:
         //
@@ -1019,9 +1019,7 @@ PkRuntime.prototype.init_ = function () {
         //   <thenBinding>
         //   <elseBinding>)
         //
-        if ( !listLenIs( args, 4 ) )
-            return pkErrLen( yoke, args, "Called binding-for-if" );
-        return listAll( yoke, listGet( args, 1 ),
+        return listAll( yoke, bindingsAndCounts,
             function ( bindingAndCounts ) {
             
             return isList( bindingAndCounts ) &&
@@ -1033,34 +1031,28 @@ PkRuntime.prototype.init_ = function () {
                 return pkErr( yoke,
                     "Called binding-for-if with an invalid " +
                     "bindings-and-counts" );
-            if ( listGet( args, 2 ).isLinear() )
+            if ( thenBinding.isLinear() )
                 return pkErr( yoke,
                     "Called binding-for-if with a linear " +
                     "then-binding" );
-            if ( listGet( args, 3 ).isLinear() )
+            if ( elseBinding.isLinear() )
                 return pkErr( yoke,
                     "Called binding-for-if with a linear " +
                     "else-binding" );
             return pkRet( yoke,
-                pk( "binding-for-if",
-                    listGet( args, 0 ),
-                    listGet( args, 1 ),
-                    listGet( args, 2 ),
-                    listGet( args, 3 ) ) );
+                pk( "binding-for-if", condBinding,
+                    bindingsAndCounts, thenBinding, elseBinding ) );
         } );
-    } ) );
+    } );
     defTag( "let-list-binding",
         "source-binding",
         "captures",
         "numbers-of-dups",
         "body-binding" );
-    defVal( "let-list-binding", pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 4 ) )
-            return pkErrLen( yoke, args, "Called len-list-binding" );
-        var sourceBinding = listGet( args, 0 );
-        var captures = listGet( args, 1 );
-        var numbersOfDups = listGet( args, 2 );
-        var bodyBinding = listGet( args, 3 );
+    defFunc( "let-list-binding", 4,
+        function ( yoke,
+            sourceBinding, captures, numbersOfDups, bodyBinding ) {
+        
         if ( !isList( captures ) )
             return pkErr( yoke,
                 "Called len-list-binding with a non-list list of " +
@@ -1085,7 +1077,7 @@ PkRuntime.prototype.init_ = function () {
                     numbersOfDups,
                     bodyBinding ) );
         } );
-    } ) );
+    } );
     
     // NOTE: We respect linearity in binding-interpret already, but it
     // follows an unusual contract. Usually a function will consume or
@@ -1751,12 +1743,10 @@ PkRuntime.prototype.init_ = function () {
     // This takes an explicit input and installs it as the implicit
     // yoke. It also takes the old implicit yoke and returns it as the
     // explict output.
-    defVal( "yoke-trade", pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 1 ) )
-            return pkErrLen( yoke, args, "Called yoke-trade" );
-        var newYoke = yokeWithRider( yoke, listGet( args, 0 ) );
+    defFunc( "yoke-trade", 1, function ( yoke, newYokeRider ) {
+        var newYoke = yokeWithRider( yoke, newYokeRider );
         return pkRet( newYoke, yoke.yokeRider );
-    } ) );
+    } );
     
     // NOTE: This does nothing visible in a program that respects
     // linearity, but if a program has been keeping nonlinear
@@ -1768,10 +1758,7 @@ PkRuntime.prototype.init_ = function () {
     // what effect tokens are really for; however, if someone's goal
     // is only to invalidate old effect tokens, this utility is up to
     // that task.
-    defVal( "update-the-effect-token", pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 0 ) )
-            return pkErrLen( yoke, args,
-                "Called update-the-effect-token" );
+    defFunc( "update-the-effect-token", 0, function ( yoke ) {
         return self.mapEffect_( yoke, function ( yoke, effects ) {
             if ( !effects.canUseImperativeCapabilities )
                 return pkErr( yoke,
@@ -1779,13 +1766,9 @@ PkRuntime.prototype.init_ = function () {
                     "to imperative side effects" );
             return pkRet( yoke, pkNil );
         } );
-    } ) );
+    } );
     
-    defVal( "defval", pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 2 ) )
-            return pkErrLen( yoke, args, "Called defval" );
-        var name = listGet( args, 0 );
-        var val = listGet( args, 1 );
+    defFunc( "defval", 2, function ( yoke, name, val ) {
         if ( !isName( name ) )
             return pkErr( yoke,
                 "Called defval with a non-name name" );
@@ -1800,12 +1783,8 @@ PkRuntime.prototype.init_ = function () {
                 return self.defVal( name, val );
             } );
         } );
-    } ) );
-    defVal( "defmacro", pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 2 ) )
-            return pkErrLen( yoke, args, "Called defmacro" );
-        var name = listGet( args, 0 );
-        var macro = listGet( args, 1 );
+    } );
+    defFunc( "defmacro", 2, function ( yoke, name, macro ) {
         if ( !isName( name ) )
             return pkErr( yoke,
                 "Called defmacro with a non-name name" );
@@ -1821,12 +1800,8 @@ PkRuntime.prototype.init_ = function () {
                 return self.defMacro( name, macro );
             } );
         } );
-    } ) );
-    defVal( "deftag", pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 2 ) )
-            return pkErrLen( yoke, args, "Called deftag" );
-        var name = listGet( args, 0 );
-        var argNames = listGet( args, 1 );
+    } );
+    defFunc( "deftag", 2, function ( yoke, name, argNames ) {
         if ( !isName( name ) )
             return pkErr( yoke,
                 "Called deftag with a non-name name" );
@@ -1853,12 +1828,8 @@ PkRuntime.prototype.init_ = function () {
                 } );
             } );
         } );
-    } ) );
-    defVal( "defmethod", pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 2 ) )
-            return pkErrLen( yoke, args, "Called defmethod" );
-        var name = listGet( args, 0 );
-        var argNames = listGet( args, 1 );
+    } );
+    defFunc( "defmethod", 2, function ( yoke, name, argNames ) {
         if ( !isName( name ) )
             return pkErr( yoke,
                 "Called defmethod with a non-name name" );
@@ -1886,17 +1857,17 @@ PkRuntime.prototype.init_ = function () {
                 } );
             } );
         } );
-    } ) );
-    defVal( "set-impl", pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 3 ) )
-            return pkErrLen( yoke, args, "Called set-impl" );
-        if ( !isName( listGet( args, 0 ) ) )
+    } );
+    defFunc( "set-impl", 3,
+        function ( yoke, methodName, tagName, impl ) {
+        
+        if ( !isName( methodName ) )
             return pkErr( yoke,
                 "Called set-impl with a non-name method name" );
-        if ( !isName( listGet( args, 1 ) ) )
+        if ( !isName( tagName ) )
             return pkErr( yoke,
                 "Called set-impl with a non-name tag name" );
-        if ( listGet( args, 2 ).isLinear() )
+        if ( impl.isLinear() )
             return pkErr( yoke,
                 "Called set-impl with a linear function" );
         return self.mapEffect_( yoke, function ( yoke, effects ) {
@@ -1905,39 +1876,30 @@ PkRuntime.prototype.init_ = function () {
                     "Called set-impl without access to top-level " +
                     "definition side effects" );
             return self.enqueueDef_( yoke, function () {
-                return self.setImpl(
-                    listGet( args, 0 ),
-                    listGet( args, 1 ),
+                return self.setImpl( methodName, tagName,
                     function ( yoke, args ) {
                         return self.callMethod( yoke, "call",
-                            pkList( listGet( args, 2 ), args ) );
+                            pkList( impl, args ) );
                     } );
             } );
         } );
-    } ) );
+    } );
     
-    defVal( "raise", pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 1 ) )
-            return pkErrLen( yoke, args, "Called raise" );
-        return pkRet( yoke, pk( "nope", listGet( args, 0 ) ) );
-    } ) );
+    defFunc( "raise", 1, function ( yoke, error ) {
+        return pkRet( yoke, pk( "nope", error ) );
+    } );
     
-    defVal( "unwrap", pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 1 ) )
-            return pkErrLen( yoke, args, "Called unwrap" );
-        return self.pkUnwrap( yoke, listGet( args, 0 ),
+    defFunc( "unwrap", 1, function ( yoke, wrapped ) {
+        return self.pkUnwrap( yoke, wrapped,
             function ( yoke, unwrapped ) {
             
             return pkRet( yoke, unwrapped );
         } );
-    } ) );
+    } );
     
-    // TODO: See if these utilities should be at the top level.
+    // TODO: See if this utility should be at the top level.
     function isComparableToken( x ) {
         return x.tag === "token" && x.special.jsPayload.comparable;
-    }
-    function pkBoolean( jsBoolean ) {
-        return jsBoolean ? pk( "yep", pkNil ) : pkNil;
     }
     
     // We support mutable boxes by way of these operations:
@@ -1951,11 +1913,7 @@ PkRuntime.prototype.init_ = function () {
     // - Write to a mutable box in a valid environment.
     // - Read from a mutable box in a valid environment.
     //
-    defVal( "call-with-mbox-env", pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 1 ) )
-            return pkErrLen( yoke, args,
-                "Called call-with-mbox-env" );
-        var body = listGet( args, 0 );
+    defFunc( "call-with-mbox-env", 1, function ( yoke, body ) {
         var mboxEnvContents;
         var mboxEnv = pkToken( mboxEnvContents = {
             stringRep: "env",
@@ -1985,12 +1943,8 @@ PkRuntime.prototype.init_ = function () {
                 return pkRet( innerYoke, result );
             } );
         } );
-    } ) );
-    defVal( "mbox-new", pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 2 ) )
-            return pkErrLen( yoke, args, "Called mbox-eq" );
-        var mboxEnv = listGet( args, 0 );
-        var initState = listGet( args, 1 );
+    } );
+    defFunc( "mbox-new", 2, function ( yoke, mboxEnv, initState ) {
         if ( mboxEnv.tag !== "token" )
             return pkErr( yoke,
                 "Called mbox-new with a non-token environment" );
@@ -2022,13 +1976,8 @@ PkRuntime.prototype.init_ = function () {
                 }
             } ) );
         } );
-    } ) );
-    defVal( "mbox-eq", pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 3 ) )
-            return pkErrLen( yoke, args, "Called mbox-eq" );
-        var mboxEnv = listGet( args, 0 );
-        var mboxA = listGet( args, 1 );
-        var mboxB = listGet( args, 2 );
+    } );
+    defFunc( "mbox-eq", 3, function ( yoke, mboxEnv, mboxA, mboxB ) {
         if ( mboxEnv.tag !== "token" )
             return pkErr( yoke,
                 "Called mbox-eq with a non-token environment" );
@@ -2059,12 +2008,8 @@ PkRuntime.prototype.init_ = function () {
             return pkRet( yoke,
                 pkBoolean( tokenEq( mboxA, mboxB ) ) );
         } );
-    } ) );
-    defVal( "mbox-get", pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 2 ) )
-            return pkErrLen( yoke, args, "Called mbox-get" );
-        var mboxEnv = listGet( args, 0 );
-        var mbox = listGet( args, 1 );
+    } );
+    defFunc( "mbox-get", 2, function ( yoke, mboxEnv, mbox ) {
         if ( mboxEnv.tag !== "token" )
             return pkErr( yoke,
                 "Called mbox-get with a non-token environment" );
@@ -2091,13 +2036,10 @@ PkRuntime.prototype.init_ = function () {
             return pkRet( yoke,
                 mbox.special.jsPayload.mutableBoxState );
         } );
-    } ) );
-    defVal( "mbox-set", pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 3 ) )
-            return pkErrLen( yoke, args, "Called mbox-set" );
-        var mboxEnv = listGet( args, 0 );
-        var mbox = listGet( args, 1 );
-        var newState = listGet( args, 2 );
+    } );
+    defFunc( "mbox-set", 3,
+        function ( yoke, mboxEnv, mbox, newState ) {
+        
         if ( mboxEnv.tag !== "token" )
             return pkErr( yoke,
                 "Called mbox-set with a non-token environment" );
@@ -2123,28 +2065,23 @@ PkRuntime.prototype.init_ = function () {
             mbox.special.jsPayload.mutableBoxState = newState;
             return pkRet( yoke, pkNil );
         } );
-    } ) );
+    } );
     
-    defVal( "is-a-comparable-token", pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 1 ) )
-            return pkErrLen( yoke, args,
-                "Called token-is-comparable" );
-        return pkRet( yoke,
-            pkBoolean( isComparableToken( listGet( args, 0 ) ) ) );
-    } ) );
+    defPredicate( "is-a-struct", function ( x ) {
+        return pkIsStruct( x );
+    } );
     
-    defVal( "comparable-token-eq", pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 2 ) )
-            return pkErrLen( yoke, args,
-                "Called comparable-token-eq" );
-        var a = listGet( args, 0 );
-        var b = listGet( args, 1 );
+    defPredicate( "is-a-comparable-token", function ( x ) {
+        return isComparableToken( x );
+    } );
+    
+    defFunc( "comparable-token-eq", 2, function ( yoke, a, b ) {
         if ( !(isComparableToken( a ) && isComparableToken( b )) )
             return pkErr( yoke,
                 "Called comparable-token-eq with a value that " +
                 "wasn't a comparable token" );
         return pkRet( yoke, pkBoolean( tokenEq( a, b ) ) );
-    } ) );
+    } );
     
     return self;
 };
@@ -2789,7 +2726,7 @@ PkRuntime.prototype.callMethod = function (
     return this.callMethodRaw(
         yoke, pkStrName( jsMethodName ), args );
 };
-PkRuntime.prototype.setImpl = function ( methodName, tagName, call ) {
+PkRuntime.prototype.setImpl = function ( methodName, tagName, impl ) {
     var methodMeta = this.getMeta_( methodName );
     if ( methodMeta.methodOrVal !== "method" )
         return pkRawErr(
@@ -2801,7 +2738,7 @@ PkRuntime.prototype.setImpl = function ( methodName, tagName, call ) {
             "Can't implement method " + methodName + " for non-tag " +
             tagName );
     methodMeta.methodImplsByTag.set( tagName.special.nameJson,
-        { call: call } );
+        { call: impl } );
     return pk( "yep", pkNil );
 };
 PkRuntime.prototype.setStrictImpl = function (
