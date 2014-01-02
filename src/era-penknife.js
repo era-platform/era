@@ -455,6 +455,13 @@ function runWaitOne( yoke, then ) {
         return then( yoke );
     } );
 }
+function syncYokeCall( maybeSyncAndYoke, defer, then ) {
+    if ( maybeSyncAndYoke.isNotSyncAndYoke )
+        return maybeSyncAndYoke.go( defer, then );
+    defer( function () {
+        then( maybeSyncAndYoke );
+    } );
+}
 function listLenEq( yoke, a, b, then ) {
     if ( a.tag === "nil" && b.tag === "nil" )
         return then( yoke, true );
@@ -2976,11 +2983,49 @@ PkRuntime.prototype.withAvailableEffectsReplaced = function (
         return runRet( disempoweredYoke, result );
     } );
 };
-PkRuntime.prototype.conveniences_syncYoke = {
+PkRuntime.prototype.conveniences_debuggableSyncYoke = {
     yokeRider: pk( "pure-yoke" ),
     effectToken: null,
     runWaitLinear: function ( step, then ) {
         return then( step( this ) );
+    }
+};
+PkRuntime.prototype.conveniences_runSyncYoke = function (
+    maybeYokeAndResult ) {
+    
+    var deferred = [];
+    var finalYokeAndResult = null;
+    syncYokeCall( maybeYokeAndResult, function ( actionToDefer ) {
+        deferred.push( actionToDefer );
+    }, function ( yokeAndResult ) {
+        if ( deferred.length !== 0 || finalYokeAndResult !== null )
+            throw new Error();
+        finalYokeAndResult = yokeAndResult;
+    } );
+    while ( deferred.length !== 0 )
+        deferred.shift()();
+    if ( deferred.length !== 0 || finalYokeAndResult === null )
+        throw new Error();
+    return finalYokeAndResult;
+};
+PkRuntime.prototype.conveniences_syncYoke = {
+    yokeRider: pk( "pure-yoke" ),
+    effectToken: null,
+    runWaitLinear: function ( step, then ) {
+        var self = this;
+        return {
+            isNotSyncAndYoke: true,
+            go: function ( defer, then2 ) {
+                defer( function () {
+                    syncYokeCall( step( self ), defer,
+                        function ( yokeAndResult ) {
+                        
+                        syncYokeCall(
+                            then( yokeAndResult ), defer, then2 );
+                    } );
+                } );
+            }
+        };
     }
 };
 PkRuntime.prototype.conveniences_macroexpand = function (

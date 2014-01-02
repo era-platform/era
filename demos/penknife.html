@@ -83,11 +83,8 @@ textarea { display: block; }
   (rev-append rest (cons first rev-lst))
   rev-lst)
 
-; TODO: Add the following code to this prelude once we can actually
-; run it. Right now it causes a JavaScript stack overflow error, but
-; we can get around that by implementing an alternative to syncYoke.
-</script>
-<script type="text/plain" id="pk-prelude-pending">
+; NOTE: When we use debuggableSyncYoke, this definition causes a
+; JavaScript stack overflow error.
 (defval quote.take /fn-with-args (take num lst)
 /if-struct succ (pred) num
   (if-struct cons (first rest) lst
@@ -105,6 +102,10 @@ textarea { display: block; }
     (raise quote.s(Called take with a non-list list)))
   (raise quote.s(Called take with a non-nat number)))
 
+; TODO: Add the following code to this prelude. We can probably run it
+; now.
+</script>
+<script type="text/plain" id="pk-prelude-pending">
 (defmacro quote.let-list-and-rest
 /fn-with-args (op-fork body get-fork gensym-base)
 /let-list (head-vars tail-var lst body) body
@@ -178,6 +179,8 @@ textarea { display: block; }
 (if-struct cons (first rest) (list quote.foo quote.bar quote.baz)
   (list first rest)
   (nil))
+
+(take take (succ/succ/nil) quote.(a b c))
 
 ; TODO: Once we add `fn-with-varargs` to the prelude, uncomment this.
 ;( (fn-with-varargs (a b c) rest
@@ -289,23 +292,25 @@ window.onload = function () {
                 displays.push( "Parse error: " + result.result.msg );
                 break;
             }
-            var macroexpanded =
+            var macroexpanded = penknife.conveniences_runSyncYoke(
                 penknife.conveniences_macroexpandArrays(
-                    result.result.val ).result;
+                    result.result.val ) ).result;
             if ( reportError( macroexpanded, "Macroexpansion" ) ) {
                 break;
             } else {
 //                displays.push(
 //                    "Macroexpansion: " + macroexpanded.ind( 0 ) );
             }
-            var macroexpandedDrop =
-                penknife.conveniences_pkDrop( macroexpanded ).result;
+            var macroexpandedDrop = penknife.conveniences_runSyncYoke(
+                penknife.conveniences_pkDrop( macroexpanded )
+            ).result;
             if ( reportError( macroexpandedDrop,
                 "Macroexpansion result drop" ) )
                 break;
             
-            var interpreted = penknife.conveniences_interpretBinding(
-                macroexpanded.ind( 0 ) ).result;
+            var interpreted = penknife.conveniences_runSyncYoke(
+                penknife.conveniences_interpretBinding(
+                    macroexpanded.ind( 0 ) ) ).result;
             if ( reportError( interpreted, "Interpretation" ) ) {
                 break;
             } else {
@@ -314,18 +319,18 @@ window.onload = function () {
 //                    displays.push( "" );
                 }
             }
-            var interpretedDrop =
-                penknife.conveniences_pkDrop( interpreted ).result;
+            var interpretedDrop = penknife.conveniences_runSyncYoke(
+                penknife.conveniences_pkDrop( interpreted ) ).result;
             if ( reportError( interpretedDrop,
                 "Interpretation result drop" ) )
                 break;
             
-            var defined =
-                penknife.conveniences_runDefinitions().result;
+            var defined = penknife.conveniences_runSyncYoke(
+                penknife.conveniences_runDefinitions() ).result;
             if ( reportError( defined, "Definition" ) )
                 break;
-            var definedDrop =
-                penknife.conveniences_pkDrop( defined ).result;
+            var definedDrop = penknife.conveniences_runSyncYoke(
+                penknife.conveniences_pkDrop( defined ) ).result;
             if ( reportError( definedDrop,
                 "Definition result drop" ) )
                 break;
