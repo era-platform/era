@@ -2098,7 +2098,7 @@ PkRuntime.prototype.init_ = function () {
     
     defFunc( "is-a-comparable-token", 1, function ( yoke, x ) {
         return self.pkDrop( yoke, x, function ( yoke ) {
-            return isComparableToken( x );
+            return pkRet( yoke, pkBoolean( isComparableToken( x ) ) );
         } );
     } );
     
