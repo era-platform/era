@@ -792,11 +792,6 @@ PkRuntime.prototype.init_ = function () {
                 [ yoke ].concat( listToArrBounded( args, arity ) ) );
         } ) );
     }
-    function defPredicate( name, jsFunc ) {
-        defFunc( name, 1, function ( yoke, x ) {
-            return pkRet( yoke, pkBoolean( jsFunc( x ) ) );
-        } );
-    }
     function defMacro( name, body ) {
         self.defMacro( pkStrName( name ),
             pkfn( function ( yoke, args ) {
@@ -1838,7 +1833,7 @@ PkRuntime.prototype.init_ = function () {
                 "Called defmethod with a non-list list of argument " +
                 "names" );
         return listAll( yoke, argNames, function ( argName ) {
-            return !isName( argName );
+            return isName( argName );
         }, function ( yoke, valid ) {
             if ( !valid )
                 return pkErr( yoke,
@@ -1886,7 +1881,7 @@ PkRuntime.prototype.init_ = function () {
     } );
     
     defFunc( "raise", 1, function ( yoke, error ) {
-        return pkRet( yoke, pk( "nope", error ) );
+        return runRet( yoke, pk( "nope", error ) );
     } );
     
     defFunc( "unwrap", 1, function ( yoke, wrapped ) {
@@ -2067,12 +2062,44 @@ PkRuntime.prototype.init_ = function () {
         } );
     } );
     
-    defPredicate( "is-a-struct", function ( x ) {
-        return pkIsStruct( x );
+    defFunc( "get-tag-name", 1, function ( yoke, x ) {
+        return self.pkDrop( yoke, x, function ( yoke ) {
+            return pkRet( yoke, x.getTagName() );
+        } );
     } );
     
-    defPredicate( "is-a-comparable-token", function ( x ) {
-        return isComparableToken( x );
+    defFunc( "is-a-struct", 1, function ( yoke, x ) {
+        return self.pkDrop( yoke, x, function ( yoke ) {
+            return pkRet( yoke, pkBoolean( pkIsStruct( x ) ) );
+        } );
+    } );
+    
+    defFunc( "struct-get-args", 1, function ( yoke, struct ) {
+        if ( !pkIsStruct( struct ) )
+            return pkErr( yoke,
+                "Called struct-args with a non-struct" );
+        return self.pkDrop( yoke, struct, function ( yoke ) {
+            return pkRet( yoke, pkGetArgs( struct ) );
+        } );
+    } );
+    
+    defFunc( "is-a-name", 1, function ( yoke, x ) {
+        return self.pkDrop( yoke, x, function ( yoke ) {
+            return pkRet( yoke, pkBoolean( isName( x ) ) );
+        } );
+    } );
+    
+    defFunc( "name-eq", 2, function ( yoke, a, b ) {
+        if ( !(isName( a ) && isName( b )) )
+            return pkErr( yoke, "Called name-eq with a non-name" );
+        return pkRet( yoke,
+            pkBoolean( a.special.nameJson === b.special.nameJson ) );
+    } );
+    
+    defFunc( "is-a-comparable-token", 1, function ( yoke, x ) {
+        return self.pkDrop( yoke, x, function ( yoke ) {
+            return isComparableToken( x );
+        } );
     } );
     
     defFunc( "comparable-token-eq", 2, function ( yoke, a, b ) {

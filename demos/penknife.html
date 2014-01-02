@@ -23,9 +23,112 @@ textarea { display: block; }
 (defmacro quote.fn-with-args /fn args
 /let-list (op-fork body get-fork gensym-base) args
 /let-list (arglist body) body
-/let-list (g-args) (list/pair-name gensym-base quote.foo)
+/let-list (g-args) (list/pair-name gensym-base quote.args)
 /macroexpand-to-fork
   (list quote.fn g-args (list quote.let-list arglist g-args body))
+  get-fork
+  (pair-name gensym-base quote.body-of-fn-with-args))
+
+(defval quote.fix
+/let-list (fix)
+    (list/fn-with-args (fix func)
+      (fn args (call func (cons (fix fix func) args))))
+/fn-with-args (func)
+  (fix fix func))
+
+(defval quote.not /fn-with-args (x)
+/if x (nil) (yep/nil))
+
+(defval quote.isa /fn-with-args (tag-name x)
+; TODO: Make the error message a raw string rather than a string-name.
+/if (not/is-a-name get-tag-name.tag-name)
+  (raise quote.s(Called isa with a non-name tag name))
+  (name-eq tag-name get-tag-name.x))
+
+; TODO: Rewrite this so that it doesn't duplicate a linear struct.
+(defval quote.is-a-struct-with-tag /fn-with-args (tag-name x)
+; TODO: Make the error message a raw string rather than a string-name.
+/if (not/is-a-name get-tag-name.tag-name)
+  (raise
+    quote.s(Called is-a-struct-with-tag with a non-name tag name))
+/if (not/is-a-struct x)
+  (nil)
+  (isa tag-name x))
+
+(defmethod quote.len quote.(collection))
+(set-impl quote.len quote.nil /fn-with-args (collection)
+  (nil))
+(set-impl quote.len quote.cons /fn-with-args (collection)
+/let-list (first rest) struct-get-args.collection
+  (succ len.rest))
+
+; TODO: Rewrite this so that it doesn't duplicate a linear struct.
+(defmacro quote.if-struct
+/fn-with-args (op-fork body get-fork gensym-base)
+/let-list (tag-name args x then else) body
+/let-list (g-struct) (list/pair-name gensym-base quote.struct)
+/macroexpand-to-fork
+  (list quote.let-list (list g-struct) (list quote.list x)
+  /list quote.if
+      (list quote.is-a-struct-with-tag
+        (list quote.quote tag-name) g-struct)
+    (list quote.let-list args (list quote.struct-get-args g-struct)
+      then)
+    else)
+  get-fork
+  (pair-name gensym-base quote.body-of-if-struct))
+
+(defval quote.rev-append /fix/fn-with-args (rev-append lst rev-lst)
+/if-struct cons (first rest) lst
+  (rev-append rest (cons first rev-lst))
+  rev-lst)
+
+; TODO: Add the following code to this prelude once we can actually
+; run it. Right now it causes a JavaScript stack overflow error, but
+; we can get around that by implementing an alternative to syncYoke.
+</script>
+<script type="text/plain" id="pk-prelude-pending">
+(defval quote.take /fn-with-args (take num lst)
+/if-struct succ (pred) num
+  (if-struct cons (first rest) lst
+    (let-list (heads tail) (take take pred rest)
+      (list (cons first heads) tail))
+  /if-struct nil () lst
+    (raise
+      quote.s(Called take with a number greater than the length of the list))
+    (raise quote.s(Called take with a non-list list)))
+/if-struct nil () num
+  (if-struct cons (first rest) lst
+    (list (nil) lst)
+  /if-struct nil () lst
+    (list (nil) lst)
+    (raise quote.s(Called take with a non-list list)))
+  (raise quote.s(Called take with a non-nat number)))
+
+(defmacro quote.let-list-and-rest
+/fn-with-args (op-fork body get-fork gensym-base)
+/let-list (head-vars tail-var lst body) body
+/let-list (g-heads) (list/pair-name gensym-base quote.head)
+/let-list (g-tail) (list/pair-name gensym-base quote.tail)
+/macroexpand-to-fork
+  ; TODO: Figure out a way to insert a natural number into code,
+  ; rather than generating a call to `len` like this.
+  (list quote.let-list (cons g-heads g-tail)
+      (list quote.take quote.take
+        (list quote.len (list quote.quote head-vars)) lst)
+  /list quote.let-list head-vars g-heads
+  /list quote.let-list list.tail-var (list quote.list g-tail)
+    body)
+  get-fork
+  (pair-name gensym-base quote.body-of-let-list-and-rest))
+
+(defmacro quote.fn-with-varargs
+/fn-with-args (op-fork body get-fork gensym-base)
+/let-list (arglist rest body) body
+/let-list (g-args) (list/pair-name gensym-base quote.args)
+/macroexpand-to-fork
+  (list quote.fn g-args
+    (list quote.let-list-and-rest arglist rest g-args body))
   get-fork
   (pair-name gensym-base quote.body-of-fn-with-args))
 </script>
@@ -69,6 +172,17 @@ textarea { display: block; }
 /let-list (-) (list/mbox-set mbox-env my-mbox succ.b)
 /let-list (c) (list/mbox-get mbox-env my-mbox)
 /list a b c)
+
+(rev-append (list quote.a quote.b quote.c) (list))
+
+(if-struct cons (first rest) (list quote.foo quote.bar quote.baz)
+  (list first rest)
+  (nil))
+
+; TODO: Once we add `fn-with-varargs` to the prelude, uncomment this.
+;( (fn-with-varargs (a b c) rest
+;    (list a b c rest))
+;  quote.a quote.b quote.c quote.d quote.e)
 </textarea>
 <button id="go">Execute</button>
 <textarea id="result" disabled cols="80" rows="24"></textarea>
