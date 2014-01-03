@@ -18,6 +18,11 @@ textarea { display: block; }
     >View the old Penknife project on GitHub.</a></p>
 
 <script type="text/plain" id="pk-prelude">
+
+; TODO: Make the error messages raw strings rather than `string-name`
+; values. The strings are all specified using "quote.s[...]" right
+; now.
+
 (defval quote.list /fn x x)
 
 (defmacro quote.fn-with-args /fn args
@@ -39,21 +44,18 @@ textarea { display: block; }
 (defval quote.not /fn-with-args (x)
 /if x (nil) (yep/nil))
 
-(defval quote.isa /fn-with-args (tag-name x)
-; TODO: Make the error message a raw string rather than a string-name.
-/if (not/is-a-name get-tag-name.tag-name)
-  (raise quote.s(Called isa with a non-name tag name))
-  (name-eq tag-name get-tag-name.x))
+(defval quote.nl-isa /fn-with-args (tag-name nl)
+/if (not is-a-name.tag-name)
+  (raise quote.s[Called nl-isa with a non-name tag name])
+  (name-eq tag-name nl-get-tag-name.nl))
 
-; TODO: Rewrite this so that it doesn't duplicate a linear struct.
-(defval quote.is-a-struct-with-tag /fn-with-args (tag-name x)
-; TODO: Make the error message a raw string rather than a string-name.
-/if (not/is-a-name get-tag-name.tag-name)
+(defval quote.nl-is-a-struct-with-tag /fn-with-args (tag-name nl)
+/if (not is-a-name.tag-name)
   (raise
-    quote.s(Called is-a-struct-with-tag with a non-name tag name))
-/if (not/is-a-struct x)
+    quote.s[Called nl-is-a-struct-with-tag with a non-name tag name])
+/if (not/nl-is-a-struct nl)
   (nil)
-  (isa tag-name x))
+  (nl-isa tag-name nl))
 
 (defmethod quote.len quote.(collection))
 (set-impl quote.len quote.nil /fn-with-args (collection)
@@ -62,18 +64,23 @@ textarea { display: block; }
 /let-list (first rest) struct-get-args.collection
   (succ len.rest))
 
-; TODO: Rewrite this so that it doesn't duplicate a linear struct.
 (defmacro quote.if-struct
 /fn-with-args (op-fork body get-fork gensym-base)
 /let-list (tag-name args x then else) body
-/let-list (g-struct) (list/pair-name gensym-base quote.struct)
+/let-list (g-x) (list/pair-name gensym-base quote.x)
+/let-list (g-nl-x) (list/pair-name gensym-base quote.nl-x)
+/let-list (g-ignored) (list/pair-name gensym-base quote.ignored)
 /macroexpand-to-fork
-  (list quote.let-list (list g-struct) (list quote.list x)
+  (list quote.let-list (list g-nl-x)
+      (list quote.list /list quote.linear-as-nonlinear x)
+  /list quote.let-list (list g-x)
+      (list quote.list /list quote.nl-get-linear g-nl-x)
   /list quote.if
-      (list quote.is-a-struct-with-tag
-        (list quote.quote tag-name) g-struct)
-    (list quote.let-list args (list quote.struct-get-args g-struct)
+      (list quote.nl-is-a-struct-with-tag
+        (list quote.quote tag-name) g-nl-x)
+    (list quote.let-list args (list quote.struct-get-args g-x)
       then)
+    ; Let `g-x` be dropped.
     else)
   get-fork
   (pair-name gensym-base quote.body-of-if-struct))
@@ -85,22 +92,22 @@ textarea { display: block; }
 
 ; NOTE: When we use debuggableSyncYoke, this definition causes a
 ; JavaScript stack overflow error.
-(defval quote.take /fn-with-args (take num lst)
+(defval quote.take /fix/fn-with-args (take num lst)
 /if-struct succ (pred) num
   (if-struct cons (first rest) lst
-    (let-list (heads tail) (take take pred rest)
+    (let-list (heads tail) (take pred rest)
       (list (cons first heads) tail))
   /if-struct nil () lst
     (raise
-      quote.s(Called take with a number greater than the length of the list))
-    (raise quote.s(Called take with a non-list list)))
+      quote.s[Called take with a number greater than the length of the list])
+    (raise quote.s[Called take with a non-list list]))
 /if-struct nil () num
   (if-struct cons (first rest) lst
     (list (nil) lst)
   /if-struct nil () lst
     (list (nil) lst)
-    (raise quote.s(Called take with a non-list list)))
-  (raise quote.s(Called take with a non-nat number)))
+    (raise quote.s[Called take with a non-list list]))
+  (raise quote.s[Called take with a non-nat number]))
 
 (defmacro quote.let-list-and-rest
 /fn-with-args (op-fork body get-fork gensym-base)
@@ -108,11 +115,10 @@ textarea { display: block; }
 /let-list (g-heads) (list/pair-name gensym-base quote.head)
 /let-list (g-tail) (list/pair-name gensym-base quote.tail)
 /macroexpand-to-fork
-  ; TODO: Figure out a way to insert a natural number into code,
-  ; rather than generating a call to `len` like this.
+  ; TODO: Figure if we should be inserting a natural number (a
+  ; non-list, non-name value) into code like this.
   (list quote.let-list (list g-heads g-tail)
-      (list quote.take quote.take
-        (list quote.len (list quote.quote head-vars)) lst)
+      (list quote.take (list quote.quote len.head-vars) lst)
   /list quote.let-list head-vars g-heads
   /list quote.let-list list.tail-var (list quote.list g-tail)
     body)
@@ -176,7 +182,7 @@ textarea { display: block; }
   (list first rest)
   (nil))
 
-(take take (succ/succ/nil) quote.(a b c))
+(take (succ/succ/nil) quote.(a b c))
 
 ( (fn-with-varargs (a b c) rest
     (list a b c rest))

@@ -2069,25 +2069,37 @@ PkRuntime.prototype.init_ = function () {
         } );
     } );
     
-    defFunc( "get-tag-name", 1, function ( yoke, x ) {
-        return self.pkDrop( yoke, x, function ( yoke ) {
-            return pkRet( yoke, x.getTagName() );
-        } );
+    defFunc( "nl-get-linear", 1, function ( yoke, nl ) {
+        if ( nl.tag !== "linear-as-nonlinear" )
+            return pkErr( yoke,
+                "Called nl-get-linear with a value that wasn't a " +
+                "linear-as-nonlinear" );
+        return pkRet( yoke, nl.ind( 0 ) );
     } );
     
-    defFunc( "is-a-struct", 1, function ( yoke, x ) {
-        return self.pkDrop( yoke, x, function ( yoke ) {
-            return pkRet( yoke, pkBoolean( pkIsStruct( x ) ) );
-        } );
+    defFunc( "nl-get-tag-name", 1, function ( yoke, nl ) {
+        if ( nl.tag !== "linear-as-nonlinear" )
+            return pkErr( yoke,
+                "Called nl-get-tag-name with a value that wasn't a " +
+                "linear-as-nonlinear" );
+        var x = nl.ind( 0 );
+        return pkRet( yoke, x.getTagName() );
+    } );
+    
+    defFunc( "nl-is-a-struct", 1, function ( yoke, nl ) {
+        if ( nl.tag !== "linear-as-nonlinear" )
+            return pkErr( yoke,
+                "Called nl-is-a-struct with a value that wasn't a " +
+                "linear-as-nonlinear" );
+        var x = nl.ind( 0 );
+        return pkRet( yoke, pkBoolean( pkIsStruct( x ) ) );
     } );
     
     defFunc( "struct-get-args", 1, function ( yoke, struct ) {
         if ( !pkIsStruct( struct ) )
             return pkErr( yoke,
-                "Called struct-args with a non-struct" );
-        return self.pkDrop( yoke, struct, function ( yoke ) {
-            return pkRet( yoke, pkGetArgs( struct ) );
-        } );
+                "Called struct-get-args with a non-struct" );
+        return pkRet( yoke, pkGetArgs( struct ) );
     } );
     
     defFunc( "is-a-name", 1, function ( yoke, x ) {
