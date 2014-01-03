@@ -102,10 +102,6 @@ textarea { display: block; }
     (raise quote.s(Called take with a non-list list)))
   (raise quote.s(Called take with a non-nat number)))
 
-; TODO: Add the following code to this prelude. We can probably run it
-; now.
-</script>
-<script type="text/plain" id="pk-prelude-pending">
 (defmacro quote.let-list-and-rest
 /fn-with-args (op-fork body get-fork gensym-base)
 /let-list (head-vars tail-var lst body) body
@@ -114,7 +110,7 @@ textarea { display: block; }
 /macroexpand-to-fork
   ; TODO: Figure out a way to insert a natural number into code,
   ; rather than generating a call to `len` like this.
-  (list quote.let-list (cons g-heads g-tail)
+  (list quote.let-list (list g-heads g-tail)
       (list quote.take quote.take
         (list quote.len (list quote.quote head-vars)) lst)
   /list quote.let-list head-vars g-heads
@@ -182,10 +178,9 @@ textarea { display: block; }
 
 (take take (succ/succ/nil) quote.(a b c))
 
-; TODO: Once we add `fn-with-varargs` to the prelude, uncomment this.
-;( (fn-with-varargs (a b c) rest
-;    (list a b c rest))
-;  quote.a quote.b quote.c quote.d quote.e)
+( (fn-with-varargs (a b c) rest
+    (list a b c rest))
+  quote.a quote.b quote.c quote.d quote.e)
 </textarea>
 <button id="go">Execute</button>
 <textarea id="result" disabled cols="80" rows="24"></textarea>
