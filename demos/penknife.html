@@ -19,10 +19,6 @@ textarea { display: block; }
 
 <script type="text/plain" id="pk-prelude">
 
-; TODO: Make the error messages raw strings rather than `string-name`
-; values. The strings are all specified using "quote.s[...]" right
-; now.
-
 (defval quote.list /fn x x)
 
 (defmacro quote.let /fn args
@@ -32,6 +28,40 @@ textarea { display: block; }
   (list quote.let-list list.var (list quote.list val) body)
   get-fork
   gensym-base)
+
+; TODO: See if we should rewrite this as a built-in utility. Even
+; though it technically works for now, it's way too much effort to go
+; to for an incomplete string syntax that's only used for a few
+; built-in error messages.
+(defmacro quote.err /fn args
+/let-list (op-fork body get-fork gensym-base) args
+/let-list (msg-as-name) body
+/let msg-as-nl-name linear-as-nonlinear.msg-as-name
+/let unpad-force
+    (fn args /let-list (padded) args
+    /let-list (end-minus-one) (struct-get-args string-len.padded)
+      (string-cut padded (succ/succ/nil) end-minus-one))
+/let raise-own
+    (fn args /let-list (name) args
+    /let-list (padded) struct-get-args.name
+      (raise unpad-force.padded))
+/let unpad
+    (fn args /let-list (padded) args
+    /let len string-len.padded
+    /if (name-eq quote.succ (nl-get-tag-name linear-as-nonlinear.len))
+      (let-list (end-minus-one) struct-get-args.len
+        (string-cut padded (succ/succ/nil) end-minus-one))
+      (raise-own
+        quote.s[Expanded err with a message that wasn't long enough]))
+/if (name-eq quote.string-name nl-get-tag-name.msg-as-nl-name)
+  (let-list (msg-as-padded-string)
+      (struct-get-args nl-get-linear.msg-as-nl-name)
+    (macroexpand-to-fork
+      (list quote.raise /list quote.quote unpad.msg-as-padded-string)
+      get-fork
+      gensym-base))
+  (raise-own
+    quote.s[Expanded err with a message that wasn't a string-name]))
 
 (defmacro quote.fn-with-args /fn args
 /let-list (op-fork body get-fork gensym-base) args
@@ -54,13 +84,12 @@ textarea { display: block; }
 
 (defval quote.nl-isa /fn-with-args (tag-name nl)
 /if (not is-a-name.tag-name)
-  (raise quote.s[Called nl-isa with a non-name tag name])
+  err.s[Called nl-isa with a non-name tag name]
   (name-eq tag-name nl-get-tag-name.nl))
 
 (defval quote.nl-is-a-struct-with-tag /fn-with-args (tag-name nl)
 /if (not is-a-name.tag-name)
-  (raise
-    quote.s[Called nl-is-a-struct-with-tag with a non-name tag name])
+  err.s[Called nl-is-a-struct-with-tag with a non-name tag name]
 /if (not/nl-is-a-struct nl)
   (nil)
   (nl-isa tag-name nl))
@@ -105,16 +134,15 @@ textarea { display: block; }
     (let-list (heads tail) (take pred rest)
       (list (cons first heads) tail))
   /if-struct nil () lst
-    (raise
-      quote.s[Called take with a number greater than the length of the list])
-    (raise quote.s[Called take with a non-list list]))
+    err.s[Called take with a number greater than the length of the list]
+    err.s[Called take with a non-list list])
 /if-struct nil () num
   (if-struct cons (first rest) lst
     (list (nil) lst)
   /if-struct nil () lst
     (list (nil) lst)
-    (raise quote.s[Called take with a non-list list]))
-  (raise quote.s[Called take with a non-nat number]))
+    err.s[Called take with a non-list list])
+  err.s[Called take with a non-nat number])
 
 (defmacro quote.let-list-and-rest
 /fn-with-args (op-fork body get-fork gensym-base)

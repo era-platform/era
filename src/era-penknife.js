@@ -385,11 +385,19 @@ function listGet( x, i ) {
         throw new Error();
     return x.ind( 0 );
 }
-function listLenBounded( x, maxLen ) {
-    for ( var n = 0; n <= maxLen; n++ ) {
+function listLenBounded( x, max ) {
+    for ( var n = 0; n <= max; n++ ) {
         if ( x.tag !== "cons" )
             return n;
         x = x.ind( 1 );
+    }
+    return null;
+}
+function natToJsBounded( x, max ) {
+    for ( var n = 0; n <= max; n++ ) {
+        if ( x.tag !== "succ" )
+            return n;
+        x = x.ind( 0 );
     }
     return null;
 }
@@ -2127,6 +2135,41 @@ PkRuntime.prototype.init_ = function () {
                 "Called comparable-token-eq with a value that " +
                 "wasn't a comparable token" );
         return pkRet( yoke, pkBoolean( tokenEq( a, b ) ) );
+    } );
+    
+    // TODO: Take a closer look at how to design these string
+    // operations properly. Once we have string concatenation support,
+    // what should happen if a string becomes longer than what
+    // JavaScript strings support?
+    defFunc( "string-len", 1, function ( yoke, string ) {
+        if ( string.tag !== "string" )
+            return pkErr( yoke,
+                "Called string-len with a non-string" );
+        var result = pkNil;
+        // TODO: Figure out if this long loop is acceptable.
+        for ( var i = 0, n = string.special.jsStr.length; i < n; i++ )
+            result = pk( "succ", result );
+        return pkRet( yoke, result );
+    } );
+    defFunc( "string-cut", 3, function ( yoke, string, start, stop ) {
+        if ( string.tag !== "string" )
+            return pkErr( yoke,
+                "Called string-cut with a non-string" );
+        if ( !isNat( start ) )
+            return pkErr( yoke,
+                "Called string-cut with a non-nat start" );
+        if ( !isNat( stop ) )
+            return pkErr( yoke,
+                "Called string-cut with a non-nat stop" );
+        var jsStr = string.special.jsStr;
+        var jsLen = jsStr.length;
+        var jsStart = natToJsBounded( start, jsLen );
+        var jsStop = natToJsBounded( stop, jsLen );
+        if ( jsLen < jsStop )
+            jsStop = jsLen;
+        return pkRet( yoke,
+            pkStr( jsStop <= jsStart ? "" :
+                jsStr.substring( jsStart, jsStop ) ) );
     } );
     
     return self;
