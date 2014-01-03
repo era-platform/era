@@ -25,18 +25,26 @@ textarea { display: block; }
 
 (defval quote.list /fn x x)
 
+(defmacro quote.let /fn args
+/let-list (op-fork body get-fork gensym-base) args
+/let-list (var val body) body
+/macroexpand-to-fork
+  (list quote.let-list list.var (list quote.list val) body)
+  get-fork
+  gensym-base)
+
 (defmacro quote.fn-with-args /fn args
 /let-list (op-fork body get-fork gensym-base) args
 /let-list (arglist body) body
-/let-list (g-args) (list/pair-name gensym-base quote.args)
+/let g-args (pair-name gensym-base quote.args)
 /macroexpand-to-fork
   (list quote.fn g-args (list quote.let-list arglist g-args body))
   get-fork
   (pair-name gensym-base quote.body-of-fn-with-args))
 
 (defval quote.fix
-/let-list (fix)
-    (list/fn-with-args (fix func)
+/let fix
+    (fn-with-args (fix func)
       (fn args (call func (cons (fix fix func) args))))
 /fn-with-args (func)
   (fix fix func))
@@ -67,14 +75,12 @@ textarea { display: block; }
 (defmacro quote.if-struct
 /fn-with-args (op-fork body get-fork gensym-base)
 /let-list (tag-name args x then else) body
-/let-list (g-x) (list/pair-name gensym-base quote.x)
-/let-list (g-nl-x) (list/pair-name gensym-base quote.nl-x)
-/let-list (g-ignored) (list/pair-name gensym-base quote.ignored)
+/let g-x (pair-name gensym-base quote.x)
+/let g-nl-x (pair-name gensym-base quote.nl-x)
+/let g-ignored (pair-name gensym-base quote.ignored)
 /macroexpand-to-fork
-  (list quote.let-list (list g-nl-x)
-      (list quote.list /list quote.linear-as-nonlinear x)
-  /list quote.let-list (list g-x)
-      (list quote.list /list quote.nl-get-linear g-nl-x)
+  (list quote.let g-nl-x (list quote.linear-as-nonlinear x)
+  /list quote.let g-x (list quote.nl-get-linear g-nl-x)
   /list quote.if
       (list quote.nl-is-a-struct-with-tag
         (list quote.quote tag-name) g-nl-x)
@@ -90,8 +96,9 @@ textarea { display: block; }
   (rev-append rest (cons first rev-lst))
   rev-lst)
 
-; NOTE: When we use debuggableSyncYoke, this definition causes a
-; JavaScript stack overflow error.
+; NOTE: Back when we used debuggableSyncYoke, this definition caused a
+; JavaScript stack overflow error. Now the above code might cause it
+; instead because it uses more layers of macros.
 (defval quote.take /fix/fn-with-args (take num lst)
 /if-struct succ (pred) num
   (if-struct cons (first rest) lst
@@ -112,15 +119,15 @@ textarea { display: block; }
 (defmacro quote.let-list-and-rest
 /fn-with-args (op-fork body get-fork gensym-base)
 /let-list (head-vars tail-var lst body) body
-/let-list (g-heads) (list/pair-name gensym-base quote.head)
-/let-list (g-tail) (list/pair-name gensym-base quote.tail)
+/let g-heads (pair-name gensym-base quote.head)
+/let g-tail (pair-name gensym-base quote.tail)
 /macroexpand-to-fork
   ; TODO: Figure if we should be inserting a natural number (a
   ; non-list, non-name value) into code like this.
   (list quote.let-list (list g-heads g-tail)
       (list quote.take (list quote.quote len.head-vars) lst)
   /list quote.let-list head-vars g-heads
-  /list quote.let-list list.tail-var (list quote.list g-tail)
+  /list quote.let tail-var g-tail
     body)
   get-fork
   (pair-name gensym-base quote.body-of-let-list-and-rest))
@@ -128,12 +135,12 @@ textarea { display: block; }
 (defmacro quote.fn-with-varargs
 /fn-with-args (op-fork body get-fork gensym-base)
 /let-list (arglist rest body) body
-/let-list (g-args) (list/pair-name gensym-base quote.args)
+/let g-args (pair-name gensym-base quote.args)
 /macroexpand-to-fork
   (list quote.fn g-args
     (list quote.let-list-and-rest arglist rest g-args body))
   get-fork
-  (pair-name gensym-base quote.body-of-fn-with-args))
+  (pair-name gensym-base quote.body-of-fn-with-varargs))
 </script>
 
 <textarea id="code-in-textarea" cols="80" rows="24">
@@ -167,13 +174,13 @@ textarea { display: block; }
     (list b b c))
   quote.foo quote.bar quote.baz)
 
-(call-with-mbox-env/fn args /let-list (mbox-env) args
-/let-list (my-mbox) (list/mbox-new mbox-env (succ/nil))
-/let-list (a) (list/mbox-get mbox-env my-mbox)
-/let-list (-) (list/mbox-set mbox-env my-mbox succ.a)
-/let-list (b) (list/mbox-get mbox-env my-mbox)
-/let-list (-) (list/mbox-set mbox-env my-mbox succ.b)
-/let-list (c) (list/mbox-get mbox-env my-mbox)
+(call-with-mbox-env/fn-with-args (mbox-env)
+/let my-mbox (mbox-new mbox-env (succ/nil))
+/let a (mbox-get mbox-env my-mbox)
+/let - (mbox-set mbox-env my-mbox succ.a)
+/let b (mbox-get mbox-env my-mbox)
+/let - (mbox-set mbox-env my-mbox succ.b)
+/let c (mbox-get mbox-env my-mbox)
 /list a b c)
 
 (rev-append (list quote.a quote.b quote.c) (list))
