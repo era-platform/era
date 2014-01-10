@@ -2,6 +2,51 @@
 // Copyright 2013 Ross Angle. Released under the MIT License.
 "use strict";
 
+// TODO: Implement a string syntax according to the following notes:
+//
+// reader macro " followed by ( will read a string terminated by ),
+//   and it results in the string contents, which means a list of
+//   strings interspersed with other values
+// reader macro " followed by [ will read a string terminated by ],
+//   and it results in the string contents, which means a list of
+//   strings interspersed with other values
+// any raw Unicode code point except space, tab, carriage return,
+//   newline, \, (, ), [, and ] is used directly and has no other
+//   meaning
+// whitespace tokens:
+//   \s means a single space
+//   \t means a tab
+//   \r means a carriage return
+//   \n means a newline
+//   \# means empty string
+// non-whitespace tokens:
+//   \- means backslash
+//   ( reads a string terminated by ) and means the contents of that
+//     string plus both brackets
+//   [ reads a string terminated by ] and means the contents of that
+//     string plus both brackets
+//   ) is an error unless it terminates the current string reader
+//   ] is an error unless it terminates the current string reader
+//   \< means left square bracket
+//   \> means right square bracket
+//   \{ means left parenthesis
+//   \} means right parenthesis
+//   \; followed by the rest of a line means empty string (for
+//     comments)
+//   \, followed by an s-expression and any amount of raw whitespace
+//     is that s-expression; this is one of the "other values"
+//     interspersed with actual strings in the result
+//   \u followed by 1-6 uppercase hexadecimal digits followed by -
+//     means the appropriate Unicode code point, unless it's a code
+//     point value outside the Unicode range or reserved for UTF-16
+//     surrogates, in which case it's an error
+// normalize raw whitespace according to the following rules:
+//   - add one raw space after every \, escape
+//   - remove all raw whitespace adjacent to the ends of the string
+//   - remove all raw whitespace adjacent to whitespace escapes
+//   - replace every remaining occurrence of one or more whitespace
+//     characters with a single space
+
 
 // $.stream.readc
 // $.stream.peekc
