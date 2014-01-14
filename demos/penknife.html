@@ -94,12 +94,15 @@ textarea { display: block; }
   (nil)
   (nl-isa tag-name nl))
 
-(defmethod quote.len quote.(collection))
-(set-impl quote.len quote.nil /fn-with-args (collection)
-  (nil))
-(set-impl quote.len quote.cons /fn-with-args (collection)
-/let-list (first rest) struct-get-args.collection
-  (succ len.rest))
+; TODO: We have another definition of `len` below that's much shorter.
+; See if we should replace it with this method-based version.
+;
+;(defmethod quote.len quote.(collection))
+;(set-impl quote.len quote.nil /fn-with-args (collection)
+;  (nil))
+;(set-impl quote.len quote.cons /fn-with-args (collection)
+;/let-list (first rest) struct-get-args.collection
+;  (succ len.rest))
 
 (defmacro quote.if-struct
 /fn-with-args (op-fork body get-fork gensym-base)
@@ -120,10 +123,60 @@ textarea { display: block; }
   get-fork
   (pair-name gensym-base quote.body-of-if-struct))
 
-(defval quote.rev-append /fix/fn-with-args (rev-append lst rev-lst)
+(defval quote.fold-nat /fix/fn-with-args (foldl-nat init nat func)
+/if-struct succ (pred) nat
+  (foldl-nat func.init pred func)
+/if-struct nil () nat
+  init
+  err.s[Called fold-nat with a non-nat number])
+
+(defval quote.is-a-list /fn-with-args (x)
+/if-struct cons (first rest) x
+  (yep/nil)
+/if-struct nil () x
+  (yep/nil)
+  (nil))
+
+(defval quote.foldl /fix/fn-with-args (foldl init lst func)
 /if-struct cons (first rest) lst
-  (rev-append rest (cons first rev-lst))
-  rev-lst)
+  (foldl (func init first) rest func)
+/if-struct nil () lst
+  init
+  err.s[Called foldl with a non-list list])
+
+(defval quote.rev-append /fn-with-args (lst rev-lst)
+  (foldl rev-lst lst /fn-with-args (rev-lst elem)
+    (cons elem rev-lst)))
+
+(defval quote.rev /fn-with-args (lst)
+  (rev-append lst (nil)))
+
+(defval quote.mappend /fn-with-args (lst func)
+  (rev/foldl (nil) lst /fn-with-args (rev-result elem)
+    (rev-append func.elem rev-result)))
+
+(defval quote.map /fn-with-args (lst func)
+  (mappend lst /fn-with-args (elem)
+    (list func.elem)))
+
+(defval quote.len /fn-with-args (lst)
+  (foldl (nil) lst /fn-with-args (len elem)
+    succ.len))
+
+(defval quote.nat-eq /fix/fn-with-args (nat-eq a b)
+/if-struct succ (pred-a) a
+  (if-struct succ (pred-b) b
+    (nat-eq pred-a pred-b)
+  /if-struct nil () b
+    (nil)
+    err.s[Called nat-eq with a non-nat second argument])
+/if-struct nil () a
+  (if-struct succ (b-pred) b
+    (nil)
+  /if-struct nil () b
+    (yep/nil)
+    err.s[Called nat-eq with a non-nat second argument])
+  err.s[Called nat-eq with a non-nat first argument])
 
 ; NOTE: Back when we used debuggableSyncYoke, this definition caused a
 ; JavaScript stack overflow error. Now the above code might cause it
@@ -144,6 +197,116 @@ textarea { display: block; }
     err.s[Called take with a non-list list])
   err.s[Called take with a non-nat number])
 
+(defmacro quote.defmacro-codegen
+/fn-with-args (op-fork body get-fork gensym-base)
+/let-list (name body-var gensym-names codegen-body) body
+/let gbase (pair-name gensym-base quote.defmacro-codegen)
+/let gbase-gensyms (pair-name gbase quote.gensyms)
+/let g-op-fork (pair-name gbase-gensyms quote.g-op-fork)
+/let g-get-fork (pair-name gbase-gensyms quote.g-get-fork)
+/let g-gensym-base (pair-name gbase-gensyms quote.g-gensym-base)
+/let g-gbase (pair-name gbase-gensyms quote.g-gbase)
+/let g-gbase-gensyms (pair-name gbase-gensyms quote.g-gbase-gensyms)
+/macroexpand-to-fork
+  (list quote.defmacro (list quote.quote name)
+  /list quote.fn-with-args
+    (list g-op-fork body-var g-get-fork g-gensym-base)
+  /list quote.let g-gbase
+    (list quote.pair-name g-gensym-base (list quote.quote name))
+  /list quote.let g-gbase-gensyms
+    (list quote.pair-name g-gbase (list quote.quote quote.gensyms))
+  /list quote.let-list gensym-names
+    (cons quote.list /map gensym-names /fn-with-args (gensym-name)
+      (list quote.pair-name g-gbase-gensyms
+        (list quote.quote gensym-name)))
+  /list quote.macroexpand-to-fork
+    codegen-body
+    g-get-fork
+    (list quote.pair-name g-gbase
+      (list quote.quote quote.macroexpansion)))
+  get-fork
+  (pair-name gbase quote.macroexpansion))
+
+(defmacro-codegen let-list-and-rest body (g-heads g-tail)
+/let-list (head-vars tail-var lst body) body
+  ; TODO: Figure if we should be inserting a natural number (a
+  ; non-list, non-name value) into code like this.
+  (list quote.let-list (list g-heads g-tail)
+      (list quote.take (list quote.quote len.head-vars) lst)
+  /list quote.let-list head-vars g-heads
+  /list quote.let tail-var g-tail
+    body))
+
+(defmacro-codegen fn-with-varargs body (g-args)
+/let-list (arglist rest body) body
+  (list quote.fn g-args
+  /list quote.let-list-and-rest arglist rest g-args
+    body))
+
+(defval quote.append /fn-with-varargs () lsts
+  (mappend lsts /fn-with-args (lst)
+    lst))
+
+; TODO: See if this should just be internal to the definition of `qq`.
+(defval quote.expand-qq
+/fix/fn-with-args
+  (expand-qq qq-name uq-name uqs-name return-list level x)
+/let recur
+  (fn-with-args (return-list level x)
+    (expand-qq qq-name uq-name uqs-name return-list level x))
+/let as-list
+  (fn-with-args (expr)
+    (if return-list (list quote.list expr) expr))
+/let parse-escape
+  (fn-with-args (name)
+    (if-struct cons (first rest) x
+      (if (nat-eq len.x (succ/succ/nil))
+        (let-list (first second) x
+        /if is-a-name.first
+          (if (name-eq first name)
+            yep.second
+            (nil))
+          (nil))
+        (nil))
+      (nil)))
+; TODO: Remove some of the duplicate branches from the following code.
+/if-struct nil () level
+  (if-struct yep (x) parse-escape.qq-name
+    (as-list/list quote.list (list quote.quote qq-name)
+      (recur (nil) succ.level x))
+  /if-struct yep (x) parse-escape.uq-name
+    as-list.x
+  /if-struct yep (x) parse-escape.uqs-name
+    (if return-list
+      x
+      err.q[Called qq with a tree containing uqs in an incorrect place])
+  /if is-a-list.x
+    (as-list/cons quote.append /map x /fn-with-args (elem)
+      (recur (yep/nil) level elem))
+    (as-list/list quote.quote x))
+/if-struct succ (pred-level) level
+  (if-struct yep (x) parse-escape.qq-name
+    (as-list/list quote.list (list quote.quote qq-name)
+      (recur (nil) succ.level x))
+  /if-struct yep (x) parse-escape.uq-name
+    (as-list/list quote.list (list quote.quote uq-name)
+      (recur (nil) pred-level x))
+  /if-struct yep (x) parse-escape.uqs-name
+    (as-list/list quote.list (list quote.quote uqs-name)
+      (recur (nil) pred-level x))
+  /if is-a-list.x
+    (as-list/cons quote.append /map x /fn-with-args (elem)
+      (recur (yep/nil) level elem))
+    (as-list/list quote.quote x))
+  err.s[Called expand-qq with a non-nat level])
+
+(defmacro-codegen qq body ()
+/let-list (tree) body
+  (expand-qq quote.qq quote.uq quote.uqs (nil) (nil) tree))
+
+</script>
+<script type="text/plain">
+
 (defmacro quote.let-list-and-rest
 /fn-with-args (op-fork body get-fork gensym-base)
 /let-list (head-vars tail-var lst body) body
@@ -159,16 +322,6 @@ textarea { display: block; }
     body)
   get-fork
   (pair-name gensym-base quote.body-of-let-list-and-rest))
-
-(defmacro quote.fn-with-varargs
-/fn-with-args (op-fork body get-fork gensym-base)
-/let-list (arglist rest body) body
-/let g-args (pair-name gensym-base quote.args)
-/macroexpand-to-fork
-  (list quote.fn g-args
-    (list quote.let-list-and-rest arglist rest g-args body))
-  get-fork
-  (pair-name gensym-base quote.body-of-fn-with-varargs))
 </script>
 
 <textarea id="code-in-textarea" cols="80" rows="24">
@@ -222,6 +375,17 @@ textarea { display: block; }
 ( (fn-with-varargs (a b c) rest
     (list a b c rest))
   quote.a quote.b quote.c quote.d quote.e)
+
+(map (list (nil) (succ/nil) (succ/succ/nil)) succ)
+
+; NOTE: These tests work, but they take much too much time to execute.
+; TODO: Speed 'em up.
+; qq.(foo bar)
+; qq.(foo uq.(succ/succ/nil))
+; qq.(foo uq.(succ/succ/nil) (uqs quote.(a b c)))
+; qq.(foo (uq.(succ/succ/nil) (uqs quote.(a b c)) bar))
+; qq.(foo ((qq uq.(succ/succ/nil)) (qq (uqs quote.(a b c))) bar))
+; qq.(foo ((qq (uq uq.(succ/succ/nil))) (qq (uqs quote.(a b c))) bar))
 </textarea>
 <button id="go">Execute</button>
 <textarea id="result" disabled cols="80" rows="24"></textarea>
