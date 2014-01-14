@@ -378,14 +378,15 @@ textarea { display: block; }
 
 (map (list (nil) (succ/nil) (succ/succ/nil)) succ)
 
-; NOTE: These tests work, but they take much too much time to execute.
+; NOTE: These tests work, but they take a little too much time to
+; execute.
 ; TODO: Speed 'em up.
-; qq.(foo bar)
-; qq.(foo uq.(succ/succ/nil))
-; qq.(foo uq.(succ/succ/nil) (uqs quote.(a b c)))
-; qq.(foo (uq.(succ/succ/nil) (uqs quote.(a b c)) bar))
-; qq.(foo ((qq uq.(succ/succ/nil)) (qq (uqs quote.(a b c))) bar))
-; qq.(foo ((qq (uq uq.(succ/succ/nil))) (qq (uqs quote.(a b c))) bar))
+qq.(foo bar)
+qq.(foo uq.(succ/succ/nil))
+qq.(foo uq.(succ/succ/nil) (uqs quote.(a b c)))
+qq.(foo (uq.(succ/succ/nil) (uqs quote.(a b c)) bar))
+qq.(foo ((qq uq.(succ/succ/nil)) (qq (uqs quote.(a b c))) bar))
+qq.(foo ((qq (uq uq.(succ/succ/nil))) (qq (uqs quote.(a b c))) bar))
 </textarea>
 <button id="go">Execute</button>
 <textarea id="result" disabled cols="80" rows="24"></textarea>
@@ -453,6 +454,7 @@ function pkReadAll( string, then ) {
 
 window.onload = function () {
     function generateOutput() {
+        var startMillis = new Date().getTime();
         var penknife = makePkRuntime();
         pkReadAll(
             document.getElementById( "pk-prelude" ).firstChild.data,
@@ -537,6 +539,9 @@ window.onload = function () {
         }
         document.getElementById( "result" ).value =
             displays.join( "\n" );
+        var runMillis = new Date().getTime() - startMillis;
+        // TODO: Either remove this or display it more prominently.
+        console.log( "Ran for " + runMillis / 1000 + " seconds." );
         
         } );
         } );

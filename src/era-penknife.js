@@ -82,9 +82,9 @@ Pk.prototype.init_ = function (
     return this;
 };
 Pk.prototype.getTagName = function () {
-    // NOTE: The function pkStrName() is defined below.
+    // NOTE: The function pkStrNameUnsafeMemoized() is defined below.
     return this.tagName !== null ? this.tagName :
-        pkStrName( this.tag );
+        pkStrNameUnsafeMemoized( this.tag );
 };
 Pk.prototype.ind = function ( i ) {
     // NOTE: The function listGet() is defined below.
@@ -311,6 +311,10 @@ function pkMapLeaves( yoke, tree, func ) {
         } );
     throw new Error();
 }
+function pkStrUnsafe( jsStr ) {
+    return new Pk().init_( null, "string", pkNil, !"isLinear",
+        { jsStr: jsStr } );
+}
 function pkStr( jsStr ) {
     // NOTE: This sanity check is just here in case some code happens
     // to be buggy. We always have valid Unicode by the time we get
@@ -320,16 +324,26 @@ function pkStr( jsStr ) {
     // characters, we should consider removing this.
     if ( !isValidUnicode( jsStr ) )
         throw new Error();
-    return new Pk().init_( null, "string", pkNil, !"isLinear",
-        { jsStr: jsStr } );
+    return pkStrUnsafe( jsStr );
 }
 function pkStrNameRaw( str ) {
     return new Pk().init_(
         null, "string-name", pkList( str ), !"isLinear",
         { nameJson: JSON.stringify( str.special.jsStr ) } );
 }
+function pkStrNameUnsafe( jsStr ) {
+    return pkStrNameRaw( pkStrUnsafe( jsStr ) );
+}
 function pkStrName( jsStr ) {
     return pkStrNameRaw( pkStr( jsStr ) );
+}
+var pkStrNameUnsafeMemoizedMap = strMap();
+function pkStrNameUnsafeMemoized( jsStr ) {
+    var result = pkStrNameUnsafeMemoizedMap.get( jsStr );
+    if ( result === void 0 )
+        pkStrNameUnsafeMemoizedMap.set( jsStr,
+            result = pkStrNameUnsafe( jsStr ) );
+    return result;
 }
 function pkPairName( first, second ) {
     return new Pk().init_(
@@ -355,8 +369,14 @@ function pkfn( call ) {
 function pkList( var_args ) {
     return pkListFromArr( arguments );
 }
+function pkYep( contents ) {
+    // NOTE: This is equivalent to pk( "yep", contents ), but we call
+    // this so frequently it's worth specializing like this.
+    return new Pk().init_( null, "yep", pkCons( contents, pkNil ),
+        contents.isLinear(), {} );
+}
 function pkBoolean( jsBoolean ) {
-    return jsBoolean ? pk( "yep", pkNil ) : pkNil;
+    return jsBoolean ? pkYep( pkNil ) : pkNil;
 }
 
 function isList( x ) {
@@ -418,9 +438,10 @@ function runRet( yoke, val ) {
     return { yoke: yoke, result: val };
 }
 function pkRet( yoke, val ) {
-    return runRet( yoke, pk( "yep", val ) );
+    return runRet( yoke, pkYep( val ) );
 }
 function pkRawErr( jsStr ) {
+    // TODO: See if this can use jsStrUnsafe().
     return pk( "nope", pkStr( jsStr ) );
 }
 function pkErr( yoke, jsStr ) {
@@ -493,7 +514,7 @@ function listGetNat( yoke, list, nat, then ) {
     if ( list.tag !== "cons" )
         return then( yoke, pkNil );
     if ( nat.tag !== "succ" )
-        return then( yoke, pk( "yep", list.ind( 0 ) ) );
+        return then( yoke, pkYep( list.ind( 0 ) ) );
     return runWaitOne( yoke, function ( yoke ) {
         return listGetNat( yoke, list.ind( 1 ), nat.ind( 0 ), then );
     } );
@@ -785,19 +806,21 @@ PkRuntime.prototype.init_ = function () {
     self.defQueueHead_ = self.defQueueTail_;
     
     function defTag( name, var_args ) {
-        self.defTag( pkStrName( name ), pkListFromArr(
-            arrMap( [].slice.call( arguments, 1 ), function ( s ) {
-                return pkStrName( s );
-            } ) ) );
+        self.defTag( pkStrNameUnsafeMemoized( name ),
+            pkListFromArr( arrMap( [].slice.call( arguments, 1 ),
+                function ( s ) {
+                    return pkStrNameUnsafeMemoized( s );
+                } ) ) );
     }
     function defMethod( name, var_args ) {
-        self.defMethod( pkStrName( name ), pkListFromArr(
-            arrMap( [].slice.call( arguments, 1 ), function ( s ) {
-                return pkStrName( s );
-            } ) ) );
+        self.defMethod( pkStrNameUnsafeMemoized( name ),
+            pkListFromArr( arrMap( [].slice.call( arguments, 1 ),
+                function ( s ) {
+                    return pkStrNameUnsafeMemoized( s );
+                } ) ) );
     }
     function defVal( name, val ) {
-        self.defVal( pkStrName( name ), val );
+        self.defVal( pkStrNameUnsafeMemoized( name ), val );
     }
     function defFunc( name, arity, jsFunc ) {
         defVal( name, pkfn( function ( yoke, args ) {
@@ -808,7 +831,7 @@ PkRuntime.prototype.init_ = function () {
         } ) );
     }
     function defMacro( name, body ) {
-        self.defMacro( pkStrName( name ),
+        self.defMacro( pkStrNameUnsafeMemoized( name ),
             pkfn( function ( yoke, args ) {
             
             if ( !listLenIs( args, 4 ) )
@@ -835,7 +858,9 @@ PkRuntime.prototype.init_ = function () {
     }
     function setStrictImpl( methodName, tagName, call ) {
         self.setStrictImpl(
-            pkStrName( methodName ), pkStrName( tagName ), call );
+            pkStrNameUnsafeMemoized( methodName ),
+            pkStrNameUnsafeMemoized( tagName ),
+            call );
     }
     
     defTag( "cons", "first", "rest" );
@@ -946,7 +971,7 @@ PkRuntime.prototype.init_ = function () {
         return runWaitTry( yoke, function ( yoke ) {
             return self.callMethod( yoke, "call", pkList(
                 func,
-                pkList( pk( "yep", wrappedEffectToken ) )
+                pkList( pkYep( wrappedEffectToken ) )
             ) );
         }, function ( yoke, maybeNewWrappedEffectToken ) {
             if ( maybeNewWrappedEffectToken.tag !== "yep" )
@@ -1182,11 +1207,11 @@ PkRuntime.prototype.init_ = function () {
                 return self.callMethod( yoke, "binding-interpret",
                     pkList( capture.ind( 0 ), nonlocalCaptures ) );
             }, function ( yoke, value ) {
-                return pkRet( yoke, pk( "yep", value ) );
+                return pkRet( yoke, pkYep( value ) );
             } );
         }, function ( yoke, captures ) {
             return pkRet( yoke, pkfnLinear(
-                pkCons( pk( "yep", bodyBinding ), captures ),
+                pkCons( pkYep( bodyBinding ), captures ),
                 function ( yoke, bodyBindingAndCaptures, args ) {
                 
                 var bodyBinding =
@@ -1477,8 +1502,7 @@ PkRuntime.prototype.init_ = function () {
                             innerInBindingsLeft
                         ) );
                     return pkRet( yoke, pkList(
-                        pkCons(
-                            pk( "yep", innerInBindingsLeft.ind( 0 ) ),
+                        pkCons( pkYep( innerInBindingsLeft.ind( 0 ) ),
                             revCaptures ),
                         newRevInnerOutBindings,
                         newI,
@@ -1524,7 +1548,7 @@ PkRuntime.prototype.init_ = function () {
         return self.pkDrop( yoke, fork, function ( yoke ) {
             return pkRet( yoke, pk( "getmac-fork",
                 pkGetTineLinear( pkNil,
-                    pkList( pk( "yep", listGet( body, 0 ) ) ),
+                    pkList( pkYep( listGet( body, 0 ) ) ),
                     function ( yoke, captures, bindings ) {
                     
                     return pkRet( yoke,
@@ -1718,7 +1742,7 @@ PkRuntime.prototype.init_ = function () {
             function ( yoke, outerCaptures ) {
         return pkRet( yoke, pk( "getmac-fork",
             pkGetTineLinear( outerCaptures, pkList(
-                pk( "yep", sourceGetTine )
+                pkYep( sourceGetTine )
             ), function ( yoke, captures, outerBindings ) {
                 var sourceGetTine = listGet( captures, 0 ).ind( 0 );
                 
@@ -2141,6 +2165,8 @@ PkRuntime.prototype.init_ = function () {
     // operations properly. Once we have string concatenation support,
     // what should happen if a string becomes longer than what
     // JavaScript strings support?
+    // TODO: Make these count characters by the number of Unicode code
+    // points, not the number of UTF-16 code units.
     defFunc( "string-len", 1, function ( yoke, string ) {
         if ( string.tag !== "string" )
             return pkErr( yoke,
@@ -2378,7 +2404,7 @@ PkRuntime.prototype.makeSubBindingUnderMappendedArgs_ = function (
         var entry = map.get( jsName );
         if ( entry === void 0 ) {
             map.set( jsName, { dups: pkNil, indices: pkNil } );
-            return pkRet( yoke, pk( "yep", pkName ) );
+            return pkRet( yoke, pkYep( pkName ) );
         } else {
             return pkRet( yoke, pkNil );
         }
@@ -2669,7 +2695,7 @@ PkRuntime.prototype.nonMacroMacroexpander = function () {
                         }, function ( yoke, allNames ) {
                             // <indentation-reset>
 return pkRet( yoke, pk( "getmac-fork",
-    pkGetTineLinear( allNames, pkList( pk( "yep", allGetTines ) ),
+    pkGetTineLinear( allNames, pkList( pkYep( allGetTines ) ),
         function ( yoke, captures, allInBindings ) {
         
         var allGetTines = listGet( captures, 0 ).ind( 0 );
@@ -2758,12 +2784,12 @@ PkRuntime.prototype.defVal = function ( name, val ) {
             "Called defval with a name that was already bound to a " +
             "method" );
     meta.val = val;
-    return pk( "yep", pkNil );
+    return pkYep( pkNil );
 };
 PkRuntime.prototype.defMacro = function ( name, macro ) {
     var meta = this.prepareMeta_( name );
     meta.macro = macro;
-    return pk( "yep", pkNil );
+    return pkYep( pkNil );
 };
 PkRuntime.prototype.defTag = function ( name, keys ) {
     var meta = this.prepareMeta_( name );
@@ -2772,7 +2798,7 @@ PkRuntime.prototype.defTag = function ( name, keys ) {
             "Called deftag with a name that was already bound to a " +
             "tag" );
     meta.tagKeys = keys;
-    return pk( "yep", pkNil );
+    return pkYep( pkNil );
 };
 PkRuntime.prototype.defMethod = function ( name, args ) {
     var meta = this.prepareMeta_( name, "method" );
@@ -2786,7 +2812,7 @@ PkRuntime.prototype.defMethod = function ( name, args ) {
             "to a method" );
     meta.methodArgs = args;
     meta.methodImplsByTag = strMap();
-    return pk( "yep", pkNil );
+    return pkYep( pkNil );
 };
 PkRuntime.prototype.callMethodRaw = function (
     yoke, methodName, args ) {
@@ -2813,9 +2839,12 @@ PkRuntime.prototype.callMethod = function (
     yoke, jsMethodName, args ) {
     
     return this.callMethodRaw(
-        yoke, pkStrName( jsMethodName ), args );
+        yoke, pkStrNameUnsafeMemoized( jsMethodName ), args );
 };
 PkRuntime.prototype.setImpl = function ( methodName, tagName, impl ) {
+    // TODO: These error messages implicitly use Pk#toString(), which
+    // is hackishly designed. Figure out what kind of externalization
+    // we really want here.
     var methodMeta = this.getMeta_( methodName );
     if ( methodMeta.methodOrVal !== "method" )
         return pkRawErr(
@@ -2828,7 +2857,7 @@ PkRuntime.prototype.setImpl = function ( methodName, tagName, impl ) {
             tagName );
     methodMeta.methodImplsByTag.set( tagName.special.nameJson,
         { call: impl } );
-    return pk( "yep", pkNil );
+    return pkYep( pkNil );
 };
 PkRuntime.prototype.setStrictImpl = function (
     methodName, tagName, call ) {
@@ -2855,15 +2884,15 @@ PkRuntime.prototype.getVal = function ( name ) {
     if ( meta === void 0 )
         return pkRawErr( "Unbound variable " + name );
     if ( meta.methodOrVal === "val" )
-        return pk( "yep", meta.val );
+        return pkYep( meta.val );
     if ( meta.methodOrVal === "method" )
-        return pk( "yep", pkfn( function ( yoke, args ) {
+        return pkYep( pkfn( function ( yoke, args ) {
             return runWaitOne( yoke, function ( yoke ) {
                 return self.callMethodRaw( yoke, name, args );
             } );
         } ) );
     if ( meta.tagKeys !== void 0 )
-        return pk( "yep", pkfn( function ( yoke, args ) {
+        return pkYep( pkfn( function ( yoke, args ) {
             return listLenEq( yoke, args, meta.tagKeys,
                 function ( yoke, areEq ) {
                 
@@ -2891,7 +2920,7 @@ PkRuntime.prototype.getVal = function ( name ) {
 PkRuntime.prototype.qualifyName = function ( name ) {
     // TODO: If we ever implement namespaces, complicate this method
     // to handle them.
-    return pk( "yep", name );
+    return pkYep( name );
 };
 PkRuntime.prototype.getMacro = function ( name ) {
     var meta = this.getMeta_( name );
@@ -2900,12 +2929,12 @@ PkRuntime.prototype.getMacro = function ( name ) {
     
     // If the name is specifically bound to macro behavior, use that.
     if ( meta.macro !== void 0 )
-        return pk( "yep", pk( "yep", meta.macro ) );
+        return pkYep( pkYep( meta.macro ) );
     
     if ( meta.methodOrVal === "val"
         || meta.methodOrVal === "method"
         || meta.tagKeys !== void 0 )
-        return pk( "yep", pkNil );
+        return pkYep( pkNil );
     
     return pkRawErr( "Unbound variable " + name );
 };
@@ -2979,8 +3008,7 @@ PkRuntime.prototype.mapEffect_ = function ( yoke, func ) {
                                         pureYoke.runWaitLinear
                                 };
                                 return pkRet( updatedYoke,
-                                    pk( "yep",
-                                        newEffectToken.wrapped ) );
+                                    pkYep( newEffectToken.wrapped ) );
                             } );
                         } );
                         
@@ -3095,7 +3123,7 @@ PkRuntime.prototype.conveniences_macroexpand = function (
         return self.callMethod( yoke, "macroexpand-to-fork", pkList(
             expr,
             self.forkGetter( "the top-level get-fork" ),
-            pkStrName( "root-gensym-base" )
+            pkStrNameUnsafeMemoized( "root-gensym-base" )
         ) );
     }, function ( yoke, getTine, maybeMacro ) {
         if ( !listLenIs( listGet( getTine, 0 ), 0 ) )
