@@ -84,7 +84,7 @@ Pk.prototype.init_ = function (
 Pk.prototype.getTagName = function () {
     // NOTE: The function pkStrNameUnsafeMemoized() is defined below.
     return this.tagName !== null ? this.tagName :
-        pkStrNameUnsafeMemoized( this.tag );
+        pkQualifiedName( pkStrNameUnsafeMemoized( this.tag ) );
 };
 Pk.prototype.ind = function ( i ) {
     // NOTE: The function listGet() is defined below.
@@ -120,6 +120,10 @@ Pk.prototype.toString = function () {
         // the name contains spaces, parentheses, quotation marks,
         // etc., or when the name is "nil".
         return "" + this.ind( 0 ).special.jsStr;
+    }
+    if ( this.tag === "qualified-name" ) {
+        // TODO: See if this toString behavior makes sense.
+        return "" + this.ind( 0 );
     }
     if ( this.tag === "string" )
         return JSON.stringify( this.special.jsStr );
@@ -329,7 +333,8 @@ function pkStr( jsStr ) {
 function pkStrNameRaw( str ) {
     return new Pk().init_(
         null, "string-name", pkList( str ), !"isLinear",
-        { nameJson: JSON.stringify( str.special.jsStr ) } );
+        { unqualifiedNameJson: JSON.stringify( str.special.jsStr ) }
+        );
 }
 function pkStrNameUnsafe( jsStr ) {
     return pkStrNameRaw( pkStrUnsafe( jsStr ) );
@@ -348,10 +353,17 @@ function pkStrNameUnsafeMemoized( jsStr ) {
 function pkPairName( first, second ) {
     return new Pk().init_(
         null, "pair-name", pkList( first, second ), !"isLinear",
-        { nameJson:
+        { unqualifiedNameJson:
             "[\"pair-name\"," +
-                first.special.nameJson + "," +
-                second.special.nameJson + "]" } );
+                first.special.unqualifiedNameJson + "," +
+                second.special.unqualifiedNameJson + "]" } );
+}
+function pkQualifiedName( name ) {
+    return new Pk().init_(
+        null, "qualified-name", pkList( name ), !"isLinear",
+        { qualifiedNameJson:
+            "[\"qualified-name\"," +
+                name.special.unqualifiedNameJson + "]" } );
 }
 function pkfnLinear( captures, call ) {
     return new Pk().init_( null, "fn", pkNil, captures.isLinear(),
@@ -385,12 +397,15 @@ function isList( x ) {
 function isNat( x ) {
     return x.tag === "succ" || x.tag === "nil";
 }
-function isName( x ) {
-    // NOTE: For now, isName( x ) implies x.isLinear(). If we ever
-    // extend it to include linear values, we should take a look at
-    // any code that calls isName() to see if it needs to change to
-    // respect linearity.
+// NOTE: For now, isUnqualifiedName( x ) and isQualifiedName( x )
+// imply x.isLinear(). If we ever extend them to include linear
+// values, we should take a look at any code that calls them to see if
+// it needs to change to respect linearity.
+function isUnqualifiedName( x ) {
     return x.tag === "string-name" || x.tag === "pair-name";
+}
+function isQualifiedName( x ) {
+    return x.tag === "qualified-name";
 }
 function tokenEq( a, b ) {
     return a.special.jsPayload === b.special.jsPayload;
@@ -757,7 +772,7 @@ function isEnoughGetTineDeep( yoke, x, then ) {
     if ( !isEnoughGetTineShallow( x ) )
         return then( yoke, false );
     return listAll( yoke, listGet( x, 0 ), function ( name ) {
-        return isName( name );
+        return isUnqualifiedName( name );
     }, function ( yoke, result ) {
         return then( yoke, result );
     } );
@@ -805,22 +820,25 @@ PkRuntime.prototype.init_ = function () {
     self.defQueueTail_ = { end: true };
     self.defQueueHead_ = self.defQueueTail_;
     
+    function globalName( name ) {
+        return pkQualifiedName( pkStrNameUnsafeMemoized( name ) );
+    }
     function defTag( name, var_args ) {
-        self.defTag( pkStrNameUnsafeMemoized( name ),
+        self.defTag( globalName( name ),
             pkListFromArr( arrMap( [].slice.call( arguments, 1 ),
                 function ( s ) {
                     return pkStrNameUnsafeMemoized( s );
                 } ) ) );
     }
     function defMethod( name, var_args ) {
-        self.defMethod( pkStrNameUnsafeMemoized( name ),
+        self.defMethod( globalName( name ),
             pkListFromArr( arrMap( [].slice.call( arguments, 1 ),
                 function ( s ) {
                     return pkStrNameUnsafeMemoized( s );
                 } ) ) );
     }
     function defVal( name, val ) {
-        self.defVal( pkStrNameUnsafeMemoized( name ), val );
+        self.defVal( globalName( name ), val );
     }
     function defFunc( name, arity, jsFunc ) {
         defVal( name, pkfn( function ( yoke, args ) {
@@ -831,7 +849,7 @@ PkRuntime.prototype.init_ = function () {
         } ) );
     }
     function defMacro( name, body ) {
-        self.defMacro( pkStrNameUnsafeMemoized( name ),
+        self.defMacro( globalName( name ),
             pkfn( function ( yoke, args ) {
             
             if ( !listLenIs( args, 4 ) )
@@ -849,18 +867,16 @@ PkRuntime.prototype.init_ = function () {
                 return pkErr( yoke,
                     "Called " + name + "'s macroexpander with a " +
                     "linear get-fork" );
-            if ( !isName( gensymBase ) )
+            if ( !isUnqualifiedName( gensymBase ) )
                 return pkErr( yoke,
                     "Called " + name + "'s macroexpander with a " +
-                    "non-name gensym base" );
+                    "gensym base that wasn't an unqualified name" );
             return body( yoke, fork, macroBody, getFork, gensymBase );
         } ) );
     }
     function setStrictImpl( methodName, tagName, call ) {
         self.setStrictImpl(
-            pkStrNameUnsafeMemoized( methodName ),
-            pkStrNameUnsafeMemoized( tagName ),
-            call );
+            globalName( methodName ), globalName( tagName ), call );
     }
     
     defTag( "cons", "first", "rest" );
@@ -893,10 +909,22 @@ PkRuntime.prototype.init_ = function () {
     } );
     defTag( "pair-name", "first", "second" );
     defFunc( "pair-name", 2, function ( yoke, first, second ) {
-        if ( !(isName( first ) && isName( second )) )
+        if ( !(true
+            && isUnqualifiedName( first )
+            && isUnqualifiedName( second )
+        ) )
             return pkErr( yoke,
-                "Called pair-name with a non-name element" );
+                "Called pair-name with an element that wasn't an " +
+                "unqualified name" );
         return pkRet( yoke, pkPairName( first, second ) );
+    } );
+    defTag( "qualified-name", "name" );
+    defFunc( "qualified-name", 1, function ( yoke, name ) {
+        if ( !isUnqualifiedName( name ) )
+            return pkErr( yoke,
+                "Called qualified-name with a value that wasn't an " +
+                "unqualified name" );
+        return pkRet( yoke, pkQualifiedName( name ) );
     } );
     defTag( "nonlinear-as-linear",
         "inner-value", "duplicator", "unwrapper" );
@@ -1010,9 +1038,10 @@ PkRuntime.prototype.init_ = function () {
     defTag( "literal-essence", "literal-val" );
     defTag( "main-essence", "name" );
     defFunc( "main-essence", 1, function ( yoke, name ) {
-        if ( !isName( name ) )
+        if ( !isQualifiedName( name ) )
             return pkErr( yoke,
-                "Called main-essence with a non-name" );
+                "Called main-essence with a value that wasn't a " +
+                "qualified name" );
         return pkRet( yoke, pk( "main-essence", name ) );
     } );
     defTag( "call-essence", "op", "args" );
@@ -1394,14 +1423,18 @@ PkRuntime.prototype.init_ = function () {
                 return pkErr( yoke,
                     "Called macroexpand-to-fork with a linear " +
                     "get-fork" );
-            if ( !isName( gensymBase ) )
+            if ( !isUnqualifiedName( gensymBase ) )
                 return pkErr( yoke,
-                    "Called macroexpand-to-fork with a non-name " +
-                    "gensym base" );
+                    "Called macroexpand-to-fork with a gensym base " +
+                    "that wasn't an unqualified name" );
             return body( yoke, expr, getFork, gensymBase );
         } );
     }
-    arrEach( [ "string-name", "pair-name" ], function ( nameTag ) {
+    arrEach( [
+        "string-name",
+        "pair-name",
+        "qualified-name"
+    ], function ( nameTag ) {
         defMacroexpandToFork( nameTag,
             function ( yoke, expr, getFork, gensymBase ) {
             
@@ -1446,11 +1479,13 @@ PkRuntime.prototype.init_ = function () {
         if ( !listLenIs( body, 2 ) )
             return pkErrLen( yoke, body, "Expanded fn" );
         var paramName = listGet( body, 0 );
-        if ( !isName( paramName ) )
-            return pkErr( yoke, "Expanded fn with a non-name var" );
+        if ( !isUnqualifiedName( paramName ) )
+            return pkErr( yoke,
+                "Expanded fn with a var that wasn't an unqualified " +
+                "name" );
         function isParamName( name ) {
-            return paramName.special.nameJson ===
-                name.special.nameJson;
+            return paramName.special.unqualifiedNameJson ===
+                name.special.unqualifiedNameJson;
         }
         
         return self.pkDrop( yoke, fork, function ( yoke ) {
@@ -1559,6 +1594,30 @@ PkRuntime.prototype.init_ = function () {
             ) );
         } );
     } );
+    defMacro( "qname",
+        function ( yoke, fork, body, getFork, gensymBase ) {
+        
+        if ( !listLenIs( body, 1 ) )
+            return pkErrLen( yoke, body, "Expanded qname" );
+        var name = body.ind( 0 );
+        if ( !isUnqualifiedName( name ) )
+            return pkErr( yoke,
+                "Expanded qname with a value that wasn't an " +
+                "unqualified name" );
+        return runWaitTry( yoke, function ( yoke ) {
+            return runRet( yoke, self.qualifyName( name ) );
+        }, function ( yoke, name ) {
+            return self.pkDrop( yoke, fork, function ( yoke ) {
+                return pkRet( yoke, pk( "getmac-fork",
+                    pkGetTine( pkNil, function ( yoke, essences ) {
+                        return pkRet( yoke,
+                            pk( "literal-essence", name ) );
+                    } ),
+                    pkNil
+                ) );
+            } );
+        } );
+    } );
     
     defMacro( "if",
         function ( yoke, fork, body, getFork, gensymBase ) {
@@ -1616,7 +1675,7 @@ PkRuntime.prototype.init_ = function () {
         // worse) function of the number of `branchCaptures`.
         var bcDedupMap = strMap();
         return listKeep( yoke, branchCaptures, function ( pkName ) {
-            var jsName = pkName.special.nameJson;
+            var jsName = pkName.special.unqualifiedNameJson;
             var entry = bcDedupMap.get( jsName );
             if ( entry !== void 0 )
                 return false;
@@ -1714,13 +1773,13 @@ PkRuntime.prototype.init_ = function () {
                 "variables" );
         
         return listAll( yoke, varNames, function ( varName ) {
-            return isName( varName );
+            return isUnqualifiedName( varName );
         }, function ( yoke, valid ) {
         
         if ( !valid )
             return pkErr( yoke,
-                "Expanded let-list with a non-name element variable"
-                );
+                "Expanded let-list with an element variable that " +
+                "wasn't an unqualified name" );
         
         return self.pkDrop( yoke, fork, function ( yoke ) {
         
@@ -1802,9 +1861,10 @@ PkRuntime.prototype.init_ = function () {
     } );
     
     defFunc( "defval", 2, function ( yoke, name, val ) {
-        if ( !isName( name ) )
+        if ( !isQualifiedName( name ) )
             return pkErr( yoke,
-                "Called defval with a non-name name" );
+                "Called defval with a value that wasn't a " +
+                "qualified name" );
         if ( val.isLinear() )
             return pkErr( yoke, "Called defval with a linear value" );
         return self.mapEffect_( yoke, function ( yoke, effects ) {
@@ -1818,9 +1878,10 @@ PkRuntime.prototype.init_ = function () {
         } );
     } );
     defFunc( "defmacro", 2, function ( yoke, name, macro ) {
-        if ( !isName( name ) )
+        if ( !isQualifiedName( name ) )
             return pkErr( yoke,
-                "Called defmacro with a non-name name" );
+                "Called defmacro with a value that wasn't a " +
+                "qualified name" );
         if ( macro.isLinear() )
             return pkErr( yoke,
                 "Called defmacro with a linear macro" );
@@ -1835,19 +1896,21 @@ PkRuntime.prototype.init_ = function () {
         } );
     } );
     defFunc( "deftag", 2, function ( yoke, name, argNames ) {
-        if ( !isName( name ) )
+        if ( !isQualifiedName( name ) )
             return pkErr( yoke,
-                "Called deftag with a non-name name" );
+                "Called deftag with a value that wasn't a " +
+                "qualified name" );
         if ( !isList( argNames ) )
             return pkErr( yoke,
                 "Called deftag with a non-list list of argument " +
                 "names" );
         return listAll( yoke, argNames, function ( argName ) {
-            return !isName( argName );
+            return !isUnqualifiedName( argName );
         }, function ( yoke, valid ) {
             if ( !valid )
                 return pkErr( yoke,
-                    "Called deftag with a non-name argument name" );
+                    "Called deftag with an argument name that " +
+                    "wasn't an unqualified name" );
             if ( keys.isLinear() )
                 return pkErr( yoke,
                     "Called deftag with a linear args list" );
@@ -1863,20 +1926,21 @@ PkRuntime.prototype.init_ = function () {
         } );
     } );
     defFunc( "defmethod", 2, function ( yoke, name, argNames ) {
-        if ( !isName( name ) )
+        if ( !isQualifiedName( name ) )
             return pkErr( yoke,
-                "Called defmethod with a non-name name" );
+                "Called defmethod with a value that wasn't a " +
+                "qualified name" );
         if ( !isList( argNames ) )
             return pkErr( yoke,
                 "Called defmethod with a non-list list of argument " +
                 "names" );
         return listAll( yoke, argNames, function ( argName ) {
-            return isName( argName );
+            return isUnqualifiedName( argName );
         }, function ( yoke, valid ) {
             if ( !valid )
                 return pkErr( yoke,
-                    "Called defmethod with a non-name argument name"
-                    );
+                    "Called defmethod with an argument name that " +
+                    "wasn't an unqualified name" );
             if ( argNames.isLinear() )
                 return pkErr( yoke,
                     "Called defmethod with a linear args list" );
@@ -1894,12 +1958,14 @@ PkRuntime.prototype.init_ = function () {
     defFunc( "set-impl", 3,
         function ( yoke, methodName, tagName, impl ) {
         
-        if ( !isName( methodName ) )
+        if ( !isQualifiedName( methodName ) )
             return pkErr( yoke,
-                "Called set-impl with a non-name method name" );
-        if ( !isName( tagName ) )
+                "Called set-impl with a method name that wasn't a " +
+                "qualified name" );
+        if ( !isQualifiedName( tagName ) )
             return pkErr( yoke,
-                "Called set-impl with a non-name tag name" );
+                "Called set-impl with a tag name that wasn't a " +
+                "qualified name" );
         if ( impl.isLinear() )
             return pkErr( yoke,
                 "Called set-impl with a linear function" );
@@ -2133,17 +2199,38 @@ PkRuntime.prototype.init_ = function () {
         return pkRet( yoke, pkGetArgs( struct ) );
     } );
     
-    defFunc( "is-a-name", 1, function ( yoke, x ) {
+    defFunc( "is-an-unqualified-name", 1, function ( yoke, x ) {
         return self.pkDrop( yoke, x, function ( yoke ) {
-            return pkRet( yoke, pkBoolean( isName( x ) ) );
+            return pkRet( yoke, pkBoolean( isUnqualifiedName( x ) ) );
         } );
     } );
     
-    defFunc( "name-eq", 2, function ( yoke, a, b ) {
-        if ( !(isName( a ) && isName( b )) )
-            return pkErr( yoke, "Called name-eq with a non-name" );
+    defFunc( "is-a-qualified-name", 1, function ( yoke, x ) {
+        return self.pkDrop( yoke, x, function ( yoke ) {
+            return pkRet( yoke, pkBoolean( isQualifiedName( x ) ) );
+        } );
+    } );
+    
+    defFunc( "unqualified-name-eq", 2, function ( yoke, a, b ) {
+        if ( !(isUnqualifiedName( a ) && isUnqualifiedName( b )) )
+            return pkErr( yoke,
+                "Called unqualified-name-eq with a value that " +
+                "wasn't an unqualified name" );
         return pkRet( yoke,
-            pkBoolean( a.special.nameJson === b.special.nameJson ) );
+            pkBoolean(
+                a.special.unqualifiedNameJson ===
+                    b.special.unqualifiedNameJson ) );
+    } );
+    
+    defFunc( "qualified-name-eq", 2, function ( yoke, a, b ) {
+        if ( !(isQualifiedName( a ) && isQualifiedName( b )) )
+            return pkErr( yoke,
+                "Called qualified-name-eq with a value that wasn't " +
+                "a qualified name" );
+        return pkRet( yoke,
+            pkBoolean(
+                a.special.qualifiedNameJson ===
+                    b.special.qualifiedNameJson ) );
     } );
     
     defFunc( "is-a-comparable-token", 1, function ( yoke, x ) {
@@ -2200,7 +2287,7 @@ PkRuntime.prototype.init_ = function () {
     return self;
 };
 PkRuntime.prototype.getMeta_ = function ( name ) {
-    return this.meta_.get( name.special.nameJson );
+    return this.meta_.get( name.special.qualifiedNameJson );
 };
 PkRuntime.prototype.prepareMeta_ = function (
     name, opt_methodOrVal ) {
@@ -2208,7 +2295,7 @@ PkRuntime.prototype.prepareMeta_ = function (
     var meta = this.getMeta_( name );
     if ( meta === void 0 ) {
         meta = { name: name };
-        this.meta_.set( name.special.nameJson, meta );
+        this.meta_.set( name.special.qualifiedNameJson, meta );
     }
     if ( opt_methodOrVal === void 0 ) {
         // Do nothing.
@@ -2229,7 +2316,7 @@ PkRuntime.prototype.pkDup = function ( yoke, val, count ) {
     
     if ( !val.isLinear() ) {
         // NOTE: This includes tags "nil", "string", "string-name",
-        // and "pair-name".
+        // "pair-name", and "qualified-name".
         return withDups( pkNil, function ( ignored ) {
             return val;
         } );
@@ -2386,7 +2473,7 @@ PkRuntime.prototype.makeSubEssenceUnderMappendedArgs_ = function (
     // of the length of `argList`.
     var map = strMap();
     function getEntry( pkName ) {
-        var jsName = pkName.special.nameJson;
+        var jsName = pkName.special.unqualifiedNameJson;
         return map.get( jsName );
     }
     
@@ -2399,7 +2486,7 @@ PkRuntime.prototype.makeSubEssenceUnderMappendedArgs_ = function (
     return listRev( yoke, argList, function ( yoke, revArgList ) {
     return listMap( yoke, revArgList, function ( yoke, pkName ) {
         
-        var jsName = pkName.special.nameJson;
+        var jsName = pkName.special.unqualifiedNameJson;
         var entry = map.get( jsName );
         if ( entry === void 0 ) {
             map.set( jsName, { dups: pkNil, indices: pkNil } );
@@ -2541,19 +2628,27 @@ PkRuntime.prototype.makeSubEssenceUnderMappendedArgs_ = function (
 PkRuntime.prototype.forkGetter = function ( nameForError ) {
     var self = this;
     return pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 1 ) )
-            return pkErrLen( yoke, args, "Called " + nameForError );
-        var name = listGet( args, 0 );
-        if ( !isName( name ) )
-            return pkErr( yoke,
-                "Called " + nameForError + " with a non-name" );
         // NOTE: This reads definitions. We maintain the metaphor that
         // we work with an immutable snapshot of the definitions, so
         // we may want to refactor this to be closer to that metaphor
         // someday.
-        return runWaitTry( yoke, function ( yoke ) {
-            return runRet( yoke, self.qualifyName( name ) );
-        }, function ( yoke, name ) {
+        if ( !listLenIs( args, 1 ) )
+            return pkErrLen( yoke, args, "Called " + nameForError );
+        var name = listGet( args, 0 );
+        
+        if ( isUnqualifiedName( name ) )
+            return runWaitTry( yoke, function ( yoke ) {
+                return runRet( yoke, self.qualifyName( name ) );
+            }, function ( yoke, name ) {
+                return handleQualifiedName( yoke, name );
+            } );
+        else if ( isQualifiedName( name ) )
+            return handleQualifiedName( yoke, name );
+        else
+            return pkErr( yoke,
+                "Called " + nameForError + " with a non-name" );
+        
+        function handleQualifiedName( yoke, name ) {
             return runWaitTry( yoke, function ( yoke ) {
                 return runRet( yoke, self.getMacro( name ) );
             }, function ( yoke, maybeMacro ) {
@@ -2565,7 +2660,7 @@ PkRuntime.prototype.forkGetter = function ( nameForError ) {
                     maybeMacro
                 ) );
             } );
-        } );
+        }
     } );
 };
 PkRuntime.prototype.deriveGetFork_ = function (
@@ -2576,10 +2671,13 @@ PkRuntime.prototype.deriveGetFork_ = function (
         if ( !listLenIs( args, 1 ) )
             return pkErrLen( yoke, args, "Called a get-fork" );
         var name = listGet( args, 0 );
-        if ( !isName( name ) )
-            return pkErr( yoke, "Called a get-fork with a non-name" );
-        return isLocalName( yoke, name, function ( yoke, isLocal ) {
-            if ( isLocal )
+        
+        if ( isUnqualifiedName( name ) )
+            return isLocalName( yoke, name,
+                function ( yoke, isLocal ) {
+                
+                if ( !isLocal )
+                    return handleNonlocal( yoke );
                 return pkRet( yoke, pk( "getmac-fork",
                     pkGetTine( pkList( name ),
                         function ( yoke, essences ) {
@@ -2588,6 +2686,13 @@ PkRuntime.prototype.deriveGetFork_ = function (
                     } ),
                     pkNil
                 ) );
+            } );
+        else if ( isQualifiedName( name ) )
+            return handleNonlocal( yoke );
+        else
+            return pkErr( yoke, "Called a get-fork with a non-name" );
+        
+        function handleNonlocal( yoke ) {
             // NOTE: We don't verify the output of nonlocalGetFork.
             // Forks are anything that works with the fork-to-getmac
             // method and possibly other methods, and if we sanitize
@@ -2601,7 +2706,7 @@ PkRuntime.prototype.deriveGetFork_ = function (
                 return self.callMethod( yoke, "call",
                     pkList( nonlocalGetFork, pkList( name ) ) );
             } );
-        } );
+        }
     } );
 };
 PkRuntime.prototype.runWaitTryGetmacFork = function (
@@ -2668,10 +2773,10 @@ PkRuntime.prototype.nonMacroMacroexpander = function () {
             return pkErr( yoke,
                 "Called a non-macro's macroexpander with a linear " +
                 "get-fork" );
-        if ( !isName( gensymBase ) )
+        if ( !isUnqualifiedName( gensymBase ) )
             return pkErr( yoke,
-                "Called a non-macro's macroexpander with a " +
-                "non-name gensym base" );
+                "Called a non-macro's macroexpander with a gensym " +
+                "base that wasn't an unqualified name" );
         return self.runWaitTryGetmacFork( yoke,
             "the fork parameter to a non-macro's macroexpander",
             function ( yoke ) {
@@ -2826,8 +2931,8 @@ PkRuntime.prototype.callMethodRaw = function (
         return pkErrLen( yoke, args, "Called method " + methodName );
     var meta = this.getMeta_( methodName );
     var tagName = listGet( args, 0 ).getTagName();
-    var impl =
-        meta && meta.methodImplsByTag.get( tagName.special.nameJson );
+    var impl = meta && meta.methodImplsByTag.get(
+        tagName.special.qualifiedNameJson );
     if ( impl === void 0 )
         return pkErr( yoke,
             "No implementation for method " + methodName + " tag " +
@@ -2837,8 +2942,9 @@ PkRuntime.prototype.callMethodRaw = function (
 PkRuntime.prototype.callMethod = function (
     yoke, jsMethodName, args ) {
     
-    return this.callMethodRaw(
-        yoke, pkStrNameUnsafeMemoized( jsMethodName ), args );
+    return this.callMethodRaw( yoke,
+        pkQualifiedName( pkStrNameUnsafeMemoized( jsMethodName ) ),
+        args );
 };
 PkRuntime.prototype.setImpl = function ( methodName, tagName, impl ) {
     // TODO: These error messages implicitly use Pk#toString(), which
@@ -2854,8 +2960,8 @@ PkRuntime.prototype.setImpl = function ( methodName, tagName, impl ) {
         return pkRawErr(
             "Can't implement method " + methodName + " for non-tag " +
             tagName );
-    methodMeta.methodImplsByTag.set( tagName.special.nameJson,
-        { call: impl } );
+    methodMeta.methodImplsByTag.set(
+        tagName.special.qualifiedNameJson, { call: impl } );
     return pkYep( pkNil );
 };
 PkRuntime.prototype.setStrictImpl = function (
@@ -2905,8 +3011,9 @@ PkRuntime.prototype.getVal = function ( name ) {
                 return pkRet( yoke,
                     new Pk().init_(
                         name,
-                        name.tag === "string-name" ?
-                            name.ind( 0 ).special.jsStr : null,
+                        name.ind( 0 ).tag === "string-name" ?
+                            name.ind( 0 ).ind( 0 ).special.jsStr :
+                            null,
                         args,
                         args.isLinear(),
                         {}
@@ -2919,7 +3026,7 @@ PkRuntime.prototype.getVal = function ( name ) {
 PkRuntime.prototype.qualifyName = function ( name ) {
     // TODO: If we ever implement namespaces, complicate this method
     // to handle them.
-    return pkYep( name );
+    return pkYep( pkQualifiedName( name ) );
 };
 PkRuntime.prototype.getMacro = function ( name ) {
     var meta = this.getMeta_( name );
