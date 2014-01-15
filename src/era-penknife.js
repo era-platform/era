@@ -1749,16 +1749,15 @@ PkRuntime.prototype.init_ = function () {
                 return self.fulfillGetTine( yoke,
                     sourceGetTine, outerEssences,
                     function ( yoke, sourceEssence, outerEssences ) {
-                
-                var bodyCaptureEssences = outerEssences;
-                
-                return pkRet( yoke,
-                    pk( "let-list-essence",
-                        sourceEssence,
-                        bodyCaptureEssences,
-                        bodyDupsList,
-                        bodyEssence ) );
-                
+                    
+                    var bodyCaptureEssences = outerEssences;
+                    
+                    return pkRet( yoke,
+                        pk( "let-list-essence",
+                            sourceEssence,
+                            bodyCaptureEssences,
+                            bodyDupsList,
+                            bodyEssence ) );
                 } );
             } ),
             pkNil
