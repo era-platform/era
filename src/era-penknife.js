@@ -769,28 +769,28 @@ function pkGetTineLinear( names, captures, func ) {
         if ( !listLenIs( args, 1 ) )
             return pkErrLen( yoke, args,
                 "Called a get-tine function" );
-        var bindings = listGet( args, 0 );
-        if ( !isList( bindings ) )
+        var essences = listGet( args, 0 );
+        if ( !isList( essences ) )
             return pkErr( yoke,
                 "Called a get-tine function with a non-list list " +
-                "of bindings" );
-        return listLenEq( yoke, names, bindings,
+                "of essences" );
+        return listLenEq( yoke, names, essences,
             function ( yoke, areEq ) {
             
             if ( !areEq )
                 return pkErr( yoke,
                     "Called a get-tine function with a list of " +
-                    "bindings that wasn't the right length" );
+                    "essences that wasn't the right length" );
             
-            return func( yoke, captures, bindings );
+            return func( yoke, captures, essences );
         } );
     } ) );
 }
 function pkGetTine( names, func ) {
     return pkGetTineLinear( names, pkNil,
-        function ( yoke, captures, bindings ) {
+        function ( yoke, captures, essences ) {
         
-        return func( yoke, bindings );
+        return func( yoke, essences );
     } );
 }
 
@@ -1007,94 +1007,94 @@ PkRuntime.prototype.init_ = function () {
         return pkRet( yoke, pkList( fork.ind( 0 ), fork.ind( 1 ) ) );
     } );
     
-    defTag( "literal-binding", "literal-val" );
-    defTag( "main-binding", "name" );
-    defFunc( "main-binding", 1, function ( yoke, name ) {
+    defTag( "literal-essence", "literal-val" );
+    defTag( "main-essence", "name" );
+    defFunc( "main-essence", 1, function ( yoke, name ) {
         if ( !isName( name ) )
             return pkErr( yoke,
-                "Called main-binding with a non-name" );
-        return pkRet( yoke, pk( "main-binding", name ) );
+                "Called main-essence with a non-name" );
+        return pkRet( yoke, pk( "main-essence", name ) );
     } );
-    defTag( "call-binding", "op", "args" );
-    defFunc( "call-binding", 2, function ( yoke, op, args ) {
+    defTag( "call-essence", "op", "args" );
+    defFunc( "call-essence", 2, function ( yoke, op, args ) {
         if ( !isList( args ) )
             return pkErr( yoke,
-                "Called call-binding with a non-list args list" );
-        return pkRet( yoke, pk( "call-binding", op, args ) );
+                "Called call-essence with a non-list args list" );
+        return pkRet( yoke, pk( "call-essence", op, args ) );
     } );
-    defTag( "param-binding", "index" );
-    defFunc( "param-binding", 1, function ( yoke, index ) {
+    defTag( "param-essence", "index" );
+    defFunc( "param-essence", 1, function ( yoke, index ) {
         if ( !isNat( index ) )
             return pkErr( yoke,
-                "Called param-binding with a non-nat index" );
-        return pkRet( yoke, pk( "param-binding", index ) );
+                "Called param-essence with a non-nat index" );
+        return pkRet( yoke, pk( "param-essence", index ) );
     } );
-    defTag( "fn-binding", "captures", "body-binding" );
-    defVal( "fn-binding", pkfn( function ( yoke, args ) {
+    defTag( "fn-essence", "captures", "body-essence" );
+    defVal( "fn-essence", pkfn( function ( yoke, args ) {
         // NOTE: By blocking this function, we preserve the invariant
-        // that the "captures" list is a list of maybes of bindings.
+        // that the "captures" list is a list of maybes of essences.
         // That way we don't have to check for this explicitly in
-        // binding-interpret.
+        // essence-interpret.
         // TODO: See if we should check for it explicitly anyway. Then
         // we can remove this restriction.
         return pkErr( yoke,
-            "The fn-binding function has no behavior" );
+            "The fn-essence function has no behavior" );
     } ) );
-    defTag( "binding-for-if", "cond-binding",
-        "bindings-and-counts", "then-binding", "else-binding" );
-    defFunc( "binding-for-if", 4,
-        function ( yoke, condBinding,
-            bindingsAndCounts, thenBinding, elseBinding ) {
+    defTag( "essence-for-if", "cond-essence",
+        "essences-and-counts", "then-essence", "else-essence" );
+    defFunc( "essence-for-if", 4,
+        function ( yoke, condEssence,
+            essencesAndCounts, thenEssence, elseEssence ) {
         
-        // NOTE: The overall structure of a `binding-for-if` is like
+        // NOTE: The overall structure of a `essence-for-if` is like
         // this:
         //
-        // (binding-for-if <condBinding>
-        //   <list of (<captureBinding> <thenCount> <elseCount>)>
-        //   <thenBinding>
-        //   <elseBinding>)
+        // (essence-for-if <condEssence>
+        //   <list of (<captureEssence> <thenCount> <elseCount>)>
+        //   <thenEssence>
+        //   <elseEssence>)
         //
-        return listAll( yoke, bindingsAndCounts,
-            function ( bindingAndCounts ) {
+        return listAll( yoke, essencesAndCounts,
+            function ( essenceAndCounts ) {
             
-            return isList( bindingAndCounts ) &&
-                listLenIs( bindingAndCounts, 3 ) &&
-                isNat( listGet( bindingAndCounts, 1 ) ) &&
-                isNat( listGet( bindingAndCounts, 2 ) );
+            return isList( essenceAndCounts ) &&
+                listLenIs( essenceAndCounts, 3 ) &&
+                isNat( listGet( essenceAndCounts, 1 ) ) &&
+                isNat( listGet( essenceAndCounts, 2 ) );
         }, function ( yoke, valid ) {
             if ( !valid )
                 return pkErr( yoke,
-                    "Called binding-for-if with an invalid " +
-                    "bindings-and-counts" );
-            if ( thenBinding.isLinear() )
+                    "Called essence-for-if with an invalid " +
+                    "essences-and-counts" );
+            if ( thenEssence.isLinear() )
                 return pkErr( yoke,
-                    "Called binding-for-if with a linear " +
-                    "then-binding" );
-            if ( elseBinding.isLinear() )
+                    "Called essence-for-if with a linear " +
+                    "then-essence" );
+            if ( elseEssence.isLinear() )
                 return pkErr( yoke,
-                    "Called binding-for-if with a linear " +
-                    "else-binding" );
+                    "Called essence-for-if with a linear " +
+                    "else-essence" );
             return pkRet( yoke,
-                pk( "binding-for-if", condBinding,
-                    bindingsAndCounts, thenBinding, elseBinding ) );
+                pk( "essence-for-if", condEssence,
+                    essencesAndCounts, thenEssence, elseEssence ) );
         } );
     } );
-    defTag( "let-list-binding",
-        "source-binding",
+    defTag( "let-list-essence",
+        "source-essence",
         "captures",
         "numbers-of-dups",
-        "body-binding" );
-    defFunc( "let-list-binding", 4,
+        "body-essence" );
+    defFunc( "let-list-essence", 4,
         function ( yoke,
-            sourceBinding, captures, numbersOfDups, bodyBinding ) {
+            sourceEssence, captures, numbersOfDups, bodyEssence ) {
         
         if ( !isList( captures ) )
             return pkErr( yoke,
-                "Called len-list-binding with a non-list list of " +
+                "Called len-list-essence with a non-list list of " +
                 "captures" );
         if ( !isList( numbersOfDups ) )
             return pkErr( yoke,
-                "Called len-list-binding with a non-list list of " +
+                "Called len-list-essence with a non-list list of " +
                 "numbers of duplicates" );
         return listAll( yoke, numbersOfDups,
             function ( numberOfDups ) {
@@ -1103,20 +1103,20 @@ PkRuntime.prototype.init_ = function () {
         }, function ( yoke, valid ) {
             if ( !valid )
                 return pkErr( yoke,
-                    "Called len-list-binding with a non-nat number " +
+                    "Called len-list-essence with a non-nat number " +
                     "of duplicates" );
             return pkRet( yoke,
-                pk( "let-list-binding",
-                    sourceBinding,
+                pk( "let-list-essence",
+                    sourceEssence,
                     captures,
                     numbersOfDups,
-                    bodyBinding ) );
+                    bodyEssence ) );
         } );
     } );
     
-    // NOTE: We respect linearity in binding-interpret already, but it
+    // NOTE: We respect linearity in essence-interpret already, but it
     // follows an unusual contract. Usually a function will consume or
-    // return all of its linear parameters, but each binding-interpret
+    // return all of its linear parameters, but each essence-interpret
     // call consumes only part of the list of captured values. To be
     // consistent in this "consume or return" policy, we take each
     // captured value in the form of a linear-as-nonlinear wrapped
@@ -1127,47 +1127,47 @@ PkRuntime.prototype.init_ = function () {
     // wrappers, but we do raise an error if we're about to unwrap and
     // the wrapper isn't there.
     //
-    defMethod( "binding-interpret", "self", "list-of-captured-vals" );
-    function defBindingInterpret( tag, body ) {
-        setStrictImpl( "binding-interpret", tag,
+    defMethod( "essence-interpret", "self", "list-of-captured-vals" );
+    function defEssenceInterpret( tag, body ) {
+        setStrictImpl( "essence-interpret", tag,
             function ( yoke, args ) {
             
-            var binding = listGet( args, 0 );
+            var essence = listGet( args, 0 );
             var captures = listGet( args, 1 );
             if ( !isList( listGet( args, 1 ) ) )
                 return pkErr( yoke,
-                    "Called binding-interpret with a non-list list " +
+                    "Called essence-interpret with a non-list list " +
                     "of captured values" );
             if ( listGet( args, 1 ).isLinear() )
                 return pkErr( yoke,
-                    "Called binding-interpret with a linear list " +
+                    "Called essence-interpret with a linear list " +
                     "of captured values" );
-            return body( yoke, binding, captures );
+            return body( yoke, essence, captures );
         } );
     }
-    defBindingInterpret( "literal-binding",
-        function ( yoke, binding, captures ) {
+    defEssenceInterpret( "literal-essence",
+        function ( yoke, essence, captures ) {
         
-        return pkRet( yoke, binding.ind( 0 ) );
+        return pkRet( yoke, essence.ind( 0 ) );
     } );
-    defBindingInterpret( "main-binding",
-        function ( yoke, binding, captures ) {
+    defEssenceInterpret( "main-essence",
+        function ( yoke, essence, captures ) {
         
         // NOTE: This reads definitions. We maintain the metaphor that
         // we work with an immutable snapshot of the definitions, so
         // we may want to refactor this to be closer to that metaphor
         // someday.
-        return runRet( yoke, self.getVal( binding.ind( 0 ) ) );
+        return runRet( yoke, self.getVal( essence.ind( 0 ) ) );
     } );
-    defBindingInterpret( "call-binding",
-        function ( yoke, binding, captures ) {
+    defEssenceInterpret( "call-essence",
+        function ( yoke, essence, captures ) {
         
         return runWaitTry( yoke, function ( yoke ) {
-            return self.callMethod( yoke, "binding-interpret",
-                pkList( binding.ind( 0 ), captures ) );
+            return self.callMethod( yoke, "essence-interpret",
+                pkList( essence.ind( 0 ), captures ) );
         }, function ( yoke, op ) {
             return self.interpretList_( yoke,
-                binding.ind( 1 ), captures,
+                essence.ind( 1 ), captures,
                 function ( yoke, args ) {
                 
                 return self.callMethod( yoke, "call",
@@ -1175,48 +1175,48 @@ PkRuntime.prototype.init_ = function () {
             } );
         } );
     } );
-    defBindingInterpret( "param-binding",
-        function ( yoke, binding, captures ) {
+    defEssenceInterpret( "param-essence",
+        function ( yoke, essence, captures ) {
         
-        return listGetNat( yoke, captures, binding.ind( 0 ),
+        return listGetNat( yoke, captures, essence.ind( 0 ),
             function ( yoke, maybeNonlinearValue ) {
             
             if ( maybeNonlinearValue.tag !== "yep" )
                 return pkErr( yoke,
-                    "Tried to interpret a param-binding that fell " +
+                    "Tried to interpret a param-essence that fell " +
                     "off the end of the list of captured values" );
             var nonlinearValue = maybeNonlinearValue.ind( 0 );
             if ( nonlinearValue.tag !== "linear-as-nonlinear" )
                 return pkErr( yoke,
-                    "Tried to interpret a param-binding, but the " +
+                    "Tried to interpret a param-essence, but the " +
                     "captured value turned out not to be wrapped " +
                     "up as a linear-as-nonlinear value" );
             var value = nonlinearValue.ind( 0 );
             return pkRet( yoke, value );
         } );
     } );
-    defBindingInterpret( "fn-binding",
-        function ( yoke, binding, nonlocalCaptures ) {
+    defEssenceInterpret( "fn-essence",
+        function ( yoke, essence, nonlocalCaptures ) {
         
-        var captures = binding.ind( 0 );
-        var bodyBinding = binding.ind( 1 );
+        var captures = essence.ind( 0 );
+        var bodyEssence = essence.ind( 1 );
         return listMap( yoke, captures, function ( yoke, capture ) {
             if ( capture.tag !== "yep" )
                 return pkRet( yoke, pkNil );
             return runWaitTry( yoke, function ( yoke ) {
-                return self.callMethod( yoke, "binding-interpret",
+                return self.callMethod( yoke, "essence-interpret",
                     pkList( capture.ind( 0 ), nonlocalCaptures ) );
             }, function ( yoke, value ) {
                 return pkRet( yoke, pkYep( value ) );
             } );
         }, function ( yoke, captures ) {
             return pkRet( yoke, pkfnLinear(
-                pkCons( pkYep( bodyBinding ), captures ),
-                function ( yoke, bodyBindingAndCaptures, args ) {
+                pkCons( pkYep( bodyEssence ), captures ),
+                function ( yoke, bodyEssenceAndCaptures, args ) {
                 
-                var bodyBinding =
-                    bodyBindingAndCaptures.ind( 0 ).ind( 0 );
-                var captures = bodyBindingAndCaptures.ind( 1 );
+                var bodyEssence =
+                    bodyEssenceAndCaptures.ind( 0 ).ind( 0 );
+                var captures = bodyEssenceAndCaptures.ind( 1 );
                 
                 return listCount( yoke, captures,
                     function ( maybeCapturedVal ) {
@@ -1239,8 +1239,8 @@ PkRuntime.prototype.init_ = function () {
                                     function ( yoke, localCaptures ) {
                                     
                                     return self.callMethod( yoke,
-                                        "binding-interpret",
-                                        pkList( bodyBinding,
+                                        "essence-interpret",
+                                        pkList( bodyEssence,
                                             localCaptures ) );
                                 } );
                             return runWaitOne( yoke,
@@ -1273,16 +1273,16 @@ PkRuntime.prototype.init_ = function () {
             } ) );
         } );
     } );
-    defBindingInterpret( "binding-for-if",
-        function ( yoke, binding, outerCaptures ) {
+    defEssenceInterpret( "essence-for-if",
+        function ( yoke, essence, outerCaptures ) {
         
-        var condBinding = binding.ind( 0 );
-        var bindingsAndCounts = binding.ind( 1 );
-        var thenBinding = binding.ind( 2 );
-        var elseBinding = binding.ind( 3 );
+        var condEssence = essence.ind( 0 );
+        var essencesAndCounts = essence.ind( 1 );
+        var thenEssence = essence.ind( 2 );
+        var elseEssence = essence.ind( 3 );
         return runWaitTry( yoke, function ( yoke ) {
-            return self.callMethod( yoke, "binding-interpret",
-                pkList( condBinding, outerCaptures ) );
+            return self.callMethod( yoke, "essence-interpret",
+                pkList( condEssence, outerCaptures ) );
         }, function ( yoke, condValue ) {
             // TODO: See if there's a better way for us to respect
             // linearity here. Maybe we should explicitly drop
@@ -1292,27 +1292,27 @@ PkRuntime.prototype.init_ = function () {
             // this code (not to mention breaking its symmetry).
             if ( condValue.isLinear() )
                 return pkErr( yoke,
-                    "Used binding-for-if to branch on a condition " +
+                    "Used essence-for-if to branch on a condition " +
                     "that was linear" );
             if ( condValue.tag !== "nil" ) {
-                var branchBinding = thenBinding;
-                var getCount = function ( bindingAndCounts ) {
-                    return listGet( bindingAndCounts, 1 );
+                var branchEssence = thenEssence;
+                var getCount = function ( essenceAndCounts ) {
+                    return listGet( essenceAndCounts, 1 );
                 };
             } else {
-                var branchBinding = elseBinding;
-                var getCount = function ( bindingAndCounts ) {
-                    return listGet( bindingAndCounts, 2 );
+                var branchEssence = elseEssence;
+                var getCount = function ( essenceAndCounts ) {
+                    return listGet( essenceAndCounts, 2 );
                 };
             }
-            return listMappend( yoke, bindingsAndCounts,
-                function ( yoke, bindingAndCounts ) {
+            return listMappend( yoke, essencesAndCounts,
+                function ( yoke, essenceAndCounts ) {
                 
-                var binding = listGet( bindingAndCounts, 0 );
-                var count = getCount( bindingAndCounts );
+                var essence = listGet( essenceAndCounts, 0 );
+                var count = getCount( essenceAndCounts );
                 return runWaitTry( yoke, function ( yoke ) {
-                    return self.callMethod( yoke, "binding-interpret",
-                        pkList( binding, outerCaptures ) );
+                    return self.callMethod( yoke, "essence-interpret",
+                        pkList( essence, outerCaptures ) );
                 }, function ( yoke, value ) {
                     return self.pkDup( yoke, value, count );
                 } );
@@ -1323,23 +1323,23 @@ PkRuntime.prototype.init_ = function () {
                     return pkRet( yoke,
                         pkLinearAsNonlinear( innerCapture ) );
                 }, function ( yoke, wrappedInnerCaptures ) {
-                    return self.callMethod( yoke, "binding-interpret",
+                    return self.callMethod( yoke, "essence-interpret",
                         pkList(
-                            branchBinding, wrappedInnerCaptures ) );
+                            branchEssence, wrappedInnerCaptures ) );
                 } );
             } );
         } );
     } );
-    defBindingInterpret( "let-list-binding",
-        function ( yoke, binding, outerCaptures ) {
+    defEssenceInterpret( "let-list-essence",
+        function ( yoke, essence, outerCaptures ) {
         
-        var sourceBinding = binding.ind( 0 );
-        var captureBindings = binding.ind( 1 );
-        var numbersOfDups = binding.ind( 2 );
-        var bodyBinding = binding.ind( 3 );
+        var sourceEssence = essence.ind( 0 );
+        var captureEssences = essence.ind( 1 );
+        var numbersOfDups = essence.ind( 2 );
+        var bodyEssence = essence.ind( 3 );
         return runWaitTry( yoke, function ( yoke ) {
-            return self.callMethod( yoke, "binding-interpret",
-                pkList( sourceBinding, outerCaptures ) );
+            return self.callMethod( yoke, "essence-interpret",
+                pkList( sourceEssence, outerCaptures ) );
         }, function ( yoke, sourceValue ) {
         return listLenEq( yoke, sourceValue, numbersOfDups,
             function ( yoke, valid ) {
@@ -1350,7 +1350,7 @@ PkRuntime.prototype.init_ = function () {
                 "destructuring a list" );
         
         return self.interpretList_( yoke,
-            captureBindings, outerCaptures,
+            captureEssences, outerCaptures,
             function ( yoke, evaluatedOuterCaptures ) {
         return listMapTwo( yoke, sourceValue, numbersOfDups,
             function ( yoke, sourceElem, numberOfDups ) {
@@ -1368,8 +1368,8 @@ PkRuntime.prototype.init_ = function () {
             return pkRet( yoke, pkLinearAsNonlinear( capture ) );
         }, function ( yoke, innerCaptures ) {
             
-            return self.callMethod( yoke, "binding-interpret",
-                pkList( bodyBinding, innerCaptures ) );
+            return self.callMethod( yoke, "essence-interpret",
+                pkList( bodyEssence, innerCaptures ) );
         } );
         } );
         
@@ -1478,51 +1478,51 @@ PkRuntime.prototype.init_ = function () {
         
         return pkRet( yoke, pk( "getmac-fork",
             pkGetTine( innerNames,
-                function ( yoke, innerInBindings ) {
+                function ( yoke, innerInEssences ) {
                 
                 return listFoldl( yoke,
-                    pkList( pkNil, pkNil, pkNil, innerInBindings ),
+                    pkList( pkNil, pkNil, pkNil, innerInEssences ),
                     outerNames,
                     function ( yoke, frame, outerName ) {
                     
                     var revCaptures = listGet( frame, 0 );
-                    var revInnerOutBindings = listGet( frame, 1 );
+                    var revInnerOutEssences = listGet( frame, 1 );
                     var i = listGet( frame, 2 );
-                    var innerInBindingsLeft = listGet( frame, 3 );
+                    var innerInEssencesLeft = listGet( frame, 3 );
                     
-                    var newRevInnerOutBindings =
-                        pkCons( pk( "param-binding", i ),
-                            revInnerOutBindings );
+                    var newRevInnerOutEssences =
+                        pkCons( pk( "param-essence", i ),
+                            revInnerOutEssences );
                     var newI = pk( "succ", i );
                     if ( isParamName( outerName ) )
                         return pkRet( yoke, pkList(
                             pkCons( pkNil, revCaptures ),
-                            newRevInnerOutBindings,
+                            newRevInnerOutEssences,
                             newI,
-                            innerInBindingsLeft
+                            innerInEssencesLeft
                         ) );
                     return pkRet( yoke, pkList(
-                        pkCons( pkYep( innerInBindingsLeft.ind( 0 ) ),
+                        pkCons( pkYep( innerInEssencesLeft.ind( 0 ) ),
                             revCaptures ),
-                        newRevInnerOutBindings,
+                        newRevInnerOutEssences,
                         newI,
-                        innerInBindingsLeft.ind( 1 )
+                        innerInEssencesLeft.ind( 1 )
                     ) );
                 }, function ( yoke, frame ) {
                 
                 return listRev( yoke, listGet( frame, 0 ),
                     function ( yoke, captures ) {
                 return listRev( yoke, listGet( frame, 1 ),
-                    function ( yoke, innerOutBindings ) {
+                    function ( yoke, innerOutEssences ) {
                 
                 return runWaitTry( yoke, function ( yoke ) {
                     return self.callMethod( yoke, "call", pkList(
                         listGet( getTine, 1 ),
-                        pkList( innerOutBindings )
+                        pkList( innerOutEssences )
                     ) );
-                }, function ( yoke, bodyBinding ) {
+                }, function ( yoke, bodyEssence ) {
                     return pkRet( yoke,
-                        pk( "fn-binding", captures, bodyBinding ) );
+                        pk( "fn-essence", captures, bodyEssence ) );
                 } );
                 
                 } );
@@ -1549,10 +1549,10 @@ PkRuntime.prototype.init_ = function () {
             return pkRet( yoke, pk( "getmac-fork",
                 pkGetTineLinear( pkNil,
                     pkList( pkYep( listGet( body, 0 ) ) ),
-                    function ( yoke, captures, bindings ) {
+                    function ( yoke, captures, essences ) {
                     
                     return pkRet( yoke,
-                        pk( "literal-binding",
+                        pk( "literal-essence",
                             listGet( captures, 0 ).ind( 0 ) ) );
                 } ),
                 pkNil
@@ -1625,54 +1625,54 @@ PkRuntime.prototype.init_ = function () {
         }, function ( yoke, bcDedup ) {
         
         function fulfill( getTine, then ) {
-            return self.makeSubBindingUnderMappendedArgs_(
+            return self.makeSubEssenceUnderMappendedArgs_(
                 yoke, getTine, null, gensymBase, bcDedup,
-                function ( yoke, captures, dupsList, outBinding ) {
+                function ( yoke, captures, dupsList, outEssence ) {
                 
                 if ( !listLenIs( captures, 0 ) )
                     throw new Error();
-                return then( yoke, dupsList, outBinding );
+                return then( yoke, dupsList, outEssence );
             } );
         }
         
         return fulfill( thenGetTine,
-            function ( yoke, thenDupsList, thenOutBinding ) {
+            function ( yoke, thenDupsList, thenOutEssence ) {
         
-        if ( thenOutBinding.isLinear() )
+        if ( thenOutEssence.isLinear() )
             return pkErr( yoke,
-                "Got a linear then-binding for binding-for-if " +
+                "Got a linear then-essence for essence-for-if " +
                 "during if's macroexpander" );
         
         return fulfill( elseGetTine,
-            function ( yoke, elseDupsList, elseOutBinding ) {
+            function ( yoke, elseDupsList, elseOutEssence ) {
         
-        if ( thenOutBinding.isLinear() )
+        if ( thenOutEssence.isLinear() )
             return pkErr( yoke,
-                "Got a linear else-binding for binding-for-if " +
+                "Got a linear else-essence for essence-for-if " +
                 "during if's macroexpander" );
         
         return listAppend( yoke, condCaptures, bcDedup,
             function ( yoke, outerCaptures ) {
         return pkRet( yoke, pk( "getmac-fork",
             pkGetTine( outerCaptures,
-                function ( yoke, outerBindings ) {
+                function ( yoke, outerEssences ) {
                 
                 return self.fulfillGetTine( yoke,
-                    condGetTine, outerBindings,
-                    function ( yoke, condBinding, outerBindings ) {
+                    condGetTine, outerEssences,
+                    function ( yoke, condEssence, outerEssences ) {
                     
                     return listMapMulti( yoke, pkList(
-                        outerBindings,
+                        outerEssences,
                         thenDupsList,
                         elseDupsList
                     ), function ( yoke, elems ) {
                         return pkRet( yoke, elems );
-                    }, function ( yoke, outerBindingsAndCounts ) {
-                        return pkRet( yoke, pk( "binding-for-if",
-                            condBinding,
-                            outerBindingsAndCounts,
-                            thenOutBinding,
-                            elseOutBinding
+                    }, function ( yoke, outerEssencesAndCounts ) {
+                        return pkRet( yoke, pk( "essence-for-if",
+                            condEssence,
+                            outerEssencesAndCounts,
+                            thenOutEssence,
+                            elseOutEssence
                         ) );
                     } );
                 } );
@@ -1733,31 +1733,31 @@ PkRuntime.prototype.init_ = function () {
         
         var sourceCaptures = listGet( sourceGetTine, 0 );
         
-        return self.makeSubBindingUnderMappendedArgs_( yoke,
+        return self.makeSubEssenceUnderMappendedArgs_( yoke,
             bodyExpr, nonlocalGetFork, gensymBase, varNames,
             function ( yoke,
-                bodyCaptures, bodyDupsList, bodyBinding ) {
+                bodyCaptures, bodyDupsList, bodyEssence ) {
         
         return listAppend( yoke, sourceCaptures, bodyCaptures,
             function ( yoke, outerCaptures ) {
         return pkRet( yoke, pk( "getmac-fork",
             pkGetTineLinear( outerCaptures, pkList(
                 pkYep( sourceGetTine )
-            ), function ( yoke, captures, outerBindings ) {
+            ), function ( yoke, captures, outerEssences ) {
                 var sourceGetTine = listGet( captures, 0 ).ind( 0 );
                 
                 return self.fulfillGetTine( yoke,
-                    sourceGetTine, outerBindings,
-                    function ( yoke, sourceBinding, outerBindings ) {
+                    sourceGetTine, outerEssences,
+                    function ( yoke, sourceEssence, outerEssences ) {
                 
-                var bodyCaptureBindings = outerBindings;
+                var bodyCaptureEssences = outerEssences;
                 
                 return pkRet( yoke,
-                    pk( "let-list-binding",
-                        sourceBinding,
-                        bodyCaptureBindings,
+                    pk( "let-list-essence",
+                        sourceEssence,
+                        bodyCaptureEssences,
                         bodyDupsList,
-                        bodyBinding ) );
+                        bodyEssence ) );
                 
                 } );
             } ),
@@ -2322,17 +2322,17 @@ PkRuntime.prototype.pkUnwrap = function ( yoke, val, then ) {
     } );
 };
 PkRuntime.prototype.fulfillGetTine = function (
-    yoke, getTine, bindings, then ) {
+    yoke, getTine, essences, then ) {
     
     var self = this;
     return listFoldl( yoke,
-        pkList( pkNil, bindings ), listGet( getTine, 0 ),
+        pkList( pkNil, essences ), listGet( getTine, 0 ),
         function ( yoke, takenRevAndNot, name ) {
             var notTaken = listGet( takenRevAndNot, 1 );
             if ( notTaken.tag !== "cons" )
                 return pkErr( yoke,
                     "An internal fulfillGetTine operation " +
-                    "encountered fewer input bindings than " +
+                    "encountered fewer input essences than " +
                     "required by the get-tines." );
             return pkRet( yoke, pkList(
                 pkCons( notTaken.ind( 0 ),
@@ -2349,35 +2349,35 @@ PkRuntime.prototype.fulfillGetTine = function (
                     listGet( getTine, 1 ),
                     pkList( taken )
                 ) );
-            }, function ( yoke, resultBinding ) {
+            }, function ( yoke, resultEssence ) {
                 return then( yoke,
-                    resultBinding, listGet( takenRevAndNot, 1 ) );
+                    resultEssence, listGet( takenRevAndNot, 1 ) );
             } );
         } );
     } );
 };
 PkRuntime.prototype.fulfillGetTines = function (
-    yoke, getTines, bindings, then ) {
+    yoke, getTines, essences, then ) {
     
     var self = this;
     if ( getTines.tag !== "cons" )
-        return then( yoke, pkNil, bindings );
-    return self.fulfillGetTine( yoke, getTines.ind( 0 ), bindings,
-        function ( yoke, outBinding, inBindingsRemaining ) {
+        return then( yoke, pkNil, essences );
+    return self.fulfillGetTine( yoke, getTines.ind( 0 ), essences,
+        function ( yoke, outEssence, inEssencesRemaining ) {
         
         return self.fulfillGetTines( yoke,
-            getTines.ind( 1 ), inBindingsRemaining,
-            function ( yoke, outBindings, inBindingsRemaining ) {
+            getTines.ind( 1 ), inEssencesRemaining,
+            function ( yoke, outEssences, inEssencesRemaining ) {
             
             return runWaitOne( yoke, function ( yoke ) {
                 return then( yoke,
-                    pkCons( outBinding, outBindings ),
-                    inBindingsRemaining );
+                    pkCons( outEssence, outEssences ),
+                    inEssencesRemaining );
             } );
         } );
     } );
 };
-PkRuntime.prototype.makeSubBindingUnderMappendedArgs_ = function (
+PkRuntime.prototype.makeSubEssenceUnderMappendedArgs_ = function (
     yoke, expr, nonlocalGetForkOrNull, gensymBase, argList, then ) {
     
     var self = this;
@@ -2477,7 +2477,7 @@ PkRuntime.prototype.makeSubBindingUnderMappendedArgs_ = function (
         } );
     }, function ( yoke, stopIndex ) {
     return listFoldlJsAsync( yoke,
-        { nonlocalI: pkNil, revInBindings: pkNil },
+        { nonlocalI: pkNil, revInEssences: pkNil },
         captures,
         function ( yoke, frame, pkName, then ) {
         
@@ -2486,9 +2486,9 @@ PkRuntime.prototype.makeSubBindingUnderMappendedArgs_ = function (
             // nonlocal
             return then( yoke, {
                 nonlocalI: pk( "succ", frame.nonlocalI ),
-                revInBindings:
-                    pkCons( pk( "param-binding", frame.nonlocalI ),
-                        frame.revInBindings )
+                revInEssences:
+                    pkCons( pk( "param-essence", frame.nonlocalI ),
+                        frame.revInEssences )
             } );
         } else {
             // local
@@ -2498,18 +2498,18 @@ PkRuntime.prototype.makeSubBindingUnderMappendedArgs_ = function (
             entry.indices = entry.indices.ind( 1 );
             return then( yoke, {
                 nonlocalI: frame.nonlocalI,
-                revInBindings:
-                    pkCons( pk( "param-binding", localI ),
-                        frame.revInBindings )
+                revInEssences:
+                    pkCons( pk( "param-essence", localI ),
+                        frame.revInEssences )
             } );
         }
     }, function ( yoke, frame ) {
-    return listRev( yoke, frame.revInBindings,
-        function ( yoke, inBindings ) {
+    return listRev( yoke, frame.revInEssences,
+        function ( yoke, inEssences ) {
     return runWaitTry( yoke, function ( yoke ) {
         return self.callMethod( yoke, "call",
-            pkList( cont, pkList( inBindings ) ) );
-    }, function ( yoke, outBinding ) {
+            pkList( cont, pkList( inEssences ) ) );
+    }, function ( yoke, outEssence ) {
     return listMap( yoke, maybeArgList,
         function ( yoke, maybePkName ) {
         
@@ -2520,7 +2520,7 @@ PkRuntime.prototype.makeSubBindingUnderMappendedArgs_ = function (
             return pkRet( yoke, pkNil );
     }, function ( yoke, dupsList ) {
     
-    return then( yoke, nonlocalNames, dupsList, outBinding );
+    return then( yoke, nonlocalNames, dupsList, outEssence );
     
     } );
     } );
@@ -2559,9 +2559,9 @@ PkRuntime.prototype.forkGetter = function ( nameForError ) {
                 return runRet( yoke, self.getMacro( name ) );
             }, function ( yoke, maybeMacro ) {
                 return pkRet( yoke, pk( "getmac-fork",
-                    pkGetTine( pkNil, function ( yoke, bindings ) {
+                    pkGetTine( pkNil, function ( yoke, essences ) {
                         return pkRet( yoke,
-                            pk( "main-binding", name ) );
+                            pk( "main-essence", name ) );
                     } ),
                     maybeMacro
                 ) );
@@ -2583,9 +2583,9 @@ PkRuntime.prototype.deriveGetFork_ = function (
             if ( isLocal )
                 return pkRet( yoke, pk( "getmac-fork",
                     pkGetTine( pkList( name ),
-                        function ( yoke, bindings ) {
+                        function ( yoke, essences ) {
                         
-                        return pkRet( yoke, listGet( bindings, 0 ) );
+                        return pkRet( yoke, listGet( essences, 0 ) );
                     } ),
                     pkNil
                 ) );
@@ -2696,18 +2696,18 @@ PkRuntime.prototype.nonMacroMacroexpander = function () {
                             // <indentation-reset>
 return pkRet( yoke, pk( "getmac-fork",
     pkGetTineLinear( allNames, pkList( pkYep( allGetTines ) ),
-        function ( yoke, captures, allInBindings ) {
+        function ( yoke, captures, allInEssences ) {
         
         var allGetTines = listGet( captures, 0 ).ind( 0 );
-        return self.fulfillGetTines( yoke, allGetTines, allInBindings,
-            function ( yoke, allOutBindings, inBindingsRemaining ) {
+        return self.fulfillGetTines( yoke, allGetTines, allInEssences,
+            function ( yoke, allOutEssences, inEssencesRemaining ) {
             
-            if ( !listLenIs( inBindingsRemaining, 0 ) )
+            if ( !listLenIs( inEssencesRemaining, 0 ) )
                 throw new Error();
             return pkRet( yoke,
-                pk( "call-binding",
-                    allOutBindings.ind( 0 ),
-                    allOutBindings.ind( 1 ) ) );
+                pk( "call-essence",
+                    allOutEssences.ind( 0 ),
+                    allOutEssences.ind( 1 ) ) );
         } );
     } ),
     pkNil
@@ -2741,7 +2741,7 @@ PkRuntime.prototype.interpretList_ = function (
     if ( list.tag !== "cons" )
         return then( yoke, pkNil );
     return runWaitTry( yoke, function ( yoke ) {
-        return self.callMethod( yoke, "binding-interpret",
+        return self.callMethod( yoke, "essence-interpret",
             pkList( list.ind( 0 ), captures ) );
     }, function ( yoke, elem ) {
         return self.interpretList_( yoke, list.ind( 1 ), captures,
@@ -3133,8 +3133,8 @@ PkRuntime.prototype.conveniences_macroexpand = function (
         return runWaitTry( yoke, function ( yoke ) {
             return self.callMethod( yoke, "call",
                 pkList( listGet( getTine, 1 ), pkList( pkNil ) ) );
-        }, function ( yoke, binding ) {
-            return pkRet( yoke, binding );
+        }, function ( yoke, essence ) {
+            return pkRet( yoke, essence );
         } );
     } );
 };
@@ -3163,8 +3163,8 @@ PkRuntime.prototype.conveniences_pkDrop = function ( val, opt_yoke ) {
         return pkRet( yoke, pkNil );
     } );
 };
-PkRuntime.prototype.conveniences_interpretBinding = function (
-    binding, opt_yoke ) {
+PkRuntime.prototype.conveniences_interpretEssence = function (
+    essence, opt_yoke ) {
     
     var self = this;
     if ( opt_yoke === void 0 )
@@ -3175,8 +3175,8 @@ PkRuntime.prototype.conveniences_interpretBinding = function (
         canUseImperativeCapabilities: true,
         canDefine: true
     }, function ( yoke ) {
-        return self.callMethod( yoke, "binding-interpret",
-            pkList( binding, pkNil ) );
+        return self.callMethod( yoke, "essence-interpret",
+            pkList( essence, pkNil ) );
     } );
 };
 PkRuntime.prototype.conveniences_runDefinitions = function (

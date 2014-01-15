@@ -511,7 +511,7 @@ window.onload = function () {
                 break;
             
             var interpreted = penknife.conveniences_runSyncYoke(
-                penknife.conveniences_interpretBinding(
+                penknife.conveniences_interpretEssence(
                     macroexpanded.ind( 0 ) ) ).result;
             if ( reportError( interpreted, "Interpretation" ) ) {
                 break;
