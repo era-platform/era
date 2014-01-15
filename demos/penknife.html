@@ -393,6 +393,43 @@ qq.(foo ((qq (uq uq.(succ/succ/nil))) (qq (uqs quote.(a b c))) bar))
 ; Test that we we don't let local names hijack the qualified names
 ; used by macro-generated code.
 (let append list qq.(a b c))
+
+(defval qname.call-with-flow-grapher /fn-with-args (body)
+/call-with-mbox-env/fn-with-args (mbox-env)
+/let rev-junctions-mbox (mbox-new mbox-env (nil))
+/let next-node-num-mbox (mbox-new mbox-env (nil))
+/let get-next-node-num
+  (fn-with-args ()
+  /let result (mbox-get mbox-env next-node-num-mbox)
+  /let - (mbox-set mbox-env next-node-num-mbox succ.result)
+    result)
+/let get-next-node
+  (fn-with-args ()
+  /let num (get-next-node-num)
+  /nonlinear-as-linear num
+    
+    ; Duplicating this value causes it to record a junction in the
+    ; graph.
+    (fn-with-args (num num-dups)
+    /let result
+      (rev/fold-nat (nil) num-dups /fn-with-args (rev-result)
+        (cons (get-next-node-num) rev-result))
+    /let rev-junctions (mbox-get mbox-env rev-junctions-mbox)
+    /let - (mbox-set mbox-env rev-junctions-mbox
+             (cons (list num result) rev-junctions))
+      result)
+    
+    ; Unwrapping this value is useless.
+    (fn-with-args (num)
+      (nil)))
+/let - (body/get-next-node)
+  (rev/mbox-get mbox-env rev-junctions-mbox))
+
+; Build a flow graph for some example code.
+(call-with-flow-grapher/fn-with-args (n)
+/let m (list n n)
+  (list m m m))
+
 </textarea>
 <button id="go">Execute</button>
 <textarea id="result" disabled cols="80" rows="24"></textarea>
