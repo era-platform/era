@@ -398,32 +398,52 @@ qq.(foo ((qq (uq uq.(succ/succ/nil))) (qq (uqs quote.(a b c))) bar))
 /call-with-mbox-env/fn-with-args (mbox-env)
 /let rev-junctions-mbox (mbox-new mbox-env (nil))
 /let next-node-num-mbox (mbox-new mbox-env (nil))
+/let num-strays-mbox (mbox-new mbox-env (succ/nil))
+/let mget (fn-with-args (mbox) (mbox-get mbox-env mbox))
+/let mset (fn-with-args (mbox val) (mbox-set mbox-env mbox val))
+/let inc (fn-with-args (nat-mbox) (mset nat-mbox /succ mget.nat-mbox))
 /let get-next-node-num
   (fn-with-args ()
-  /let result (mbox-get mbox-env next-node-num-mbox)
-  /let - (mbox-set mbox-env next-node-num-mbox succ.result)
+  /let result mget.next-node-num-mbox
+  /let - inc.next-node-num-mbox
     result)
 /let get-next-node
   (fn-with-args ()
-  /let num (get-next-node-num)
-  /nonlinear-as-linear num
+  /nonlinear-as-linear
+    (list (get-next-node-num) (mbox-new mbox-env (nil)))
     
     ; Duplicating this value causes it to record a junction in the
     ; graph.
-    (fn-with-args (num num-dups)
+    (fn-with-args (inner-val num-dups)
+    /let-list (num used-mbox) inner-val
+    /if mget.used-mbox
+      err.s[Can't duplicate a flow grapher that was already used]
+    /let - (mset used-mbox (yep/nil))
+    /let - (if-struct succ (pred) mget.num-strays-mbox
+             (mset num-strays-mbox pred)
+             err.s[Internal error when duplicating a flow grapher])
     /let result
       (rev/fold-nat (nil) num-dups /fn-with-args (rev-result)
-        (cons (get-next-node-num) rev-result))
-    /let rev-junctions (mbox-get mbox-env rev-junctions-mbox)
-    /let - (mbox-set mbox-env rev-junctions-mbox
-             (cons (list num result) rev-junctions))
+        (let - inc.num-strays-mbox
+          (cons (list (get-next-node-num) (mbox-new mbox-env (nil)))
+            rev-result)))
+    /let rev-junctions mget.rev-junctions-mbox
+    /let - (mset rev-junctions-mbox
+             (cons
+               (list num
+                 (map result /fn-with-args (entry)
+                 /let-list (num used-mbox) entry
+                   num))
+               rev-junctions))
       result)
     
     ; Unwrapping this value is useless.
-    (fn-with-args (num)
+    (fn-with-args (inner-val)
       (nil)))
 /let - (body/get-next-node)
-  (rev/mbox-get mbox-env rev-junctions-mbox))
+/if-struct succ (pred) mget.num-strays-mbox
+  err.s[Didn't consume all flow graphsrs in a call to call-with-flow-grapher]
+  (rev mget.rev-junctions-mbox))
 
 ; Build a flow graph for some example code.
 (call-with-flow-grapher/fn-with-args (n)
