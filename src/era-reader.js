@@ -319,15 +319,6 @@ readerMacros.set( "\"", function ( $ ) {
                     readStringUntilBracket( closeBracket,
                         objPlus( $, {
                         
-                        readerMacros: stringReaderMacros,
-                        unrecognized: function ( $sub2 ) {
-                            $sub2.stream.readc( function ( c ) {
-                                $sub2.then( { ok: true, val: [ {
-                                    type: "nonWhite",
-                                    text: c
-                                } ] } );
-                            } );
-                        },
                         then: function ( result ) {
                             if ( result.ok )
                                 $.then( { ok: true,
@@ -335,10 +326,6 @@ readerMacros.set( "\"", function ( $ ) {
                                         result.val ) } );
                             else
                                 $.then( result );
-                        },
-                        end: function ( $sub2 ) {
-                            $.then( { ok: false,
-                                msg: "Incomplete string" } );
                         }
                     } ) );
                 };
@@ -444,6 +431,12 @@ function readStringUntilBracket( bracket, $ ) {
                     $.then( { ok: true, val: result } );
                 } );
             } ),
+            unrecognized: function ( $sub2 ) {
+                $sub2.stream.readc( function ( c ) {
+                    $sub2.then( { ok: true,
+                        val: [ { type: "nonWhite", text: c } ] } );
+                } );
+            },
             then: function ( result ) {
                 if ( result.ok )
                     reader(
