@@ -188,6 +188,24 @@ function isValidUnicode( string ) {
         return codePointInfo.isReplaced;
     } );
 }
+function unicodeCodePointToString( codePoint ) {
+    function inRange( min, pastMax ) {
+        return function ( n ) {
+            return min <= n && n < pastMax;
+        };
+    }
+    var isHead = inRange( 0xD800, 0xDC00 );
+    var isTrail = inRange( 0xDC00, 0xE000 );
+    if ( !(0 <= codePoint && codePoint < 0x110000
+        && !isHead( codePoint ) && !isTrail( codePoint )) )
+        return null;
+    if ( codePoint < 0x10000 )
+        return String.fromCharCode( codePoint );
+    return String.fromCharCode(
+        0xD800 + ((codePoint - 0x10000) >>> 10),
+        0xE000 + ((codePoint - 0x10000) & 0x3FF)
+    );
+}
 
 // TODO: Come up with something better than this.
 var naiveIsoCases = [];

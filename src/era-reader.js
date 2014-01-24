@@ -6,7 +6,6 @@
 
 // To make string literals convenient, we implement an interpolated
 // string syntax according to the following design sketch:
-// // TODO: Implement \u.
 //
 // reader macro " followed by ( will read a string terminated by ),
 //   and it results in the string contents, which means a list of
@@ -558,8 +557,6 @@ stringReaderMacros.set( "\\", function ( $ ) {
                             then: function ( result ) {
                                 if ( !result.ok )
                                     return void $.then( result );
-                                // TODO: See if we should consume this
-                                // character when it isn't a dot.
                                 $.stream.readc( function ( c ) {
                                     if ( c === "." )
                                         $.then( { ok: true, val: [ {
@@ -577,10 +574,46 @@ stringReaderMacros.set( "\\", function ( $ ) {
                     } );
                 },
                 "u": function ( $ ) {
-                    // TODO: Implement this.
-                    $.then( { ok: false, msg:
-                        "Unicode escapes haven't been implemented " +
-                        "yet" } );
+                    $.stream.readc( function ( c ) {
+                        loop( "", 6 );
+                        function loop( hexSoFar, digitsLeft ) {
+                            $.stream.readc( function ( c ) {
+                                if ( c === "" )
+                                    $.then( { ok: false, msg:
+                                        "Incomplete Unicode escape"
+                                    } );
+                                else if ( c === "." )
+                                    next( hexSoFar );
+                                else if ( digitsLeft === 0 )
+                                    $.then( { ok: false, msg:
+                                        "Unterminated Unicode escape"
+                                    } );
+                                else if ( /^[01-9A-F]$/.test( c ) )
+                                    loop( hexSoFar + c,
+                                        digitsLeft - 1 );
+                                else
+                                    $.then( { ok: false, msg:
+                                        "Unrecognized character in " +
+                                        "Unicode escape" } );
+                            } );
+                        }
+                        function next( hex ) {
+                            if ( hex.length === 0 )
+                                return void $.then( { ok: false, msg:
+                                    "Unicode escape with no digits"
+                                } );
+                            console.log( hex.length );
+                            var text = unicodeCodePointToString(
+                                parseInt( hex, 16 ) );
+                            if ( text === null )
+                                return void $.then( { ok: false, msg:
+                                    "Unicode escape out of range" } );
+                            $.then( { ok: true, val: [ {
+                                type: "nonWhite",
+                                text: text
+                            } ] } );
+                        }
+                    } );
                 }
             } ),
             unrecognized: function ( $sub ) {
