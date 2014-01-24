@@ -397,6 +397,9 @@ function isList( x ) {
 function isNat( x ) {
     return x.tag === "succ" || x.tag === "nil";
 }
+function isIstring( x ) {
+    return x.tag === "istring-cons" || x.tag === "istring-end";
+}
 // NOTE: For now, isUnqualifiedName( x ) and isQualifiedName( x )
 // imply x.isLinear(). If we ever extend them to include linear
 // values, we should take a look at any code that calls them to see if
@@ -900,6 +903,29 @@ PkRuntime.prototype.init_ = function () {
     defVal( "string", pkfn( function ( yoke, args ) {
         return pkErr( yoke, "The string function has no behavior" );
     } ) );
+    defTag( "istring-cons", "prefix", "interpolation", "rest" );
+    defFunc( "istring-cons", 3,
+        function ( yoke, prefix, interpolation, rest ) {
+        
+        if ( prefix.tag !== "string" )
+            return pkErr( yoke,
+                "Called istring-cons with a prefix that wasn't a " +
+                "string" );
+        if ( !isIstring( rest ) )
+            return pkErr( yoke,
+                "Called istring-cons with a rest that wasn't an " +
+                "istring" );
+        return pkRet( yoke,
+            pk( "istring-cons", prefix, interpolation, rest ) );
+    } );
+    defTag( "istring-end", "suffix" );
+    defFunc( "istring-end", 1, function ( yoke, suffix ) {
+        if ( suffix.tag !== "string" )
+            return pkErr( yoke,
+                "Called istring-end with a suffix that wasn't a " +
+                "string" );
+        return pkRet( yoke, pk( "istring-end", suffix ) );
+    } );
     defTag( "string-name", "string" );
     defFunc( "string-name", 1, function ( yoke, string ) {
         if ( string.tag !== "string" )
@@ -3250,19 +3276,35 @@ PkRuntime.prototype.conveniences_macroexpandArrays = function (
     function arraysToConses( arrayExpr ) {
         // TODO: Use something like Lathe.js's _.likeArray() and
         // _.likeObjectLiteral() here.
-        // TODO: Support the interpolatedString case.
         if ( typeof arrayExpr === "string"
-            && isValidUnicode( arrayExpr ) )
+            && isValidUnicode( arrayExpr ) ) {
             return pkStrName( arrayExpr );
-        else if ( arrayExpr instanceof Array )
+        } else if ( arrayExpr instanceof Array ) {
             return pkListFromArr(
                 arrMap( arrayExpr, arraysToConses ) );
-        else if ( typeof arrayExpr === "object"
+        } else if ( typeof arrayExpr === "object"
             && arrayExpr !== null
-            && arrayExpr.type === "interpolatedString" )
-            return pkNil;
-        else
+            && arrayExpr.type === "interpolatedString" ) {
+            
+            var contents = arrayExpr.parts.slice();
+            var suffix = contents.pop().text;
+            if ( suffix === void 0 )
+                throw new Error();
+            var result = pk( "istring-end", pkStrUnsafe( suffix ) );
+            while ( contents.length !== 0 ) {
+                var interpolation = contents.pop().val;
+                var prefix = contents.pop().text;
+                if ( prefix === void 0 || interpolation === void 0 )
+                    throw new Error();
+                result = pk( "istring-cons",
+                    pkStrUnsafe( prefix ),
+                    arraysToConses( interpolation ),
+                    result );
+            }
+            return result;
+        } else {
             throw new Error();
+        }
     }
     
     return this.conveniences_macroexpand(
