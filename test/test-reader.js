@@ -18,7 +18,8 @@ addNaiveIsoUnitTest( function ( then ) {
                 $.then( { ok: false, msg: "Reached the end" } );
         },
         unrecognized: function ( $ ) {
-            $.then( { ok: false, msg: "Unrecognized char" } );
+            $.then( { ok: false,
+                msg: "Encountered an unrecognized character" } );
         },
         then: function ( result ) {
             then( result, { ok: true, val:

@@ -209,6 +209,7 @@ function postprocessWhitespace( stringParts ) {
             resultParts.push(
                 { type: "text", text: currentText },
                 { type: "interpolation", val: part.val } );
+            currentText = "";
             removing = false;
         } else if ( part.type === "rawWhite" ) {
             if ( !removing ) {
@@ -437,6 +438,9 @@ function readStringUntilBracket( bracket, $ ) {
                         val: [ { type: "nonWhite", text: c } ] } );
                 } );
             },
+            end: function ( $sub ) {
+                $.then( { ok: false, msg: "Incomplete string" } );
+            },
             then: function ( result ) {
                 if ( result.ok )
                     reader(
@@ -444,9 +448,6 @@ function readStringUntilBracket( bracket, $ ) {
                             $, { past: string, last: result.val } ) );
                 else
                     $.then( result );
-            },
-            end: function ( $sub ) {
-                $.then( { ok: false, msg: "Incomplete string" } );
             }
         } );
     }
@@ -524,10 +525,45 @@ stringReaderMacros.set( "\\", function ( $ ) {
                     ignoreRestOfLine( $ );
                 },
                 ",": function ( $ ) {
-                    // TODO: Implement this.
-                    $.then( { ok: false, msg:
-                        "Interpolations haven't been implemented " +
-                        "yet" } );
+                    $.stream.readc( function ( c ) {
+                        reader( objPlus( $, {
+                            heedsCommandEnds: false,
+                            infixLevel: 3,
+                            infixState: { type: "empty" },
+                            readerMacros: readerMacros,
+                            unrecognized: function ( $ ) {
+                                if ( bankInfix( $, 0 ) )
+                                    return;
+                                // TODO: See if we can make this error
+                                // message, the error message in
+                                // penknife.html, and the error
+                                // message in test-reader.js use the
+                                // same code. Also, see if they should
+                                // use the above bankInfix line.
+                                $.then( { ok: false, msg:
+                                    "Encountered an unrecognized " +
+                                    "character" } );
+                            },
+                            end: function ( $ ) {
+                                if ( $.infixState.type === "ready" )
+                                    $.then( { ok: true,
+                                        val: $.infixState.val } );
+                                else
+                                    $.then( { ok: false, msg:
+                                        "Incomplete interpolation " +
+                                        "in string" } );
+                            },
+                            then: function ( result ) {
+                                if ( result.ok )
+                                    $.then( { ok: true, val: [ {
+                                        type: "interpolation",
+                                        val: result.val
+                                    } ] } );
+                                else
+                                    $.then( result );
+                            }
+                        } ) );
+                    } );
                 },
                 "u": function ( $ ) {
                     // TODO: Implement this.
