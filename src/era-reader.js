@@ -2,14 +2,20 @@
 // Copyright 2013 Ross Angle. Released under the MIT License.
 "use strict";
 
-// TODO: Implement a string syntax according to the following notes:
+// This is a reader for Era's own dialect of s-expressions.
+
+// To make string literals convenient, we implement an interpolated
+// string syntax according to the following design sketch:
+// // TODO: Implement \, and \u.
 //
 // reader macro " followed by ( will read a string terminated by ),
 //   and it results in the string contents, which means a list of
-//   strings interspersed with other values
+//   strings interspersed with other values, and then it will
+//   postprocess whitespace as described further below
 // reader macro " followed by [ will read a string terminated by ],
 //   and it results in the string contents, which means a list of
-//   strings interspersed with other values
+//   strings interspersed with other values, and then it will
+//   postprocess whitespace as described further below
 // any raw Unicode code point except space, tab, carriage return,
 //   newline, \, (, ), [, and ] is used directly and has no other
 //   meaning
@@ -22,9 +28,9 @@
 // non-whitespace tokens:
 //   \- means backslash
 //   ( reads a string terminated by ) and means the contents of that
-//     string plus both brackets
+//     string plus both brackets, without postprocessing whitespace
 //   [ reads a string terminated by ] and means the contents of that
-//     string plus both brackets
+//     string plus both brackets, without postprocessing whitespace
 //   ) is an error unless it terminates the current string reader
 //   ] is an error unless it terminates the current string reader
 //   \< means left square bracket
@@ -40,12 +46,12 @@
 //     means the appropriate Unicode code point, unless it's a code
 //     point value outside the Unicode range or reserved for UTF-16
 //     surrogates, in which case it's an error
-// normalize raw whitespace according to the following rules:
+// postprocess whitespace according to the following rules:
 //   - add one raw space after every \, escape
 //   - remove all raw whitespace adjacent to the ends of the string
 //   - remove all raw whitespace adjacent to whitespace escapes
-//   - replace every remaining occurrence of one or more whitespace
-//     characters with a single space
+//   - replace every remaining occurrence of one or more raw
+//     whitespace characters with a single space
 
 
 // $.stream.readc
@@ -153,20 +159,94 @@ var symbolChopsChars = strMap().setObj( { "(": ")", "[": "]" } );
 var commandEndChars = "\r\n";
 var whiteChars = " \t";
 
+function postprocessWhitespace( stringParts ) {
+    // Add one raw space after every \, escape.
+    var stringParts2 = arrMappend( stringParts, function ( part ) {
+        if ( part.type === "interpolation" )
+            return [ part, { type: "rawWhite", text: " " } ];
+        else
+            return [ part ];
+    } );
+    
+    // Remove all raw whitespace adjacent to the ends of the string
+    // and adjacent to whitespace escapes.
+    function removeAfterStartOrExplicitWhitespace( parts ) {
+        var parts2 = [];
+        var removing = true;
+        arrEach( parts, function ( part ) {
+            if ( part.type === "interpolation" ) {
+                parts2.push( part );
+                removing = false;
+            } else if ( part.type === "rawWhite" ) {
+                if ( !removing )
+                    parts2.push( part );
+            } else if ( part.type === "explicitWhite" ) {
+                parts2.push( part );
+                removing = true;
+            } else if ( part.type === "nonWhite" ) {
+                parts2.push( part );
+                removing = false;
+            } else {
+                throw new Error();
+            }
+        } );
+        return parts2;
+    }
+    var stringParts3 = removeAfterStartOrExplicitWhitespace(
+        stringParts2 ).reverse();
+    var stringParts4 = removeAfterStartOrExplicitWhitespace(
+        stringParts3 ).reverse();
+    
+    // Replace every remaining occurrence of one or more raw
+    // whitespace characters with a single space. Meanwhile, drop the
+    // distinction between raw whitespace, explicit whitespace, and
+    // non-whitespace text.
+    var resultParts = [];
+    var currentText = "";
+    var removing = true;
+    arrEach( stringParts4, function ( part ) {
+        if ( part.type === "interpolation" ) {
+            resultParts.push(
+                { type: "text", text: currentText },
+                { type: "interpolation", val: part.val } );
+            removing = false;
+        } else if ( part.type === "rawWhite" ) {
+            if ( !removing ) {
+                currentText += " ";
+                removing = true;
+            }
+        } else if ( part.type === "explicitWhite" ) {
+            currentText += part.text;
+            removing = false;
+        } else if ( part.type === "nonWhite" ) {
+            currentText += part.text;
+            removing = false;
+        } else {
+            throw new Error();
+        }
+    } );
+    resultParts.push( { type: "text", text: currentText } );
+    return { type: "interpolatedString", parts: resultParts };
+}
+
+function ignoreRestOfLine( $ ) {
+    $.stream.peekc( function ( c ) {
+        if ( c === "" )
+            $.end( $ );
+        else if ( /^[\r\n]$/.test( c ) )
+            reader( $ );
+        else
+            $.stream.readc( function ( c ) {
+                ignoreRestOfLine( $ );
+            } );
+    } );
+}
+
 var readerMacros = strMap();
 readerMacros.set( ";", function ( $ ) {
     if ( bankCommand( $ ) )
         return;
-    function loop() {
-        $.stream.readc( function ( c ) {
-            if ( c === "" )
-                return void $.end( $ );
-            if ( /^[\r\n]$/.test( c ) )
-                return void reader( $ );
-            loop();
-        } );
-    }
-    loop();
+    ignoreRestOfLine( $ );
 } );
 addReaderMacros( readerMacros, commandEndChars, function ( $ ) {
     if ( bankCommand( $ ) )
@@ -226,6 +306,52 @@ readerMacros.set( "/", function ( $ ) {
     if ( bankInfix( $, 0 ) )
         return;
     readListUntilParen( $, !"consumeParen" );
+} );
+readerMacros.set( "\"", function ( $ ) {
+    if ( bankInfix( $, 0 ) )
+        return;
+    $.stream.readc( function ( c ) {
+        reader( objPlus( $, {
+            readerMacros: symbolChopsChars.map(
+                function ( closeBracket, openBracket ) {
+                
+                return function ( $sub ) {
+                    readStringUntilBracket( closeBracket,
+                        objPlus( $, {
+                        
+                        readerMacros: stringReaderMacros,
+                        unrecognized: function ( $sub2 ) {
+                            $sub2.stream.readc( function ( c ) {
+                                $sub2.then( { ok: true, val: [ {
+                                    type: "nonWhite",
+                                    text: c
+                                } ] } );
+                            } );
+                        },
+                        then: function ( result ) {
+                            if ( result.ok )
+                                $.then( { ok: true,
+                                    val: postprocessWhitespace(
+                                        result.val ) } );
+                            else
+                                $.then( result );
+                        },
+                        end: function ( $sub2 ) {
+                            $.then( { ok: false,
+                                msg: "Incomplete string" } );
+                        }
+                    } ) );
+                };
+            } ),
+            unrecognized: function ( $sub ) {
+                $.then( { ok: false,
+                    msg: "Unrecognized string opening character" } );
+            },
+            end: function ( $sub ) {
+                $.then( { ok: false, msg: "Incomplete string" } );
+            }
+        } ) );
+    } );
 } );
 function defineInfixOperator(
     ch, level, noLhsErr, incompleteErr, readRemaining ) {
@@ -302,6 +428,133 @@ defineInfixOperator( ".", 2,
         then( [ lhs, rhs ] );
     } );
 } );
+
+function readStringUntilBracket( bracket, $ ) {
+    function sub( $, string ) {
+        return objPlus( $, {
+            string: string,
+            readerMacros: stringReaderMacros.plusEntry( bracket,
+                function ( $sub ) {
+                
+                $sub.stream.readc( function ( c ) {
+                    var result = [];
+                    for ( var string = $sub.string;
+                        string !== null; string = string.past )
+                        result = string.last.concat( result );
+                    $.then( { ok: true, val: result } );
+                } );
+            } ),
+            then: function ( result ) {
+                if ( result.ok )
+                    reader(
+                        sub(
+                            $, { past: string, last: result.val } ) );
+                else
+                    $.then( result );
+            },
+            end: function ( $sub ) {
+                $.then( { ok: false, msg: "Incomplete string" } );
+            }
+        } );
+    }
+    $.stream.readc( function ( c ) {
+        reader( sub( $, null ) );
+    } );
+}
+
+var stringReaderMacros = strMap();
+stringReaderMacros.setAll( strMap().setObj( {
+    " ": " ",
+    "\t": "\t",
+    "\r": "\r",
+    "\n": "\n"
+} ).map( function ( text ) {
+    return function ( $ ) {
+        $.stream.readc( function ( c ) {
+            $.then( { ok: true,
+                val: [ { type: "rawWhite", text: text } ] } );
+        } );
+    };
+} ) );
+symbolChopsChars.each( function ( openBracket, closeBracket ) {
+    stringReaderMacros.set( openBracket, function ( $ ) {
+        readStringUntilBracket( closeBracket, objPlus( $, {
+            then: function ( result ) {
+                if ( result.ok )
+                    $.then( { ok: true, val: [].concat(
+                        { type: "nonWhite", text: openBracket },
+                        result.val,
+                        { type: "nonWhite", text: closeBracket }
+                    ) } );
+                else
+                    $.then( result );
+            }
+        } ) );
+    } );
+    stringReaderMacros.set( closeBracket, function ( $ ) {
+        $.then( { ok: false,
+            msg: "Unmatched " + closeBracket + " in string" } );
+    } );
+} );
+stringReaderMacros.set( "\\", function ( $ ) {
+    $.stream.readc( function ( c ) {
+        reader( objPlus( $, {
+            readerMacros: strMap().setAll( strMap().setObj( {
+                "s": " ",
+                "t": "\t",
+                "r": "\r",
+                "n": "\n",
+                "#": ""
+            } ).map( function ( text ) {
+                return function ( $sub ) {
+                    $.stream.readc( function ( c ) {
+                        $.then( { ok: true, val:
+                            [ { type: "explicitWhite", text: text } ]
+                        } );
+                    } );
+                };
+            } ) ).setAll( strMap().setObj( {
+                "-": "\\",
+                "<": "[",
+                ">": "]",
+                "{": "(",
+                "}": ")"
+            } ).map( function ( text ) {
+                return function ( $sub ) {
+                    $.stream.readc( function ( c ) {
+                        $.then( { ok: true, val:
+                            [ { type: "nonWhite", text: text } ] } );
+                    } );
+                };
+            } ) ).setObj( {
+                ";": function ( $sub ) {
+                    ignoreRestOfLine( $ );
+                },
+                ",": function ( $ ) {
+                    // TODO: Implement this.
+                    $.then( { ok: false, msg:
+                        "Interpolations haven't been implemented " +
+                        "yet" } );
+                },
+                "u": function ( $ ) {
+                    // TODO: Implement this.
+                    $.then( { ok: false, msg:
+                        "Unicode escapes haven't been implemented " +
+                        "yet" } );
+                }
+            } ),
+            unrecognized: function ( $sub ) {
+                $.then( { ok: false,
+                    msg: "Unrecognized escape sequence" } );
+            },
+            end: function ( $sub ) {
+                $.then( { ok: false,
+                    msg: "Incomplete escape sequence" } );
+            }
+        } ) );
+    } );
+} );
+
 
 function stringStream( string ) {
     if ( !isValidUnicode( string ) )

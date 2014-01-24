@@ -3248,13 +3248,19 @@ PkRuntime.prototype.conveniences_macroexpandArrays = function (
     arrayExpr, opt_yoke ) {
     
     function arraysToConses( arrayExpr ) {
-        // TODO: Use something like Lathe.js's _.likeArray() here.
+        // TODO: Use something like Lathe.js's _.likeArray() and
+        // _.likeObjectLiteral() here.
+        // TODO: Support the interpolatedString case.
         if ( typeof arrayExpr === "string"
             && isValidUnicode( arrayExpr ) )
             return pkStrName( arrayExpr );
         else if ( arrayExpr instanceof Array )
             return pkListFromArr(
                 arrMap( arrayExpr, arraysToConses ) );
+        else if ( typeof arrayExpr === "object"
+            && arrayExpr !== null
+            && arrayExpr.type === "interpolatedString" )
+            return pkNil;
         else
             throw new Error();
     }
