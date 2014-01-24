@@ -6,7 +6,7 @@
 
 // To make string literals convenient, we implement an interpolated
 // string syntax according to the following design sketch:
-// // TODO: Implement \, and \u.
+// // TODO: Implement \u.
 //
 // reader macro " followed by ( will read a string terminated by ),
 //   and it results in the string contents, which means a list of
@@ -39,15 +39,24 @@
 //   \} means right parenthesis
 //   \; followed by the rest of a line means empty string (for
 //     comments)
-//   \, followed by an s-expression and any amount of raw whitespace
-//     is that s-expression; this is one of the "other values"
-//     interspersed with actual strings in the result
-//   \u followed by 1-6 uppercase hexadecimal digits followed by -
+//   \, followed by a non-infix s-expression followed by . is that
+//     s-expression; this is one of the "other values" interspersed
+//     with actual strings in the result
+//     // NOTE: The reason we choose the character . here is that it's
+//     // already an infix operator, so it will be left behind by a
+//     // non-infix s-expression. The reason we have a terminating
+//     // character at all is so the s-expression reader can consume
+//     // all the whitespace before that, leaving the whitespace
+//     // after that for the string reader to process.
+//   \u followed by 1-6 uppercase hexadecimal digits followed by .
 //     means the appropriate Unicode code point, unless it's a code
 //     point value outside the Unicode range or reserved for UTF-16
 //     surrogates, in which case it's an error
+//     // NOTE: The reason we choose the character . here is for
+//     // consistency with the \, escape sequence. The reason we have
+//     // a terminating character at all is so the following character
+//     // can be a hex digit without ambiguity.
 // postprocess whitespace according to the following rules:
-//   - add one raw space after every \, escape
 //   - remove all raw whitespace adjacent to the ends of the string
 //   - remove all raw whitespace adjacent to whitespace escapes
 //   - replace every remaining occurrence of one or more raw
@@ -160,14 +169,6 @@ var commandEndChars = "\r\n";
 var whiteChars = " \t";
 
 function postprocessWhitespace( stringParts ) {
-    // Add one raw space after every \, escape.
-    var stringParts2 = arrMappend( stringParts, function ( part ) {
-        if ( part.type === "interpolation" )
-            return [ part, { type: "rawWhite", text: " " } ];
-        else
-            return [ part ];
-    } );
-    
     // Remove all raw whitespace adjacent to the ends of the string
     // and adjacent to whitespace escapes.
     function removeAfterStartOrExplicitWhitespace( parts ) {
@@ -192,10 +193,10 @@ function postprocessWhitespace( stringParts ) {
         } );
         return parts2;
     }
+    var stringParts2 = removeAfterStartOrExplicitWhitespace(
+        stringParts ).reverse();
     var stringParts3 = removeAfterStartOrExplicitWhitespace(
         stringParts2 ).reverse();
-    var stringParts4 = removeAfterStartOrExplicitWhitespace(
-        stringParts3 ).reverse();
     
     // Replace every remaining occurrence of one or more raw
     // whitespace characters with a single space. Meanwhile, drop the
@@ -204,7 +205,7 @@ function postprocessWhitespace( stringParts ) {
     var resultParts = [];
     var currentText = "";
     var removing = true;
-    arrEach( stringParts4, function ( part ) {
+    arrEach( stringParts3, function ( part ) {
         if ( part.type === "interpolation" ) {
             resultParts.push(
                 { type: "text", text: currentText },
@@ -532,14 +533,15 @@ stringReaderMacros.set( "\\", function ( $ ) {
                             infixState: { type: "empty" },
                             readerMacros: readerMacros,
                             unrecognized: function ( $ ) {
-                                if ( bankInfix( $, 0 ) )
-                                    return;
                                 // TODO: See if we can make this error
                                 // message, the error message in
                                 // penknife.html, and the error
                                 // message in test-reader.js use the
-                                // same code. Also, see if they should
-                                // use the above bankInfix line.
+                                // same code. Also, see if these
+                                // should all use a bankInfix line
+                                // like the following.
+//                                if ( bankInfix( $, 0 ) )
+//                                    return;
                                 $.then( { ok: false, msg:
                                     "Encountered an unrecognized " +
                                     "character" } );
@@ -554,13 +556,22 @@ stringReaderMacros.set( "\\", function ( $ ) {
                                         "in string" } );
                             },
                             then: function ( result ) {
-                                if ( result.ok )
-                                    $.then( { ok: true, val: [ {
-                                        type: "interpolation",
-                                        val: result.val
-                                    } ] } );
-                                else
-                                    $.then( result );
+                                if ( !result.ok )
+                                    return void $.then( result );
+                                // TODO: See if we should consume this
+                                // character when it isn't a dot.
+                                $.stream.readc( function ( c ) {
+                                    if ( c === "." )
+                                        $.then( { ok: true, val: [ {
+                                            type: "interpolation",
+                                            val: result.val
+                                        } ] } );
+                                    else
+                                        $.then( { ok: false, val:
+                                            "Didn't end a string " +
+                                            "interpolation with a " +
+                                            "dot" } );
+                                } );
                             }
                         } ) );
                     } );
