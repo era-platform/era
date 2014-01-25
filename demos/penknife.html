@@ -29,41 +29,24 @@ textarea { display: block; }
   get-fork
   gensym-base)
 
-; TODO: See if we should rewrite this as a built-in utility. Even
-; though it technically works for now, it's way too much effort to go
-; to for an incomplete string syntax that's only used for a few
-; built-in error messages.
+(defval qname.err-fn /fn args
+/let-list (msg) args
+/let-list (str)
+    (struct-get-args/if
+        (qualified-name-eq
+          qname.istring-end (nl-get-tag-name linear-as-nonlinear.msg))
+      msg
+      quote."[
+        Called err-fn with a message that wasn't an istring-end])
+  raise.str)
+
 (defmacro qname.err /fn args
 /let-list (op-fork body get-fork gensym-base) args
-/let-list (msg-as-name) body
-/let msg-as-nl-name linear-as-nonlinear.msg-as-name
-/let unpad-force
-    (fn args /let-list (padded) args
-    /let-list (end-minus-one) (struct-get-args string-len.padded)
-      (string-cut padded (succ/succ/nil) end-minus-one))
-/let raise-own
-    (fn args /let-list (name) args
-    /let-list (padded) struct-get-args.name
-      (raise unpad-force.padded))
-/let unpad
-    (fn args /let-list (padded) args
-    /let len string-len.padded
-    /if (qualified-name-eq
-          qname.succ (nl-get-tag-name linear-as-nonlinear.len))
-      (let-list (end-minus-one) struct-get-args.len
-        (string-cut padded (succ/succ/nil) end-minus-one))
-      (raise-own
-        quote.s[Expanded err with a message that wasn't long enough]))
-/if (qualified-name-eq
-      qname.string-name nl-get-tag-name.msg-as-nl-name)
-  (let-list (msg-as-padded-string)
-      (struct-get-args nl-get-linear.msg-as-nl-name)
-    (macroexpand-to-fork
-      (list qname.raise /list qname.quote unpad.msg-as-padded-string)
-      get-fork
-      gensym-base))
-  (raise-own
-    quote.s[Expanded err with a message that wasn't a string-name]))
+/let-list (msg) body
+/macroexpand-to-fork
+  (list qname.err-fn /list qname.quote msg)
+  get-fork
+  gensym-base)
 
 (defmacro qname.fn-with-args /fn args
 /let-list (op-fork body get-fork gensym-base) args
@@ -86,12 +69,14 @@ textarea { display: block; }
 
 (defval qname.nl-isa /fn-with-args (tag-name nl)
 /if (not is-a-qualified-name.tag-name)
-  err.s[Called nl-isa with a tag name that wasn't a qualified name]
+  err."[Called nl-isa with a tag name that wasn't a qualified name]
   (qualified-name-eq tag-name nl-get-tag-name.nl))
 
 (defval qname.nl-is-a-struct-with-tag /fn-with-args (tag-name nl)
 /if (not is-a-qualified-name.tag-name)
-  err.s[Called nl-is-a-struct-with-tag with a tag name that wasn't a qualified name]
+  err."[
+    Called nl-is-a-struct-with-tag with a tag name that wasn't a
+    qualified name]
 /if (not/nl-is-a-struct nl)
   (nil)
   (nl-isa tag-name nl))
@@ -130,7 +115,7 @@ textarea { display: block; }
   (foldl-nat func.init pred func)
 /if-struct nil () nat
   init
-  err.s[Called fold-nat with a non-nat number])
+  err."[Called fold-nat with a non-nat number])
 
 (defval qname.is-a-list /fn-with-args (x)
 /if-struct cons (first rest) x
@@ -144,7 +129,7 @@ textarea { display: block; }
   (foldl (func init first) rest func)
 /if-struct nil () lst
   init
-  err.s[Called foldl with a non-list list])
+  err."[Called foldl with a non-list list])
 
 (defval qname.rev-append /fn-with-args (lst rev-lst)
   (foldl rev-lst lst /fn-with-args (rev-lst elem)
@@ -171,14 +156,14 @@ textarea { display: block; }
     (nat-eq pred-a pred-b)
   /if-struct nil () b
     (nil)
-    err.s[Called nat-eq with a non-nat second argument])
+    err."[Called nat-eq with a non-nat second argument])
 /if-struct nil () a
   (if-struct succ (b-pred) b
     (nil)
   /if-struct nil () b
     (yep/nil)
-    err.s[Called nat-eq with a non-nat second argument])
-  err.s[Called nat-eq with a non-nat first argument])
+    err."[Called nat-eq with a non-nat second argument])
+  err."[Called nat-eq with a non-nat first argument])
 
 ; NOTE: Back when we used debuggableSyncYoke, this definition caused a
 ; JavaScript stack overflow error. Now the above code might cause it
@@ -189,15 +174,16 @@ textarea { display: block; }
     (let-list (heads tail) (take pred rest)
       (list (cons first heads) tail))
   /if-struct nil () lst
-    err.s[Called take with a number greater than the length of the list]
-    err.s[Called take with a non-list list])
+    err."[
+      Called take with a number greater than the length of the list]
+    err."[Called take with a non-list list])
 /if-struct nil () num
   (if-struct cons (first rest) lst
     (list (nil) lst)
   /if-struct nil () lst
     (list (nil) lst)
-    err.s[Called take with a non-list list])
-  err.s[Called take with a non-nat number])
+    err."[Called take with a non-list list])
+  err."[Called take with a non-nat number])
 
 (defmacro qname.defmacro-codegen
 /fn-with-args (op-fork body get-fork gensym-base)
@@ -281,7 +267,8 @@ textarea { display: block; }
   /if-struct yep (x) parse-escape.uqs-name
     (if return-list
       x
-      err.q[Called qq with a tree containing uqs in an incorrect place])
+      err."[
+        Called qq with a tree containing uqs in an incorrect place])
   /if is-a-list.x
     (as-list/cons qname.append /map x /fn-with-args (elem)
       (recur (yep/nil) level elem))
@@ -300,7 +287,7 @@ textarea { display: block; }
     (as-list/cons qname.append /map x /fn-with-args (elem)
       (recur (yep/nil) level elem))
     (as-list/list qname.qname x))
-  err.s[Called expand-qq with a non-nat level])
+  err."[Called expand-qq with a non-nat level])
 
 (defmacro-codegen qq body ()
 /let-list (tree) body
@@ -321,11 +308,14 @@ textarea { display: block; }
       (fn-with-args (inner-val num-dups)
       /let-list (used-mbox local-inner-val) inner-val
       /if mget.used-mbox
-        err.s[Can't duplicate a local linear value that was already used]
+        err."[
+          Can't duplicate a local linear value that was already used]
       /let - (mset used-mbox (yep/nil))
       /let - (if-struct succ (pred) mget.num-strays-mbox
                (mset num-strays-mbox pred)
-               err.s[Internal error when duplicating a local linear value])
+               err."[
+                 Internal error when duplicating a local linear value
+                 ])
         (map (local-duplicator local-inner-val num-dups)
         /fn-with-args (local-inner-val)
           (let - (mset num-strays-mbox (succ mget.num-strays-mbox))
@@ -336,7 +326,9 @@ textarea { display: block; }
       /let-list (used-mbox local-inner-val) inner-val
         local-unwrapper.local-inner-val)))
 /if-struct succ (pred) mget.num-strays-mbox
-  err.s[Didn't consume all local linear values in a call to call-with-local-linearity]
+  err."[
+    Didn't consume all local linear values in a call to
+    call-with-local-linearity]
   result)
 
 </script>

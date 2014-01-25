@@ -2279,6 +2279,8 @@ PkRuntime.prototype.init_ = function () {
     // JavaScript strings support?
     // TODO: Make these count characters by the number of Unicode code
     // points, not the number of UTF-16 code units.
+    // TODO: See if we should just remove `string-len` and
+    // `string-cut` since we no longer actually use them.
     defFunc( "string-len", 1, function ( yoke, string ) {
         if ( string.tag !== "string" )
             return pkErr( yoke,
