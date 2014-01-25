@@ -1221,10 +1221,12 @@ PkRuntime.prototype.init_ = function () {
             return self.callMethod( yoke, "essence-interpret",
                 pkList( essence.ind( 0 ), captures ) );
         }, function ( yoke, op ) {
-            return self.interpretList_( yoke,
-                essence.ind( 1 ), captures,
-                function ( yoke, args ) {
+            return listMap( yoke, essence.ind( 1 ),
+                function ( yoke, essence ) {
                 
+                return self.callMethod( yoke, "essence-interpret",
+                    pkList( essence, captures ) );
+            }, function ( yoke, args ) {
                 return self.callMethod( yoke, "call",
                     pkList( op, args ) );
             } );
@@ -1404,9 +1406,12 @@ PkRuntime.prototype.init_ = function () {
                 "Got the wrong number of elements when " +
                 "destructuring a list" );
         
-        return self.interpretList_( yoke,
-            captureEssences, outerCaptures,
-            function ( yoke, evaluatedOuterCaptures ) {
+        return listMap( yoke, captureEssences,
+            function ( yoke, essence ) {
+            
+            return self.callMethod( yoke, "essence-interpret",
+                pkList( essence, outerCaptures ) );
+        }, function ( yoke, evaluatedOuterCaptures ) {
         return listMapTwo( yoke, sourceValue, numbersOfDups,
             function ( yoke, sourceElem, numberOfDups ) {
             
@@ -2862,27 +2867,6 @@ return pkRet( yoke, pk( "getmac-fork",
                         pkCons( getTine, revGetTinesSoFar ) );
                 } );
             }
-        } );
-    } );
-};
-PkRuntime.prototype.interpretList_ = function (
-    yoke, list, captures, then ) {
-    
-    // TODO: Use a fold here.
-    var self = this;
-    if ( list.tag !== "cons" )
-        return then( yoke, pkNil );
-    return runWaitTry( yoke, function ( yoke ) {
-        return self.callMethod( yoke, "essence-interpret",
-            pkList( list.ind( 0 ), captures ) );
-    }, function ( yoke, elem ) {
-        return self.interpretList_( yoke, list.ind( 1 ), captures,
-            function ( yoke, interpretedTail ) {
-            
-            return runWaitOne( yoke, function ( yoke ) {
-                return then( yoke,
-                    pkCons( elem, interpretedTail ) );
-            } );
         } );
     } );
 };
