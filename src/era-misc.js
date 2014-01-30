@@ -430,3 +430,330 @@ var patternLang = {};
         return pat( arrPat ).match( arrData );
     };
 })();
+
+// TODO: Test all of this.
+// TODO: Expose all of this to Penknife.
+function BigInt() {}
+BigInt.prototype.init_ = function ( sign, digits16Bit ) {
+    this.sign_ = sign;
+    this.digits_ = digits16Bit;
+    return this;
+};
+BigInt.prototype.copy = function () {
+    return new BigInt().init_( this.digits_.slice() );
+};
+BigInt.prototype.normalize_ = function () {
+    var ds = this.digits_;
+    for ( var i = ds.length - 1; 0 <= i; i-- )
+        if ( ds[ i ] === 0 )
+            ds.pop();
+    if ( ds.length === 0 )
+        this.sign_ = 1;
+    return this;
+};
+BigInt.prototype.compareAbsTo = function ( other ) {
+    var a = this.digits_;
+    var b = other.digits_;
+    var an = a.length;
+    var bn = b.length;
+    if ( an < bn )
+        return -1;
+    if ( bn < an )
+        return 1;
+    var len = an;
+    for ( var i = len - 1; 0 <= i; i-- ) {
+        var aDigit = a[ i ];
+        var bDigit = b[ i ];
+        if ( aDigit < bDigit )
+            return -1;
+        if ( bDigit < aDigit )
+            return 1;
+    }
+    return 0;
+};
+BigInt.prototype.compareTo = function ( other ) {
+    var as = this.sign_;
+    var bs = other.sign_;
+    if ( as < bs )
+        return -1;
+    if ( bs < as )
+        return 1;
+    var sign = as;
+    return sign * this.compareAbsTo( other );
+};
+BigInt.prototype.zapPlus = function ( other ) {
+    var a = this.digits_;
+    var b = other.digits_;
+    var an = a.length;
+    var bn = b.length;
+    if ( this.sign_ === other.sign_ ) {
+        // NOTE: The possible values of `carry` are 0 and 1.
+        var carry = 0;
+        var i = 0;
+        for ( ; i < bn; i++ ) {
+            // NOTE: Even though we change the length of `a` here, we
+            // don't need to update `an`.
+            if ( an <= i )
+                a.push( 0 );
+            var digitSum = a[ i ] + b[ i ] + carry;
+            a[ i ] = digitSum & 0xFFFF;
+            carry = digitSum >>> 16;
+        }
+        for ( ; i < an; i++ ) {
+            if ( carry === 0 )
+                break;
+            var digitSum = a[ i ] + carry;
+            a[ i ] = digitSum & 0xFFFF;
+            carry = digitSum >>> 16;
+        }
+        if ( carry !== 0 )
+            a.push( 1 );
+    } else {
+        // NOTE: The possible values of `carry` are -1, 0, and 1.
+        var carry = 0;
+        var i = 0;
+        for ( ; i < bn; i++ ) {
+            // NOTE: Even though we change the length of `a` here, we
+            // don't need to update `an`.
+            if ( an <= i )
+                a.push( 0 );
+            var digitSum = a[ i ] + 0x10000 - b[ i ] + carry;
+            a[ i ] = digitSum & 0xFFFF;
+            carry = (digitSum >>> 16) - 1;
+        }
+        for ( ; i < an; i++ ) {
+            if ( carry === 0 )
+                break;
+            var digitSum = a[ i ] + 0x10000 + carry;
+            a[ i ] = digitSum & 0xFFFF;
+            carry = (digitSum >>> 16) - 1;
+        }
+        if ( carry !== 0 )
+            a.push( carry );
+        if ( carry === -1 ) {
+            this.sign_ *= -1;
+            for ( var i = 0, n = a.length; i < n; i++ )
+                a[ i ] = ~a[ i ] & 0xFFFF;
+            this.zapPlus( new BigInt().init_( 1, [ 1 ] ) );
+        }
+    }
+    return this.normalize_();
+};
+BigInt.prototype.zapShiftLeft = function ( jsNumBits ) {
+    if ( this.sign_ !== 1 )
+        throw new Error();
+    var remainder = jsNumBits % 16;
+    var quotient = (jsNumBits - remainder) / 16;
+    var a = this.digits_;
+    if ( remainder !== 0 ) {
+        var carry = 0x0000;
+        for ( var i = 0, n = a.length; i < n; i++ ) {
+            var shifted = a[ i ] << remainder;
+            a[ i ] = (shifted & 0xFFFF) + carry;
+            carry = shifted >>> 16;
+        }
+        if ( carry !== 0 )
+            a.push( carry );
+    }
+    if ( a.length !== 0 )
+        for ( var i = 0; i < quotient; i++ )
+            a.unshift( 0 );
+    return this;
+};
+BigInt.prototype.zapShiftRightWithRemainder = function ( jsNumBits ) {
+    if ( this.sign_ !== 1 )
+        throw new Error();
+    var remainder = jsNumBits % 16;
+    var quotient = (jsNumBits - remainder) / 16;
+    var r = [];
+    for ( var i = 0; i < quotient; i++ )
+        r.push( this.digits_.shift() );
+    this.zapShiftLeft( 16 - remainder );
+    r.push( this.digits_.shift() >> (16 - remainder) );
+    return { quotient: this,
+        remainder: new BigInt().init_( 1, r ).normalize_() };
+};
+// TODO: Remove either zapTimes() or times(), depending on which one
+// is more efficient.
+BigInt.prototype.zapTimes = function ( other ) {
+    // TODO: See if this can be more efficient.
+    var finalSign = this.sign_ * other.sign_;
+    this.sign_ = 1;
+    var aBig = this.copy();
+    this.digits_ = [];
+    var b = other.digits_;
+    for ( var i = 0, n = b.length; i < n; i++ ) {
+        var bDigit = b[ i ];
+        for ( var j = 0; bDigit !== 0; bDigit >>= 1, j++ )
+            if ( (bDigit & 1) === 1 )
+                this.zapPlus( aBig.copy().zapShiftLeft( j ) );
+        aBig.zapShiftLeft( 16 );
+    }
+    this.sign_ = finalSign;
+    return this;
+};
+BigInt.prototype.times = function ( other ) {
+    // TODO: See if this can be more efficient.
+    var a = this.digits_;
+    var b = other.digits_;
+    var an = a.length;
+    var bn = b.length;
+    var anm1 = an - 1;
+    var bnm1 = bn - 1;
+    var anbnp1 = anm1 * bnm1 + 1;
+    var result = new BigInt().init_( 1, [] );
+    for ( var resultPlaceLeftToRight = 0;
+        resultPlaceLeftToRight <= anbnp1; resultPlaceLeftToRight++ ) {
+        
+        result.zapShiftLeft( 16 );
+        
+        for (
+            var aPlace = anm1 - resultPlaceLeftToRight, bPlace = bnm1;
+            aPlace < an; aPlace++, bPlace-- ) {
+            
+            if ( aPlace < 0 || bPlace < 0 )
+                continue;
+            var digitProduct = a[ aPlace ] * b[ bPlace ];
+            result.zapPlus( new BigInt().init_( 1, [
+                digitProduct >>> 16,
+                digitProduct & 0xFFFF
+            ] ).normalize_() );
+        }
+    }
+    if ( this.sign_ !== other.sign_ )
+        result.zapNeg();
+    return result;
+};
+BigInt.prototype.zapAbs = function () {
+    this.sign_ = 1;
+    return this;
+};
+BigInt.prototype.zapNeg = function () {
+    if ( this.digits_.length !== 0 )
+        this.sign_ = -this.sign_;
+    return this;
+};
+BigInt.prototype.dividedByTowardZeroWithRemainder =
+    function ( other ) {
+    
+    // TODO: See if this can be more efficient.
+    if ( other.digits_.length === 0 )
+        throw new Error();
+    var quotient = new BigInt().init_( 1, [] );
+    var remainder = this.copy().zapAbs();
+    var bAbs = other.copy().zapAbs();
+    var b = bAbs.digits_;
+    var bn = b.length;
+    var bLast = b[ bn - 1 ];
+    var bLastPlusOne = bLast + 1;
+    while ( bAbs.compareTo( remainder ) <= 0 ) {
+        var r = remainder.digits_;
+        var rn = r.length;
+        var digitDisparity = rn - bn;
+        var rLast = r[ rn - 1 ];
+        if ( rLast < bLast ) {
+            // NOTE: We're multiplying instead of shifting so that the
+            // result will always be positive.
+            rLast = (rLast * 0x10000) + r[ rn - 2 ];
+            digitDisparity--;
+        }
+        var quotientAtThisDisparity = ~~(rLast / bLastPlusOne);
+        if ( quotientAtThisDisparity === 0 ) {
+            quotientAtThisDisparity = 1;
+            for ( var i = bn - 2; 0 <= i; i-- ) {
+                if ( b[ i ] !== r[ i + digitDisparity ] ) {
+                    quotientAtThisDisparity = 0;
+                    break;
+                }
+            }
+        }
+        if ( quotientAtThisDisparity === 0 ) {
+            remainder.zapPlus(
+                bAbs.copy().
+                    zapShiftLeft( 16 * digitDisparity - 1 ).
+                    zapNeg() );
+            quotient.zapPlus(
+                new BigInt().init_( 1, [ 1 ] ).
+                    zapShiftLeft( 16 * digitDisparity - 1 ) );
+        } else {
+            // TODO: Where this uses zapTimes(), see if times() would
+            // be more efficient.
+            remainder.zapPlus(
+                new BigInt().init_( 1, [ quotientAtThisDisparity ] ).
+                    zapTimes( bAbs ).
+                    zapShiftLeft( 16 * digitDisparity ).
+                    zapNeg() );
+            quotient.zapPlus(
+                new BigInt().init_( 1, [ quotientAtThisDisparity ] ).
+                    zapShiftLeft( 16 * digitDisparity ) );
+        }
+    }
+    
+    // NOTE: These examples may clarify the following negations.
+    //
+    // 9 / 2 = 4 R 1
+    // 9 / -2 = -4 R 1
+    // -9 / 2 = -4 R -1
+    // -9 / -2 = 4 R -1
+    //
+    // Intuitively, the product of the quotient and the divisor must
+    // have the same sign as the dividend (since it must approximate
+    // the dividend), but it will always have equal or lesser
+    // magnitude. Thus the remainder must have the same sign as the
+    // dividend to add to this magnitude.
+    //
+    if ( this.sign_ !== other.sign_ )
+        quotient.zapNeg();
+    if ( this.sign_ === -1 )
+        remainder.zapNeg();
+    
+    return { quotient: quotient, remainder: remainder };
+};
+BigInt.prototype.toStringInRadix = function ( base ) {
+    if ( !(2 <= base && base <= 16) )
+        throw new Error();
+    var alphabet = "0123456789ABCDEF".split( "" ).slice( 0, base );
+    var bigBase = new BigInt().init_( 1, [ base ] );
+    var result = "";
+    var remainder = this.copy().zapAbs();
+    while ( remainder.digits_.length !== 0 ) {
+        var digitAndRest =
+            remainder.dividedByTowardZeroWithRemainder( bigBase );
+        result =
+            alphabet[ digitAndRest.quotient.digits_[ 0 ] ] + result;
+        remainder = digitAndRest.remainder;
+    }
+    if ( result === "" )
+        result = alphabet[ 0 ];
+    else if ( this.sign_ === -1 )
+        result = "-" + result;
+    return result;
+};
+function bigIntFromStringInRadix( base, string ) {
+    if ( !(2 <= base && base <= 16) )
+        throw new Error();
+    var alphabet = strMap();
+    for ( var i = 0; i < base; i++ )
+        alphabet.set( "0123456789ABCDEF".charAt( i ),
+            new BigInt().init_( 1, [ i ] ).normalize_() );
+    var bigBase = new BigInt().init_( 1, [ base ] );
+    var i = 0, n = string.length;
+    var sign = 1;
+    var result = new BigInt().init_( 1, [] );
+    if ( i < n && string.charAt( i ) === "-" ) {
+        sign = -1;
+        i++;
+    }
+    for ( ; i < n; i++ ) {
+        var ch = string.charAt( i );
+        var digitValue = alphabet.get( ch );
+        if ( digitValue === void 0 )
+            throw new Error();
+        // TODO: Where this uses zapTimes(), see if times() would be
+        // more efficient.
+        result.zapTimes( bigBase ).zapPlus( digitValue );
+    }
+    if ( sign === -1 )
+        result.zapNeg();
+    return result;
+}
