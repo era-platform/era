@@ -431,7 +431,9 @@ var patternLang = {};
     };
 })();
 
-// TODO: Test all of this.
+// TODO: Test all of this. The tests in test-bigint.js are a good
+// start, but they're not very thorough. They don't even test negative
+// numbers, for instance.
 // TODO: Expose all of this to Penknife.
 function BigInt() {}
 BigInt.prototype.init_ = function ( sign, digits16Bit ) {
@@ -440,13 +442,15 @@ BigInt.prototype.init_ = function ( sign, digits16Bit ) {
     return this;
 };
 BigInt.prototype.copy = function () {
-    return new BigInt().init_( this.digits_.slice() );
+    return new BigInt().init_( this.sign_, this.digits_.slice() );
 };
 BigInt.prototype.normalize_ = function () {
     var ds = this.digits_;
-    for ( var i = ds.length - 1; 0 <= i; i-- )
-        if ( ds[ i ] === 0 )
-            ds.pop();
+    for ( var i = ds.length - 1; 0 <= i; i-- ) {
+        if ( ds[ i ] !== 0 )
+            break;
+        ds.pop();
+    }
     if ( ds.length === 0 )
         this.sign_ = 1;
     return this;
@@ -600,10 +604,11 @@ BigInt.prototype.times = function ( other ) {
     var bn = b.length;
     var anm1 = an - 1;
     var bnm1 = bn - 1;
-    var anbnp1 = anm1 * bnm1 + 1;
+    var resultPlacesToCalculate = an + bn - 1;
     var result = new BigInt().init_( 1, [] );
     for ( var resultPlaceLeftToRight = 0;
-        resultPlaceLeftToRight <= anbnp1; resultPlaceLeftToRight++ ) {
+        resultPlaceLeftToRight < resultPlacesToCalculate;
+        resultPlaceLeftToRight++ ) {
         
         result.zapShiftLeft( 16 );
         
@@ -615,8 +620,8 @@ BigInt.prototype.times = function ( other ) {
                 continue;
             var digitProduct = a[ aPlace ] * b[ bPlace ];
             result.zapPlus( new BigInt().init_( 1, [
-                digitProduct >>> 16,
-                digitProduct & 0xFFFF
+                digitProduct & 0xFFFF,
+                digitProduct >>> 16
             ] ).normalize_() );
         }
     }
@@ -715,13 +720,15 @@ BigInt.prototype.toStringInRadix = function ( base ) {
     var alphabet = "0123456789ABCDEF".split( "" ).slice( 0, base );
     var bigBase = new BigInt().init_( 1, [ base ] );
     var result = "";
-    var remainder = this.copy().zapAbs();
-    while ( remainder.digits_.length !== 0 ) {
+    var digitsLeft = this.copy().zapAbs();
+    while ( digitsLeft.digits_.length !== 0 ) {
         var digitAndRest =
-            remainder.dividedByTowardZeroWithRemainder( bigBase );
-        result =
-            alphabet[ digitAndRest.quotient.digits_[ 0 ] ] + result;
-        remainder = digitAndRest.remainder;
+            digitsLeft.dividedByTowardZeroWithRemainder( bigBase );
+        var digitValue = digitAndRest.remainder.digits_[ 0 ];
+        if ( digitValue === void 0 )
+            digitValue = 0;
+        result = alphabet[ digitValue ] + result;
+        digitsLeft = digitAndRest.quotient;
     }
     if ( result === "" )
         result = alphabet[ 0 ];

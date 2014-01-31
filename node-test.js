@@ -9,6 +9,7 @@ var fs = require( "fs" );
 Function( [
     "src/era-misc.js",
     "test/harness-first.js",
+    "test/test-bigint.js",
     "src/era-reader.js",
     "test/test-reader.js",
     "src/era-modules.js",
