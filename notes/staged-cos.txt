@@ -54,8 +54,8 @@ t:
 @s()
 @s[@rs() @st[]]
 -- In terms of quantifiers:
--- As 0
--- Es j : 2 > NegIf rst j > Ars 0
+-- <As _ : 0> _
+-- <Es j : 2> <NegIf rst j> <Ars _ : 0> _
 
 @st[@s.a @s.a]
 @s.a
@@ -78,8 +78,8 @@ where each row "{ <" and the dual <| |> to < > means:
 @rs(@s[R U] @s[T V])
 @s[@rs(R T) @st[U V]]
 -- In terms of quantifiers:
--- Ars i : 2 > Es j : 2 > P`i`j
--- Es j : 2 > NegIf rst j > Ars i : 2 > NegIf rst j > P`i`j
+-- <Ars i : 2> <Es j : 2> P`i`j
+-- <Es j : 2> <NegIf rst j> <Ars i : 2> <NegIf rst j> P`i`j
 
 -- the "medial" rules
        @s[@st[
@@ -157,3 +157,39 @@ above:
   @rs(@s[@rs() A] @s[@s[] B])
   @s[@rs(@rs() @s[]) @st[A B]]
   @st[A B]
+
+
+Future directions (TODO):
+
+- Add exponentials. Like our atoms and connectives, exponentials will
+  also need to be annotated with particular stages, perhaps like so:
+
+  !rs.@s[R S]
+  @s[!rs.R ?st.S]
+
+  Will ?st.R be identical with !st.R? Probably not. Binary additives
+  carry boolean (or nonconstructive there-exists-a-boolean)
+  information across stages, and exponentials almost do the same for
+  natural numbers, but the information is specifically about how many
+  times a resource is replicated over @s[] or @s(), for a specific
+  `s`.
+
+- Add quantifiers over all stages, per the notes on quantifiers above.
+
+- Integrate this with the dependent typing of Era's module system.
+  This will probably require Pi/Sigma quantifiers where a variable
+  ranges over some type, so we get to figure out whether it means
+  anything (and what it means) to use each of our propositions as a
+  type. Is @st[@s() @s()] like a (there-exists-a-)boolean type that's
+  (nonconstructively) observable in stage `s`, and if so, what does it
+  mean for `t` to appear in that type?
+
+- Write a Penknife library that uses this kind of system (maybe an
+  unsound variant) to do practical staged programming. This will
+  probably require quantifiers-over-stages and exponentials. These
+  features are important because I suspect any !-qualified proposition
+  with no free variables is a type whose inhabitants are serializable
+  values. Free variables represent something like the ability to point
+  to memory in a particular stage: e.g. some OOP object may be stored
+  in variables and passed to other objects, but not stored in files
+  and passed to other Web servers.
