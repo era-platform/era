@@ -1,0 +1,159 @@
+== Staged calculus of structures ==
+
+Take inspiration from Guglielmi's subatomic logic and the calculus of
+structures, but severely reinterpret and augment it:
+
+Every stage s has atoms "@s.a". The notation -@s.a represents the dual
+of @s.a.
+
+Every stage s has a multiplicative disjunction @s[P Q] for
+branching from a side effect in that stage.
+
+Every stage s has a multiplicative conjunction @s(P Q) for
+converging toward a side effect in that stage.
+
+Every stage r and later stage s have an additive connective written
+@rs[P Q] or @rs(P Q) for transporting information between those
+stages. We use @rs[] when the main stage we're considering is r, and
+we use @rs() when it's s.
+
+-- NOTE: For ordered stages r, s, and t, we can infer from @rs(P Q) to
+-- @st[P Q] and from @st[] to @rs() within the logic.
+
+Universal quantification on stages (forall s. P) is like
+branching from a stage-valued side effect in a pseudo-stage before all stages.
+
+Existential quantification on stages (exists s. P) is like
+converging toward a stage-valued side effect in a pseudo-stage after all stages.
+-- TODO: Should this be "before all stages" instead?
+
+-- TODO: Actually iron out some quantification rules and write them
+-- below. We might want to reformulate this whole thing in terms of
+-- quantifiers rather than connectives anyway (look for "in terms of
+-- quantifiers"), and that point of view could help clarify what these
+-- rules should be.
+
+We don't have just one involutive negation. We have many involutive
+negations, each based on a particular stage triple (r, s, t), where r
+precedes s and s precedes t.
+
+Based on the rules from "Linear Logic and Noncommutativity in the
+Calculus of Structures" (Strassburger 2003) for system SLLS, what
+follows are the rules for the down fragment (and most of the up
+fragment) of our staged logic. (The up fragment is the dual of the
+down fragment across one of our negations.) Unlike Strassburger, we
+spell out rules for units rather than treating them as special cases
+of the atom rules.
+
+We'll let r, s, and t be stages such that r precedes s and s precedes
+t:
+
+@s()
+@s[@s.a -@s.a]
+
+@s()
+@s[@rs() @st[]]
+-- In terms of quantifiers:
+-- As 0
+-- Es j : 2 > NegIf rst j > Ars 0
+
+@st[@s.a @s.a]
+@s.a
+
+@st[]
+@s.a
+
+    @s[@s(      -- equivalent to "switch"
+    @s[   @rs(  -- identical to "additive"
+where each row "{ <" and the dual <| |> to < > means:
+<{R U} {T V}>
+{<R T> <| U V |>}
+
+-- the "switch" rule, here for convenience
+@s(@s[R U] T)
+@s[@s(R T) U]
+-- NOTE: The switch rule is special. See below.
+
+-- the "additive" rule, here in case we get confused about the above
+@rs(@s[R U] @s[T V])
+@s[@rs(R T) @st[U V]]
+-- In terms of quantifiers:
+-- Ars i : 2 > Es j : 2 > P`i`j
+-- Es j : 2 > NegIf rst j > Ars i : 2 > NegIf rst j > P`i`j
+
+-- the "medial" rules
+       @s[@st[
+    @s(   @st[
+@rs(      @st[  -- NOTE: This rule is special. See below.
+@rs(   @s[      -- redundant with its dual, but here for symmetry
+@rs(@s(         -- redundant with its dual, but here for symmetry
+where each row "{ <" means:
+<{R U} {T V}>
+{<R T> <U V>}
+
+       @s[@st[
+    @s(   @st[
+@rs(      @st[  -- NOTE: This rule is special. See below.
+@rs(   @s[      -- redundant with its dual, but here for symmetry
+@rs(@s(         -- redundant with its dual, but here for symmetry
+-- for contrast:
+       @s(@rs(  -- redundant with its dual, but here for symmetry
+@st[      @rs(  -- special from the @rs(@st[ medial and this @rs(@st[
+where each row "{ <" means:
+<{} {}>
+{}
+-- TODO: See if there's a rule for @s[@rs(.
+
+       @s[@st[
+    @s(   @st[
+@rs(      @st[  -- NOTE: This rule is special. See below.
+@rs(   @s[      -- redundant with its dual, but here for symmetry
+@rs(@s(         -- redundant with its dual, but here for symmetry
+-- for contrast:
+@st[      @rs(  -- special from the @rs(@st[ medial and this @rs(@st[
+@st[@s[         -- from additive
+where each row "{ <" means:
+<>
+{<> <>}
+-- TODO: See if there's a rule for @st[@s(.
+
+       @s[@st[  -- implied by additive
+    @s(   @st[
+@rs(      @st[  -- special implied by @rs(->@st[
+@rs(   @s[      -- redundant with its dual, but here for symmetry
+@rs(@s(         -- redundant with its dual, but here for symmetry
+where each row "{ <" means:
+<>
+{}
+
+-- TODO: See whether any of the rest of these rules is redundant.
+
+Almost all rules for in-between connectives @st[] and @rs() remain
+correct if we use @r[] and @r() in their place. The exceptions are
+these and their duals:
+
+  @st[]
+  @rs()
+
+  @st[]
+  @rs(@st[] @st[])
+
+  @rs()
+  @st[@rs() @rs()]
+
+  @st[@rs(R U) @rs(T V)]
+  @rs(@st[R T] @st[U V])
+
+The same is true in reverse; most rules for single-stage connectives
+@s[] and @s() work with @st[] and @rs() too. However, the switch rule
+isn't reachable.
+
+The additive rule and the @rs(@s[ medial rule plug together nicely for
+a theorem purely at the additive level, which we call "@rs(->@st["
+above:
+
+  @rs(A B)
+  @s[@rs(@rs() @s[]) @rs(A B)]
+  @rs(@s[@rs() A] @s[@s[] B])
+  @s[@rs(@rs() @s[]) @st[A B]]
+  @st[A B]
