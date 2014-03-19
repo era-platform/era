@@ -126,7 +126,61 @@ where each row "{ <" means:
 <>
 {}
 
--- TODO: See whether any of the rest of these rules is redundant.
+@st[?st.R ?st.T]
+?st.@st[R T]
+
+@st[!rs.R !rs.T]
+!rs.@st[R T]
+
+@st[]
+?st.@st[]
+
+@st[]
+!rs.@st[]
+
+@s[?st.R T]
+?st.@st[R T]
+
+@s[]
+?st.@st[]
+
+-- TODO: See whether any of the rest of the rules is redundant.
+
+-- Our dependent type quantifiers are formulated based on
+-- "Redesigning the CLF type theory" by Anders Schack-Nielsen 2009
+-- <http://www.logosphere.org/~celf/download/clf.pdf>, with a
+-- modification in notation so we have duals.
+--
+-- Where most dependent type theories have types like these...
+--
+-- \Pi (a : A) -> B{a}
+-- \Sigma (a : A) -> B{a}
+--
+-- ...we write them this way:
+--
+-- D@s[-a : -rst.!rs.A].B{a}
+-- D@s(a : !rs.A).B{a}
+--
+-- This way we (might, hopefully) have a pair of dual connectives
+-- here, with De Morgan rules like this:
+--
+-- -rst.D@s[-a : A].B{a}
+-- D@s(a : -rst.A).-rst.B{a}
+
+-- TODO: Figure out the rules for these dependent connectives.
+--
+-- TODO: Add a boolean type 2@s and its dual -2@s to represent strong
+-- access to data. The type @st[...] seems to only represent that a
+-- choice has been taken, not which choice it was. (Actually,
+-- exponentials may give us some way to get this kind of strong
+-- access, right? Since they support intuitionistic logic and all...)
+--
+-- TODO: Above, in the introduction of all our notation, list
+-- exponentials, dependent connectives, the -rst.A and maybe
+-- "<NegIf rst j> A" notations for negation, and (if we add them)
+-- booleans.
+
+
 
 Almost all rules for in-between connectives @st[] and @rs() remain
 correct if we use @r[] and @r() in their place. The exceptions are
@@ -174,6 +228,9 @@ Future directions (TODO):
   times a resource is replicated over @s[] or @s(), for a specific
   `s`.
 
+  TODO: Now that we've added exponentials, turn the above TODO into
+  documentation.
+
 - Add quantifiers over all stages, per the notes on quantifiers above.
 
 - Integrate this with the dependent typing of Era's module system.
@@ -183,6 +240,9 @@ Future directions (TODO):
   type. Is @st[@s() @s()] like a (there-exists-a-)boolean type that's
   (nonconstructively) observable in stage `s`, and if so, what does it
   mean for `t` to appear in that type?
+
+  TODO: Now that we've started to work on dependent connectives,
+  update the above TODO.
 
 - Write a Penknife library that uses this kind of system (maybe an
   unsound variant) to do practical staged programming. This will
