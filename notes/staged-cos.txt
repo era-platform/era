@@ -146,28 +146,8 @@ where each row "{ <" means:
 
 -- TODO: See whether any of the rest of the rules is redundant.
 
--- Our dependent type quantifiers are formulated based on
--- "Redesigning the CLF type theory" by Anders Schack-Nielsen 2009
--- <http://www.logosphere.org/~celf/download/clf.pdf>, with a
--- modification in notation so we have duals.
---
--- Where most dependent type theories have types like these...
---
--- \Pi (a : A) -> B{a}
--- \Sigma (a : A) -> B{a}
---
--- ...we write them this way:
---
--- D@s[-a : -rst.!rs.A].B{a}
--- D@s(a : !rs.A).B{a}
---
--- This way we (might, hopefully) have a pair of dual connectives
--- here, with De Morgan rules like this:
---
--- -rst.D@s[-a : A].B{a}
--- D@s(a : -rst.A).-rst.B{a}
-
--- TODO: Figure out the rules for these dependent connectives.
+-- TODO: Figure out the rules for the dependent connectives presented
+-- in staged-cos-dependent-notation.txt.
 --
 -- TODO: Add a boolean type 2@s and its dual -2@s to represent strong
 -- access to data. The type @st[...] seems to only represent that a
@@ -241,8 +221,8 @@ Future directions (TODO):
   (nonconstructively) observable in stage `s`, and if so, what does it
   mean for `t` to appear in that type?
 
-  TODO: Now that we've started to work on dependent connectives,
-  update the above TODO.
+  TODO: Now that we've started to work on dependent connectives in
+  staged-cos-dependent-notation.txt, update the above TODO.
 
 - Write a Penknife library that uses this kind of system (maybe an
   unsound variant) to do practical staged programming. This will

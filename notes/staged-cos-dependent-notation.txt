@@ -1,0 +1,171 @@
+== Dependent type notation in the staged calculus of structures ==
+
+Where most dependent type theories have Pi and Sigma types with
+notations like these...
+
+\Pi (a : A) -> B{a}
+\Sigma (a : A) -> B{a}
+
+...the calculus of structures has involutive negation that follows the
+laws of linear logic, so we must understand how such negation affects
+these constructs.
+
+The quantifiers formulated in "Redesigning the CLF type theory" by
+Anders Schack-Nielsen 2009
+<http://www.logosphere.org/~celf/download/clf.pdf> are more useful
+from a linear logic point of view, since they allow us to make the
+exponentials explicit:
+
+\PiHat (a : !A) -> B{a}
+\SigmaHat (a : !A) -> B{a}
+
+As discussed in that paper, PiHat in the non-dependent case is like
+(!A -o B), and SigmaHat is like (!A * B) where * is multiplicative
+conjunction. So these are two multiplicative connectives, and we're
+going to try to treat them as duals of each other.
+
+Here's a notation that emphasizes their duality:
+
+D@s[-rst.a : -rst.!rs.A].B{a}
+D@s(a : !rs.A).B{a}
+
+This way we get this De Morgan's equivalence and its companion:
+
+D@s[-rst.a : -rst.A].-rst.B{a}
+-rst.D@s(a : A).B{a}
+
+The paper talks about how B{a} may only depend on intuitionistic
+variables of the pattern `a`. (The paper uses a detailed pattern
+language, which we'll somewhat imitate in a moment.) If the second
+type gets to depend on !-modal parts of the first value, why not let
+the first type depend on !-modal or ?-modal parts of the second value
+as well? Let's not worry about exactly what modalities we permit, and
+let's remix the notation again:
+
+-- originals
+\PiHat (a : !A) -> B{a}
+\SigmaHat (a : !A) -> B{a}
+
+-- our new notation
+@s[-rst.a _]:@s[-rst.!rs.A B{a}]
+@s(a _):@s(!rs.A B{a})
+
+-- De Morgan
+@s[-rst.a -rst.b]:@s[-rst.A{b} -rst.B{a}]
+-rst.@s(a b):@s(A{b} B{a})
+
+(TODO: See if back-and-forth dependency turns out to be well-founded.)
+
+If back-and-forth dependency turns out to be well-founded, then it'll
+give us commutativity and a more thorough way to express rules like
+the switch rule in their full dependent type expressiveness:
+
+@s(@s[r u] t):@s(@s[R{u}{t} U{r}{t}] T{r}{u})
+@s[@s(r t) u]:@s[@s(R{u}{t} T{r}{u}) U{r}{t}]
+
+Notice that T depends on u and U depends on t, even though this rule
+switches the nesting of these bindings. If we weren't using a pattern
+language here, we would have trouble describing this.
+
+With examples like this in mind, it turns out we might just want to
+tag specific substructures with variable names (or, in general,
+patterns) and use them throughout the currently described rule:
+
+@s(@s[r:R{u}{t} u:U{r}{t}] t:T{r}{u})
+@s[@s(r:R{u}{t} t:T{r}{u}) u:U{r}{t}]
+
+At this point, it's easy to take the variables for granted and just
+specify the rule the old-fashioned way:
+
+@s(@s[R U] T)
+@s[@s(R T) U]
+
+It seems just as easy to work backwards and get analogues for all the
+other rules. At the same time, we obtain curious connectives for
+dependently typed additives.
+
+One potential obstacle to this system is the use of variables. Each
+connective introduces variables with scoping rules that may be subtly
+different, so letting them all get mixed up in one environment could
+reduce clarity. We'll see this pretty soon once we have at least one
+notation that lets a type depend on a term.
+
+Case in point: Let's start handling observational equality (as in
+"Observational Equality, Now!" Altenkirch, McBride, Swierstra 2007,
+and also as in era-sequents.txt). We need types (propositions) for
+type equality and value equality:
+
+A=B
+<a A == b B>
+
+The paper's equality of dependent pair types is defined like so. We
+encode the propositional AND connective as @s(...), since the coercion
+that motivates this definition uses both operands exactly once apiece:
+
+@s(a:!rs.A B{a})=@s(c:!rs.C D{c})
+- is defined as -
+@s(A=C
+   @s[-rst.a:!rs.A -rst.c:!rs.C -rst.!rs.<a !rs.A == c !rs.C> B{a}=D{c}])
+
+If we remove the exponentials and allow bidirectional dependency, we
+may be looking at something like this instead:
+
+@s(a:A{b} b:B{a})=@s(c:C{d} d:D{c})
+- is defined as -
+@s(@s[-rst.b:B{a} -rst.d:D{c} -rst.<b B{a} == d D{c}> A{b}=C{d}]
+   @s[-rst.a:A{b} -rst.c:C{d} -rst.<a A{b} == c C{d}> B{a}=D{c}])
+
+This interpretation doesn't quite seem to get us within a comfortable
+proximity to of the paper's equality, but it's not too distant either:
+
+@s(a:!rs.A B{a})=@s(c:!rs.C D{c})
+- is defined as -
+@s(@s[-rst.b:B{a} -rst.d:D{c} -rst.<b B{a} == d D{c}> !rs.A=!rs.C]
+   @s[-rst.a:!rs.A -rst.c:!rs.C -rst.<a !rs.A == c !rs.C> B{a}=D{c}])
+
+If we rewrite it a bit, we can at least get something less cluttered:
+
+@s(a:A{b} b:B{a})=@s(c:C{d} d:D{c})
+- is defined as -
+-rst.@s[@s(b:B{a} d:D{c} <b B{a} == d D{c}> -rst.A{b}=C{d})
+        @s(a:A{b} c:C{d} <a A{b} == c C{d}> -rst.B{a}=D{c})]
+
+This suggests we may want to work with the dual of type equality in
+the first place... assuming we can make sense of such a thing.
+
+We've sort of put the cart before the horse here, because we still
+have neither a term language nor any desired rules for how equality
+should be useful. Perhaps the rule we're looking for is something like
+this:
+
+A=B
+@s[-rst.a:A @s(b:B <a A == b B>)]
+
+TODO: See if the above definition of sigma equality allows us to
+derive this rule.
+
+To start us off on a term language, here's a similar attempt to adapt
+the definition of sigma equality for values rather than types:
+
+<x @s(a:A{b} b:B{a}) == y @s(c:C{d} d:D{c})>
+@s(<#fst.x A{b} == #fst.y C{d}> <#snd.x B{a} == #snd.y D{c}>)
+
+We have two problems: Where are a, b, c, and d defined in the
+consequence of that rule? How can we be comfortable the semantics of
+#fst and #snd when they impose an ordering on the contents of an
+otherwise unordered connective like dependent @s(...)?
+
+We can solve these problems by changing to a more elaborate notation:
+
+<x @s(a:A{b} b:B{a}) == y @s(c:C{d} d:D{c})>
+@s(<<#get a x @s(a:A{b} b:B{a})> A{b} ==
+    <#get c y @s(c:C{d} d:D{c})> C{d}>
+   <<#get b x @s(a:A{b} b:B{a})> B{a} ==
+    <#get d y @s(c:C{d} d:D{c})> D{c}>)
+
+Now the variables appearing in the types can refer to the definitions
+inside type annotations in the terms, and the element we're retrieving
+is specified by name rather than by position. Unfortunately, this
+notation now contains a lot of redundant information, and we'll
+probably need a completely different notation when we're dealing with
+@s[...] rather than @s(...), aka pi rather than sigma.
