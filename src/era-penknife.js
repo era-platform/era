@@ -1364,7 +1364,7 @@ PkRuntime.prototype.init_ = function () {
                     return listGet( essenceAndCounts, 2 );
                 };
             }
-            return listMappend( yoke, essencesAndCounts,
+            return listMap( yoke, essencesAndCounts,
                 function ( yoke, essenceAndCounts ) {
                 
                 var essence = listGet( essenceAndCounts, 0 );
@@ -1373,18 +1373,28 @@ PkRuntime.prototype.init_ = function () {
                     return self.callMethod( yoke, "essence-interpret",
                         pkList( essence, outerCaptures ) );
                 }, function ( yoke, value ) {
-                    return self.pkDup( yoke, value, count );
+                    return pkRet( yoke, pkList( value, count ) );
                 } );
-            }, function ( yoke, innerCaptures ) {
-                return listMap( yoke, innerCaptures,
-                    function ( yoke, innerCapture ) {
+            }, function ( yoke, valuesAndCounts ) {
+                return listMappend( yoke, valuesAndCounts,
+                    function ( yoke, valueAndCount ) {
                     
-                    return pkRet( yoke,
-                        pkLinearAsNonlinear( innerCapture ) );
-                }, function ( yoke, wrappedInnerCaptures ) {
-                    return self.callMethod( yoke, "essence-interpret",
-                        pkList(
-                            branchEssence, wrappedInnerCaptures ) );
+                    var value = listGet( valueAndCount, 0 );
+                    var count = listGet( valueAndCount, 1 );
+                    return self.pkDup( yoke, value, count );
+                }, function ( yoke, innerCaptures ) {
+                    return listMap( yoke, innerCaptures,
+                        function ( yoke, innerCapture ) {
+                        
+                        return pkRet( yoke,
+                            pkLinearAsNonlinear( innerCapture ) );
+                    }, function ( yoke, wrappedInnerCaptures ) {
+                        return self.callMethod( yoke,
+                            "essence-interpret",
+                            pkList(
+                                branchEssence,
+                                wrappedInnerCaptures ) );
+                    } );
                 } );
             } );
         } );
