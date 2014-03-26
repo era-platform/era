@@ -1,0 +1,123 @@
+== Scattered notes for compiling Penknife "essences" to JavaScript ==
+
+// These are Penknife's built-in essence types:
+
+defEssenceInterpret( "literal-essence",
+defEssenceInterpret( "main-essence",
+defEssenceInterpret( "call-essence",
+defEssenceInterpret( "param-essence",
+defEssenceInterpret( "fn-essence",
+defEssenceInterpret( "essence-for-if",
+defEssenceInterpret( "let-list-essence",
+
+// We'll compile each one to JavaScript using a format resembling the
+// following:
+// (TODO: Come up with a plan for fn-essence.)
+
+
+// literal-essence
+var gs1 = ...;  // one leaf
+...;  // more subtrees
+var x = ...;  // entire tree
+
+// main-essence
+return penknifeRuntime.getValByQualifiedNameJson( ... );
+  // the qualifiedNameJson value
+
+// call-essence
+...;
+var gs1 = ...;  // the thing to call
+var gs2 = pkNil;  // the end of the argument list
+...;
+var gs3 = pkCons( ..., gs2 );  // one of the arguments
+...;  // more arguments
+var gs4 = pkCons( ..., gs3 );  // last of the arguments
+return penknifeRuntime.callMethod( yoke, "call", pkList( gs1, gs4 ) );
+
+// param-essence
+var x = param1;  // using whichever number belongs to this param
+
+// fn-essence
+// TODO
+
+// essence-for-if
+...;
+var gs1 = ...;  // the source to destructure
+...;
+var gs2 = ...;  // the essencesAndCounts
+if ( gs1.isLinear() )
+    return pkErr( yoke,
+        "Used essence-for-if to branch on a condition " +
+        "that was linear" );
+if ( gs1.tag !== "nil" ) {
+    var branchEssence = thenEssence;
+    var getCount = function ( essenceAndCounts ) {
+        return listGet( essenceAndCounts, 1 );
+    };
+} else {
+    var branchEssence = elseEssence;
+    var getCount = function ( essenceAndCounts ) {
+        return listGet( essenceAndCounts, 2 );
+    };
+}
+var gs3 = gs2.ind( 1 );
+var essence = listGet( gs2.ind( 0 ), 0 );
+var count = getCount( gs2.ind( 0 ) );
+...;
+var gs4 = ...;  // one of the outer captures
+...;  // more outer captures
+}{
+var gs5 = gs1.ind( 1 );
+var gs6 = gs2.ind( 1 );
+return pkRuntime.pkDup( yoke, gs1.ind( 0 ), gs2.ind( 0 ) );
+}, function ( yoke, gs7 ) {
+var gs8 = gs5.ind( 1 );
+var gs9 = gs6.ind( 1 );
+return pkRuntime.pkDup( yoke, gs5.ind( 0 ), gs6.ind( 0 ) );
+}, function ( yoke, gs10 ) {
+...;
+var param1 = gs7.ind( 0 );
+var gs11 = gs7.ind( 1 );
+var param2 = gs11.ind( 0 );
+...;
+var param3 = gs10.ind( 0 );
+var gs12 = gs10.ind( 1 );
+...;
+var x = ...;  // body
+
+// let-list-essence
+...;
+var gs1 = ...;  // the source to destructure
+...;
+var gs2 = ...;  // the numbersOfDups
+return listLenEq( yoke, gs1, gs2,
+    function ( yoke, valid ) {
+//
+if ( !valid )
+    return pkErr( yoke,
+        "Got the wrong number of elements when " +
+        "destructuring a list" );
+//
+...;
+var gs3 = ...;  // one of the outer captures
+...;  // more outer captures
+var param0 = gs3;
+...;
+}{
+var gs4 = gs1.ind( 1 );
+var gs5 = gs2.ind( 1 );
+return pkRuntime.pkDup( yoke, gs1.ind( 0 ), gs2.ind( 0 ) );
+}, function ( yoke, gs6 ) {
+var gs7 = gs4.ind( 1 );
+var gs8 = gs5.ind( 1 );
+return pkRuntime.pkDup( yoke, gs4.ind( 0 ), gs5.ind( 0 ) );
+}, function ( yoke, gs9 ) {
+...;
+var param1 = gs6.ind( 0 );
+var gs10 = gs6.ind( 1 );
+var param2 = gs10.ind( 0 );
+...;
+var param3 = gs9.ind( 0 );
+var gs11 = gs9.ind( 1 );
+...;
+var x = ...;  // body
