@@ -453,7 +453,7 @@ function listLenIs( x, n ) {
     return listLenBounded( x, n ) === n;
 }
 function runRet( yoke, val ) {
-    return { yoke: yoke, result: val };
+    return { type: "done", yoke: yoke, result: val };
 }
 function pkRet( yoke, val ) {
     return runRet( yoke, pkYep( val ) );
@@ -476,6 +476,7 @@ function yokeWithRider( yoke, rider ) {
     return {
         yokeRider: rider,
         effectToken: yoke.effectToken,
+        internal: yoke.internal,
         runWaitLinear: yoke.runWaitLinear
     };
 }
@@ -502,11 +503,12 @@ function runWaitOne( yoke, then ) {
         return then( yoke );
     } );
 }
-function syncYokeCall( maybeSyncAndYoke, defer, then ) {
-    if ( maybeSyncAndYoke.isNotSyncAndYoke )
-        return maybeSyncAndYoke.go( defer, then );
+function syncYokeCall( maybeYokeAndResult, defer, then ) {
     defer( function () {
-        then( maybeSyncAndYoke );
+        if ( maybeYokeAndResult.type === "deferrer" )
+            maybeYokeAndResult.go( defer, then );
+        else
+            then( maybeYokeAndResult );
     } );
 }
 function listLenEq( yoke, a, b, then ) {
@@ -3122,6 +3124,7 @@ PkRuntime.prototype.mapEffect_ = function ( yoke, func ) {
                                     yokeRider: pureYoke.yokeRider,
                                     effectToken:
                                         newEffectToken.unwrapped,
+                                    internal: pureYoke.internal,
                                     runWaitLinear:
                                         pureYoke.runWaitLinear
                                 };
@@ -3171,6 +3174,7 @@ PkRuntime.prototype.withAvailableEffectsReplaced = function (
     var empoweredYoke = {
         yokeRider: pk( "imperative-yoke", effectToken.wrapped ),
         effectToken: effectToken.unwrapped,
+        internal: yoke.internal,
         runWaitLinear: yoke.runWaitLinear
     };
     return runWait( empoweredYoke, function ( empoweredYoke ) {
@@ -3179,6 +3183,7 @@ PkRuntime.prototype.withAvailableEffectsReplaced = function (
         var disempoweredYoke = {
             yokeRider: yoke.yokeRider,
             effectToken: yoke.effectToken,
+            internal: empoweredYoke.internal,
             runWaitLinear: empoweredYoke.runWaitLinear
         };
         return runRet( disempoweredYoke, result );
@@ -3187,6 +3192,7 @@ PkRuntime.prototype.withAvailableEffectsReplaced = function (
 PkRuntime.prototype.conveniences_debuggableSyncYoke = {
     yokeRider: pk( "pure-yoke" ),
     effectToken: null,
+    internal: null,
     runWaitLinear: function ( step, then ) {
         return then( step( this ) );
     }
@@ -3212,21 +3218,50 @@ PkRuntime.prototype.conveniences_runSyncYoke = function (
 PkRuntime.prototype.conveniences_syncYoke = {
     yokeRider: pk( "pure-yoke" ),
     effectToken: null,
+    internal: 0,
     runWaitLinear: function ( step, then ) {
         var self = this;
-        return {
-            isNotSyncAndYoke: true,
-            go: function ( defer, then2 ) {
-                defer( function () {
-                    syncYokeCall( step( self ), defer,
-                        function ( yokeAndResult ) {
-                        
-                        syncYokeCall(
-                            then( yokeAndResult ), defer, then2 );
-                    } );
+        
+        // TODO: Test to see what value is best for all browsers.
+        var maxStack = 1000;
+        
+        if ( self.internal < maxStack ) {
+            var maybeYokeAndResult = step( {
+                yokeRider: self.yokeRider,
+                effectToken: self.effectToken,
+                internal: self.internal + 1,
+                runWaitLinear: self.runWaitLinear
+            } );
+            if ( maybeYokeAndResult.type === "done" )
+                return then( maybeYokeAndResult );
+            return { type: "deferrer", go: function ( defer, then2 ) {
+                syncYokeCall( maybeYokeAndResult, defer,
+                    function ( yokeAndResult ) {
+                    
+                    var yoke = yokeAndResult.yoke;
+                    syncYokeCall(
+                        then( runRet( {
+                            yokeRider: yoke.yokeRider,
+                            effectToken: yoke.effectToken,
+                            internal: 0,
+                            runWaitLinear: yoke.runWaitLinear
+                        }, yokeAndResult.result ) ),
+                        defer, then2 );
                 } );
-            }
-        };
+            } };
+        } else {
+            return { type: "deferrer", go: function ( defer, then2 ) {
+                syncYokeCall( step( {
+                    yokeRider: self.yokeRider,
+                    effectToken: self.effectToken,
+                    internal: 0,
+                    runWaitLinear: self.runWaitLinear
+                } ), defer, function ( yokeAndResult ) {
+                    syncYokeCall(
+                        then( yokeAndResult ), defer, then2 );
+                } );
+            } };
+        }
     }
 };
 PkRuntime.prototype.conveniences_macroexpand = function (
