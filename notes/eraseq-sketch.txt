@@ -1,0 +1,39 @@
+
+#coerce ((ax1 : ai) -> ao[ ax1 ]) ((bx1 : bi) -> bo[ bx1 ]) pf orig
+~~>
+\bx2 : bi ->
+    (#coerce ao[ #coerce bi ai (#fst pf) bx2 ]
+        bo[ bx2 ]
+        (#snd pf bx2 (#coerce bi ai (#fst pf) bx2)
+            (#coherent (#fst pf) bx2))
+        (orig (#coerce bi ai (#fst pf) bx2)))
+
+(beta-rule
+  (coerce (pit ax1 ai /sbs ao ax1) (pit bx1 ai /sbs bo bx1) pf orig)
+  (coerce (sbs ao /coerce bi ai (fst pf) bx2) (sbs bo bx2)
+    (call (snd pf) bx2 (coerce bi ai (fst pf) bx2)
+      (coherent (fst pf) bx2))
+    (call orig /coerce bi ai (fst pf) bx2)))
+
+
+// Introduce !!startSum.
+me @ ##secret myKey
+me @ ##type seedParts
+(me @ ##type x1) |- (me @ ##type accum[ x1 ])
+(me @ ##type e1), (me @ ##extensible e1) |-
+    (me @ seedImplementation[ e1 ] : accum[ #Extend seedParts e1 ])
+---
+me @ !!startSum
+    myKey x2 accum[ x2 ] seedParts e2 seedImplementation[ e2 ]
+
+(entails-to me (
+  (secret myKey)
+  (type seedParts)
+  (entails-to me (/type x1) (/type /sbs accum x1))
+  (entails-to me ((type e1) (extensible e1))
+    (/isa (sbs seedImplementation e1)
+          (sbs accum /extendt seedParts e1)))
+) (
+  (startSum myKey x2 (sbs accum x2) seedParts e2
+    (sbs seedImplementation e2))
+))
