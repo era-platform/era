@@ -1,5 +1,7 @@
 == Scattered notes for compiling Penknife "essences" to JavaScript ==
 
+// (To see source code that achieves this, consult penknife-to-js.js.)
+
 // These are Penknife's built-in essence types:
 
 defEssenceInterpret( "literal-essence",
