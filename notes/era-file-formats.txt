@@ -112,11 +112,10 @@ s-expression can be rendered with spaces in between the list elements,
 like (a (b c)). If the algorithm needs a string, it can use this
 binary representation as though it were encoded ASCII text.
 
-For def-pubkey-derived, the given signature is verified against the
+For def-pubkey-derived, the given signatures are verified against the
 parent of this key.
 
-For def-pubkey-everyone, the given signature is verified to be an
-empty sequence of bytes.
+For def-pubkey-everyone, no signature is needed.
 
 TODO: Choose a nontrivial signature algorithm. Until we have one, we
 don't actually need to do normalization at all.
