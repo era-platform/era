@@ -56,7 +56,7 @@ function jsListAppend( yoke, a, b, then ) {
         } );
     } );
 }
-function jsListFoldlAsync( yoke, init, list, func, then ) {
+function jsListFoldl( yoke, init, list, func, then ) {
     return go( yoke, init, list );
     function go( yoke, init, list ) {
         if ( list === null )
@@ -89,7 +89,7 @@ function jsListFlattenOnce( yoke, list, then ) {
     }
 }
 function jsListMap( yoke, list, func, then ) {
-    return jsListFoldlAsync( yoke, null, list,
+    return jsListFoldl( yoke, null, list,
         function ( yoke, revPast, elem, then ) {
         
         return func( yoke, elem, function ( yoke, elem ) {
@@ -153,6 +153,7 @@ function getGs( yoke, gsi, then ) {
 // NOTE: So far, the generated code snippets depend on the following
 // free variables:
 //
+// new Pk().init_
 // pkNil
 // pkCons
 // pkRuntime.getVal
@@ -226,7 +227,7 @@ function compileCallOnLiteral2( yoke,
         "" + funcCode + "( " +
             compiledArg1.resultVar + ", " +
             compiledArg2.resultVar " );"
-        compiledArg.revStatements,
+        revStatements,
         function ( yoke, gsi, compiledResult ) {
         
         return then( yoke, gsi, compiledResult );
@@ -235,6 +236,34 @@ function compileCallOnLiteral2( yoke,
     } );
     
     } );
+}
+
+function compileListOfVars( yoke, gensymIndex, elemVars, then ) {
+    var gsi = gensymIndex;
+    return jsListFoldl( yoke,
+        {
+            gsi: gsi,
+            resultSoFar: { revStatements: null, resultVar: "pkNil" }
+        },
+        elemVars,
+        function ( yoke, state, elemVar, then ) {
+        
+        return getGs( yoke, state.gsi,
+            function ( yoke, gsi, resultVar ) {
+            
+            return then( yoke, { gsi: state.gsi, resultSoFar: {
+                revStatements: {
+                    first: "var " + resultVar + " = pkCons( " +
+                        elemVar + ", " +
+                        state.resultSoFar.resultVar + " );",
+                    rest: state.resultSoFar.revStatements
+                },
+                resultVar: resultVar
+            } } );
+        } );
+    }, function ( yoke, state ) {
+        return then( yoke, state.gsi, state.resultSoFar );
+    } )
 }
 
 function compileLiteral( yoke, gensymIndex, pkVal, then ) {
@@ -311,7 +340,73 @@ function compileLiteral( yoke, gensymIndex, pkVal, then ) {
         return waitErr( yoke, gsi, "Tried to compile a literal fn" );
     } else {
         // NOTE: At this point, we know pkIsStruct( pkVal ) is true.
-        // TODO: Implement this.
+        return pkListToJsList( yoke, pkGetArgs( pkVal ),
+            function ( yoke, literalArgs ) {
+        return jsListFoldl( yoke,
+            { ok: true, val: { gsi: gsi, revCompiledArgs: null } },
+            literalArgs,
+            function ( yoke, state, literalArg, then ) {
+            
+            if ( !state.ok )
+                return then( yoke, state );
+            
+            return compileLiteral( yoke, state.val.gsi, literalArg,
+                function ( yoke, gsi, compiledArg ) {
+                
+                if ( !compiledArg.ok )
+                    return then( yoke, compiledArg );
+                
+                return then( yoke, { ok: true, val: {
+                    gsi: gsi,
+                    revCompiledArgs: { first: compiledArg.val,
+                        rest: state.val.revCompiledArgs }
+                } );
+            } );
+        }, function ( yoke, state ) {
+            if ( !state.ok )
+                return then( yoke, gsi, state );
+        
+        return jsListMappend( yoke, state.val.revCompiledArgs,
+            function ( yoke, compiledArg, then ) {
+            
+            return runWaitOne( yoke, function ( yoke ) {
+                return then( yoke, compiledArg.revStatements );
+            } );
+        }, function ( yoke, revStatements ) {
+        return jsListMap( yoke, state.val.revCompiledArgs,
+            function ( yoke, compiledArg, then ) {
+            
+            return runWaitOne( yoke, function ( yoke ) {
+                return then( yoke, compiledArg.resultVar );
+            } );
+        }, function ( yoke, revArgVars ) {
+        return jsListRev( yoke, revArgVars,
+            function ( yoke, argVars ) {
+        return compileListOfVars( yoke, gsi, argVars,
+            function ( yoke, gsi, compiledList ) {
+        return jsListAppend( yoke,
+            revStatements,
+            compiledList.revStatements,
+            function ( yoke, revStatements ) {
+        return getGsAndFinishWithExpr( yoke, gsi,
+            "new Pk().init_( null, " +
+                strToSource( pkVal.tag ) + ", " +
+                compiledList.resultVar + ", " +
+                compiledList.resultVar + ".isLinear(), {} )",
+            revStatements,
+            function ( yoke, gsi, compiledResult ) {
+        
+        return then( yoke, gsi, compiledResult );
+        
+        } );
+        } );
+        } );
+        } );
+        } );
+        } );
+        
+        } );
+        } );
     }
 }
 
@@ -342,6 +437,8 @@ function compileEssence(
         
         return pkListToJsList( yoke, essence.ind( 1 ),
             function ( yoke, argEssences ) {
+        // TODO: Stop interweaving the evaluation and list creation
+        // like this and just use compileListOfVars().
         return getGs( yoke, gsi, function ( yoke, gsi, listEndVar ) {
         return pkListFoldlAsync( yoke,
             { ok: true, val: { gsi: gsi, lastListPartVar: listEndVar,
