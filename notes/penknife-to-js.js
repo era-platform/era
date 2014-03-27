@@ -189,7 +189,7 @@ function compileCallOnLiteral( yoke,
         function ( yoke, gsi, compiledArg ) {
         
         if ( !compiledArg.ok )
-            return then( yoke, gsi, compiledArg );
+            return then( yoke, null, compiledArg );
     
     return getGsAndFinishWithExpr( yoke, gsi,
         "" + funcCode + "( " + compiledArg.resultVar + " )",
@@ -210,13 +210,13 @@ function compileCallOnLiteral2( yoke,
         function ( yoke, gsi, compiledArg1 ) {
         
         if ( !compiledArg1.ok )
-            return then( yoke, gsi, compiledArg1 );
+            return then( yoke, null, compiledArg1 );
     
     return compileLiteral( yoke, gsi, literalArg2,
         function ( yoke, gsi, compiledArg2 ) {
         
         if ( !compiledArg1.ok )
-            return then( yoke, gsi, compiledArg2 );
+            return then( yoke, null, compiledArg2 );
     
     return jsListAppend( yoke,
         compiledArg2.revStatements,
@@ -266,7 +266,9 @@ function compileListOfVars( yoke, gensymIndex, elemVars, then ) {
     } )
 }
 
-function compileMap( yoke, gensymIndex, elems, compileElem, then ) {
+function compileMapToVars( yoke,
+    gensymIndex, elems, compileElem, then ) {
+    
     var gsi = gensymIndex;
     return pkListFoldlAsync( yoke,
         { ok: true, val: { gsi: gsi, revCompiledElems: null } },
@@ -291,7 +293,7 @@ function compileMap( yoke, gensymIndex, elems, compileElem, then ) {
     }, function ( yoke, state ) {
         
         if ( !state.ok )
-            return then( yoke, gsi, state );
+            return then( yoke, null, null, null, state );
     
     return pkListMappend( yoke, state.revCompiledElems,
         function ( yoke, compiledElem, then ) {
@@ -309,7 +311,28 @@ function compileMap( yoke, gensymIndex, elems, compileElem, then ) {
     }, function ( yoke, revElemVars ) {
     return pkListRev( yoke, revElemVars,
         function ( yoke, elemVars ) {
-    return compileListOfVars( yoke, state.gsi, elemVars,
+    
+    return then( yoke, gsi, revStatements, elemVars,
+        { ok: true, val: null } );
+    
+    } );
+    } );
+    } );
+    
+    } );
+}
+
+function compileMapToList( yoke,
+    gensymIndex, elems, compileElem, then ) {
+    
+    var gsi = gensymIndex;
+    return compileMapToVars( yoke, gsi, elems, compileElem,
+        function ( yoke, gsi, revStatements, elemVars, valid ) {
+        
+        if ( !valid.ok )
+            return then( yoke, null, valid );
+        
+    return compileListOfVars( yoke, gsi, elemVars,
         function ( yoke, gsi, compiledElems ) {
     return pkListAppend( yoke,
         compiledElems.revStatements,
@@ -323,9 +346,6 @@ function compileMap( yoke, gensymIndex, elems, compileElem, then ) {
     
     } );
     } );
-    } );
-    } );
-    } );
     
     } );
 }
@@ -333,9 +353,9 @@ function compileMap( yoke, gensymIndex, elems, compileElem, then ) {
 function compileLiteral( yoke, gensymIndex, pkVal, then ) {
     var gsi = gensymIndex;
     
-    function waitErr( yoke, gsi, message ) {
+    function waitErr( yoke, message ) {
         return runWaitOne( yoke, function ( yoke ) {
-            return then( yoke, gsi, { ok: false, val: message } );
+            return then( yoke, null, { ok: false, val: message } );
         } );
     }
     
@@ -343,7 +363,7 @@ function compileLiteral( yoke, gensymIndex, pkVal, then ) {
         // NOTE: This case would technically be unnecessary if we
         // checked for nonlinear-as-linear instead, but we might as
         // well get it out of the way early on, since we can.
-        return waitErr( yoke, gsi,
+        return waitErr( yoke,
             "Tried to compile a literal value that was linear" );
     } else if ( pkVal.tag === "nil" ) {
         return then( yoke, gsi, { ok: true, val: {
@@ -362,9 +382,9 @@ function compileLiteral( yoke, gensymIndex, pkVal, then ) {
             "pkStrUnsafe( " +
                 strToSource( pkVal.special.jsStr ) + ")",
             null,
-            function ( yoke, gsi, compiledResult ) {
+            function ( yoke, gsi, compiled ) {
             
-            return then( yoke, gsi, compiledResult );
+            return then( yoke, gsi, compiled );
         } );
     } else if ( pkVal.tag === "string-name" ) {
         return compileCallOnLiteral( yoke, gsi,
@@ -395,18 +415,17 @@ function compileLiteral( yoke, gensymIndex, pkVal, then ) {
             return then( yoke, gsi, compiled );
         } );
     } else if ( pkVal.tag === "linear-as-nonlinear" ) {
-        return waitErr( yoke, gsi,
+        return waitErr( yoke,
             "Tried to compile a literal linear-as-nonlinear" );
     } else if ( pkVal.tag === "token" ) {
-        return waitErr( yoke, gsi,
-            "Tried to compile a literal token" );
+        return waitErr( yoke, "Tried to compile a literal token" );
     } else if ( pkVal.tag === "fn" ) {
-        return waitErr( yoke, gsi, "Tried to compile a literal fn" );
+        return waitErr( yoke, "Tried to compile a literal fn" );
     } else {
         // NOTE: At this point, we know pkIsStruct( pkVal ) is true.
         return pkListToJsList( yoke, pkGetArgs( pkVal ),
             function ( yoke, literalArgs ) {
-        return compileMap( yoke, gsi, literalArgs,
+        return compileMapToList( yoke, gsi, literalArgs,
             function ( yoke, gsi, literalArg, then ) {
             
             return compileLiteral( yoke, gsi, literalArg,
@@ -416,7 +435,7 @@ function compileLiteral( yoke, gensymIndex, pkVal, then ) {
             } );
         }, function ( yoke, gsi, compiledArgs ) {
             if ( !compiledArgs.ok )
-                return then( yoke, gsi, compiledArgs );
+                return then( yoke, null, compiledArgs );
         
         return getGsAndFinishWithExpr( yoke, gsi,
             "new Pk().init_( null, " +
@@ -458,21 +477,21 @@ function compileEssence(
             function ( yoke, gsi, compiledOp ) {
             
             if ( !compiledOp.ok )
-                return then( yoke, gsi, compiledOp );
+                return then( yoke, null, compiledOp );
         
         return pkListToJsList( yoke, essence.ind( 1 ),
             function ( yoke, argEssences ) {
-        return compileMap( yoke, gsi, argEssences,
+        return compileMapToList( yoke, gsi, argEssences,
             function ( yoke, gsi, argEssence, then ) {
             
             return compileEssence( yoke, gsi, numParams, argEssence,
                 function ( yoke, gsi, compiledArg ) {
                 
-                return then( yoke, gsi, compiledArg );
+                return then( yoke, null, compiledArg );
             } );
         }, function ( yoke, gsi, compiledArgs ) {
             if ( !compiledArgs.ok )
-                return then( yoke, gsi, compiledArgs );
+                return then( yoke, null, compiledArgs );
         
         return getGs( yoke, state.gsi,
             function ( yoke, gsi, resultVar ) {
@@ -501,7 +520,7 @@ function compileEssence(
             function ( yoke, compared ) {
             
             if ( !(compared < 0) )
-                return then( yoke, gsi, { ok: false, val:
+                return then( yoke, null, { ok: false, val:
                     "Tried to compile a param-essence which had an " +
                     "index that was out of range" } );
         
@@ -517,10 +536,39 @@ function compileEssence(
     } else if ( essence.tag === "essence-for-if" ) {
         // TODO: Implement this.
     } else if ( essence.tag === "let-list-essence" ) {
+        var sourceEssence = essence.ind( 0 );
+        var captureEssences = essence.ind( 1 );
+        var numbersOfDups = essence.ind( 2 );
+        var bodyEssence = essence.ind( 3 );
+        return compileEssence( yoke, gsi, numParams, sourceEssence,
+            function ( yoke, gsi, compiledSource ) {
+            
+            if ( !compiledOp.ok )
+                return then( yoke, null, compiledSource );
+        
+        return pkListToJsList( yoke, captureEssences,
+            function ( yoke, captureEssences ) {
+        return compileMapToVars( yoke, gsi, captureEssences,
+            function ( yoke, gsi, argEssence, then ) {
+            
+            return compileEssence( yoke, gsi, numParams, argEssence,
+                function ( yoke, gsi, compiledArg ) {
+                
+                return then( yoke, gsi, compiledArg );
+            } );
+        }, function ( yoke, gsi, revStatements, captureVars, valid ) {
+            if ( !valid.ok )
+                return then( yoke, null, valid );
+        
         // TODO: Implement this.
+        
+        } );
+        } );
+        
+        } );
     } else {
         return runWaitOne( yoke, function ( yoke ) {
-            return then( yoke, gsi, { ok: false, val:
+            return then( yoke, null, { ok: false, val:
                 "Tried to compile a value that wasn't of a " +
                 "recognized essence type" } );
         } );
