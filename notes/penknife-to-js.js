@@ -276,19 +276,18 @@ function compileListOfVars( yoke, gensymIndex, elemVars, then ) {
     } )
 }
 
-function compileMapToVars( yoke,
-    gensymIndex, elems, compileElem, then ) {
+function pkListRevMapWithGsiAndErrors( yoke,
+    gsi, elems, processElem, then ) {
     
-    var gsi = gensymIndex;
     return pkListFoldlAsync( yoke,
-        { ok: true, val: { gsi: gsi, revCompiledElems: null } },
+        { ok: true, val: { gsi: gsi, revProcessed: null } },
         elems,
         function ( yoke, state, elem, then ) {
         
         if ( !state.ok )
             return then( yoke, state );
         
-        return compileElem( yoke, state.val.gsi, elem,
+        return processElem( yoke, state.val.gsi, elem,
             function ( yoke, gsi, compiledElem ) {
             
             if ( !compiledElem.ok )
@@ -296,14 +295,34 @@ function compileMapToVars( yoke,
             
             return then( yoke, { ok: true, val: {
                 gsi: gsi,
-                revCompiledElems: { first: compiledElem.val,
-                    rest: state.val.revCompiledElems }
+                revProcessed: { first: compiledElem.val,
+                    rest: state.val.revProcessed }
             } } );
         } );
     }, function ( yoke, state ) {
-        
         if ( !state.ok )
-            return then( yoke, null, null, null, state );
+            return then( yoke, null, state );
+        return then( yoke, state.gsi,
+            { ok: true, val: state.revProcessed } );
+    } );
+}
+
+function compileMapToVars( yoke,
+    gensymIndex, elems, compileElem, then ) {
+    
+    var gsi = gensymIndex;
+    return pkListRevMapWithGsiAndErrors( yoke, gsi, elems,
+        function ( yoke, gsi, elem, then ) {
+        
+        return compileElem( yoke, gsi, elem,
+            function ( yoke, gsi, compiledElem ) {
+            
+            return then( yoke, gsi, compiledElem );
+        } );
+    }, function ( yoke, gsi, revCompiledElems ) {
+        
+        if ( !revCompiledElems.ok )
+            return then( yoke, null, null, null, revCompiledElems );
     
     return pkListMappend( yoke, state.revCompiledElems,
         function ( yoke, compiledElem, then ) {
@@ -568,18 +587,29 @@ function compileEssence(
             } );
         }, function ( yoke,
             gsi, captureVarsRevStatements, captureVars, valid ) {
+            
             if ( !valid.ok )
                 return then( yoke, null, valid );
+        
+        return listLen( yoke, numbersOfDups,
+            function ( yoke, numberOfElems ) {
+        return compileLiteral( yoke, gsi, numberOfElems,
+            function ( yoke, gsi, compiledNumberOfElems ) {
+            
+            if ( !compiledNumberOfElems.ok )
+                return then( yoke, null, compiledNumberOfElems );
+        
         return compileLiteral( yoke, gsi, numbersOfDups,
             function ( yoke, gsi, compiledNumbersOfDups ) {
             
-            if ( !compiledSource.ok )
+            if ( !compiledNumbersOfDups.ok )
                 return then( yoke, null, compiledNumbersOfDups );
         
         return jsListFlattenOnce( yoke, jsList(
             compiledNumbersOfDups.val.revStatements,
+            compiledNumberOfElems.val.revStatements,
             captureVarsRevStatements,
-            compiledSource.val.revStatements,
+            compiledSource.val.revStatements
         ), function ( yoke, revStatements ) {
         
         // TODO: Implement this.
@@ -587,6 +617,10 @@ function compileEssence(
         } );
         
         } );
+        
+        } );
+        } );
+        
         } );
         } );
         
