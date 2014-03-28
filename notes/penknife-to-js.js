@@ -166,6 +166,7 @@ function getGs( yoke, gsi, then ) {
 // new Pk().init_
 // pkNil
 // pkCons
+// pkList
 // pkRuntime.getVal
 // pkRuntime.callMethod
 // pkStrNameRaw
@@ -173,6 +174,7 @@ function getGs( yoke, gsi, then ) {
 // pkYep
 // pkPairName
 // pkStrUnsafe
+// runWaitTry
 
 function getGsAndFinishWithExpr( yoke,
     gensymIndex, expr, revStatements, then ) {
@@ -276,25 +278,28 @@ function compileListOfVars( yoke, gensymIndex, elemVars, then ) {
     } )
 }
 
-function pkListRevMapWithGsiAndErrors( yoke,
-    gsi, elems, processElem, then ) {
+// NOTE: The word "zoke" is just a play on words since it's basically
+// a second "yoke." We could have named this variable "state," but
+// we have a local variable named that.
+function pkListRevMapWithStateAndErrors( yoke, zoke,
+    elems, processElem, then ) {
     
     return pkListFoldlAsync( yoke,
-        { ok: true, val: { gsi: gsi, revProcessed: null } },
+        { ok: true, val: { zoke: zoke, revProcessed: null } },
         elems,
         function ( yoke, state, elem, then ) {
         
         if ( !state.ok )
             return then( yoke, state );
         
-        return processElem( yoke, state.val.gsi, elem,
-            function ( yoke, gsi, compiledElem ) {
+        return processElem( yoke, state.val.zoke, elem,
+            function ( yoke, zoke, compiledElem ) {
             
             if ( !compiledElem.ok )
                 return then( yoke, compiledElem );
             
             return then( yoke, { ok: true, val: {
-                gsi: gsi,
+                zoke: zoke,
                 revProcessed: { first: compiledElem.val,
                     rest: state.val.revProcessed }
             } } );
@@ -302,7 +307,7 @@ function pkListRevMapWithGsiAndErrors( yoke,
     }, function ( yoke, state ) {
         if ( !state.ok )
             return then( yoke, null, state );
-        return then( yoke, state.gsi,
+        return then( yoke, state.zoke,
             { ok: true, val: state.revProcessed } );
     } );
 }
@@ -311,7 +316,7 @@ function compileMapToVars( yoke,
     gensymIndex, elems, compileElem, then ) {
     
     var gsi = gensymIndex;
-    return pkListRevMapWithGsiAndErrors( yoke, gsi, elems,
+    return pkListRevMapWithStateAndErrors( yoke, gsi, elems,
         function ( yoke, gsi, elem, then ) {
         
         return compileElem( yoke, gsi, elem,
@@ -522,21 +527,32 @@ function compileEssence(
             if ( !compiledArgs.ok )
                 return then( yoke, null, compiledArgs );
         
-        return getGs( yoke, state.gsi,
-            function ( yoke, gsi, resultVar ) {
+        return getGs( yoke, gsi, function ( yoke, gsi, callbackVar ) {
+        return getGs( yoke, gsi, function ( yoke, gsi, resultVar ) {
         
         return then( yoke, gsi, { ok: true, val: {
             revStatements: {
-                first: { type: "async", resultVar: resultVar, code:
-                    "pkRuntime.callMethod( yoke, \"call\", " +
-                        "pkList( " + compiledOp.val.resultVar + ", " +
-                            compiledArgs.val.resultVar + " ) )"
+                first: {
+                    type: "async",
+                    callbackVar: callbackVar,
+                    resultVar: resultVar,
+                    code:
+                        "runWaitTry( yoke, function ( yoke ) {\n" +
+                        "    return pkRuntime.callMethod( yoke, " +
+                                "\"call\", " +
+                                "pkList( " +
+                                    compiledOp.val.resultVar + ", " +
+                                    compiledArgs.val.resultVar + " " +
+                                ") " +
+                            ");\n" +
+                        "}, " + callbackVar + " )"
                 },
                 rest: compiledArgs.val.revStatements
             },
             resultVar: resultVar
         } } );
         
+        } );
         } );
         
         } );
@@ -599,14 +615,80 @@ function compileEssence(
             if ( !compiledNumberOfElems.ok )
                 return then( yoke, null, compiledNumberOfElems );
         
-        return compileLiteral( yoke, gsi, numbersOfDups,
-            function ( yoke, gsi, compiledNumbersOfDups ) {
+        return pkListToJsList( yoke, numbersOfDups,
+            function ( yoke, numbersOfDups ) {
+        return compileMapToVars( yoke, gsi, numbersOfDups,
+            function ( yoke, gsi, numberOfDups, then ) {
             
-            if ( !compiledNumbersOfDups.ok )
-                return then( yoke, null, compiledNumbersOfDups );
+            return compileLiteral( yoke, gsi, numberOfDups,
+                function ( yoke, gsi, compiledNumberOfDups ) {
+                
+                return then( yoke, gsi, compiledNumberOfDups );
+            } );
+        }, function ( yoke, gsi,
+            numbersOfDupsRevStatements, varsOfNumbersOfDups, valid ) {
+            
+            if ( !valid.ok )
+                return then( yoke, null, valid );
+        
+        return pkListRevMapWithStateAndErrors( yoke,
+            { gsi: gsi, lastListVar: compiledSource.val.resultVar },
+            varsOfNumbersOfDups,
+            function ( yoke, state, numberOfDupsVar, then ) {
+            
+            return getGs( yoke, state.gsi,
+                function ( yoke, gsi, restVar ) {
+            return getGs( yoke, gsi,
+                function ( yoke, gsi, callbackVar ) {
+            return getGs( yoke, gsi,
+                function ( yoke, gsi, resultVar ) {
+            
+            return then( yoke, { gsi: gsi, lastListVar: restVar },
+                { ok: true, val: {
+                
+                revStatements: pkList( {
+                    type: "async",
+                    callbackVar: callbackVar,
+                    resultVar: resultVar,
+                    code:
+                        "runWaitTry( yoke,\n" +
+                        "    function ( yoke ) {\n" +
+                        "    \n" +
+                        "    return pkDup( yoke, " +
+                                state.lastListVar + ".ind( 0 ), " +
+                                numberOfDupsVar + " );\n" +
+                        "}, " + callbackVar + " )"
+                }, {
+                    type: "sync",
+                    code: "var " + restVar + " = " +
+                        state.lastListVar + ".ind( 1 );"
+                } ),
+                resultVar: resultVar
+            } } );
+            
+            } );
+            } );
+            } );
+        }, function ( yoke, state, revCompiledDupLists ) {
+            
+            if ( !revCompiledDupLists.ok )
+                return then( yoke, null, revCompiledDupLists );
+        
+        return pkListMappend( yoke, revCompiledDupLists.val,
+            function ( yoke, compiledDupList, then ) {
+            
+            return runWaitOne( yoke, function ( yoke ) {
+                return then( yoke, compiledDupList.revStatements );
+            } );
+        }, function ( yoke, compiledDupListsRevStatements ) {
         
         return jsListFlattenOnce( yoke, jsList(
-            compiledNumbersOfDups.val.revStatements,
+            // TODO: Compile bodyEssence, and execute it here.
+            // TODO: Unroll the captureVars and the
+            // revCompiledDupLists into param variables.
+            compiledDupListsRevStatements,
+            // TODO: Verify the length of the source.
+            numbersOfDupsRevStatements,
             compiledNumberOfElems.val.revStatements,
             captureVarsRevStatements,
             compiledSource.val.revStatements
@@ -616,6 +698,11 @@ function compileEssence(
         
         } );
         
+        } );
+        
+        } );
+        
+        } );
         } );
         
         } );
