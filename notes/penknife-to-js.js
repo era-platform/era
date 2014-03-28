@@ -31,6 +31,16 @@ function natCompare( yoke, a, b, then ) {
     } );
 }
 
+function jsListFromArr( arr ) {
+    var result = null;
+    for ( var i = arr.length - 1; 0 <= i; i-- )
+        result = { first: arr[ i ], rest: result };
+    return result;
+}
+function jsList( var_args ) {
+    return jsListFromArr( arguments );
+}
+
 function jsListRevAppend( yoke, backwardFirst, forwardSecond, then ) {
     if ( backwardFirst === null )
         return then( yoke, forwardSecond );
@@ -543,7 +553,7 @@ function compileEssence(
         return compileEssence( yoke, gsi, numParams, sourceEssence,
             function ( yoke, gsi, compiledSource ) {
             
-            if ( !compiledOp.ok )
+            if ( !compiledSource.ok )
                 return then( yoke, null, compiledSource );
         
         return pkListToJsList( yoke, captureEssences,
@@ -556,12 +566,27 @@ function compileEssence(
                 
                 return then( yoke, gsi, compiledArg );
             } );
-        }, function ( yoke, gsi, revStatements, captureVars, valid ) {
+        }, function ( yoke,
+            gsi, captureVarsRevStatements, captureVars, valid ) {
             if ( !valid.ok )
                 return then( yoke, null, valid );
+        return compileLiteral( yoke, gsi, numbersOfDups,
+            function ( yoke, gsi, compiledNumbersOfDups ) {
+            
+            if ( !compiledSource.ok )
+                return then( yoke, null, compiledNumbersOfDups );
+        
+        return jsListFlattenOnce( yoke, jsList(
+            compiledNumbersOfDups.val.revStatements,
+            captureVarsRevStatements,
+            compiledSource.val.revStatements,
+        ), function ( yoke, revStatements ) {
         
         // TODO: Implement this.
         
+        } );
+        
+        } );
         } );
         } );
         
