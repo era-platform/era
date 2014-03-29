@@ -98,6 +98,24 @@ function jsListFlattenOnce( yoke, list, then ) {
         } );
     }
 }
+function jsListCount( yoke, list, func, then ) {
+    return jsListFoldl( yoke, pkNil, list,
+        function ( yoke, count, elem, then ) {
+        
+        if ( func( elem ) )
+            return then( yoke, pk( "succ", count ) );
+        return then( yoke, count );
+    }, function ( yoke, count ) {
+        return then( yoke, count );
+    } );
+}
+function jsListLen( yoke, list, then ) {
+    return jsListCount( yoke, list, function ( elem ) {
+        return true;
+    }, function ( yoke, count ) {
+        return then( yoke, count );
+    } );
+}
 function jsListMap( yoke, list, func, then ) {
     return jsListFoldl( yoke, null, list,
         function ( yoke, revPast, elem, then ) {
@@ -122,6 +140,59 @@ function jsListMappend( yoke, list, func, then ) {
         } );
     } );
 }
+function jsListMapMultiWithLen( yoke, nat, lists, func, then ) {
+    return go( yoke, nat, lists, null );
+    function go( yoke, nat, lists, revResults ) {
+        if ( nat.tag !== "succ" )
+            return jsListRev( yoke, revResults,
+                function ( yoke, results ) {
+                
+                return then( yoke, results );
+            } );
+        return jsListMap( yoke, lists, function ( yoke, list, then ) {
+            return then( yoke, list.first );
+        }, function ( yoke, firsts ) {
+            return jsListMap( yoke, lists, function ( yoke, list ) {
+                return pkRet( yoke, list.rest );
+            }, function ( yoke, rests ) {
+                return func( yoke, firsts,
+                    function ( yoke, resultElem ) {
+                    
+                    return go( yoke, nat.ind( 0 ), rests,
+                        pkCons( resultElem, revResults ) );
+                } );
+            } );
+        } );
+    }
+}
+function jsListMapMulti( yoke, lists, func, then ) {
+    if ( lists === null )
+        throw new Error();
+    return jsListLen( yoke, lists.first, function ( yoke, len ) {
+        return jsListMapMultiWithLen( yoke, len, lists,
+            function ( yoke, elems, then ) {
+            
+            return func( yoke, elems, function ( yoke, resultElem ) {
+                return then( yoke, resultElem );
+            } );
+        }, function ( yoke, result ) {
+            return then( yoke, result );
+        } );
+    } );
+}
+function jsListMapTwo( yoke, a, b, func, then ) {
+    return jsListMapMulti( yoke, jsList( a, b ),
+        function ( yoke, elems, then ) {
+        
+        return func( yoke, elems.first, elems.rest.first,
+            function ( yoke, resultElem ) {
+            
+            return then( yoke, resultElem );
+        } );
+    }, function ( yoke, result ) {
+        return then( yoke, result );
+    } );
+}
 function pkListToJsList( yoke, pkList, then ) {
     return listFoldlJsAsync( yoke, null, pkList,
         function ( yoke, revPast, elem, then ) {
@@ -130,6 +201,17 @@ function pkListToJsList( yoke, pkList, then ) {
     }, function ( yoke, revResult ) {
         return jsListRev( yoke, revResult, function ( yoke, result ) {
             return then( yoke, result );
+        } );
+    } );
+}
+function natToJsList( yoke, nat, then ) {
+    return runWaitOne( yoke, function ( yoke ) {
+        if ( nat.tag !== "succ" )
+            return then( yoke, null );
+        return natToJsList( yoke, nat.ind( 0 ),
+            function ( yoke, rest ) {
+            
+            return { first: null, rest: rest };
         } );
     } );
 }
@@ -175,6 +257,10 @@ function getGs( yoke, gsi, then ) {
 // pkPairName
 // pkStrUnsafe
 // runWaitTry
+// pkDup
+// listLenIsNat
+// yoke
+// pkErr
 
 function getGsAndFinishWithExpr( yoke,
     gensymIndex, expr, revStatements, then ) {
@@ -281,10 +367,10 @@ function compileListOfVars( yoke, gensymIndex, elemVars, then ) {
 // NOTE: The word "zoke" is just a play on words since it's basically
 // a second "yoke." We could have named this variable "state," but
 // we have a local variable named that.
-function pkListRevMapWithStateAndErrors( yoke, zoke,
+function jsListRevMapWithStateAndErrors( yoke, zoke,
     elems, processElem, then ) {
     
-    return pkListFoldlAsync( yoke,
+    return jsListFoldl( yoke,
         { ok: true, val: { zoke: zoke, revProcessed: null } },
         elems,
         function ( yoke, state, elem, then ) {
@@ -316,7 +402,7 @@ function compileMapToVars( yoke,
     gensymIndex, elems, compileElem, then ) {
     
     var gsi = gensymIndex;
-    return pkListRevMapWithStateAndErrors( yoke, gsi, elems,
+    return jsListRevMapWithStateAndErrors( yoke, gsi, elems,
         function ( yoke, gsi, elem, then ) {
         
         return compileElem( yoke, gsi, elem,
@@ -329,21 +415,21 @@ function compileMapToVars( yoke,
         if ( !revCompiledElems.ok )
             return then( yoke, null, null, null, revCompiledElems );
     
-    return pkListMappend( yoke, state.revCompiledElems,
+    return jsListMappend( yoke, state.revCompiledElems,
         function ( yoke, compiledElem, then ) {
         
         return runWaitOne( yoke, function ( yoke ) {
             return then( yoke, compiledElem.revStatements );
         } );
     }, function ( yoke, revStatements ) {
-    return pkListMap( yoke, state.revCompiledElems,
+    return jsListMap( yoke, state.revCompiledElems,
         function ( yoke, compiledElem, then ) {
         
         return runWaitOne( yoke, function ( yoke ) {
             return then( yoke, compiledElem.resultVar );
         } );
     }, function ( yoke, revElemVars ) {
-    return pkListRev( yoke, revElemVars,
+    return jsListRev( yoke, revElemVars,
         function ( yoke, elemVars ) {
     
     return then( yoke, gsi, revStatements, elemVars,
@@ -368,7 +454,7 @@ function compileMapToList( yoke,
         
     return compileListOfVars( yoke, gsi, elemVars,
         function ( yoke, gsi, compiledElems ) {
-    return pkListAppend( yoke,
+    return jsListAppend( yoke,
         compiledElems.revStatements,
         revStatements,
         function ( yoke, revStatements ) {
@@ -378,6 +464,132 @@ function compileMapToList( yoke,
         resultVar: compiledElems.resultVar
     } } );
     
+    } );
+    } );
+    
+    } );
+}
+
+function compileListToVars( yoke,
+    gensymIndex, compiledList, len, then ) {
+    
+    var gsi = gensymIndex;
+    return natToJsList( yoke, len, function ( yoke, len ) {
+    return jsListRevMapWithStateAndErrors( yoke,
+        { gsi: gsi, lastListVar: compiledList.resultVar },
+        len,
+        function ( yoke, state, ignored, then ) {
+        
+        return getGs( yoke, state.gsi,
+            function ( yoke, gsi, restVar ) {
+        return getGs( yoke, gsi,
+            function ( yoke, gsi, elemVar ) {
+        
+        return then( yoke, { gsi: gsi, lastListVar: restVar },
+            { ok: true, val: {
+            
+            revStatements: jsList( {
+                type: "sync",
+                code: "var " + restVar + " = " +
+                    state.lastListVar + ".ind( 1 );"
+            }, {
+                type: "sync",
+                code: "var " + elemVar + " = " +
+                    state.lastListVar + ".ind( 0 );"
+            } ),
+            resultVar: elemVar
+        } } );
+        
+        } );
+        } );
+    }, function ( yoke, state, revCompiledElems ) {
+        
+        if ( !revCompiledElems.ok )
+            return then( yoke, null, null, null, revCompiledElems );
+    
+    return jsListMappend( yoke, revCompiledElems.val,
+        function ( yoke, compiledElem, then ) {
+        
+        return runWaitOne( yoke, function ( yoke ) {
+            return then( yoke, compiledElem.revStatements );
+        } );
+    }, function ( yoke, compiledElemsRevStatements ) {
+    return jsListMap( yoke, revCompiledElems.val,
+        function ( yoke, compiledElem, then ) {
+        
+        return runWaitOne( yoke, function ( yoke ) {
+            return then( yoke, compiledElem.resultVar );
+        } );
+    }, function ( yoke, revCompiledElemVars ) {
+    return jsListRev( yoke, revCompiledElemVars,
+        function ( yoke, compiledElemVars ) {
+    return jsListAppend( yoke,
+        compiledElemsRevStatements,
+        compiledList.revStatements,
+        function ( yoke, revStatements ) {
+    
+    return then( yoke, state.gsi, revStatements, compiledElemVars,
+        { ok: true, val: null } );
+    
+    } );
+    } );
+    } );
+    } );
+    
+    } );
+    } );
+}
+
+function compileDups( yoke,
+    gensymIndex, compiledSource, numberOfDups, then ) {
+    
+    var gsi = gensymIndex;
+    
+    return compileLiteral( yoke, gsi, numberOfDups,
+        function ( yoke, gsi, compiledNumberOfDups ) {
+        
+        if ( !compiledNumberOfDups.ok )
+            return then( yoke,
+                null, null, null, compiledNumberOfDups );
+    
+    return jsListAppend( yoke,
+        compiledNumberOfDups.val.revStatements,
+        compiledSource.val.revStatements,
+        function ( yoke, revStatements ) {
+    return getGs( yoke, gsi, function ( yoke, gsi, callbackVar ) {
+    return getGs( yoke, gsi, function ( yoke, gsi, dupsVar ) {
+    return compileListToVars( yoke, gsi,
+        {
+            revStatements: {
+                first: {
+                    type: "async",
+                    callbackVar: callbackVar,
+                    resultVar: dupsVar,
+                    code:
+                        "runWaitTry( yoke, function ( yoke ) {\n" +
+                        "    return pkDup( yoke, " +
+                                compiledSource.resultVar + ", " +
+                                compiledNumberOfDups.val.resultVar +
+                                " " +
+                            ");\n" +
+                        "}, " + callbackVar + " )"
+                },
+                rest: revStatements
+            },
+            resultVar: dupsVar
+        },
+        numberOfDups,
+        function ( yoke,
+            gsi, revStatements, compiledDupVars, valid ) {
+        
+        if ( !valid.ok )
+            return then( yoke, null, null, null, valid );
+    
+    return then( yoke, gsi, revStatements, compiledDupVars,
+        { ok: true, val: null } );
+    
+    } );
+    } );
     } );
     } );
     
@@ -615,81 +827,89 @@ function compileEssence(
             if ( !compiledNumberOfElems.ok )
                 return then( yoke, null, compiledNumberOfElems );
         
-        return pkListToJsList( yoke, numbersOfDups,
-            function ( yoke, numbersOfDups ) {
-        return compileMapToVars( yoke, gsi, numbersOfDups,
-            function ( yoke, gsi, numberOfDups, then ) {
-            
-            return compileLiteral( yoke, gsi, numberOfDups,
-                function ( yoke, gsi, compiledNumberOfDups ) {
-                
-                return then( yoke, gsi, compiledNumberOfDups );
-            } );
-        }, function ( yoke, gsi,
-            numbersOfDupsRevStatements, varsOfNumbersOfDups, valid ) {
+        return getGs( yoke, gsi, function ( yoke, gsi, callbackVar ) {
+        return getGs( yoke, gsi, function ( yoke, gsi, ignoredVar ) {
+        return compileListToVars( yoke, gsi,
+            {
+                revStatements: {
+                    first: {
+                        type: "async",
+                        callbackVar: callbackVar,
+                        resultVar: ignoredVar,
+                        code:
+"runWaitTry( yoke, function ( yoke ) {\n" +
+"    return listLenIsNat( yoke, " +
+        compiledSource.val.resultVar + ", " +
+        compiledNumberOfElems.val.resultVar + ",\n" +
+"        function ( yoke, valid ) {\n" +
+"        \n" +
+"        if ( !valid )\n" +
+"            return pkErr( yoke,\n" +
+"                \"Got the wrong number of elements when \" +\n" +
+"                \"destructuring a list\" );\n" +
+"        return pkRet( yoke, pkNil );\n" +
+"    } );\n" +
+"}, " + callbackVar + " )"
+                    },
+                    rest: compiledNumberOfElems.val.revStatements
+                },
+                resultVar: compiledSource.val.resultVar
+            },
+            numberOfElems,
+            function ( yoke,
+                gsi, elemsRevStatements, elemVars, valid ) {
             
             if ( !valid.ok )
                 return then( yoke, null, valid );
         
-        return pkListRevMapWithStateAndErrors( yoke,
-            { gsi: gsi, lastListVar: compiledSource.val.resultVar },
-            varsOfNumbersOfDups,
-            function ( yoke, state, numberOfDupsVar, then ) {
+        return pkListToJsList( yoke, numbersOfDups,
+            function ( yoke, numbersOfDups ) {
+        return jsListMapTwo( yoke, elemVars, numbersOfDups,
+            function ( yoke, elemVar, numberOfDups, then ) {
             
-            return getGs( yoke, state.gsi,
-                function ( yoke, gsi, restVar ) {
-            return getGs( yoke, gsi,
-                function ( yoke, gsi, callbackVar ) {
-            return getGs( yoke, gsi,
-                function ( yoke, gsi, resultVar ) {
+            return runWaitOne( yoke, function ( yoke ) {
+                return then( yoke, {
+                    elemVar: elemVar,
+                    numberOfDups: numberOfDups
+                } );
+            } );
+        }, function ( yoke, elemVarsAndNumbersOfDups ) {
+        return jsListRevMapWithStateAndErrors( yoke, gsi,
+            elemVarsAndNumbersOfDups,
+            function ( yoke, gsi, entry, then ) {
             
-            return then( yoke, { gsi: gsi, lastListVar: restVar },
-                { ok: true, val: {
+            return compileDups( yoke, gsi,
+                { revStatements: null, resultVar: entry.elemVar },
+                entry.numberOfDups,
+                function ( yoke,
+                    gsi, revStatements, dupVars, valid ) {
                 
-                revStatements: pkList( {
-                    type: "async",
-                    callbackVar: callbackVar,
-                    resultVar: resultVar,
-                    code:
-                        "runWaitTry( yoke,\n" +
-                        "    function ( yoke ) {\n" +
-                        "    \n" +
-                        "    return pkDup( yoke, " +
-                                state.lastListVar + ".ind( 0 ), " +
-                                numberOfDupsVar + " );\n" +
-                        "}, " + callbackVar + " )"
-                }, {
-                    type: "sync",
-                    code: "var " + restVar + " = " +
-                        state.lastListVar + ".ind( 1 );"
-                } ),
-                resultVar: resultVar
-            } } );
+                if ( !valid.ok )
+                    return then( yoke, null, valid );
+                
+                return then( yoke, gsi, { ok: true, val: {
+                    revStatements: revStatements,
+                    dupVars: dupVars
+                } } );
+            } );
+        }, function ( yoke, state, revCompiledDups ) {
             
-            } );
-            } );
-            } );
-        }, function ( yoke, state, revCompiledDupLists ) {
-            
-            if ( !revCompiledDupLists.ok )
-                return then( yoke, null, revCompiledDupLists );
+            if ( !revCompiledDups.ok )
+                return then( yoke, null, revCompiledDups );
         
-        return pkListMappend( yoke, revCompiledDupLists.val,
+        return jsListMappend( yoke, revCompiledDups.val,
             function ( yoke, compiledDupList, then ) {
             
             return runWaitOne( yoke, function ( yoke ) {
                 return then( yoke, compiledDupList.revStatements );
             } );
         }, function ( yoke, compiledDupListsRevStatements ) {
-        
         return jsListFlattenOnce( yoke, jsList(
             // TODO: Compile bodyEssence, and execute it here.
-            // TODO: Unroll the captureVars and the
-            // revCompiledDupLists into param variables.
+            // TODO: Unroll the captureVars and the revCompiledDups
+            // into param variables.
             compiledDupListsRevStatements,
-            // TODO: Verify the length of the source.
-            numbersOfDupsRevStatements,
-            compiledNumberOfElems.val.revStatements,
+            elemsRevStatements,
             captureVarsRevStatements,
             compiledSource.val.revStatements
         ), function ( yoke, revStatements ) {
@@ -697,11 +917,13 @@ function compileEssence(
         // TODO: Implement this.
         
         } );
-        
         } );
         
         } );
+        } );
+        } );
         
+        } );
         } );
         } );
         
