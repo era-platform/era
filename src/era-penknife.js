@@ -1269,11 +1269,10 @@ PkRuntime.prototype.init_ = function () {
                 pkList( capture, nonlocalCaptures ) );
         }, function ( yoke, captures ) {
             return pkRet( yoke, pkfnLinear(
-                pkCons( pkYep( bodyEssence ), captures ),
+                pkCons( bodyEssence, captures ),
                 function ( yoke, bodyEssenceAndCaptures, args ) {
                 
-                var bodyEssence =
-                    bodyEssenceAndCaptures.ind( 0 ).ind( 0 );
+                var bodyEssence = bodyEssenceAndCaptures.ind( 0 );
                 var captures = bodyEssenceAndCaptures.ind( 1 );
                 
                 return runWaitTry( yoke, function ( yoke ) {
