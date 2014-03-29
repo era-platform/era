@@ -917,6 +917,7 @@ function compileEssence(
         var essencesAndCounts = essence.ind( 1 );
         var thenEssence = essence.ind( 2 );
         var elseEssence = essence.ind( 3 );
+        
         return compileEssence( yoke, gsi, numParams, condEssence,
             function ( yoke, gsi, compiledCond ) {
             
@@ -940,68 +941,67 @@ function compileEssence(
         }, function ( yoke,
             gsi, capturesRevStatements, captureVars, valid ) {
         return getGs( yoke, gsi, function ( yoke, gsi, resultVar ) {
-        return jsListMap( yoke, essencesAndCounts,
-            function ( yoke, essenceAndCounts, then ) {
+        
+        function doBranch( yoke,
+            gsi, essence, essencesAndCountsIndex, then ) {
             
-            return runWaitOne( yoke, function ( yoke ) {
-                return then( yoke, listGet( essenceAndCounts, 1 ) );
+            return jsListMap( yoke, essencesAndCounts,
+                function ( yoke, essenceAndCounts, then ) {
+                
+                return runWaitOne( yoke, function ( yoke ) {
+                    return then( yoke,
+                        listGet( essenceAndCounts,
+                            essencesAndCountsIndex ) );
+                } );
+            }, function ( yoke, counts, then ) {
+            return compileDupsOfMany( yoke, gsi, captureVars, counts,
+                function ( yoke,
+                    gsi, revStatements, branchVars, valid ) {
+                
+                if ( !valid.ok )
+                    return then( yoke, null, null, valid );
+            
+            return compileEssenceWithParams( yoke, gsi,
+                branchVars,
+                essence,
+                function ( yoke, gsi, compiled ) {
+                
+                if ( !compiled.ok )
+                    return then( yoke, null, null, compiled );
+            
+            return jsListFlattenOnce( yoke, jsList(
+                jsList( {
+                    type: "sync",
+                    code: "var " + resultVar + " = " +
+                        compiled.val.resultVar + ";"
+                } ),
+                compiled.val.revStatements,
+                revStatements
+            ), function ( revStatements ) {
+            
+            return then( yoke, gsi, revStatements,
+                { ok: true, val: null } );
+            
             } );
-        }, function ( yoke, thenCounts, then ) {
-        return compileDupsOfMany( yoke, gsi, captureVars, thenCounts,
-            function ( yoke,
-                gsi, thenRevStatements, thenVars, valid ) {
+            
+            } );
+            
+            } );
+            } );
+        }
+        
+        function doBranch( yoke, gsi, thenEssence, 1,
+            function ( yoke, gsi, thenRevStatements, valid ) {
             
             if ( !valid.ok )
                 return then( yoke, null, valid );
         
-        return compileEssenceWithParams( yoke, gsi,
-            thenVars,
-            thenEssence,
-            function ( yoke, gsi, compiledThen ) {
-            
-            if ( !compiledThen.ok )
-                return then( yoke, null, compiledThen );
-        
-        return jsListFlattenOnce( yoke, jsList(
-            jsList( {
-                type: "sync",
-                code: "var " + resultVar + " = " +
-                    compiledThen.val.resultVar
-            } ),
-            compiledThen.val.revStatements,
-            thenRevStatements
-        ), function ( thenRevStatements ) {
-        return jsListMap( yoke, essencesAndCounts,
-            function ( yoke, essenceAndCounts, then ) {
-            
-            return runWaitOne( yoke, function ( yoke ) {
-                return then( yoke, listGet( essenceAndCounts, 2 ) );
-            } );
-        }, function ( yoke, elseCounts, then ) {
-        return compileDupsOfMany( yoke, gsi, captureVars, elseCounts,
-            function ( yoke,
-                gsi, elseRevStatements, elseVars, valid ) {
+        function doBranch( yoke, gsi, elseEssence, 2,
+            function ( yoke, gsi, elseRevStatements, valid ) {
             
             if ( !valid.ok )
                 return then( yoke, null, valid );
         
-        return compileEssenceWithParams( yoke, gsi,
-            elseVars,
-            elseEssence,
-            function ( yoke, gsi, compiledElse ) {
-            
-            if ( !compiledElse.ok )
-                return then( yoke, null, compiledElse );
-        
-        return jsListFlattenOnce( yoke, jsList(
-            jsList( {
-                type: "sync",
-                code: "var " + resultVar + " = " +
-                    compiledElse.val.resultVar
-            } ),
-            compiledElse.val.revStatements,
-            elseRevStatements
-        ), function ( elseRevStatements ) {
         return jsListFlattenOnce( yoke, jsList(
             jsList( {
                 type: "if",
@@ -1021,18 +1021,11 @@ function compileEssence(
         } } );
         
         } );
-        } );
         
         } );
         
         } );
-        } );
-        } );
         
-        } );
-        
-        } );
-        } );
         } );
         } );
         } );
