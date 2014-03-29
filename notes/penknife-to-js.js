@@ -902,7 +902,7 @@ function compileEssence(
                 return then( yoke, null, { ok: false, val:
                     "Tried to compile a param-essence which had an " +
                     "index that was out of range" } );
-        
+            
             return natToParam( yoke, i, function ( yoke, resultVar ) {
                 return then( yoke, gsi, { ok: true, val: {
                     revStatements: null,
