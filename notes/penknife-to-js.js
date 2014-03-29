@@ -892,30 +892,84 @@ function compileEssence(
                     dupVars: dupVars
                 } } );
             } );
-        }, function ( yoke, state, revCompiledDups ) {
+        }, function ( yoke, state, revCompiledDupsNested ) {
             
-            if ( !revCompiledDups.ok )
-                return then( yoke, null, revCompiledDups );
+            if ( !revCompiledDupsNested.ok )
+                return then( yoke, null, revCompiledDupsNested );
         
-        return jsListMappend( yoke, revCompiledDups.val,
+        return jsListMappend( yoke, revCompiledDupsNested.val,
             function ( yoke, compiledDupList, then ) {
             
             return runWaitOne( yoke, function ( yoke ) {
                 return then( yoke, compiledDupList.revStatements );
             } );
         }, function ( yoke, compiledDupListsRevStatements ) {
+        return jsListRev( yoke, revCompiledDupsNested.val,
+            function ( yoke, compiledDupsNested ) {
+        return jsListMappend( yoke, compiledDupsNested,
+            function ( yoke, compiledDupList, then ) {
+            
+            return runWaitOne( yoke, function ( yoke ) {
+                return then( yoke, compiledDupList.dupVars );
+            } );
+        }, function ( yoke, dupVars ) {
+        return jsListAppend( yoke, captureVars, dupVars,
+            function ( yoke, innerParamSourceVars ) {
+        return jsListRev( yoke, innerParamSourceVars,
+            function ( yoke, revInnerParamSourceVars ) {
+        return jsListLen( yoke, innerParamSourceVars,
+            function ( yoke, numInnerParams ) {
+        return jsListRevMapWithStateAndErrors( yoke, numInnerParams,
+            revInnerParamSourceVars,
+            function ( yoke, indexPlusOne, paramSourceVar, then ) {
+            
+            var index = indexPlusOne.ind( 0 );
+            return natToParam( yoke, index,
+                function ( yoke, paramVar ) {
+                
+                return then( yoke, index, { ok: true, val: {
+                    type: "sync",
+                    code: "var " + paramVar + " = " +
+                        paramSourceVar + ";"
+                } );
+            } );
+        }, function ( yoke, ignoredZero, paramStatements ) {
+            
+            if ( !paramStatements.ok )
+                return then( yoke, null, paramStatements );
+        
+        return jsListRev( yoke, paramStatements.val,
+            function ( yoke, revParamStatements ) {
+        return compileEssence( yoke, gsi, numInnerParams, bodyEssence,
+            function ( yoke, gsi, compiledBody ) {
+            
+            if ( !compiledBody.ok )
+                return then( yoke, null, compiledBody );
+        
         return jsListFlattenOnce( yoke, jsList(
-            // TODO: Compile bodyEssence, and execute it here.
-            // TODO: Unroll the captureVars and the revCompiledDups
-            // into param variables.
+            compiledBody.val.revStatements,
+            revParamStatements,
             compiledDupListsRevStatements,
             elemsRevStatements,
             captureVarsRevStatements,
             compiledSource.val.revStatements
         ), function ( yoke, revStatements ) {
         
-        // TODO: Implement this.
+        return then( yoke, gsi, { ok: true, val: {
+            revStatements: revStatements,
+            resultVar: compiledBody.val.resultVar
+        } } );
         
+        } );
+        
+        } );
+        } );
+        
+        } );
+        } );
+        } );
+        } );
+        } );
         } );
         } );
         
