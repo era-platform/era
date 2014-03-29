@@ -2,8 +2,13 @@
 // Copyright 2014 Ross Angle. Released under the MIT License.
 "use strict";
 
-// TODO: When this file is feature-complete, move its contents into
-// era-penknife.js and try it out.
+// TODO: Implement the compiler logic for `fn-essence`.
+//
+// TODO: Write a compiler phase that actually generates strings,
+// rather than linked lists of statements.
+//
+// TODO: Import this file as part of the Penknife demo, and try it
+// out.
 
 
 function strToSource( str ) {
