@@ -540,8 +540,8 @@ function compileListToVars( yoke,
     } );
 }
 
-function compileDups( yoke,
-    gensymIndex, compiledSource, numberOfDups, then ) {
+function compileDupsOfOne( yoke,
+    gensymIndex, sourceVar, numberOfDups, then ) {
     
     var gsi = gensymIndex;
     
@@ -552,10 +552,6 @@ function compileDups( yoke,
             return then( yoke,
                 null, null, null, compiledNumberOfDups );
     
-    return jsListAppend( yoke,
-        compiledNumberOfDups.val.revStatements,
-        compiledSource.val.revStatements,
-        function ( yoke, revStatements ) {
     return getGs( yoke, gsi, function ( yoke, gsi, callbackVar ) {
     return getGs( yoke, gsi, function ( yoke, gsi, dupsVar ) {
     return compileListToVars( yoke, gsi,
@@ -568,13 +564,13 @@ function compileDups( yoke,
                     code:
                         "runWaitTry( yoke, function ( yoke ) {\n" +
                         "    return pkDup( yoke, " +
-                                compiledSource.resultVar + ", " +
+                                sourceVar + ", " +
                                 compiledNumberOfDups.val.resultVar +
                                 " " +
                             ");\n" +
                         "}, " + callbackVar + " )"
                 },
-                rest: revStatements
+                rest: compiledNumberOfDups.val.revStatements
             },
             resultVar: dupsVar
         },
@@ -591,8 +587,128 @@ function compileDups( yoke,
     } );
     } );
     } );
+    
+    } );
+}
+
+function compileDupsOfMany( yoke,
+    gensymIndex, sourceVars, numbersOfDups, then ) {
+    
+    var gsi = gensymIndex;
+    
+    return jsListMapTwo( yoke, sourceVars, numbersOfDups,
+        function ( yoke, sourceVar, numberOfDups, then ) {
+        
+        return runWaitOne( yoke, function ( yoke ) {
+            return then( yoke, {
+                sourceVar: sourceVar,
+                numberOfDups: numberOfDups
+            } );
+        } );
+    }, function ( yoke, elemVarsAndNumbersOfDups ) {
+    return jsListRevMapWithStateAndErrors( yoke, gsi,
+        elemVarsAndNumbersOfDups,
+        function ( yoke, gsi, entry, then ) {
+        
+        return compileDupsOfOne( yoke, gsi,
+            entry.sourceVar,
+            entry.numberOfDups,
+            function ( yoke,
+                gsi, revStatements, dupVars, valid ) {
+            
+            if ( !valid.ok )
+                return then( yoke, null, valid );
+            
+            return then( yoke, gsi, { ok: true, val: {
+                revStatements: revStatements,
+                dupVars: dupVars
+            } } );
+        } );
+    }, function ( yoke, state, revCompiledDupsNested ) {
+        
+        if ( !revCompiledDupsNested.ok )
+            return then( yoke, null, revCompiledDupsNested );
+    
+    return jsListMappend( yoke, revCompiledDupsNested.val,
+        function ( yoke, compiledDupList, then ) {
+        
+        return runWaitOne( yoke, function ( yoke ) {
+            return then( yoke, compiledDupList.revStatements );
+        } );
+    }, function ( yoke, revStatements ) {
+    return jsListRev( yoke, revCompiledDupsNested.val,
+        function ( yoke, compiledDupsNested ) {
+    return jsListMappend( yoke, compiledDupsNested,
+        function ( yoke, compiledDupList, then ) {
+        
+        return runWaitOne( yoke, function ( yoke ) {
+            return then( yoke, compiledDupList.dupVars );
+        } );
+    }, function ( yoke, dupVars ) {
+    
+    return then( yoke, state.gsi, revStatements, dupVars,
+        { ok: true, val: null } );
+    
+    } );
+    } );
     } );
     
+    } );
+    } );
+}
+
+function compileEssenceWithParams( yoke,
+    gensymIndex, paramSourceVars, essence, then ) {
+    
+    var gsi = gensymIndex;
+    return jsListRev( yoke, paramSourceVars,
+        function ( yoke, revParamSourceVars ) {
+    return jsListLen( yoke, paramSourceVars,
+        function ( yoke, numInnerParams ) {
+    return jsListRevMapWithStateAndErrors( yoke, numInnerParams,
+        revParamSourceVars,
+        function ( yoke, indexPlusOne, paramSourceVar, then ) {
+        
+        var index = indexPlusOne.ind( 0 );
+        return natToParam( yoke, index,
+            function ( yoke, paramVar ) {
+            
+            return then( yoke, index, { ok: true, val: {
+                type: "sync",
+                code: "var " + paramVar + " = " +
+                    paramSourceVar + ";"
+            } );
+        } );
+    }, function ( yoke, ignoredZero, paramStatements ) {
+        
+        if ( !paramStatements.ok )
+            return then( yoke, null, paramStatements );
+    
+    return jsListRev( yoke, paramStatements.val,
+        function ( yoke, revParamStatements ) {
+    return compileEssence( yoke, gsi, numInnerParams, essence,
+        function ( yoke, gsi, compiled ) {
+        
+        if ( !compiled.ok )
+            return then( yoke, null, compiled );
+    
+    return jsListAppend( yoke,
+        compiled.val.revStatements,
+        revParamStatements,
+        function ( revStatements ) {
+    
+    return then( yoke, gsi, { ok: true, val: {
+        revStatements: revStatements,
+        resultVar: compiled.val.resultVar
+    } } );
+    
+    } );
+    
+    } );
+    } );
+    
+    } );
+    } );
     } );
 }
 
@@ -864,83 +980,17 @@ function compileEssence(
         
         return pkListToJsList( yoke, numbersOfDups,
             function ( yoke, numbersOfDups ) {
-        return jsListMapTwo( yoke, elemVars, numbersOfDups,
-            function ( yoke, elemVar, numberOfDups, then ) {
+        return compileDupsOfMany( yoke, gsi, elemVars, numbersOfDups,
+            function ( yoke,
+                gsi, dupsRevStatements, dupVars, valid ) {
             
-            return runWaitOne( yoke, function ( yoke ) {
-                return then( yoke, {
-                    elemVar: elemVar,
-                    numberOfDups: numberOfDups
-                } );
-            } );
-        }, function ( yoke, elemVarsAndNumbersOfDups ) {
-        return jsListRevMapWithStateAndErrors( yoke, gsi,
-            elemVarsAndNumbersOfDups,
-            function ( yoke, gsi, entry, then ) {
-            
-            return compileDups( yoke, gsi,
-                { revStatements: null, resultVar: entry.elemVar },
-                entry.numberOfDups,
-                function ( yoke,
-                    gsi, revStatements, dupVars, valid ) {
-                
-                if ( !valid.ok )
-                    return then( yoke, null, valid );
-                
-                return then( yoke, gsi, { ok: true, val: {
-                    revStatements: revStatements,
-                    dupVars: dupVars
-                } } );
-            } );
-        }, function ( yoke, state, revCompiledDupsNested ) {
-            
-            if ( !revCompiledDupsNested.ok )
-                return then( yoke, null, revCompiledDupsNested );
+            if ( !valid.ok )
+                return then( yoke, null, valid );
         
-        return jsListMappend( yoke, revCompiledDupsNested.val,
-            function ( yoke, compiledDupList, then ) {
-            
-            return runWaitOne( yoke, function ( yoke ) {
-                return then( yoke, compiledDupList.revStatements );
-            } );
-        }, function ( yoke, compiledDupListsRevStatements ) {
-        return jsListRev( yoke, revCompiledDupsNested.val,
-            function ( yoke, compiledDupsNested ) {
-        return jsListMappend( yoke, compiledDupsNested,
-            function ( yoke, compiledDupList, then ) {
-            
-            return runWaitOne( yoke, function ( yoke ) {
-                return then( yoke, compiledDupList.dupVars );
-            } );
-        }, function ( yoke, dupVars ) {
         return jsListAppend( yoke, captureVars, dupVars,
             function ( yoke, innerParamSourceVars ) {
-        return jsListRev( yoke, innerParamSourceVars,
-            function ( yoke, revInnerParamSourceVars ) {
-        return jsListLen( yoke, innerParamSourceVars,
-            function ( yoke, numInnerParams ) {
-        return jsListRevMapWithStateAndErrors( yoke, numInnerParams,
-            revInnerParamSourceVars,
-            function ( yoke, indexPlusOne, paramSourceVar, then ) {
-            
-            var index = indexPlusOne.ind( 0 );
-            return natToParam( yoke, index,
-                function ( yoke, paramVar ) {
-                
-                return then( yoke, index, { ok: true, val: {
-                    type: "sync",
-                    code: "var " + paramVar + " = " +
-                        paramSourceVar + ";"
-                } );
-            } );
-        }, function ( yoke, ignoredZero, paramStatements ) {
-            
-            if ( !paramStatements.ok )
-                return then( yoke, null, paramStatements );
-        
-        return jsListRev( yoke, paramStatements.val,
-            function ( yoke, revParamStatements ) {
-        return compileEssence( yoke, gsi, numInnerParams, bodyEssence,
+        return compileEssenceWithParams( yoke, gsi,
+            innerParamSourceVars, bodyEssence,
             function ( yoke, gsi, compiledBody ) {
             
             if ( !compiledBody.ok )
@@ -948,8 +998,7 @@ function compileEssence(
         
         return jsListFlattenOnce( yoke, jsList(
             compiledBody.val.revStatements,
-            revParamStatements,
-            compiledDupListsRevStatements,
+            dupsRevStatements,
             elemsRevStatements,
             captureVarsRevStatements,
             compiledSource.val.revStatements
@@ -965,15 +1014,6 @@ function compileEssence(
         } );
         } );
         
-        } );
-        } );
-        } );
-        } );
-        } );
-        } );
-        } );
-        
-        } );
         } );
         } );
         
