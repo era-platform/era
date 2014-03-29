@@ -304,11 +304,13 @@ function compileCallOnLiteral2( yoke,
     return getGsAndFinishWithExpr( yoke, gsi,
         "" + funcCode + "( " +
             compiledArg1.resultVar + ", " +
-            compiledArg2.resultVar " );"
+            compiledArg2.resultVar + " );",
         revStatements,
         function ( yoke, gsi, compiledResult ) {
         
         return then( yoke, gsi, compiledResult );
+    } );
+    
     } );
     
     } );
@@ -656,7 +658,7 @@ function compileEssenceWithParams( yoke,
                 type: "sync",
                 code: "var " + paramVar + " = " +
                     paramSourceVar + ";"
-            } );
+            } } );
         } );
     }, function ( yoke, ignoredZero, paramStatements ) {
         
@@ -953,7 +955,7 @@ function compileEssence(
                     resultVar: fnVar
                 },
                 rest: compiledCaptures.val.revStatements
-            }
+            },
             resultVar: fnVar
         } } );
         
@@ -1046,13 +1048,13 @@ function compileEssence(
             } );
         }
         
-        function doBranch( yoke, gsi, thenEssence, 1,
+        return doBranch( yoke, gsi, thenEssence, 1,
             function ( yoke, gsi, thenCompiled ) {
             
             if ( !thenCompiled.ok )
                 return then( yoke, null, thenCompiled );
         
-        function doBranch( yoke, gsi, elseEssence, 2,
+        return doBranch( yoke, gsi, elseEssence, 2,
             function ( yoke, gsi, elseCompiled ) {
             
             if ( !elseCompiled.ok )
