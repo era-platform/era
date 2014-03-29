@@ -1086,17 +1086,21 @@ PkRuntime.prototype.init_ = function () {
                 "Called param-essence with a non-nat index" );
         return pkRet( yoke, pk( "param-essence", index ) );
     } );
-    defTag( "fn-essence", "captures", "body-essence" );
-    defVal( "fn-essence", pkfn( function ( yoke, args ) {
-        // NOTE: By blocking this function, we preserve the invariant
-        // that the "captures" list is a list of maybes of essences.
-        // That way we don't have to check for this explicitly in
-        // essence-interpret.
-        // TODO: See if we should check for it explicitly anyway. Then
-        // we can remove this restriction.
-        return pkErr( yoke,
-            "The fn-essence function has no behavior" );
-    } ) );
+    defTag( "fn-essence",
+        "captures", "args-dup-count", "body-essence" );
+    defFunc( "fn-essence", 3,
+        function ( yoke, captures, argsDupCount, bodyEssence ) {
+        
+        if ( !isList( captures ) )
+            return pkErr( yoke,
+                "Called fn-essence with a non-list capture list" );
+        if ( !isNat( argsDupCount ) )
+            return pkErr( yoke,
+                "Called fn-essence with a non-nat number of " +
+                "parameter duplicates" );
+        return pkRet( yoke,
+            pk( "fn-essence", captures, argsDupCount, bodyEssence ) );
+    } );
     defTag( "essence-for-if", "cond-essence",
         "essences-and-counts", "then-essence", "else-essence" );
     defFunc( "essence-for-if", 4,
@@ -1258,16 +1262,11 @@ PkRuntime.prototype.init_ = function () {
         function ( yoke, essence, nonlocalCaptures ) {
         
         var captures = essence.ind( 0 );
-        var bodyEssence = essence.ind( 1 );
+        var argsDupCount = essence.ind( 1 );
+        var bodyEssence = essence.ind( 2 );
         return listMap( yoke, captures, function ( yoke, capture ) {
-            if ( capture.tag !== "yep" )
-                return pkRet( yoke, pkNil );
-            return runWaitTry( yoke, function ( yoke ) {
-                return self.callMethod( yoke, "essence-interpret",
-                    pkList( capture.ind( 0 ), nonlocalCaptures ) );
-            }, function ( yoke, value ) {
-                return pkRet( yoke, pkYep( value ) );
-            } );
+            return self.callMethod( yoke, "essence-interpret",
+                pkList( capture, nonlocalCaptures ) );
         }, function ( yoke, captures ) {
             return pkRet( yoke, pkfnLinear(
                 pkCons( pkYep( bodyEssence ), captures ),
@@ -1277,56 +1276,23 @@ PkRuntime.prototype.init_ = function () {
                     bodyEssenceAndCaptures.ind( 0 ).ind( 0 );
                 var captures = bodyEssenceAndCaptures.ind( 1 );
                 
-                return listCount( yoke, captures,
-                    function ( maybeCapturedVal ) {
-                    
-                    return maybeCapturedVal.tag !== "yep";
-                }, function ( yoke, argsDupCount ) {
-                    return runWaitTry( yoke, function ( yoke ) {
-                        return self.pkDup(
-                            yoke, args, argsDupCount );
-                    }, function ( yoke, argsDuplicates ) {
-                        return go(
-                            yoke, captures, argsDuplicates, pkNil );
-                        function go(
-                            yoke, nonlocalCaptures, argsDuplicates,
-                            revLocalCaptures ) {
+                return runWaitTry( yoke, function ( yoke ) {
+                    return self.pkDup( yoke, args, argsDupCount );
+                }, function ( yoke, argsDuplicates ) {
+                    return listAppend( yoke, captures, argsDuplicates,
+                        function ( yoke, captures ) {
+                        
+                        return listMap( yoke, captures,
+                            function ( yoke, capture ) {
                             
-                            if ( nonlocalCaptures.tag !== "cons" )
-                                return listRev(
-                                    yoke, revLocalCaptures,
-                                    function ( yoke, localCaptures ) {
-                                    
-                                    return self.callMethod( yoke,
-                                        "essence-interpret",
-                                        pkList( bodyEssence,
-                                            localCaptures ) );
-                                } );
-                            return runWaitOne( yoke,
-                                function ( yoke ) {
-                                
-                                var maybeNlc =
-                                    nonlocalCaptures.ind( 0 );
-                                if ( maybeNlc.tag === "yep" )
-                                    return next( argsDuplicates,
-                                        maybeNlc.ind( 0 ) );
-                                return next( argsDuplicates.ind( 1 ),
-                                    argsDuplicates.ind( 0 ) );
-                                function next( argsDuplicates,
-                                    localCapture ) {
-                                    
-                                    return go(
-                                        yoke,
-                                        nonlocalCaptures.ind( 1 ),
-                                        argsDuplicates,
-                                        pkCons(
-                                            pkLinearAsNonlinear(
-                                                localCapture ),
-                                            revLocalCaptures )
-                                    );
-                                }
-                            } );
-                        }
+                            return pkRet( yoke,
+                                pkLinearAsNonlinear( capture ) );
+                        }, function ( yoke, captures ) {
+                            
+                            return self.callMethod( yoke,
+                                "essence-interpret",
+                                pkList( bodyEssence, captures ) );
+                        } );
                     } );
                 } );
             } ) );
@@ -1547,63 +1513,58 @@ PkRuntime.prototype.init_ = function () {
                 } ),
                 gensymBase
             ) );
-        }, function ( yoke, getTine, maybeMacro ) {
+        }, function ( yoke, bodyGetTine, maybeMacro ) {
         
-        var outerNames = listGet( getTine, 0 );
-        return listKeep( yoke, outerNames, function ( name ) {
+        var bodyNames = listGet( bodyGetTine, 0 );
+        return listKeep( yoke, bodyNames, function ( name ) {
             return !isParamName( name );
-        }, function ( yoke, innerNames ) {
+        }, function ( yoke, fnNames ) {
+        return listLen( yoke, fnNames, function ( yoke, numFnNames ) {
+        return listCount( yoke, bodyNames, function ( name ) {
+            return isParamName( name );
+        }, function ( yoke, numArgDups ) {
         
         return pkRet( yoke, pk( "getmac-fork",
-            pkGetTine( innerNames,
-                function ( yoke, innerInEssences ) {
-                
+            pkGetTine( fnNames, function ( yoke, fnInEssences ) {
                 return listFoldl( yoke,
-                    pkList( pkNil, pkNil, pkNil, innerInEssences ),
-                    outerNames,
+                    pkList( pkNil, pkNil, numFnNames ),
+                    bodyNames,
                     function ( yoke, frame, outerName ) {
                     
-                    var revCaptures = listGet( frame, 0 );
-                    var revInnerOutEssences = listGet( frame, 1 );
-                    var i = listGet( frame, 2 );
-                    var innerInEssencesLeft = listGet( frame, 3 );
+                    var revBodyInEssences = listGet( frame, 0 );
+                    var captureI = listGet( frame, 1 );
+                    var paramI = listGet( frame, 2 );
                     
-                    var newRevInnerOutEssences =
-                        pkCons( pk( "param-essence", i ),
-                            revInnerOutEssences );
-                    var newI = pk( "succ", i );
                     if ( isParamName( outerName ) )
                         return pkRet( yoke, pkList(
-                            pkCons( pkNil, revCaptures ),
-                            newRevInnerOutEssences,
-                            newI,
-                            innerInEssencesLeft
+                            pkCons( pk( "param-essence", paramI ),
+                                revBodyInEssences ),
+                            captureI,
+                            pk( "succ", paramI )
                         ) );
-                    return pkRet( yoke, pkList(
-                        pkCons( pkYep( innerInEssencesLeft.ind( 0 ) ),
-                            revCaptures ),
-                        newRevInnerOutEssences,
-                        newI,
-                        innerInEssencesLeft.ind( 1 )
-                    ) );
+                    else
+                        return pkRet( yoke, pkList(
+                            pkCons( pk( "param-essence", captureI ),
+                                revBodyInEssences ),
+                            pk( "succ", captureI ),
+                            paramI
+                        ) );
                 }, function ( yoke, frame ) {
                 
                 return listRev( yoke, listGet( frame, 0 ),
-                    function ( yoke, captures ) {
-                return listRev( yoke, listGet( frame, 1 ),
-                    function ( yoke, innerOutEssences ) {
+                    function ( yoke, bodyInEssences ) {
                 
                 return runWaitTry( yoke, function ( yoke ) {
                     return self.callMethod( yoke, "call", pkList(
-                        listGet( getTine, 1 ),
-                        pkList( innerOutEssences )
+                        listGet( bodyGetTine, 1 ),
+                        pkList( bodyInEssences )
                     ) );
                 }, function ( yoke, bodyEssence ) {
                     return pkRet( yoke,
-                        pk( "fn-essence", captures, bodyEssence ) );
+                        pk( "fn-essence",
+                            fnInEssences, numArgDups, bodyEssence ) );
                 } );
                 
-                } );
                 } );
                 
                 } );
@@ -1611,6 +1572,8 @@ PkRuntime.prototype.init_ = function () {
             pkNil
         ) );
         
+        } );
+        } );
         } );
         
         } );
