@@ -261,6 +261,12 @@ function getGs( yoke, gsi, then ) {
 // listLenIsNat
 // yoke
 // pkErr
+//
+// So far there are three statement types:
+//
+// type: "sync"
+// type: "async"
+// type: "if"
 
 function getGsAndFinishWithExpr( yoke,
     gensymIndex, expr, revStatements, then ) {
@@ -907,7 +913,131 @@ function compileEssence(
     } else if ( essence.tag === "fn-essence" ) {
         // TODO: Implement this.
     } else if ( essence.tag === "essence-for-if" ) {
-        // TODO: Implement this.
+        var condEssence = essence.ind( 0 );
+        var essencesAndCounts = essence.ind( 1 );
+        var thenEssence = essence.ind( 2 );
+        var elseEssence = essence.ind( 3 );
+        return compileEssence( yoke, gsi, numParams, condEssence,
+            function ( yoke, gsi, compiledCond ) {
+            
+            if ( !compiledCond.ok )
+                return then( yoke, null, compiledCond );
+        
+        return pkListToJsList( yoke, essencesAndCounts,
+            function ( yoke, essencesAndCounts ) {
+        return compileMapToVars( yoke, gsi, essencesAndCounts,
+            function ( yoke, gsi, essenceAndCounts, then ) {
+            
+            var captureEssence = listGet( essenceAndCounts, 0 );
+            
+            return compileEssence( yoke, gsi,
+                numParams,
+                captureEssence,
+                function ( yoke, gsi, compiledCapture ) {
+                
+                return then( yoke, gsi, compiledCapture );
+            } );
+        }, function ( yoke,
+            gsi, capturesRevStatements, captureVars, valid ) {
+        return getGs( yoke, gsi, function ( yoke, gsi, resultVar ) {
+        return jsListMap( yoke, essencesAndCounts,
+            function ( yoke, essenceAndCounts, then ) {
+            
+            return runWaitOne( yoke, function ( yoke ) {
+                return then( yoke, listGet( essenceAndCounts, 1 ) );
+            } );
+        }, function ( yoke, thenCounts, then ) {
+        return compileDupsOfMany( yoke, gsi, captureVars, thenCounts,
+            function ( yoke,
+                gsi, thenRevStatements, thenVars, valid ) {
+            
+            if ( !valid.ok )
+                return then( yoke, null, valid );
+        
+        return compileEssenceWithParams( yoke, gsi,
+            thenVars,
+            thenEssence,
+            function ( yoke, gsi, compiledThen ) {
+            
+            if ( !compiledThen.ok )
+                return then( yoke, null, compiledThen );
+        
+        return jsListFlattenOnce( yoke, jsList(
+            jsList( {
+                type: "sync",
+                code: "var " + resultVar + " = " +
+                    compiledThen.val.resultVar
+            } ),
+            compiledThen.val.revStatements,
+            thenRevStatements
+        ), function ( thenRevStatements ) {
+        return jsListMap( yoke, essencesAndCounts,
+            function ( yoke, essenceAndCounts, then ) {
+            
+            return runWaitOne( yoke, function ( yoke ) {
+                return then( yoke, listGet( essenceAndCounts, 2 ) );
+            } );
+        }, function ( yoke, elseCounts, then ) {
+        return compileDupsOfMany( yoke, gsi, captureVars, elseCounts,
+            function ( yoke,
+                gsi, elseRevStatements, elseVars, valid ) {
+            
+            if ( !valid.ok )
+                return then( yoke, null, valid );
+        
+        return compileEssenceWithParams( yoke, gsi,
+            elseVars,
+            elseEssence,
+            function ( yoke, gsi, compiledElse ) {
+            
+            if ( !compiledElse.ok )
+                return then( yoke, null, compiledElse );
+        
+        return jsListFlattenOnce( yoke, jsList(
+            jsList( {
+                type: "sync",
+                code: "var " + resultVar + " = " +
+                    compiledElse.val.resultVar
+            } ),
+            compiledElse.val.revStatements,
+            elseRevStatements
+        ), function ( elseRevStatements ) {
+        return jsListFlattenOnce( yoke, jsList(
+            jsList( {
+                type: "if",
+                condCode:
+                    "" + compiledCond.var.resultVar + ".tag !== " +
+                        "\"nil\"",
+                thenRevStatements: thenRevStatements,
+                elseRevStatements: elseRevStatements
+            } ),
+            capturesRevStatements,
+            compiledCond.val.revStatements
+        ), function ( yoke, revStatements ) {
+        
+        return then( yoke, gsi, { ok: true, val: {
+            revStatements: revStatements,
+            resultVar: resultVar
+        } } );
+        
+        } );
+        } );
+        
+        } );
+        
+        } );
+        } );
+        } );
+        
+        } );
+        
+        } );
+        } );
+        } );
+        } );
+        } );
+        
+        } );
     } else if ( essence.tag === "let-list-essence" ) {
         var sourceEssence = essence.ind( 0 );
         var captureEssences = essence.ind( 1 );
@@ -930,7 +1060,7 @@ function compileEssence(
                 return then( yoke, gsi, compiledArg );
             } );
         }, function ( yoke,
-            gsi, captureVarsRevStatements, captureVars, valid ) {
+            gsi, capturesRevStatements, captureVars, valid ) {
             
             if ( !valid.ok )
                 return then( yoke, null, valid );
@@ -990,7 +1120,8 @@ function compileEssence(
         return jsListAppend( yoke, captureVars, dupVars,
             function ( yoke, innerParamSourceVars ) {
         return compileEssenceWithParams( yoke, gsi,
-            innerParamSourceVars, bodyEssence,
+            innerParamSourceVars,
+            bodyEssence,
             function ( yoke, gsi, compiledBody ) {
             
             if ( !compiledBody.ok )
@@ -1000,7 +1131,7 @@ function compileEssence(
             compiledBody.val.revStatements,
             dupsRevStatements,
             elemsRevStatements,
-            captureVarsRevStatements,
+            capturesRevStatements,
             compiledSource.val.revStatements
         ), function ( yoke, revStatements ) {
         
