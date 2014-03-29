@@ -1,4 +1,4 @@
-// penknife-to-js.js
+// era-penknife-to-js.js
 // Copyright 2014 Ross Angle. Released under the MIT License.
 "use strict";
 
