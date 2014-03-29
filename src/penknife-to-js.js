@@ -2,11 +2,6 @@
 // Copyright 2014 Ross Angle. Released under the MIT License.
 "use strict";
 
-// TODO: Implement the compiler logic for `fn-essence`.
-//
-// TODO: Write a compiler phase that actually generates strings,
-// rather than linked lists of statements.
-//
 // TODO: Import this file as part of the Penknife demo, and try it
 // out.
 
@@ -246,32 +241,6 @@ function getGs( yoke, gsi, then ) {
         return then( yoke, pk( "succ", gsi ), varName );
     } );
 }
-
-// NOTE: So far, the generated code snippets depend on the following
-// free variables:
-//
-// new Pk().init_
-// pkNil
-// pkCons
-// pkList
-// pkRuntime.getVal
-// pkRuntime.callMethod
-// pkStrNameRaw
-// pkQualifiedName
-// pkYep
-// pkPairName
-// pkStrUnsafe
-// runWaitTry
-// pkDup
-// listLenIsNat
-// yoke
-// pkErr
-//
-// So far there are three statement types:
-//
-// type: "sync"
-// type: "async"
-// type: "if"
 
 function getGsAndFinishWithExpr( yoke,
     gensymIndex, expr, revStatements, then ) {
@@ -624,8 +593,7 @@ function compileDupsOfMany( yoke,
         return compileDupsOfOne( yoke, gsi,
             entry.sourceVar,
             entry.numberOfDups,
-            function ( yoke,
-                gsi, revStatements, dupVars, valid ) {
+            function ( yoke, gsi, revStatements, dupVars, valid ) {
             
             if ( !valid.ok )
                 return then( yoke, null, valid );
@@ -916,7 +884,94 @@ function compileEssence(
             } );
         } );
     } else if ( essence.tag === "fn-essence" ) {
-        // TODO: Implement this.
+        var captures = essence.ind( 0 );
+        var argsDupCount = essence.ind( 1 );
+        var bodyEssence = essence.ind( 2 );
+        
+        return listLen( yoke, captures,
+            function ( yoke, numCaptures ) {
+        return pkListToJsList( yoke, captures,
+            function ( yoke, captures ) {
+        return compileMapToList( yoke, gsi, captures,
+            function ( yoke, gsi, capture, then ) {
+            
+            return compileEssence( yoke, gsi, numParams, capture,
+                function ( yoke, gsi, compiledCapture ) {
+                
+                return then( yoke, null, compiledCapture );
+            } );
+        }, function ( yoke, gsi, compiledCaptures ) {
+            if ( !compiledCaptures.ok )
+                return then( yoke, null, compiledCaptures );
+        
+        return getGs( yoke, gsi, function ( yoke, gsi, capturesVar ) {
+        return getGs( yoke, gsi, function ( yoke, gsi, argsVar ) {
+        return getGs( yoke, gsi, function ( yoke, gsi, fnVar ) {
+        return compileListToVars( yoke, gsi,
+            { revStatements: null, resultVar: capturesVar },
+            numCaptures,
+            function ( yoke,
+                gsi, capturesRevStatements, captureVars, valid ) {
+            
+            if ( !valid.ok )
+                return then( yoke, null, valid );
+        
+        return compileDupsOfOne( yoke, gsi, argsVar, argsDupCount,
+            function ( yoke,
+                gsi, argsRevStatements, argsDupVars, valid ) {
+            
+            if ( !valid.ok )
+                return then( yoke, null, valid );
+        
+        return jsListAppend( yoke, captureVars, argsDupVars,
+            function ( yoke, paramSourceVars ) {
+        return compileEssenceWithParams( yoke, gsi,
+            paramSourceVars,
+            bodyEssence,
+            function ( yoke, gsi, compiledBody ) {
+            
+            if ( !compiledBody.ok )
+                return then( yoke, null, compiledBody );
+        
+        return jsListFlattenOnce( yoke, jsList(
+            compiledBody.val.revStatements,
+            argsRevStatements,
+            capturesRevStatements
+        ), function ( yoke, bodyRevStatements ) {
+        
+        return then( yoke, gsi, { ok: true, val: {
+            revStatements: {
+                first: {
+                    type: "fn",
+                    capturesCode: compiledCaptures.val.resultVar,
+                    capturesVar: capturesVar,
+                    argsVar: argsVar,
+                    compiledBody: {
+                        revStatements: bodyRevStatements,
+                        resultVar: compiledBody.val.resultVar
+                    },
+                    resultVar: fnVar
+                },
+                rest: compiledCaptures.val.revStatements
+            }
+            resultVar: fnVar
+        } } );
+        
+        } );
+        
+        } );
+        } );
+        
+        } );
+        
+        } );
+        } );
+        } );
+        } );
+        
+        } );
+        } );
+        } );
     } else if ( essence.tag === "essence-for-if" ) {
         var condEssence = essence.ind( 0 );
         var essencesAndCounts = essence.ind( 1 );
@@ -945,7 +1000,6 @@ function compileEssence(
             } );
         }, function ( yoke,
             gsi, capturesRevStatements, captureVars, valid ) {
-        return getGs( yoke, gsi, function ( yoke, gsi, resultVar ) {
         
         function doBranch( yoke,
             gsi, essence, essencesAndCountsIndex, then ) {
@@ -964,7 +1018,7 @@ function compileEssence(
                     gsi, revStatements, branchVars, valid ) {
                 
                 if ( !valid.ok )
-                    return then( yoke, null, null, valid );
+                    return then( yoke, null, valid );
             
             return compileEssenceWithParams( yoke, gsi,
                 branchVars,
@@ -972,20 +1026,17 @@ function compileEssence(
                 function ( yoke, gsi, compiled ) {
                 
                 if ( !compiled.ok )
-                    return then( yoke, null, null, compiled );
+                    return then( yoke, null, compiled );
             
-            return jsListFlattenOnce( yoke, jsList(
-                jsList( {
-                    type: "sync",
-                    code: "var " + resultVar + " = " +
-                        compiled.val.resultVar + ";"
-                } ),
+            return jsListAppend( yoke,
                 compiled.val.revStatements,
-                revStatements
-            ), function ( revStatements ) {
+                revStatements,
+                function ( revStatements ) {
             
-            return then( yoke, gsi, revStatements,
-                { ok: true, val: null } );
+            return then( yoke, gsi, { ok: true, val: {
+                revStatements: revStatements,
+                resultVar: compiled.val.resultVar
+            } } );
             
             } );
             
@@ -996,25 +1047,27 @@ function compileEssence(
         }
         
         function doBranch( yoke, gsi, thenEssence, 1,
-            function ( yoke, gsi, thenRevStatements, valid ) {
+            function ( yoke, gsi, thenCompiled ) {
             
-            if ( !valid.ok )
-                return then( yoke, null, valid );
+            if ( !thenCompiled.ok )
+                return then( yoke, null, thenCompiled );
         
         function doBranch( yoke, gsi, elseEssence, 2,
-            function ( yoke, gsi, elseRevStatements, valid ) {
+            function ( yoke, gsi, elseCompiled ) {
             
-            if ( !valid.ok )
-                return then( yoke, null, valid );
+            if ( !elseCompiled.ok )
+                return then( yoke, null, elseCompiled );
         
+        return getGs( yoke, gsi, function ( yoke, gsi, resultVar ) {
         return jsListFlattenOnce( yoke, jsList(
             jsList( {
                 type: "if",
                 condCode:
                     "" + compiledCond.var.resultVar + ".tag !== " +
                         "\"nil\"",
-                thenRevStatements: thenRevStatements,
-                elseRevStatements: elseRevStatements
+                thenCompiled: thenCompiled.val,
+                elseCompiled: elseCompiled.val,
+                resultVar: resultVar
             } ),
             capturesRevStatements,
             compiledCond.val.revStatements
@@ -1026,12 +1079,12 @@ function compileEssence(
         } } );
         
         } );
-        
         } );
         
         } );
         
         } );
+        
         } );
         } );
         
@@ -1165,3 +1218,119 @@ function compileEssence(
         } );
     }
 }
+
+function compiledLinkedListToString( yoke, compiled, then ) {
+    var maxSyncPerBlock = 1000;
+    return jsListFoldl( yoke,
+        { syncInBlock: 0,
+            code: "then( yoke, " + compiled.resultVar + " );" },
+        compiled.revStatements,
+        function ( yoke, state, statement, then ) {
+        
+        function finishSync( yoke, statementCode ) {
+            return runWaitOne( yoke, function ( yoke ) {
+                if ( state.syncInBlock < maxSyncPerBlock )
+                    return then( yoke, {
+                        syncInBlock: state.syncInBlock + 1,
+                        code:
+                            statementCode + "\n" +
+                            code
+                    } );
+                else
+                    return then( yoke, { syncInBlock: 0, code:
+                        statementCode + "\n" +
+                        "return runWaitOne( yoke, " +
+                            "function ( yoke ) {\n" +
+                        "\n" +
+                        code + "\n" +
+                        "\n" +
+                        "} );"
+                    } );
+            } );
+        }
+        
+        if ( statement.type === "sync" ) {
+            return finishSync( yoke, statement.code );
+        } else if ( statement.type === "async" ) {
+            return runWaitOne( yoke, function ( yoke ) {
+                return then( yoke, { syncInBlock: 0, code:
+                    "return " + statement.code + ";\n" +
+                    "function " + statement.callbackVar + "( yoke, " +
+                        statement.resultVar + " ) {" +
+                    "\n" +
+                    code + "\n" +
+                    "\n" +
+                    "}"
+                } );
+            } );
+        } else if ( statement.type === "if" ) {
+            return compiledLinkedListToString( yoke,
+                statement.thenCompiled,
+                function ( yoke, thenCode ) {
+            return compiledLinkedListToString( yoke,
+                statement.elseCompiled,
+                function ( yoke, elseCode ) {
+            
+            return then( yoke, { syncInBlock: 0, code:
+                "if ( " + statement.condCode + " )\n" +
+                "    return runWaitOne( yoke, function ( yoke ) {\n" +
+                "\n" +
+                thenCode + "\n" +
+                "\n" +
+                "    } );\n" +
+                "else\n" +
+                "    return runWaitOne( yoke, function ( yoke ) {\n" +
+                "\n" +
+                elseCode + "\n" +
+                "\n" +
+                "    } );"
+            } );
+            
+            } );
+            } );
+        } else if ( statement.type === "fn" ) {
+            return compiledLinkedListToString( yoke,
+                statement.bodyCompiled,
+                function ( yoke, bodyCode ) {
+            
+            return finishSync( yoke,
+                "var " + statement.resultVar + " = pkfnLinear( " +
+                    "(" + capturesCode + "),\n" +
+                "    function ( yoke, " +
+                    capturesVar + ", " + argsVar + " ) {\n" +
+                "\n" +
+                bodyCode + "\n" +
+                "\n" +
+                "} );" );
+            
+            } );
+        } else {
+            throw new Error();
+        }
+    }, function ( yoke, state ) {
+        return then( yoke, state.code );
+    } );
+}
+
+// NOTE: The generated code snippets depend on the following free
+// variables:
+//
+// new Pk().init_
+// pkNil
+// pkCons
+// pkList
+// pkRuntime.getVal
+// pkRuntime.callMethod
+// pkStrNameRaw
+// pkQualifiedName
+// pkYep
+// pkPairName
+// pkStrUnsafe
+// runWaitTry
+// pkDup
+// listLenIsNat
+// yoke
+// pkErr
+// pkfnLinear (only used in compiledLinkedListToString)
+// then (only used in compiledLinkedListToString)
+// runWaitOne (only used in compiledLinkedListToString)
