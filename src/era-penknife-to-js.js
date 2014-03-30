@@ -652,37 +652,74 @@ function compileEssenceWithParams( yoke,
         function ( yoke, revParamSourceVars ) {
     return jsListLen( yoke, paramSourceVars,
         function ( yoke, numInnerParams ) {
-    return jsListRevMapWithStateAndErrors( yoke, numInnerParams,
+    // NOTE: Since we're going to declare "var param1 = ..." and so
+    // forth, we need to do that in a new function scope so that var
+    // hoisting won't make these declarations shadow parameter uses
+    // *earlier* in the current block of statements.
+    return jsListRevMapWithStateAndErrors( yoke,
+        { gsi: gsi, indexPlusOne: numInnerParams },
         revParamSourceVars,
-        function ( yoke, indexPlusOne, paramSourceVar, then ) {
+        function ( yoke, state, paramSourceVar, then ) {
         
-        var index = indexPlusOne.ind( 0 );
+        var index = state.indexPlusOne.ind( 0 );
+        return getGs( yoke, state.gsi,
+            function ( yoke, gsi, intermediateVar ) {
         return natToParam( yoke, index,
             function ( yoke, paramVar ) {
-            
-            return then( yoke, index, { ok: true, val: {
-                type: "sync",
-                code: "var " + paramVar + " = " +
-                    paramSourceVar + ";"
-            } } );
-        } );
-    }, function ( yoke, ignoredZero, paramStatements ) {
         
-        if ( !paramStatements.ok )
-            return then( yoke, null, paramStatements );
+        return then( yoke, {
+            gsi: gsi,
+            indexPlusOne: index
+        }, { ok: true, val: {
+            paramBeforeStatement: { type: "sync", code:
+                "var " + intermediateVar + " = " +
+                    paramSourceVar + ";"
+            },
+            paramAfterStatement: { type: "sync", code:
+                "var " + paramVar + " = " + intermediateVar + ";"
+            }
+        } } );
+        
+        } );
+        } );
+    }, function ( yoke, state, paramBeforeAndAfterStatements ) {
+        if ( !paramBeforeAndAfterStatements.ok )
+            return then( yoke, null, paramBeforeAndAfterStatements );
     
-    return jsListRev( yoke, paramStatements.val,
-        function ( yoke, revParamStatements ) {
-    return compileEssence( yoke, gsi, numInnerParams, essence,
+    return jsListRev( yoke, paramBeforeAndAfterStatements.val,
+        function ( yoke, revParamBeforeAndAfterStatements ) {
+    return jsListMap( yoke, revParamBeforeAndAfterStatements,
+        function ( yoke, entry, then ) {
+        
+        return then( yoke, entry.paramBeforeStatement );
+    }, function ( yoke, revParamBeforeStatements ) {
+    return jsListMap( yoke, revParamBeforeAndAfterStatements,
+        function ( yoke, entry, then ) {
+        
+        return then( yoke, entry.paramAfterStatement );
+    }, function ( yoke, revParamAfterStatements ) {
+    return compileEssence( yoke, state.gsi, numInnerParams, essence,
         function ( yoke, gsi, compiled ) {
         
         if ( !compiled.ok )
             return then( yoke, null, compiled );
     
-    return jsListAppend( yoke,
+    return getGs( yoke, gsi, function ( yoke, gsi, callbackVar ) {
+    return getGs( yoke, gsi, function ( yoke, gsi, ignoredVar ) {
+    return jsListFlattenOnce( yoke, jsList(
         compiled.val.revStatements,
-        revParamStatements,
-        function ( yoke, revStatements ) {
+        revParamAfterStatements,
+        jsList( {
+            type: "async",
+            callbackVar: callbackVar,
+            resultVar: ignoredVar,
+            code:
+                "runWaitOne( yoke, function ( yoke ) {\n" +
+                "    return " + callbackVar + "( yoke, then );\n" +
+                "}, " + callbackVar + " )"
+        } ),
+        revParamBeforeStatements
+    ), function ( yoke, revStatements ) {
     
     return then( yoke, gsi, { ok: true, val: {
         revStatements: revStatements,
@@ -690,7 +727,11 @@ function compileEssenceWithParams( yoke,
     } } );
     
     } );
+    } );
+    } );
     
+    } );
+    } );
     } );
     } );
     
@@ -815,11 +856,38 @@ function compileEssence(
             return then( yoke, gsi, compiled );
         } );
     } else if ( essence.tag === "main-essence" ) {
-        return compileCallOnLiteral( yoke, gsi,
-            "pkRuntime.getVal", essence.ind( 0 ),
-            function ( yoke, gsi, compiled ) {
+        return compileLiteral( yoke, gsi, essence.ind( 0 ),
+            function ( yoke, gsi, compiledName ) {
             
-            return then( yoke, gsi, compiled );
+            if ( !compiledName.ok )
+                return then( yoke, null, compiledName );
+        
+        return getGs( yoke, gsi, function ( yoke, gsi, callbackVar ) {
+        return getGs( yoke, gsi, function ( yoke, gsi, resultVar ) {
+        return jsListFlattenOnce( yoke, jsList(
+            jsList( {
+                type: "async",
+                callbackVar: callbackVar,
+                resultVar: resultVar,
+                code:
+                    "runWaitTry( yoke, function ( yoke ) {\n" +
+                    "    return runRet( yoke, pkRuntime.getVal( " +
+                            compiledName.val.resultVar + " " +
+                        ") );\n" +
+                    "}, " + callbackVar + " )"
+            } ),
+            compiledName.val.revStatements
+        ), function ( yoke, revStatements ) {
+        
+        return then( yoke, gsi, { ok: true, val: {
+            revStatements: revStatements,
+            resultVar: resultVar
+        } } );
+        
+        } );
+        } );
+        } );
+        
         } );
     } else if ( essence.tag === "call-essence" ) {
         return compileEssence( yoke, gsi, numParams, essence.ind( 0 ),
@@ -1267,7 +1335,7 @@ function compiledLinkedListToString( yoke, compiled, then ) {
                 return then( yoke, { syncInBlock: 0, code:
                     "return " + statement.code + ";\n" +
                     "function " + statement.callbackVar + "( yoke, " +
-                        statement.resultVar + " ) {" +
+                        statement.resultVar + " ) {\n" +
                     "\n" +
                     state.code + "\n" +
                     "\n" +
@@ -1354,7 +1422,9 @@ function compiledLinkedListToString( yoke, compiled, then ) {
 // listLenIsNat
 // yoke
 // pkErr
+// pkRet
+// runRet
 // pkfnLinear (only used in compiledLinkedListToString)
 // then (only used in compiledLinkedListToString)
-// runWaitOne (only used in compiledLinkedListToString)
+// runWaitOne
 // next (only used in compiledLinkedListToString)

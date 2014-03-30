@@ -1265,7 +1265,8 @@ PkRuntime.prototype.init_ = function () {
         // Right now there seems to be a Penknife error (not a JS
         // error) when the demo starts up. To wit:
         //
-        // Macroexpansion error: "No implementation for method call tag yep"
+        // Macroexpansion error: "Called macroexpand-to-fork with a
+        // gensym base that wasn't an unqualified name"
         
         if ( false )
         return listMap( yoke, nonlocalCaptures,
@@ -1320,6 +1321,8 @@ PkRuntime.prototype.init_ = function () {
             "runWaitTry",
             "listLenIsNat",
             "pkErr",
+            "pkRet",
+            "runRet",
             "pkfnLinear",
             "runWaitOne",
             
@@ -1342,6 +1345,8 @@ PkRuntime.prototype.init_ = function () {
             runWaitTry,
             listLenIsNat,
             pkErr,
+            pkRet,
+            runRet,
             pkfnLinear,
             runWaitOne,
             
