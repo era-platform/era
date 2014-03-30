@@ -1262,11 +1262,17 @@ PkRuntime.prototype.init_ = function () {
         function ( yoke, essence, nonlocalCaptures ) {
         
         // TODO: Remove this "if ( false )" to enable compilation.
-        // Right now there seems to be a Penknife error (not a JS
-        // error) when the demo starts up. To wit:
+        // Right now it's actually even slower with compilation
+        // enabled. We should at least see if we save some time when
+        // we compile the demo's prelude ahead of time, since right
+        // now we're measuring the compilation step as part of the
+        // time spent.
         //
-        // Macroexpansion error: "Called pair-name with an element
-        // that wasn't an unqualified name"
+        // TODO: Let's also try just running the macroexpansion phase
+        // ahead of time, rather than the full compiler.
+        //
+        // TODO: Let's also try just running the read phase ahead of
+        // time, rather than either the macroexpander or the compiler.
         
         if ( false )
         return listMap( yoke, nonlocalCaptures,
@@ -3315,6 +3321,7 @@ PkRuntime.prototype.conveniences_syncYoke = {
         var self = this;
         
         // TODO: Test to see what value is best for all browsers.
+        // TODO: Put this constant somewhere more configurable.
         var maxStack = 1000;
         
         if ( self.internal < maxStack ) {

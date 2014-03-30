@@ -472,9 +472,8 @@ function compileListToVars( yoke,
         function ( yoke, state, ignored, then ) {
         
         return getGs( yoke, state.gsi,
-            function ( yoke, gsi, restVar ) {
-        return getGs( yoke, gsi,
             function ( yoke, gsi, elemVar ) {
+        return getGs( yoke, gsi, function ( yoke, gsi, restVar ) {
         
         return then( yoke, { gsi: gsi, lastListVar: restVar },
             { ok: true, val: {
@@ -705,26 +704,26 @@ function compileEssenceWithParams( yoke,
         if ( !compiled.ok )
             return then( yoke, null, compiled );
     
-    return getGs( yoke, gsi, function ( yoke, gsi, callbackVar ) {
-    return getGs( yoke, gsi, function ( yoke, gsi, ignoredVar ) {
+    return getGs( yoke, gsi, function ( yoke, gsi, resultVar ) {
     return jsListFlattenOnce( yoke, jsList(
         compiled.val.revStatements,
-        revParamAfterStatements,
+        revParamAfterStatements
+    ), function ( yoke, bodyRevStatements ) {
+    return jsListFlattenOnce( yoke, jsList(
         jsList( {
-            type: "async",
-            callbackVar: callbackVar,
-            resultVar: ignoredVar,
-            code:
-                "runWaitOne( yoke, function ( yoke ) {\n" +
-                "    return " + callbackVar + "( yoke, then );\n" +
-                "}, " + callbackVar + " )"
+            type: "let",
+            compiledBody: {
+                revStatements: bodyRevStatements,
+                resultVar: compiled.val.resultVar
+            },
+            resultVar: resultVar
         } ),
         revParamBeforeStatements
     ), function ( yoke, revStatements ) {
     
     return then( yoke, gsi, { ok: true, val: {
         revStatements: revStatements,
-        resultVar: compiled.val.resultVar
+        resultVar: resultVar
     } } );
     
     } );
@@ -1300,7 +1299,10 @@ function compileEssence(
 }
 
 function compiledLinkedListToString( yoke, compiled, then ) {
+    
+    // TODO: Put this constant somewhere more configurable.
     var maxSyncPerBlock = 1000;
+    
     return jsListFoldl( yoke,
         { syncInBlock: 0, code:
             "return then( yoke, " + compiled.resultVar + " );" },
@@ -1342,6 +1344,25 @@ function compiledLinkedListToString( yoke, compiled, then ) {
                     "\n" +
                     "}"
                 } );
+            } );
+        } else if ( statement.type === "let" ) {
+            return compiledLinkedListToString( yoke,
+                statement.compiledBody,
+                function ( yoke, bodyCode ) {
+            
+            return then( yoke, { syncInBlock: 0, code:
+                "return (function ( then ) {\n" +
+                "\n" +
+                bodyCode + "\n" +
+                "\n" +
+                "})( function ( yoke, " +
+                    statement.resultVar + " ) {\n" +
+                "\n" +
+                state.code + "\n" +
+                "\n" +
+                "} );"
+            } );
+            
             } );
         } else if ( statement.type === "if" ) {
             return compiledLinkedListToString( yoke,
@@ -1427,5 +1448,5 @@ function compiledLinkedListToString( yoke, compiled, then ) {
 // runRet
 // pkfnLinear (only used in compiledLinkedListToString)
 // then (only used in compiledLinkedListToString)
-// runWaitOne
+// runWaitOne (only used in compiledLinkedListToString)
 // next (only used in compiledLinkedListToString)
