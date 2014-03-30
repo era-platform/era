@@ -324,12 +324,13 @@ function compileCallOnLiteral2( yoke,
 
 function compileListOfVars( yoke, gensymIndex, elemVars, then ) {
     var gsi = gensymIndex;
+    return jsListRev( yoke, elemVars, function ( yoke, revElemVars ) {
     return jsListFoldl( yoke,
         {
             gsi: gsi,
             resultSoFar: { revStatements: null, resultVar: "pkNil" }
         },
-        elemVars,
+        revElemVars,
         function ( yoke, state, elemVar, then ) {
         
         return getGs( yoke, state.gsi,
@@ -348,8 +349,11 @@ function compileListOfVars( yoke, gensymIndex, elemVars, then ) {
             } } );
         } );
     }, function ( yoke, state ) {
-        return then( yoke, state.gsi, state.resultSoFar );
-    } )
+    
+    return then( yoke, state.gsi, state.resultSoFar );
+    
+    } );
+    } );
 }
 
 // NOTE: The word "zoke" is just a play on words since it's basically
@@ -399,7 +403,6 @@ function compileMapToVars( yoke,
             return then( yoke, gsi, compiledElem );
         } );
     }, function ( yoke, gsi, revCompiledElems ) {
-        
         if ( !revCompiledElems.ok )
             return then( yoke, null, null, null, revCompiledElems );
     
@@ -439,7 +442,7 @@ function compileMapToList( yoke,
         
         if ( !valid.ok )
             return then( yoke, null, valid );
-        
+    
     return compileListOfVars( yoke, gsi, elemVars,
         function ( yoke, gsi, compiledElems ) {
     return jsListAppend( yoke,
@@ -491,7 +494,6 @@ function compileListToVars( yoke,
         } );
         } );
     }, function ( yoke, state, revCompiledElems ) {
-        
         if ( !revCompiledElems.ok )
             return then( yoke, null, null, null, revCompiledElems );
     
@@ -612,7 +614,6 @@ function compileDupsOfMany( yoke,
             } } );
         } );
     }, function ( yoke, gsi, revCompiledDupsNested ) {
-        
         if ( !revCompiledDupsNested.ok )
             return then( yoke, null, revCompiledDupsNested );
     
@@ -977,7 +978,7 @@ function compileEssence(
             return compileEssence( yoke, gsi, numParams, capture,
                 function ( yoke, gsi, compiledCapture ) {
                 
-                return then( yoke, null, compiledCapture );
+                return then( yoke, gsi, compiledCapture );
             } );
         }, function ( yoke, gsi, compiledCaptures ) {
             if ( !compiledCaptures.ok )

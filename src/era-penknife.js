@@ -1265,8 +1265,8 @@ PkRuntime.prototype.init_ = function () {
         // Right now there seems to be a Penknife error (not a JS
         // error) when the demo starts up. To wit:
         //
-        // Macroexpansion error: "Called macroexpand-to-fork with a
-        // gensym base that wasn't an unqualified name"
+        // Macroexpansion error: "Called pair-name with an element
+        // that wasn't an unqualified name"
         
         if ( false )
         return listMap( yoke, nonlocalCaptures,
@@ -1330,6 +1330,10 @@ PkRuntime.prototype.init_ = function () {
             "pkRuntime",
             "then",
             
+            // TODO: This commented-out line may help when debugging
+            // compiled code, but it uses the hackish Pk#toString().
+            // See if we should make it a debug option or something.
+//            "// " + essence + "\n" +
             code
         )(
             nonlocalCaptures,
