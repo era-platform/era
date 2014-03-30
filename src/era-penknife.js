@@ -1261,6 +1261,117 @@ PkRuntime.prototype.init_ = function () {
     defEssenceInterpret( "fn-essence",
         function ( yoke, essence, nonlocalCaptures ) {
         
+        // TODO: Remove this "if ( false )" to enable compilation.
+        // Right now there seems to be a Penknife error (not a JS
+        // error) when the demo starts up. To wit:
+        //
+        // Macroexpansion error: "No implementation for method call tag yep"
+        
+        if ( false )
+        return listMap( yoke, nonlocalCaptures,
+            function ( yoke, nonlocalCapture ) {
+            
+            if ( nonlocalCapture.tag !== "linear-as-nonlinear" )
+                return pkErr( yoke,
+                    "Tried to interpret a fn-essence, but one of " +
+                    "the captured values turned out not to be " +
+                    "wrapped up as a linear-as-nonlinear value" );
+            return pkRet( yoke, nonlocalCapture.ind( 0 ) );
+        }, function ( yoke, nonlocalCaptures ) {
+        return listLen( yoke, nonlocalCaptures,
+            function ( yoke, numNlcs ) {
+        return getGs( yoke, pkNil, function ( yoke, gsi, nlcsVar ) {
+        return compileListToVars( yoke, gsi,
+            { revStatements: null, resultVar: nlcsVar },
+            numNlcs,
+            function ( yoke, gsi, nlcRevStatements, nlcVars, valid ) {
+            
+            if ( !valid.ok )
+                return then( yoke, null, valid );
+        
+        return compileEssenceWithParams( yoke, gsi, nlcVars, essence,
+            function ( yoke, gsi, compiled ) {
+            
+            if ( !compiled.ok )
+                return then( yoke, null, compiled );
+        
+        return jsListAppend( yoke,
+            compiled.val.revStatements,
+            nlcRevStatements,
+            function ( yoke, revStatements ) {
+        return compiledLinkedListToString( yoke, {
+            revStatements: revStatements,
+            resultVar: compiled.val.resultVar
+        }, function ( yoke, code ) {
+        
+        // TODO: See if there's a more convenient way to manage all
+        // these variables.
+        return Function(
+            nlcsVar,
+            
+            "Pk",
+            "pkNil",
+            "pkCons",
+            "pkList",
+            "pkStrNameRaw",
+            "pkQualifiedName",
+            "pkYep",
+            "pkPairName",
+            "runWaitTry",
+            "listLenIsNat",
+            "pkErr",
+            "pkfnLinear",
+            "runWaitOne",
+            
+            "yoke",
+            "pkRuntime",
+            "then",
+            
+            code
+        )(
+            nonlocalCaptures,
+            
+            Pk,
+            pkNil,
+            pkCons,
+            pkList,
+            pkStrNameRaw,
+            pkQualifiedName,
+            pkYep,
+            pkPairName,
+            runWaitTry,
+            listLenIsNat,
+            pkErr,
+            pkfnLinear,
+            runWaitOne,
+            
+            yoke,
+            self,
+            function ( yoke, result ) {
+                return pkRet( yoke, result );
+            }
+        );
+        
+        } );
+        } );
+        
+        } );
+        
+        } );
+        } );
+        } );
+        } );
+        
+        
+        // NOTE: The above code makes every function expression invoke
+        // the compiler in era-penknife-to-js.js. The below code makes
+        // functions store the original expression (well, what we call
+        // the "essence" since it isn't a raw s-expression) and
+        // interpret it each time.
+        // TODO: Once we use the above code, this will be dead code.
+        // Either comment it out entirely, or put it under some kind
+        // of debug option.
+        
         var captures = essence.ind( 0 );
         var argsDupCount = essence.ind( 1 );
         var bodyEssence = essence.ind( 2 );
@@ -3229,6 +3340,10 @@ PkRuntime.prototype.conveniences_syncYoke = {
                     internal: 0,
                     runWaitLinear: self.runWaitLinear
                 } ), defer, function ( yokeAndResult ) {
+                    // TODO: In this part of the code, the stack still
+                    // seems to get pretty tall, even with maxStack
+                    // set to 10. Figure out what's going on here and
+                    // if it's going to break.
                     syncYokeCall(
                         then( yokeAndResult ), defer, then2 );
                 } );
