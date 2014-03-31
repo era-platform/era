@@ -814,6 +814,19 @@ function pkGetTine( names, func ) {
     } );
 }
 
+var cachedNats = [];
+// TODO: Put this constant somewhere more configurable.
+// NOTE: There seems to be a plateau once this is as high as 3. We're
+// setting it to 10 anyway just in case.
+var maxCachedNat = 10;
+(function () {
+    var nat = pkNil;
+    for ( var i = 0; i <= maxCachedNat; i++ ) {
+        cachedNats.push( nat );
+        nat = pk( "succ", nat );
+    }
+})();
+
 function PkRuntime() {}
 PkRuntime.prototype.init_ = function () {
     var self = this;
@@ -1332,6 +1345,8 @@ PkRuntime.prototype.init_ = function () {
             "pkfnLinear",
             "runWaitOne",
             
+            "cachedNats",
+            
             "yoke",
             "pkRuntime",
             "then",
@@ -1359,6 +1374,8 @@ PkRuntime.prototype.init_ = function () {
             runRet,
             pkfnLinear,
             runWaitOne,
+            
+            cachedNats,
             
             yoke,
             self,

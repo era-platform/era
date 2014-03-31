@@ -759,6 +759,24 @@ function compileLiteral( yoke, gensymIndex, pkVal, then ) {
         } );
     }
     
+    // Optimization: If a literal natural number is small enough, look
+    // it up from a table.
+    if ( pkVal.tag === "succ" ) {
+        var jsNum = natToJsBounded( pkVal, maxCachedNat );
+        if ( jsNum !== null )
+            return getGsAndFinishWithExpr( yoke, gsi,
+                "cachedNats[ " + jsNum + " ]",
+                null,
+                function ( yoke, gsi, compiled ) {
+                
+                return then( yoke, gsi, compiled );
+            } );
+    }
+    // End optimization. (However, this is the only part of the
+    // generated code that uses cachedNats, so if you want to remove
+    // this, you might also want to remove it from the list of free
+    // variables passed into the code.)
+    
     if ( pkVal.isLinear() ) {
         // NOTE: This case would technically be unnecessary if we
         // checked for nonlinear-as-linear instead, but we might as
@@ -1456,6 +1474,7 @@ function compiledLinkedListToString( yoke, compiled, then ) {
 // pkErr
 // pkRet
 // runRet
+// cachedNats (only used in an optimization)
 // pkfnLinear (only used in compiledLinkedListToString)
 // then (only used in compiledLinkedListToString)
 // runWaitOne (only used in compiledLinkedListToString)
