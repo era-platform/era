@@ -534,6 +534,16 @@ function compileDupsOfOne( yoke,
     
     var gsi = gensymIndex;
     
+    // Optimization: Only generate a pkDup call if the number of
+    // duplicates isn't exactly one. (This is surprisingly effective.)
+    if ( numberOfDups.tag === "succ"
+        && numberOfDups.ind( 0 ).tag === "nil" )
+        return runWaitOne( yoke, function ( yoke ) {
+            return then( yoke, gsi, null, jsList( sourceVar ),
+                { ok: true, val: null } );
+        } );
+    // End optimization.
+    
     return compileLiteral( yoke, gsi, numberOfDups,
         function ( yoke, gsi, compiledNumberOfDups ) {
         
