@@ -253,8 +253,11 @@ function getGsAndFinishWithExpr( yoke,
     return getGs( yoke, gsi, function ( yoke, gsi, resultVar ) {
         return then( yoke, gsi, { ok: true, val: {
             revStatements: {
-                first: { type: "sync",
-                    code: "var " + resultVar + " = " + expr + ";" },
+                first: {
+                    type: "sync",
+                    code: expr,
+                    resultVar: resultVar
+                },
                 rest: revStatements
             },
             resultVar: resultVar
@@ -338,10 +341,11 @@ function compileListOfVars( yoke, gensymIndex, elemVars, then ) {
             
             return then( yoke, { gsi: gsi, resultSoFar: {
                 revStatements: {
-                    first: { type: "sync", code:
-                        "var " + resultVar + " = pkCons( " +
-                            elemVar + ", " +
-                            state.resultSoFar.resultVar + " );"
+                    first: {
+                        type: "sync",
+                        code: "pkCons( " + elemVar + ", " +
+                            state.resultSoFar.resultVar + " )",
+                        resultVar: resultVar
                     },
                     rest: state.resultSoFar.revStatements
                 },
@@ -480,12 +484,12 @@ function compileListToVars( yoke,
             
             revStatements: jsList( {
                 type: "sync",
-                code: "var " + restVar + " = " +
-                    state.lastListVar + ".ind( 1 );"
+                code: state.lastListVar + ".ind( 1 )",
+                resultVar: restVar
             }, {
                 type: "sync",
-                code: "var " + elemVar + " = " +
-                    state.lastListVar + ".ind( 0 );"
+                code: state.lastListVar + ".ind( 0 )",
+                resultVar: elemVar
             } ),
             resultVar: elemVar
         } } );
@@ -681,12 +685,15 @@ function compileEssenceWithParams( yoke,
             gsi: gsi,
             indexPlusOne: index
         }, { ok: true, val: {
-            paramBeforeStatement: { type: "sync", code:
-                "var " + intermediateVar + " = " +
-                    paramSourceVar + ";"
+            paramBeforeStatement: {
+                type: "sync",
+                code: paramSourceVar,
+                resultVar: intermediateVar
             },
-            paramAfterStatement: { type: "sync", code:
-                "var " + paramVar + " = " + intermediateVar + ";"
+            paramAfterStatement: {
+                type: "sync",
+                code: intermediateVar,
+                resultVar: paramVar
             }
         } } );
         
@@ -1360,7 +1367,9 @@ function compiledLinkedListToString( yoke, compiled, then ) {
         }
         
         if ( statement.type === "sync" ) {
-            return finishSync( yoke, statement.code );
+            return finishSync( yoke,
+                "var " + statement.resultVar + " = " +
+                    statement.code + ";" );
         } else if ( statement.type === "async" ) {
             return runWaitOne( yoke, function ( yoke ) {
                 return then( yoke, { syncInBlock: 0, code:
