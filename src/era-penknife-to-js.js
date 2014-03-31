@@ -19,18 +19,6 @@ testStrToSource( "foo" );
 testStrToSource( "\u2028" );
 testStrToSource( "\u2029" );
 
-function natCompare( yoke, a, b, then ) {
-    return runWaitOne( yoke, function ( yoke ) {
-        if ( a.tag === "nil" && b.tag === "nil" )
-            return then( yoke, 0 );
-        if ( a.tag === "nil" )
-            return then( yoke, -1 );
-        if ( b.tag === "nil" )
-            return then( yoke, 1 );
-        return natCompare( yoke, a.ind( 0 ), b.ind( 0 ), then );
-    } );
-}
-
 function jsListFromArr( arr ) {
     var result = null;
     for ( var i = arr.length - 1; 0 <= i; i-- )
@@ -41,6 +29,15 @@ function jsList( var_args ) {
     return jsListFromArr( arguments );
 }
 
+function jsListGetNat( yoke, list, nat, then ) {
+    return runWaitOne( yoke, function ( yoke ) {
+        if ( list === null )
+            return then( yoke, null );
+        if ( nat.tag !== "succ" )
+            return then( yoke, { val: list.first } );
+        return jsListGetNat( yoke, list.rest, nat.ind( 0 ), then );
+    } );
+}
 function jsListRevAppend( yoke, backwardFirst, forwardSecond, then ) {
     if ( backwardFirst === null )
         return then( yoke, forwardSecond );
@@ -232,11 +229,6 @@ function natToJsStringAsync( yoke, nat, then ) {
 function natToGs( yoke, nat, then ) {
     return natToJsStringAsync( yoke, nat, function ( yoke, numStr ) {
         return then( yoke, "gs" + numStr );
-    } );
-}
-function natToParam( yoke, nat, then ) {
-    return natToJsStringAsync( yoke, nat, function ( yoke, numStr ) {
-        return then( yoke, "param" + numStr );
     } );
 }
 
@@ -658,105 +650,6 @@ function compileDupsOfMany( yoke,
     } );
 }
 
-function compileEssenceWithParams( yoke,
-    gensymIndex, paramSourceVars, essence, then ) {
-    
-    var gsi = gensymIndex;
-    return jsListRev( yoke, paramSourceVars,
-        function ( yoke, revParamSourceVars ) {
-    return jsListLen( yoke, paramSourceVars,
-        function ( yoke, numInnerParams ) {
-    // NOTE: Since we're going to declare "var param1 = ..." and so
-    // forth, we need to do that in a new function scope so that var
-    // hoisting won't make these declarations shadow parameter uses
-    // *earlier* in the current block of statements.
-    return jsListRevMapWithStateAndErrors( yoke,
-        { gsi: gsi, indexPlusOne: numInnerParams },
-        revParamSourceVars,
-        function ( yoke, state, paramSourceVar, then ) {
-        
-        var index = state.indexPlusOne.ind( 0 );
-        return getGs( yoke, state.gsi,
-            function ( yoke, gsi, intermediateVar ) {
-        return natToParam( yoke, index,
-            function ( yoke, paramVar ) {
-        
-        return then( yoke, {
-            gsi: gsi,
-            indexPlusOne: index
-        }, { ok: true, val: {
-            paramBeforeStatement: {
-                type: "sync",
-                code: paramSourceVar,
-                resultVar: intermediateVar
-            },
-            paramAfterStatement: {
-                type: "sync",
-                code: intermediateVar,
-                resultVar: paramVar
-            }
-        } } );
-        
-        } );
-        } );
-    }, function ( yoke, state, paramBeforeAndAfterStatements ) {
-        if ( !paramBeforeAndAfterStatements.ok )
-            return then( yoke, null, paramBeforeAndAfterStatements );
-    
-    return jsListRev( yoke, paramBeforeAndAfterStatements.val,
-        function ( yoke, revParamBeforeAndAfterStatements ) {
-    return jsListMap( yoke, revParamBeforeAndAfterStatements,
-        function ( yoke, entry, then ) {
-        
-        return then( yoke, entry.paramBeforeStatement );
-    }, function ( yoke, revParamBeforeStatements ) {
-    return jsListMap( yoke, revParamBeforeAndAfterStatements,
-        function ( yoke, entry, then ) {
-        
-        return then( yoke, entry.paramAfterStatement );
-    }, function ( yoke, revParamAfterStatements ) {
-    return compileEssence( yoke, state.gsi, numInnerParams, essence,
-        function ( yoke, gsi, compiled ) {
-        
-        if ( !compiled.ok )
-            return then( yoke, null, compiled );
-    
-    return getGs( yoke, gsi, function ( yoke, gsi, resultVar ) {
-    return jsListFlattenOnce( yoke, jsList(
-        compiled.val.revStatements,
-        revParamAfterStatements
-    ), function ( yoke, bodyRevStatements ) {
-    return jsListFlattenOnce( yoke, jsList(
-        jsList( {
-            type: "let",
-            compiledBody: {
-                revStatements: bodyRevStatements,
-                resultVar: compiled.val.resultVar
-            },
-            resultVar: resultVar
-        } ),
-        revParamBeforeStatements
-    ), function ( yoke, revStatements ) {
-    
-    return then( yoke, gsi, { ok: true, val: {
-        revStatements: revStatements,
-        resultVar: resultVar
-    } } );
-    
-    } );
-    } );
-    } );
-    
-    } );
-    } );
-    } );
-    } );
-    
-    } );
-    } );
-    } );
-}
-
 function compileLiteral( yoke, gensymIndex, pkVal, then ) {
     var gsi = gensymIndex;
     
@@ -880,7 +773,7 @@ function compileLiteral( yoke, gensymIndex, pkVal, then ) {
 }
 
 function compileEssence(
-    yoke, gensymIndex, numParams, essence, then ) {
+    yoke, gensymIndex, paramVars, essence, then ) {
     
     var gsi = gensymIndex;
     
@@ -925,7 +818,7 @@ function compileEssence(
         
         } );
     } else if ( essence.tag === "call-essence" ) {
-        return compileEssence( yoke, gsi, numParams, essence.ind( 0 ),
+        return compileEssence( yoke, gsi, paramVars, essence.ind( 0 ),
             function ( yoke, gsi, compiledOp ) {
             
             if ( !compiledOp.ok )
@@ -936,7 +829,7 @@ function compileEssence(
         return compileMapToList( yoke, gsi, argEssences,
             function ( yoke, gsi, argEssence, then ) {
             
-            return compileEssence( yoke, gsi, numParams, argEssence,
+            return compileEssence( yoke, gsi, paramVars, argEssence,
                 function ( yoke, gsi, compiledArg ) {
                 
                 return then( yoke, gsi, compiledArg );
@@ -982,20 +875,18 @@ function compileEssence(
         } );
     } else if ( essence.tag === "param-essence" ) {
         var i = essence.ind( 0 );
-        return natCompare( yoke, i, numParams,
-            function ( yoke, compared ) {
+        return jsListGetNat( yoke, paramVars, i,
+            function ( yoke, maybeParamVar ) {
             
-            if ( !(compared < 0) )
+            if ( maybeParamVar === null )
                 return then( yoke, null, { ok: false, val:
                     "Tried to compile a param-essence which had an " +
                     "index that was out of range" } );
             
-            return natToParam( yoke, i, function ( yoke, resultVar ) {
-                return then( yoke, gsi, { ok: true, val: {
-                    revStatements: null,
-                    resultVar: resultVar
-                } } );
-            } );
+            return then( yoke, gsi, { ok: true, val: {
+                revStatements: null,
+                resultVar: maybeParamVar.val
+            } } );
         } );
     } else if ( essence.tag === "fn-essence" ) {
         var captures = essence.ind( 0 );
@@ -1009,7 +900,7 @@ function compileEssence(
         return compileMapToList( yoke, gsi, captures,
             function ( yoke, gsi, capture, then ) {
             
-            return compileEssence( yoke, gsi, numParams, capture,
+            return compileEssence( yoke, gsi, paramVars, capture,
                 function ( yoke, gsi, compiledCapture ) {
                 
                 return then( yoke, gsi, compiledCapture );
@@ -1038,10 +929,8 @@ function compileEssence(
                 return then( yoke, null, valid );
         
         return jsListAppend( yoke, captureVars, argsDupVars,
-            function ( yoke, paramSourceVars ) {
-        return compileEssenceWithParams( yoke, gsi,
-            paramSourceVars,
-            bodyEssence,
+            function ( yoke, innerParamVars ) {
+        return compileEssence( yoke, gsi, innerParamVars, bodyEssence,
             function ( yoke, gsi, compiledBody ) {
             
             if ( !compiledBody.ok )
@@ -1092,7 +981,7 @@ function compileEssence(
         var thenEssence = essence.ind( 2 );
         var elseEssence = essence.ind( 3 );
         
-        return compileEssence( yoke, gsi, numParams, condEssence,
+        return compileEssence( yoke, gsi, paramVars, condEssence,
             function ( yoke, gsi, compiledCond ) {
             
             if ( !compiledCond.ok )
@@ -1106,7 +995,7 @@ function compileEssence(
             var captureEssence = listGet( essenceAndCounts, 0 );
             
             return compileEssence( yoke, gsi,
-                numParams,
+                paramVars,
                 captureEssence,
                 function ( yoke, gsi, compiledCapture ) {
                 
@@ -1129,14 +1018,12 @@ function compileEssence(
             }, function ( yoke, counts ) {
             return compileDupsOfMany( yoke, gsi, captureVars, counts,
                 function ( yoke,
-                    gsi, revStatements, branchVars, valid ) {
+                    gsi, revStatements, innerParamVars, valid ) {
                 
                 if ( !valid.ok )
                     return then( yoke, null, valid );
             
-            return compileEssenceWithParams( yoke, gsi,
-                branchVars,
-                essence,
+            return compileEssence( yoke, gsi, innerParamVars, essence,
                 function ( yoke, gsi, compiled ) {
                 
                 if ( !compiled.ok )
@@ -1208,7 +1095,7 @@ function compileEssence(
         var captureEssences = essence.ind( 1 );
         var numbersOfDups = essence.ind( 2 );
         var bodyEssence = essence.ind( 3 );
-        return compileEssence( yoke, gsi, numParams, sourceEssence,
+        return compileEssence( yoke, gsi, paramVars, sourceEssence,
             function ( yoke, gsi, compiledSource ) {
             
             if ( !compiledSource.ok )
@@ -1219,7 +1106,7 @@ function compileEssence(
         return compileMapToVars( yoke, gsi, captureEssences,
             function ( yoke, gsi, argEssence, then ) {
             
-            return compileEssence( yoke, gsi, numParams, argEssence,
+            return compileEssence( yoke, gsi, paramVars, argEssence,
                 function ( yoke, gsi, compiledArg ) {
                 
                 return then( yoke, gsi, compiledArg );
@@ -1283,10 +1170,8 @@ function compileEssence(
                 return then( yoke, null, valid );
         
         return jsListAppend( yoke, captureVars, dupVars,
-            function ( yoke, innerParamSourceVars ) {
-        return compileEssenceWithParams( yoke, gsi,
-            innerParamSourceVars,
-            bodyEssence,
+            function ( yoke, innerParamVars ) {
+        return compileEssence( yoke, gsi, innerParamVars, bodyEssence,
             function ( yoke, gsi, compiledBody ) {
             
             if ( !compiledBody.ok )
@@ -1381,29 +1266,6 @@ function compiledLinkedListToString( yoke, compiled, then ) {
                     "\n" +
                     "}"
                 } );
-            } );
-        } else if ( statement.type === "let" ) {
-            return compiledLinkedListToString( yoke,
-                statement.compiledBody,
-                function ( yoke, bodyCode ) {
-            
-            return then( yoke, { syncInBlock: 0, code:
-                "return (function ( then ) {\n" +
-                "\n" +
-                bodyCode + "\n" +
-                "\n" +
-                "})( function ( yoke, " +
-                    statement.resultVar + " ) {\n" +
-                "\n" +
-                "return runWaitOne( yoke, function ( yoke ) {\n" +
-                "\n" +
-                state.code + "\n" +
-                "\n" +
-                "} );\n" +
-                "\n" +
-                "} );"
-            } );
-            
             } );
         } else if ( statement.type === "if" ) {
             return compiledLinkedListToString( yoke,

@@ -1274,20 +1274,6 @@ PkRuntime.prototype.init_ = function () {
     defEssenceInterpret( "fn-essence",
         function ( yoke, essence, nonlocalCaptures ) {
         
-        // TODO: Remove this "if ( false )" to enable compilation.
-        // Right now it's actually even slower with compilation
-        // enabled. We should at least see if we save some time when
-        // we compile the demo's prelude ahead of time, since right
-        // now we're measuring the compilation step as part of the
-        // time spent.
-        //
-        // TODO: Let's also try just running the macroexpansion phase
-        // ahead of time, rather than the full compiler.
-        //
-        // TODO: Let's also try just running the read phase ahead of
-        // time, rather than either the macroexpander or the compiler.
-        
-        if ( false )
         return listMap( yoke, nonlocalCaptures,
             function ( yoke, nonlocalCapture ) {
             
@@ -1309,7 +1295,7 @@ PkRuntime.prototype.init_ = function () {
             if ( !valid.ok )
                 return then( yoke, null, valid );
         
-        return compileEssenceWithParams( yoke, gsi, nlcVars, essence,
+        return compileEssence( yoke, gsi, nlcVars, essence,
             function ( yoke, gsi, compiled ) {
             
             if ( !compiled.ok )
@@ -1355,6 +1341,8 @@ PkRuntime.prototype.init_ = function () {
             // compiled code, but it uses the hackish Pk#toString().
             // See if we should make it a debug option or something.
 //            "// " + essence + "\n" +
+//            "// @sourceURL=" + Math.random() + "\n" +
+//            "debugger;\n" +
             code
         )(
             nonlocalCaptures,
@@ -1395,14 +1383,24 @@ PkRuntime.prototype.init_ = function () {
         } );
         
         
+        // TODO: Test Penknife with various AOT compilers:
+        //
+        // - A compiled file that bypasses the read phase.
+        // - A compiled file that bypasses the macroexpansion phase.
+        // - A compiled file that uses no interpreter, just compiled
+        //   code.
+        
         // NOTE: The above code makes every function expression invoke
-        // the compiler in era-penknife-to-js.js. The below code makes
-        // functions store the original expression (well, what we call
-        // the "essence" since it isn't a raw s-expression) and
-        // interpret it each time.
-        // TODO: Once we use the above code, this will be dead code.
-        // Either comment it out entirely, or put it under some kind
-        // of debug option.
+        // the compiler. The below code would make functions interpret
+        // their bodies each time they're called. Penknife was using
+        // this interpretation style until recently, when the compiled
+        // output finally reached a speed competitive with the
+        // interpreter. (Once we have AOT-compiled files, the compiler
+        // will probably be the clear winner, but right now they're
+        // actually about the same.)
+        //
+        // TODO: Right now this is dead code. Either comment it out
+        // entirely, or put it under some kind of debug option.
         
         var captures = essence.ind( 0 );
         var argsDupCount = essence.ind( 1 );
