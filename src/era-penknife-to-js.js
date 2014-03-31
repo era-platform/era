@@ -1395,7 +1395,11 @@ function compiledLinkedListToString( yoke, compiled, then ) {
                 "})( function ( yoke, " +
                     statement.resultVar + " ) {\n" +
                 "\n" +
+                "return runWaitOne( yoke, function ( yoke ) {\n" +
+                "\n" +
                 state.code + "\n" +
+                "\n" +
+                "} );\n" +
                 "\n" +
                 "} );"
             } );
