@@ -238,6 +238,10 @@ function getGs( yoke, gsi, then ) {
     } );
 }
 
+function startGensymIndex() {
+    return pkNil;
+}
+
 function getGsAndFinishWithExpr( yoke,
     gensymIndex, expr, revStatements, then ) {
     
@@ -302,8 +306,8 @@ function compileCallOnLiteral2( yoke,
     
     return getGsAndFinishWithExpr( yoke, gsi,
         "" + funcCode + "( " +
-            compiledArg1.resultVar + ", " +
-            compiledArg2.resultVar + " );",
+            compiledArg1.val.resultVar + ", " +
+            compiledArg2.val.resultVar + " )",
         revStatements,
         function ( yoke, gsi, compiledResult ) {
         
@@ -1325,6 +1329,322 @@ function compiledLinkedListToString( yoke, compiled, then ) {
         }
     }, function ( yoke, state ) {
         return then( yoke, state.code );
+    } );
+}
+
+
+
+// Turns out the reader is very slow right now because it makes
+// frequent use of setTimeout() for control flow. This redefinition of
+// `defer` is hackish, but it definitely fixes the speed issue.
+// TODO: Fix this in a better way.
+var deferTrampolineEvents = [];
+defer = function ( func ) {
+    deferTrampolineEvents.push( func );
+};
+function runDeferTrampoline() {
+    while ( deferTrampolineEvents.length !== 0 )
+        deferTrampolineEvents.pop()();
+};
+
+function pkReadAll( yoke, string, then ) {
+    function read( stream, onEnd, onFailure, onSuccess ) {
+        // TODO: Integrate yoke-passing into the reader so we don't
+        // have to run for an arbitrary amount of time like this.
+        var readResult;
+        reader( {
+            stream: stream,
+            readerMacros: readerMacros,
+            heedsCommandEnds: true,
+            infixLevel: 0,
+            infixState: { type: "empty" },
+            end: function ( $ ) {
+                if ( $.infixState.type === "ready" )
+                    $.then( { ok: true, val: $.infixState.val } );
+                else
+                    readResult = onEnd();
+                runDeferTrampoline();
+            },
+            unrecognized: function ( $ ) {
+                $.then( { ok: false,
+                    msg: "Encountered an unrecognized character" } );
+                runDeferTrampoline();
+            },
+            then: function ( result ) {
+                if ( result.ok )
+                    readResult = onSuccess( result.val );
+                else
+                    readResult = onFailure( result.msg );
+            }
+        } );
+        runDeferTrampoline();
+        return readResult;
+    }
+    var stream = stringStream( string );
+    return readNext( [] );
+    function readNext( resultsSoFar ) {
+        return read( stream, function () {  // onEnd
+            return then( yoke, resultsSoFar );
+        }, function ( message ) {  // onFailure
+            return then( yoke,
+                resultsSoFar.concat(
+                    [ { ok: false, msg: message } ] ) );
+        }, function ( result ) {  // onSuccess
+            return readNext( resultsSoFar.concat(
+                [ { ok: true, val: result } ] ) );
+        } );
+    }
+}
+
+function compileAndDefineFromString( yoke,
+    pkRuntime, pkCodeString, then ) {
+    
+    return pkReadAll( yoke, pkCodeString,
+        function ( yoke, tryExprs ) {
+        
+        var n = tryExprs.length;
+        return go( yoke, 0, null );
+        function go( yoke, i, retDisplays ) {
+            var nextRetDisplays = retDisplays;
+            function addDisplay( display ) {
+                // TODO: Stop using this mutation. It means we can't
+                // reinvoke a continuation without getting duplicate
+                // entries. We don't reinvoke continuations in the
+                // main code, but it's still a nice option when using
+                // the JS debugger.
+                nextRetDisplays =
+                    { first: display, rest: nextRetDisplays };
+            }
+            function next( yoke ) {
+                return runWaitOne( yoke, function ( yoke ) {
+                    return go( yoke, i + 1, nextRetDisplays );
+                } );
+            }
+            function finish( yoke ) {
+                var displays = [];
+                for ( var retDisplays = nextRetDisplays;
+                    retDisplays !== null;
+                    retDisplays = retDisplays.rest )
+                    displays.unshift( retDisplays.first );
+                return runWaitOne( yoke, function ( yoke ) {
+                    return then( yoke, displays );
+                } );
+            }
+            function finishWith( yoke, display ) {
+                addDisplay( display );
+                return finish( yoke );
+            }
+            function reportError( expr, errorIntro ) {
+                if ( expr.tag === "nope" ) {
+                    addDisplay( {
+                        type: "error",
+                        intro: "" + errorIntro + " error",
+                        msg: expr.ind( 0 )
+                    } );
+                    return true;
+                } else if ( expr.tag !== "yep" ) {
+                    addDisplay( {
+                        type: "error",
+                        intro:
+                            "" + errorIntro + " error " +
+                            "(poorly wrapped)",
+                        msg: expr
+                    } );
+                    return true;
+                } else {
+                    // This is a triumph.
+                    return false;
+                }
+            }
+            
+            if ( !(i < n) ) {
+                var displays = [];
+                for ( ; retDisplays !== null;
+                    retDisplays = retDisplays.rest )
+                    displays.unshift( retDisplays.first );
+                return runWaitOne( yoke, function ( yoke ) {
+                    return then( yoke, displays );
+                } );
+            }
+            
+            var reported;
+            
+            var tryExpr = tryExprs[ i ];
+            if ( !tryExpr.ok )
+                return finishWith( yoke, {
+                    type: "error",
+                    intro: "Parse error",
+                    msg: pkRawErr( tryExpr.msg )
+                } );
+            
+            return runWait( yoke, function ( yoke ) {
+                return pkRuntime.conveniences_macroexpandArrays(
+                    tryExpr.val, yoke );
+            }, function ( yoke, macroexpanded ) {
+            
+            if ( reportError( macroexpanded, "Macroexpansion" ) ) {
+                return finish( yoke );
+            } else {
+//                addDisplay( {
+//                    type: "macroexpansion-success",
+//                    val: macroexpanded.ind( 0 )
+//                } );
+            }
+            
+            return runWait( yoke, function ( yoke ) {
+                return pkRuntime.conveniences_pkDrop(
+                    macroexpanded, yoke );
+            }, function ( yoke, macroexpandedDrop ) {
+            
+            if ( reportError( macroexpandedDrop,
+                "Macroexpansion result drop" ) )
+                return finish( yoke );
+            
+            return compileTopLevel( yoke, macroexpanded.ind( 0 ),
+                function ( yoke, jsFuncCode ) {
+            
+            if ( !jsFuncCode.ok )
+                return finishWith( yoke, {
+                    type: "error",
+                    intro: "Compilation error",
+                    msg: pkRawErr( jsFuncCode.val )
+                } );
+            
+            return invokeTopLevel( yoke,
+                pkRuntime,
+                Function( "return " + jsFuncCode.val + ";" )(),
+                function ( yoke, commandResult ) {
+            
+            if ( reportError( commandResult,
+                "Command execution" ) ) {
+                return finish( yoke );
+            } else {
+                addDisplay( {
+                    type: "success",
+                    jsFuncCode: jsFuncCode.val,
+                    val: commandResult.ind( 0 )
+                } );
+            }
+            
+            return runWait( yoke, function ( yoke ) {
+                return pkRuntime.conveniences_pkDrop(
+                    commandResult, yoke );
+            }, function ( yoke, commandResultDrop ) {
+            
+            if ( reportError( commandResultDrop,
+                "Command result drop" ) )
+                return finish( yoke );
+            
+            return runWait( yoke, function ( yoke ) {
+                return pkRuntime.conveniences_runDefinitions( yoke );
+            }, function ( yoke, defined ) {
+            
+            if ( reportError( defined, "Definition" ) )
+                return finish( yoke );
+            
+            return runWait( yoke, function ( yoke ) {
+                return pkRuntime.conveniences_pkDrop( defined, yoke );
+            }, function ( yoke, definedDrop ) {
+            
+            if ( reportError( definedDrop,
+                "Definition result drop" ) )
+                return finish( yoke );
+            
+            return next( yoke );
+            
+            } );
+            
+            } );
+            
+            } );
+            
+            } );
+            
+            } );
+            
+            } );
+            
+            } );
+        }
+    } );
+}
+
+function compileTopLevel( yoke, essence, then ) {
+    return compileEssence( yoke, startGensymIndex(), null, essence,
+        function ( yoke, gsi, compiled ) {
+        
+        if ( !compiled.ok )
+            return then( yoke, null, compiled );
+    
+    return compiledLinkedListToString( yoke, compiled.val,
+        function ( yoke, code ) {
+    
+    // TODO: See if there's a more convenient way to manage all these
+    // variables.
+    return then( yoke, { ok: true, val:
+        "function ( " +
+            "Pk, pkNil, pkCons, pkList, pkStrNameRaw, " +
+            "pkQualifiedName, pkYep, pkPairName, runWaitTry, " +
+            "listLenIsNat, pkErr, pkRet, runRet, pkfnLinear, " +
+            "runWaitOne, " +
+            
+            "cachedNats, " +
+            
+            "yoke, pkRuntime, then ) {\n" +
+        "\n" +
+        // TODO: This commented-out line may help when debugging
+        // compiled code, but it uses the hackish Pk#toString().
+        // See if we should make it a debug option or something.
+//        "// " + essence + "\n" +
+//        "// @sourceURL=" + Math.random() + "\n" +
+//        "debugger;\n" +
+        code + "\n" +
+        
+        "\n" +
+        "}"
+    } );
+    
+    } );
+    
+    } );
+}
+
+function invokeTopLevel( yoke, pkRuntime, jsFunc, then ) {
+    return runWait( yoke, function ( yoke ) {
+        // TODO: Does this really count as a "convenience"?
+        return pkRuntime.conveniences_withEffectsForInterpret( yoke,
+            function ( yoke ) {
+            
+            // TODO: See if there's a more convenient way to manage
+            // all these variables.
+            return jsFunc(
+                Pk,
+                pkNil,
+                pkCons,
+                pkList,
+                pkStrNameRaw,
+                pkQualifiedName,
+                pkYep,
+                pkPairName,
+                runWaitTry,
+                listLenIsNat,
+                pkErr,
+                pkRet,
+                runRet,
+                pkfnLinear,
+                runWaitOne,
+                
+                cachedNats,
+                
+                yoke,
+                pkRuntime,
+                function ( yoke, result ) {
+                    return pkRet( yoke, result );
+                }
+            );
+        } );
+    }, function ( yoke, result ) {
+        return then( yoke, result );
     } );
 }
 

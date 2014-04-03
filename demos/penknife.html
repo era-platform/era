@@ -466,155 +466,75 @@ qq.(foo ((qq (uq uq.(succ/succ/nil))) (qq (uqs quote.(a b c))) bar))
 <script type="text/javascript" src="../src/era-penknife.js"></script>
 <script type="text/javascript">"use strict";
 
-// Turns out the reader is very slow right now because it makes
-// frequent use of setTimeout() for control flow. This redefinition of
-// `defer` is hackish, but it definitely fixes the speed issue.
-var deferTrampolineEvents = [];
-defer = function ( func ) {
-    deferTrampolineEvents.push( func );
-};
-function runDeferTrampoline() {
-    while ( deferTrampolineEvents.length !== 0 )
-        deferTrampolineEvents.pop()();
-};
-
-function pkReadAll( string, then ) {
-    function read( stream, onEnd, onFailure, onSuccess ) {
-        reader( {
-            stream: stream,
-            readerMacros: readerMacros,
-            heedsCommandEnds: true,
-            infixLevel: 0,
-            infixState: { type: "empty" },
-            end: function ( $ ) {
-                if ( $.infixState.type === "ready" )
-                    $.then( { ok: true, val: $.infixState.val } );
-                else
-                    onEnd();
-                runDeferTrampoline();
-            },
-            unrecognized: function ( $ ) {
-                $.then( { ok: false,
-                    msg: "Encountered an unrecognized character" } );
-                runDeferTrampoline();
-            },
-            then: function ( result ) {
-                if ( result.ok )
-                    onSuccess( result.val );
-                else
-                    onFailure( result.msg );
-            }
-        } );
-        runDeferTrampoline();
-    }
-    var stream = stringStream( string );
-    readNext( [] );
-    function readNext( resultsSoFar ) {
-        read( stream, function () {  // onEnd
-            then( resultsSoFar );
-        }, function ( message ) {  // onFailure
-            then( resultsSoFar.concat(
-                [ { ok: false, msg: message } ] ) );
-        }, function ( result ) {  // onSuccess
-            readNext( resultsSoFar.concat(
-                [ { ok: true, val: result } ] ) );
-        } );
-    }
-}
-
 window.onload = function () {
     function generateOutput() {
         var startMillis = new Date().getTime();
-        var penknife = makePkRuntime();
-        pkReadAll(
-            document.getElementById( "pk-prelude" ).firstChild.data,
-            function ( preludeResults ) {
-        pkReadAll(
-            document.getElementById( "code-in-textarea" ).value,
-            function ( textareaResults ) {
+        var pkRuntime = makePkRuntime();
+        var yoke = pkRuntime.conveniences_syncYoke;
         
-        var results = [].concat(
-            arrMap( preludeResults, function ( result ) {
-                return { result: result, displayThisResult: false };
+        var maybeYokeAndResult = compileAndDefineFromString( yoke,
+            pkRuntime,
+            document.getElementById( "pk-prelude" ).firstChild.data,
+            function ( yoke, preludeDisplays ) {
+        return compileAndDefineFromString( yoke,
+            pkRuntime,
+            document.getElementById( "code-in-textarea" ).value,
+            function ( yoke, textareaDisplays ) {
+        
+        var displays = [].concat(
+            arrMap( preludeDisplays, function ( display ) {
+                return { display: display, displayThisResult: false };
             } ),
-            arrMap( textareaResults, function ( result ) {
-                return { result: result, displayThisResult: true };
+            arrMap( textareaDisplays, function ( display ) {
+                return { display: display, displayThisResult: true };
             } )
         );
         
-        function reportError( result, errorIntro ) {
-            if ( result.tag === "nope" ) {
-                displays.push(
-                    "" + errorIntro + " error: " + result.ind( 0 ) );
-                return true;
-            } else if ( result.tag !== "yep" ) {
-                displays.push(
-                    "" + errorIntro + " error (poorly wrapped): " +
-                    result );
-                return true;
+        var displayStrings = [];
+        var jsFuncCodeStrings = [];
+        var hasError = false;
+        for ( var i = 0, n = displays.length; i < n; i++ ) {
+            var display = displays[ i ];
+            if ( display.display.type === "error" ) {
+                displayStrings.push(
+                    display.display.intro + ": " +
+                    display.display.msg );
+                hasError = true;
+            } else if ( display.display.type === "success" ) {
+                if ( display.displayThisResult )
+                    displayStrings.push( "" + display.display.val );
+                jsFuncCodeStrings.push( display.display.jsFuncCode );
             } else {
-                // This is a triumph.
-                return false;
+                throw new Error();
             }
         }
-        var displays = [];
-        for ( var i = 0, n = results.length; i < n; i++ ) {
-            var result = results[ i ];
-            if ( !result.result.ok ) {
-                displays.push( "Parse error: " + result.result.msg );
-                break;
-            }
-            var macroexpanded = penknife.conveniences_runSyncYoke(
-                penknife.conveniences_macroexpandArrays(
-                    result.result.val ) ).result;
-            if ( reportError( macroexpanded, "Macroexpansion" ) ) {
-                break;
-            } else {
-//                displays.push(
-//                    "Macroexpansion: " + macroexpanded.ind( 0 ) );
-            }
-            var macroexpandedDrop = penknife.conveniences_runSyncYoke(
-                penknife.conveniences_pkDrop( macroexpanded )
-            ).result;
-            if ( reportError( macroexpandedDrop,
-                "Macroexpansion result drop" ) )
-                break;
-            
-            var interpreted = penknife.conveniences_runSyncYoke(
-                penknife.conveniences_interpretEssence(
-                    macroexpanded.ind( 0 ) ) ).result;
-            if ( reportError( interpreted, "Interpretation" ) ) {
-                break;
-            } else {
-                if ( result.displayThisResult ) {
-                    displays.push( "" + interpreted.ind( 0 ) );
-//                    displays.push( "" );
-                }
-            }
-            var interpretedDrop = penknife.conveniences_runSyncYoke(
-                penknife.conveniences_pkDrop( interpreted ) ).result;
-            if ( reportError( interpretedDrop,
-                "Interpretation result drop" ) )
-                break;
-            
-            var defined = penknife.conveniences_runSyncYoke(
-                penknife.conveniences_runDefinitions() ).result;
-            if ( reportError( defined, "Definition" ) )
-                break;
-            var definedDrop = penknife.conveniences_runSyncYoke(
-                penknife.conveniences_pkDrop( defined ) ).result;
-            if ( reportError( definedDrop,
-                "Definition result drop" ) )
-                break;
-        }
+        // TODO: Come up with a better top-level interface than a
+        // single constant variable name.
+        if ( !hasError )
+            var fileCode =
+                "var myFile = [\n" +
+                "\n" +
+                "\n" +
+                jsFuncCodeStrings.join( ",\n\n\n" ) + "\n" +
+                "\n" +
+                "\n" +
+                "];";
         document.getElementById( "result" ).value =
-            displays.join( "\n" );
+            displayStrings.join( "\n" );
         var runMillis = new Date().getTime() - startMillis;
         // TODO: Either remove this or display it more prominently.
         console.log( "Ran for " + runMillis / 1000 + " seconds." );
         
+        // TODO: Actually write this to a file.
+        if ( !hasError )
+            console.log( { val: fileCode } );
+        
+        return pkRet( yoke, pkNil );
+        
         } );
         } );
+        
+        pkRuntime.conveniences_runSyncYoke( maybeYokeAndResult );
     }
     document.getElementById( "go" ).onclick = generateOutput;
     generateOutput();

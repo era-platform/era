@@ -1286,7 +1286,8 @@ PkRuntime.prototype.init_ = function () {
         }, function ( yoke, nonlocalCaptures ) {
         return listLen( yoke, nonlocalCaptures,
             function ( yoke, numNlcs ) {
-        return getGs( yoke, pkNil, function ( yoke, gsi, nlcsVar ) {
+        return getGs( yoke, startGensymIndex(),
+            function ( yoke, gsi, nlcsVar ) {
         return compileListToVars( yoke, gsi,
             { revStatements: null, resultVar: nlcsVar },
             numNlcs,
@@ -3456,18 +3457,28 @@ PkRuntime.prototype.conveniences_pkDrop = function ( val, opt_yoke ) {
         return pkRet( yoke, pkNil );
     } );
 };
+PkRuntime.prototype.conveniences_withEffectsForInterpret = function (
+    yoke, func ) {
+    
+    var self = this;
+    // TODO: See if we should be temporarily augmenting the available
+    // side effects, rather than temporarily replacing them.
+    return self.withAvailableEffectsReplaced( yoke, {
+        canUseImperativeCapabilities: true,
+        canDefine: true
+    }, function ( yoke ) {
+        return func( yoke );
+    } );
+};
 PkRuntime.prototype.conveniences_interpretEssence = function (
     essence, opt_yoke ) {
     
     var self = this;
     if ( opt_yoke === void 0 )
         opt_yoke = self.conveniences_syncYoke;
-    // TODO: See if we should be temporarily augmenting the available
-    // side effects, rather than temporarily replacing them.
-    return self.withAvailableEffectsReplaced( opt_yoke, {
-        canUseImperativeCapabilities: true,
-        canDefine: true
-    }, function ( yoke ) {
+    return self.conveniences_withEffectsForInterpret( yoke,
+        function ( yoke ) {
+        
         return self.callMethod( yoke, "essence-interpret",
             pkList( essence, pkNil ) );
     } );
