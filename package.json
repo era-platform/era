@@ -1,0 +1,21 @@
+{
+  "private": true,
+  "name": "era-lang",
+  "version": "0.0.1",
+  "description": "A module system for platform-independent code, focusing on the JavaScript platform for now.",
+  "homepage": "https://github.com/rocketnia/era",
+  "author": {
+    "name": "Ross Angle",
+    "url":  "http://www.rocketnia.com/"
+  },
+  
+  "engines": {
+    "node": ">= 0.6.0",
+    "npm": ">= 1.0.0"
+  },
+  "dependencies": {
+    "argparse": "*",
+    "uglify-js": "*"
+  },
+  "main": "node-test.js"
+}
