@@ -1396,6 +1396,8 @@ function pkReadAll( yoke, string, then ) {
     }
 }
 
+// TODO: Factor out some common functionality between this and
+// invokeFileTopLevel().
 function compileAndDefineFromString( yoke,
     pkRuntime, pkCodeString, then ) {
     
@@ -1646,6 +1648,132 @@ function invokeTopLevel( yoke, pkRuntime, jsFunc, then ) {
     }, function ( yoke, result ) {
         return then( yoke, result );
     } );
+}
+
+// TODO: Factor out some common functionality between this and
+// compileAndDefineFromString().
+function invokeFileTopLevel( yoke, pkRuntime, jsFuncs, then ) {
+    var n = jsFuncs.length;
+    return go( yoke, 0, null );
+    function go( yoke, i, retDisplays ) {
+        var nextRetDisplays = retDisplays;
+        function addDisplay( display ) {
+            // TODO: Stop using this mutation. It means we can't
+            // reinvoke a continuation without getting duplicate
+            // entries. We don't reinvoke continuations in the main
+            // code, but it's still a nice option when using the JS
+            // debugger.
+            nextRetDisplays =
+                { first: display, rest: nextRetDisplays };
+        }
+        function next( yoke ) {
+            return runWaitOne( yoke, function ( yoke ) {
+                return go( yoke, i + 1, nextRetDisplays );
+            } );
+        }
+        function finish( yoke ) {
+            var displays = [];
+            for ( var retDisplays = nextRetDisplays;
+                retDisplays !== null;
+                retDisplays = retDisplays.rest )
+                displays.unshift( retDisplays.first );
+            return runWaitOne( yoke, function ( yoke ) {
+                return then( yoke, displays );
+            } );
+        }
+        function finishWith( yoke, display ) {
+            addDisplay( display );
+            return finish( yoke );
+        }
+        function reportError( expr, errorIntro ) {
+            if ( expr.tag === "nope" ) {
+                addDisplay( {
+                    type: "error",
+                    intro: "" + errorIntro + " error",
+                    msg: expr.ind( 0 )
+                } );
+                return true;
+            } else if ( expr.tag !== "yep" ) {
+                addDisplay( {
+                    type: "error",
+                    intro:
+                        "" + errorIntro + " error " +
+                        "(poorly wrapped)",
+                    msg: expr
+                } );
+                return true;
+            } else {
+                // This is a triumph.
+                return false;
+            }
+        }
+        
+        if ( !(i < n) ) {
+            var displays = [];
+            for ( ; retDisplays !== null;
+                retDisplays = retDisplays.rest )
+                displays.unshift( retDisplays.first );
+            return runWaitOne( yoke, function ( yoke ) {
+                return then( yoke, displays );
+            } );
+        }
+        
+        var reported;
+        
+        var jsFunc = jsFuncs[ i ];
+        
+        return invokeTopLevel( yoke, pkRuntime, jsFunc,
+            function ( yoke, commandResult ) {
+        
+        if ( reportError( commandResult,
+            "Command execution" ) ) {
+            return finish( yoke );
+        } else {
+            addDisplay( {
+                type: "success",
+                // TODO: Make each compiled file a string literals.
+                // Once we do that, way we may actually have code to
+                // put here.
+                jsFuncCode:
+                    "((function () { throw new Error(); })())",
+                val: commandResult.ind( 0 )
+            } );
+        }
+        
+        return runWait( yoke, function ( yoke ) {
+            return pkRuntime.conveniences_pkDrop(
+                commandResult, yoke );
+        }, function ( yoke, commandResultDrop ) {
+        
+        if ( reportError( commandResultDrop,
+            "Command result drop" ) )
+            return finish( yoke );
+        
+        return runWait( yoke, function ( yoke ) {
+            return pkRuntime.conveniences_runDefinitions( yoke );
+        }, function ( yoke, defined ) {
+        
+        if ( reportError( defined, "Definition" ) )
+            return finish( yoke );
+        
+        return runWait( yoke, function ( yoke ) {
+            return pkRuntime.conveniences_pkDrop( defined, yoke );
+        }, function ( yoke, definedDrop ) {
+        
+        if ( reportError( definedDrop,
+            "Definition result drop" ) )
+            return finish( yoke );
+        
+        return next( yoke );
+        
+        } );
+        
+        } );
+        
+        } );
+        
+        } );
+    }
 }
 
 // NOTE: The generated code snippets depend on the following free

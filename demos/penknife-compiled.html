@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<!--
+penknife.html (part of Era)
+Copyright 2013 Ross Angle. Released under the MIT License.
+-->
+<title>Era Penknife demo</title>
+<style type="text/css">
+textarea { display: block; }
+</style>
+</head>
+<body>
+<p><a href="https://github.com/rocketnia/era"
+    >View the Era project on GitHub.</a></p>
+<p><a href="https://github.com/rocketnia/penknife"
+    >View the old Penknife project on GitHub.</a></p>
+
+<p>This file loads the compiled Penknife code from a file called
+"penknife-compiled.js" in the same directory. To use this file, you
+must create penknife-compiled.js yourself by running
+<a href="penknife.html">penknife.html</a> and getting the resulting
+compiled string (which is currently over 500KB). That string is only
+logged to the console, but it's possible to access it by going into
+the code and uncommenting a part that puts the string in a
+<code>&lt;textarea&gt;</code>.</p>
+
+<button id="go">Execute</button>
+<textarea id="result" disabled cols="80" rows="24"></textarea>
+
+<script type="text/javascript" src="../src/era-misc.js"></script>
+<script type="text/javascript" src="../src/era-reader.js"></script>
+<script type="text/javascript" src="../src/era-penknife-to-js.js">
+    </script>
+<script type="text/javascript" src="../src/era-penknife.js"></script>
+<script type="text/javascript" src="penknife-compiled.js"></script>
+<script type="text/javascript">"use strict";
+
+window.onload = function () {
+    function generateOutput() {
+        var startMillis = new Date().getTime();
+        var pkRuntime = makePkRuntime();
+        var yoke = pkRuntime.conveniences_syncYoke;
+        
+        var maybeYokeAndResult = invokeFileTopLevel( yoke,
+            pkRuntime,
+            myFile,
+            function ( yoke, compiledDisplays ) {
+        
+        var displays = [].concat(
+            arrMap( compiledDisplays, function ( display ) {
+                return { display: display, displayThisResult: true };
+            } )
+        );
+        
+        var displayStrings = [];
+        var hasError = false;
+        for ( var i = 0, n = displays.length; i < n; i++ ) {
+            var display = displays[ i ];
+            if ( display.display.type === "error" ) {
+                displayStrings.push(
+                    display.display.intro + ": " +
+                    display.display.msg );
+                hasError = true;
+            } else if ( display.display.type === "success" ) {
+                if ( display.displayThisResult )
+                    displayStrings.push( "" + display.display.val );
+            } else {
+                throw new Error();
+            }
+        }
+        document.getElementById( "result" ).value =
+            displayStrings.join( "\n" );
+        var runMillis = new Date().getTime() - startMillis;
+        // TODO: Either remove this or display it more prominently.
+        console.log( "Ran for " + runMillis / 1000 + " seconds." );
+        
+        return pkRet( yoke, pkNil );
+        
+        } );
+        
+        pkRuntime.conveniences_runSyncYoke( maybeYokeAndResult );
+    }
+    document.getElementById( "go" ).onclick = generateOutput;
+    generateOutput();
+};
+</script>
+</body>
+</html>

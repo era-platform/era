@@ -526,8 +526,14 @@ window.onload = function () {
         console.log( "Ran for " + runMillis / 1000 + " seconds." );
         
         // TODO: Actually write this to a file.
-        if ( !hasError )
+        if ( !hasError ) {
             console.log( { val: fileCode } );
+            
+//            var textarea = document.createElement( "textarea" );
+//            textarea.appendChild(
+//                document.createTextNode( fileCode ) );
+//            document.body.appendChild( textarea );
+        }
         
         return pkRet( yoke, pkNil );
         
