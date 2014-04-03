@@ -1,6 +1,6 @@
 #!/bin/env node
-// node-test.js (part of Era)
-// Copyright 2013 Ross Angle. Released under the MIT License.
+// build-era.js
+// Copyright 2013, 2014 Ross Angle. Released under the MIT License.
 "use strict";
 
 process.chdir( __dirname );

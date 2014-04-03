@@ -17,5 +17,5 @@
     "argparse": "*",
     "uglify-js": "*"
   },
-  "main": "node-test.js"
+  "main": "build-era.js"
 }
