@@ -1319,6 +1319,8 @@ function compiledLinkedListToString( yoke, compiled, then ) {
                     statement.capturesVar + ", " +
                     statement.argsVar + " ) {\n" +
                 "\n" +
+                "var then = pkRet;\n" +
+                "\n" +
                 bodyCode + "\n" +
                 "\n" +
                 "} );" );
@@ -1586,9 +1588,9 @@ function compileTopLevel( yoke, essence, then ) {
     return then( yoke, { ok: true, val:
         "function ( " +
             "Pk, pkNil, pkCons, pkList, pkStrNameRaw, " +
-            "pkQualifiedName, pkYep, pkPairName, runWaitTry, " +
-            "listLenIsNat, pkErr, pkRet, runRet, pkfnLinear, " +
-            "runWaitOne, " +
+            "pkQualifiedName, pkYep, pkPairName, pkStrUnsafe, " +
+            "runWaitTry, listLenIsNat, pkErr, pkRet, runRet, " +
+            "pkfnLinear, runWaitOne, " +
             
             "cachedNats, " +
             
@@ -1628,6 +1630,7 @@ function invokeTopLevel( yoke, pkRuntime, jsFunc, then ) {
                 pkQualifiedName,
                 pkYep,
                 pkPairName,
+                pkStrUnsafe,
                 runWaitTry,
                 listLenIsNat,
                 pkErr,

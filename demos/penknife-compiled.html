@@ -18,13 +18,19 @@ textarea { display: block; }
     >View the old Penknife project on GitHub.</a></p>
 
 <p>This file loads the compiled Penknife code from a file called
-"penknife-compiled.js" in the same directory. To use this file, you
-must create penknife-compiled.js yourself by running
-<a href="penknife.html">penknife.html</a> and getting the resulting
-compiled string (which is currently over 500KB). That string is only
-logged to the console, but it's possible to access it by going into
-the code and uncommenting a part that puts the string in a
-<code>&lt;textarea&gt;</code>.</p>
+"fin/penknife-compiled.js" in the repo directory. To use this file,
+you must create penknife-compiled.js in one of two ways:</p>
+
+<ul>
+    <li>Install Node.js. From the repo directory, run the command
+    "<code>npm install</code>" followed by the command
+    "<code>node build-era.js --build</code>".</li>
+    <li>Modify <a href="penknife.html">penknife.html</a> by
+    uncommenting some lines that put the compiled string in a
+    <code>&lt;textarea&gt;</code>. Then view that page, copy the
+    string (which is currently over 500KB), and paste it into the
+    proper file.</li>
+</ul>
 
 <button id="go">Execute</button>
 <textarea id="result" disabled cols="80" rows="24"></textarea>
@@ -34,7 +40,8 @@ the code and uncommenting a part that puts the string in a
 <script type="text/javascript" src="../src/era-penknife-to-js.js">
     </script>
 <script type="text/javascript" src="../src/era-penknife.js"></script>
-<script type="text/javascript" src="penknife-compiled.js"></script>
+<script type="text/javascript" src="../fin/penknife-compiled.js">
+    </script>
 <script type="text/javascript">"use strict";
 
 window.onload = function () {

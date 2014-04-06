@@ -3,14 +3,29 @@
 // Copyright 2013, 2014 Ross Angle. Released under the MIT License.
 "use strict";
 
-process.chdir( __dirname );
 var fs = require( "fs" );
+
 var argparse = require( "argparse" );
 //var uglify = require( "uglify-js" );
+
+var ltf = require( "./buildlib/lathe-fs" );
+
+
+function readFile( filename ) {
+    return fs.readFileSync( filename, "UTF-8" );
+}
+function readFiles( filenames ) {
+    return filenames.map( function ( filename ) {
+        return readFile( filename );
+    } ).join( "\n\n\n" );
+}
+
 
 
 if ( require.main === module ) {
 
+
+process.chdir( __dirname );
 
 var argParser = new argparse.ArgumentParser( {
     version: "0.0.1",
@@ -19,15 +34,19 @@ var argParser = new argparse.ArgumentParser( {
 } );
 argParser.addArgument( [ "-t", "--test" ], {
     action: "storeTrue",
-    help: "Run unit tests."
+    help: "Run unit tests of the module system."
+} );
+argParser.addArgument( [ "-b", "--build" ], {
+    action: "storeTrue",
+    help: "Compile dependencies of demos/penknife-compiled.html."
 } );
 var args = argParser.parseArgs();
 
-var didSomething = false;
+var tasks = [];
 
-if ( args.test ) {
-    didSomething = true;
-    Function( [
+
+if ( args.test ) tasks.push( function ( then ) {
+    Function( readFiles( [
         "src/era-misc.js",
         "test/harness-first.js",
         "test/test-bigint.js",
@@ -36,13 +55,97 @@ if ( args.test ) {
         "src/era-modules.js",
         "test/test-modules.js",
         "test/harness-last.js"
-    ].map( function ( filename ) {
-        return fs.readFileSync( filename, "UTF-8" );
-    } ).join( "\n\n\n" ) )();
-}
+    ] ) )();
+} );
 
-if ( !didSomething )
+
+if ( args.build ) tasks.push( function ( then ) {
+    
+    var $pk = Function(
+        readFiles( [
+            "src/era-misc.js",
+            "src/era-reader.js",
+            "src/era-penknife.js",
+            "src/era-penknife-to-js.js"
+        ] ) + "\n" +
+        "\n" +
+        "\n" +
+        "return { pkNil: pkNil, pkRet: pkRet,\n" +
+        "    makePkRuntime: makePkRuntime,\n" +
+        "    compileAndDefineFromString:\n" +
+        "        compileAndDefineFromString };\n"
+    )();
+    
+    
+    var pkRuntime = $pk.makePkRuntime();
+    var yoke = pkRuntime.conveniences_syncYoke;
+    
+    var maybeYokeAndResult = $pk.compileAndDefineFromString( yoke,
+        pkRuntime,
+        readFile( "demos/penknife-compiled-src.pk" ),
+        function ( yoke, displays ) {
+    
+    var displayStrings = [];
+    var jsFuncCodeStrings = [];
+    var hasError = false;
+    for ( var i = 0, n = displays.length; i < n; i++ ) {
+        var display = displays[ i ];
+        if ( display.type === "error" ) {
+            displayStrings.push( display.intro + ": " + display.msg );
+            hasError = true;
+        } else if ( display.type === "success" ) {
+            jsFuncCodeStrings.push( display.jsFuncCode );
+        } else {
+            throw new Error();
+        }
+    }
+    // TODO: Come up with a better top-level interface than a single
+    // constant variable name.
+    if ( hasError ) {
+        console.log( displayStrings.join( "\n" ) );
+    } else {
+        var fileCode =
+            "var myFile = [\n" +
+            "\n" +
+            "\n" +
+            jsFuncCodeStrings.join( ",\n\n\n" ) + "\n" +
+            "\n" +
+            "\n" +
+            "];";
+        ltf.writeTextFile(
+            "fin/penknife-compiled.js", "utf-8", fileCode,
+            function ( e ) {
+            
+            if ( e ) return void then( e );
+            
+            console.log( "Built fin/penknife-compiled.js." );
+            then();
+        } );
+    }
+    
+    return $pk.pkRet( yoke, $pk.pkNil );
+    
+    } );
+    
+    pkRuntime.conveniences_runSyncYoke( maybeYokeAndResult );
+} );
+
+
+if ( tasks.length === 0 ) {
     argParser.printHelp();
+} else {
+    var runTasksFrom = function ( i ) {
+        if ( !(i < tasks.length) )
+            return;
+        var task = tasks[ i ];
+        task( function ( e ) {
+            if ( e ) throw e;
+            
+            runTasksFrom( i + 1 );
+        } );
+    };
+    runTasksFrom( 0 );
+}
 
 
 }
