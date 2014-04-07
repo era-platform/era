@@ -7,11 +7,11 @@
 // To make string literals convenient, we implement an interpolated
 // string syntax according to the following design sketch:
 //
-// reader macro " followed by ( will read a string terminated by ),
+// reader macro \ followed by ( will read a string terminated by ),
 //   and it results in the string contents, which means a list of
 //   strings interspersed with other values, and then it will
 //   postprocess whitespace as described further below
-// reader macro " followed by [ will read a string terminated by ],
+// reader macro \ followed by [ will read a string terminated by ],
 //   and it results in the string contents, which means a list of
 //   strings interspersed with other values, and then it will
 //   postprocess whitespace as described further below
@@ -38,7 +38,7 @@
 //   \} means right parenthesis
 //   \; followed by the rest of a line means empty string (for
 //     comments)
-//   \, followed by a non-infix s-expression followed by . is that
+//   \_ followed by a non-infix s-expression followed by . is that
 //     s-expression; this is one of the "other values" interspersed
 //     with actual strings in the result
 //     // NOTE: The reason we choose the character . here is that it's
@@ -52,7 +52,7 @@
 //     point value outside the Unicode range or reserved for UTF-16
 //     surrogates, in which case it's an error
 //     // NOTE: The reason we choose the character . here is for
-//     // consistency with the \, escape sequence. The reason we have
+//     // consistency with the \_ escape sequence. The reason we have
 //     // a terminating character at all is so the following character
 //     // can be a hex digit without ambiguity.
 // postprocess whitespace according to the following rules:
@@ -308,7 +308,7 @@ readerMacros.set( "/", function ( $ ) {
         return;
     readListUntilParen( $, !"consumeParen" );
 } );
-readerMacros.set( "\"", function ( $ ) {
+readerMacros.set( "\\", function ( $ ) {
     if ( bankInfix( $, 0 ) )
         return;
     $.stream.readc( function ( c ) {
@@ -524,7 +524,7 @@ stringReaderMacros.set( "\\", function ( $ ) {
                 ";": function ( $sub ) {
                     ignoreRestOfLine( $ );
                 },
-                ",": function ( $ ) {
+                "_": function ( $ ) {
                     $.stream.readc( function ( c ) {
                         reader( objPlus( $, {
                             heedsCommandEnds: false,
