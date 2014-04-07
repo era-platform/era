@@ -203,8 +203,9 @@
 
 (defmacro-codegen let-list-and-rest body (g-heads g-tail)
 /let-list (head-vars tail-var lst body) body
-  ; TODO: Figure if we should be inserting a natural number (a
-  ; non-list, non-name value) into code like this.
+  ; NOTE: We're inserting a natural number (a non-list, non-name
+  ; value) into code, but that's just fine. The compiler can process
+  ; simple data structures like this one.
   (list qname.let-list (list g-heads g-tail)
       (list qname.take (list qname.quote len.head-vars) lst)
   /list qname.let-list head-vars g-heads

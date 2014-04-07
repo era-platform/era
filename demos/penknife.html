@@ -217,8 +217,9 @@ textarea { display: block; }
 
 (defmacro-codegen let-list-and-rest body (g-heads g-tail)
 /let-list (head-vars tail-var lst body) body
-  ; TODO: Figure if we should be inserting a natural number (a
-  ; non-list, non-name value) into code like this.
+  ; NOTE: We're inserting a natural number (a non-list, non-name
+  ; value) into code, but that's just fine. The compiler can process
+  ; simple data structures like this one.
   (list qname.let-list (list g-heads g-tail)
       (list qname.take (list qname.quote len.head-vars) lst)
   /list qname.let-list head-vars g-heads
@@ -331,24 +332,6 @@ textarea { display: block; }
     call-with-local-linearity]
   result)
 
-</script>
-<script type="text/plain">
-
-(defmacro qname.let-list-and-rest
-/fn-with-args (op-fork body get-fork gensym-base)
-/let-list (head-vars tail-var lst body) body
-/let g-heads (pair-name gensym-base quote.head)
-/let g-tail (pair-name gensym-base quote.tail)
-/macroexpand-to-fork
-  ; TODO: Figure if we should be inserting a natural number (a
-  ; non-list, non-name value) into code like this.
-  (list qname.let-list (list g-heads g-tail)
-      (list qname.take (list qname.quote len.head-vars) lst)
-  /list qname.let-list head-vars g-heads
-  /list qname.let tail-var g-tail
-    body)
-  get-fork
-  (pair-name gensym-base quote.body-of-let-list-and-rest))
 </script>
 
 <textarea id="code-in-textarea" cols="80" rows="24">
