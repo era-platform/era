@@ -30,6 +30,12 @@
 //     string plus both brackets, without postprocessing whitespace
 //   [ reads a string terminated by ] and means the contents of that
 //     string plus both brackets, without postprocessing whitespace
+//   \( reads a string terminated by ) while boosting the
+//     quasiquotation depth by 1, and it means the contents of the
+//     string plus both brackets, without postprocessing whitespace
+//   \[ reads a string terminated by ] while boosting the
+//     quasiquotation depth by 1, and it means the contents of the
+//     string plus both brackets, without postprocessing whitespace
 //   ) is an error unless it terminates the current string reader
 //   ] is an error unless it terminates the current string reader
 //   \< means left square bracket
@@ -60,6 +66,30 @@
 //   - remove all raw whitespace adjacent to whitespace escapes
 //   - replace every remaining occurrence of one or more raw
 //     whitespace characters with a single space
+//
+// The quasiquotation depth is a nonnegative integer that's usually 0.
+// All \ escape sequences except \( and \[ actually vary depending on
+// this depth. They really begin with \ followed by a number of ,
+// equal to the depth. For instance, at a depth of 2, the \n escape
+// sequence must actually be written as \,,n in the code. If any of
+// these escape sequences other than \_ appears with fewer commas than
+// the depth, it's still parsed the same way, but the result is the
+// unprocessed text.
+//
+// If the escape sequence \_ appears with fewer commas than the depth,
+// that's an error. Someday we may treat it the same way as the other
+// escape sequences, but this would make the steep assumption that the
+// code being generated shares Penknife's complete expression syntax,
+// rather than just sharing its string syntax.
+//
+// TODO: Actually that's not such an unreasonable assumption. After
+// all, the programmer uses the \[ escape sequence if they want to
+// generate string code that's like Penknife string code, and they
+// can potentially use \_ to generate interpolated expression code
+// that's like Penknife interpolated expression code. We should
+// probably support this. To do so, we'll need every Penknife reader
+// behavior to sometimes return the raw string it consumed, rather
+// than returning an expression or other result.
 
 
 // $.stream.readc
@@ -317,7 +347,7 @@ readerMacros.set( "\\", function ( $ ) {
                 function ( closeBracket, openBracket ) {
                 
                 return function ( $sub ) {
-                    readStringUntilBracket( closeBracket,
+                    readStringUntilBracket( closeBracket, 0,
                         objPlus( $, {
                         
                         then: function ( result ) {
@@ -417,10 +447,11 @@ defineInfixOperator( ".", 2,
     } );
 } );
 
-function readStringUntilBracket( bracket, $ ) {
+function readStringUntilBracket( bracket, qqDepth, $ ) {
     function sub( $, string ) {
         return objPlus( $, {
             string: string,
+            qqDepth: qqDepth,
             readerMacros: stringReaderMacros.plusEntry( bracket,
                 function ( $sub ) {
                 
@@ -472,7 +503,7 @@ stringReaderMacros.setAll( strMap().setObj( {
 } ) );
 symbolChopsChars.each( function ( openBracket, closeBracket ) {
     stringReaderMacros.set( openBracket, function ( $ ) {
-        readStringUntilBracket( closeBracket, objPlus( $, {
+        readStringUntilBracket( closeBracket, $.qqDepth, objPlus( $, {
             then: function ( result ) {
                 if ( result.ok )
                     $.then( { ok: true, val: [].concat(
@@ -491,7 +522,7 @@ symbolChopsChars.each( function ( openBracket, closeBracket ) {
     } );
 } );
 stringReaderMacros.set( "\\", function ( $ ) {
-    $.stream.readc( function ( c ) {
+    function readForEscQqDepth( escStart, escQqDepth ) {
         reader( objPlus( $, {
             readerMacros: strMap().setAll( strMap().setObj( {
                 "s": " ",
@@ -499,11 +530,15 @@ stringReaderMacros.set( "\\", function ( $ ) {
                 "r": "\r",
                 "n": "\n",
                 "#": ""
-            } ).map( function ( text ) {
+            } ).map( function ( text, escName ) {
                 return function ( $sub ) {
                     $.stream.readc( function ( c ) {
                         $.then( { ok: true, val:
-                            [ { type: "explicitWhite", text: text } ]
+                            escQqDepth < $.qqDepth ?
+                                [ { type: "nonWhite",
+                                    text: escStart + escName } ] :
+                                [ { type: "explicitWhite",
+                                    text: text } ]
                         } );
                     } );
                 };
@@ -513,18 +548,74 @@ stringReaderMacros.set( "\\", function ( $ ) {
                 ">": "]",
                 "{": "(",
                 "}": ")"
-            } ).map( function ( text ) {
+            } ).map( function ( text, escName ) {
                 return function ( $sub ) {
                     $.stream.readc( function ( c ) {
                         $.then( { ok: true, val:
-                            [ { type: "nonWhite", text: text } ] } );
+                            escQqDepth < $.qqDepth ?
+                                [ { type: "nonWhite",
+                                    text: escStart + escName } ] :
+                                [ { type: "nonWhite", text: text } ]
+                        } );
                     } );
+                };
+            } ) ).setAll( symbolChopsChars.map(
+                function ( closeBracket, openBracket ) {
+                
+                return function ( $sub ) {
+                    if ( $.qqDepth !== 0 )
+                        return void $.then( { ok: false, msg:
+                            "Used a string-within-a-string escape " +
+                            "sequence with an unquote level other " +
+                            "than zero" } );
+                    
+                    readStringUntilBracket(
+                        closeBracket,
+                        $.qqDepth + 1,
+                        objPlus( $, {
+                        
+                        then: function ( result ) {
+                            if ( result.ok )
+                                $.then( { ok: true, val: [].concat(
+                                    { type: "nonWhite", text:
+                                        escStart + openBracket },
+                                    result.val,
+                                    { type: "nonWhite",
+                                        text: closeBracket }
+                                ) } );
+                            else
+                                $.then( result );
+                        }
+                    } ) );
                 };
             } ) ).setObj( {
                 ";": function ( $sub ) {
-                    ignoreRestOfLine( $ );
+                    if ( $.qqDepth <= escQqDepth )
+                        return void ignoreRestOfLine( $ );
+                    
+                    function readRestOfLine( soFar, $ ) {
+                        $.stream.peekc( function ( c ) {
+                            if ( c === "" )
+                                $.end( $ );
+                            else if ( /^[\r\n]$/.test( c ) )
+                                $.then( { ok: true, val:
+                                    [ { type: "nonWhite",
+                                        text: escStart + soFar } ]
+                                } );
+                            else
+                                $.stream.readc( function ( c ) {
+                                    readRestOfLine( soFar + c, $ );
+                                } );
+                        } );
+                    }
+                    readRestOfLine( "", $ );
                 },
                 "_": function ( $ ) {
+                    if ( escQqDepth < $.qqDepth )
+                        return void $.then( { ok: false, msg:
+                            "Tried to interpolate in a " +
+                            "string-within-a-string" } );
+                    
                     $.stream.readc( function ( c ) {
                         reader( objPlus( $, {
                             heedsCommandEnds: false,
@@ -608,11 +699,25 @@ stringReaderMacros.set( "\\", function ( $ ) {
                             if ( text === null )
                                 return void $.then( { ok: false, msg:
                                     "Unicode escape out of range" } );
-                            $.then( { ok: true, val: [ {
-                                type: "nonWhite",
-                                text: text
-                            } ] } );
+                            $.then( { ok: true, val:
+                                escQqDepth < $.qqDepth ?
+                                    [ { type: "nonWhite", text:
+                                        escStart + hex + "." } ] :
+                                    [ { type: "nonWhite",
+                                        text: text } ]
+                            } );
                         }
+                    } );
+                },
+                ",": function ( $sub ) {
+                    if ( $.qqDepth <= escQqDepth )
+                        return void $.then( { ok: false, msg:
+                            "Unquoted past the quasiquotation " +
+                            "depth" } );
+                    
+                    $.stream.readc( function ( c ) {
+                        readForEscQqDepth(
+                            escStart + ",", escQqDepth + 1 );
                     } );
                 }
             } ),
@@ -625,6 +730,9 @@ stringReaderMacros.set( "\\", function ( $ ) {
                     msg: "Incomplete escape sequence" } );
             }
         } ) );
+    }
+    $.stream.readc( function ( c ) {
+        readForEscQqDepth( "\\", 0 );
     } );
 } );
 
