@@ -998,17 +998,15 @@ PkRuntime.prototype.init_ = function () {
     } ) );
     defMethod( "call", "self", "args" );
     setStrictImpl( "call", "fn", function ( yoke, args ) {
-        if ( !isList( listGet( args, 1 ) ) )
+        var fn = listGet( args, 0 );
+        var fnArgs = listGet( args, 1 );
+        if ( !isList( fnArgs ) )
             return pkErr( yoke,
                 "Called call with a non-list args list" );
         // TODO: See if we should respect linearity some more by
         // double-checking that the captured values haven't already
         // been spent.
-        return listGet( args, 0 ).special.call(
-            yoke,
-            listGet( args, 0 ).special.captures,
-            listGet( args, 1 )
-        );
+        return fn.special.call( yoke, fn.special.captures, fnArgs );
     } );
     
     defTag( "pure-yoke" );
