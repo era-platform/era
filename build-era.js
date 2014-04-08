@@ -6,7 +6,7 @@
 var fs = require( "fs" );
 
 var argparse = require( "argparse" );
-//var uglify = require( "uglify-js" );
+var uglify = require( "uglify-js" );
 
 var ltf = require( "./buildlib/lathe-fs" );
 
@@ -112,6 +112,53 @@ if ( args.build ) tasks.push( function ( then ) {
             "\n" +
             "\n" +
             "];";
+        
+        // TODO: Make this a debug option or something.
+        if ( false )
+            fileCode = uglify.minify( fileCode, {
+                fromString: true,
+                compress: {
+                    sequences: true,
+                    properties: true,
+                    dead_code: true,
+                    drop_debugger: false,
+                    
+                    unsafe: true,
+                    
+                    conditionals: true,
+                    comparisons: true,
+                    evaluate: true,
+                    booleans: true,
+                    loops: true,
+                    unused: true,
+                    hoist_funs: false,
+                    hoist_vars: false,
+                    if_return: true,
+                    join_vars: true,
+                    cascade: true,
+                    warnings: false,
+                    negate_iife: true,
+                    pure_getters: true,
+                    pure_funcs: [
+                        // TODO: See if there's a more convenient way
+                        // to manage all these variables.
+                        "Pk",
+                        "pkCons",
+                        "pkList",
+                        "pkStrNameRaw",
+                        "pkQualifiedName",
+                        "pkYep",
+                        "pkPairName",
+                        "pkStrUnsafe",
+                        "pkErr",
+                        "pkRet",
+                        "runRet",
+                        "pkfnLinear"
+                    ],
+                    drop_console: false
+                }
+            } ).code;
+        
         ltf.writeTextFile(
             "fin/penknife-compiled.js", "utf-8", fileCode,
             function ( e ) {
