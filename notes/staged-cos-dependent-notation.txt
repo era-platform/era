@@ -169,3 +169,32 @@ is specified by name rather than by position. Unfortunately, this
 notation now contains a lot of redundant information, and we'll
 probably need a completely different notation when we're dealing with
 @s[...] rather than @s(...), aka pi rather than sigma.
+
+---
+
+What follows is an attempt to express type constructors as rules in
+the calculus of structures itself. They're metacircular and, for now,
+very incomplete.
+
+
+[-A -B (A B Type Type)]
+
+([A Type] [B Type])
+-- Make any non-dependent [_ _] or (_ _)
+[A B Type]
+
+()
+-- Make [] or ()
+Type
+
+[-rst.a:A B{a} Type]
+-- Make any non-dependent [_ _ ...] or (_ _ ...) with any index type
+[(a:A -rst.B{a}) Type]
+
+
+How would that be expanded to dependent types? Maybe booleans would
+help somehow.
+
+
+([A Type] [B Type])
+[-2 A B Type]
