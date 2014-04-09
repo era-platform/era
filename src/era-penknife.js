@@ -1386,19 +1386,30 @@ PkRuntime.prototype.init_ = function () {
         
         // TODO: Test Penknife with various AOT compilers:
         //
+        // - No compiler at all. (This is what we're using now in
+        //   demos/penknife.html.)
+        //
         // - A compiled file that bypasses the read phase.
+        //
         // - A compiled file that bypasses the macroexpansion phase.
+        //   (This doesn't seem to help at all. The file size gets
+        //   larger and execution slower than with the full compiler.
+        //   The attempt is currently available in the form of
+        //   commented-out code labeled "INTERPRET NOTE".)
+        //
         // - A compiled file that uses no interpreter, just compiled
-        //   code.
+        //   code. (This is what we're using now in
+        //   demos/penknife-compiled.html.)
         
         // NOTE: The above code makes every function expression invoke
         // the compiler. The below code would make functions interpret
         // their bodies each time they're called. Penknife was using
         // this interpretation style until recently, when the compiled
         // output finally reached a speed competitive with the
-        // interpreter. (Once we have AOT-compiled files, the compiler
-        // will probably be the clear winner, but right now they're
-        // actually about the same.)
+        // interpreter. (Both options have about the same overall
+        // speed for the demo. The compiler's at least useful for
+        // ahead-of-time compilation, whether or not we continue to
+        // use it for this.)
         //
         // TODO: Right now this is dead code. Either comment it out
         // entirely, or put it under some kind of debug option.
