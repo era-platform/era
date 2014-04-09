@@ -459,7 +459,7 @@ function pkRet( yoke, val ) {
     return runRet( yoke, pkYep( val ) );
 }
 function pkRawErr( jsStr ) {
-    // TODO: See if this can use jsStrUnsafe().
+    // TODO: See if this can use pkStrUnsafe().
     return pk( "nope", pkStr( jsStr ) );
 }
 function pkErr( yoke, jsStr ) {
