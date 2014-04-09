@@ -844,6 +844,8 @@ function compileEssence(
         
         return getGs( yoke, gsi, function ( yoke, gsi, callbackVar ) {
         return getGs( yoke, gsi, function ( yoke, gsi, resultVar ) {
+        var fn = compiledOp.val.resultVar;
+        var fnArgs = compiledArgs.val.resultVar;
         return jsListFlattenOnce( yoke, jsList(
             jsList( {
                 type: "async",
@@ -851,12 +853,16 @@ function compileEssence(
                 resultVar: resultVar,
                 code:
                     "runWaitTry( yoke, function ( yoke ) {\n" +
+                    // NOTE: This optimization doesn't actually seem
+                    // to help any, and it bloats the file size, so
+                    // we're not using it.
+//                    "    if ( " + fn + ".tag === \"fn\" )\n" +
+//                    "        return " + fn + ".special.call( yoke, " +
+//                                fn + ".special.captures, " + fnArgs +
+//                            " );\n" +
                     "    return pkRuntime.callMethod( yoke, " +
                             "\"call\", " +
-                            "pkList( " +
-                                compiledOp.val.resultVar + ", " +
-                                compiledArgs.val.resultVar + " " +
-                            ") " +
+                            "pkList( " + fn + ", " + fnArgs + " ) " +
                         ");\n" +
                     "}, " + callbackVar + " )"
             } ),
@@ -1574,6 +1580,13 @@ function compileAndDefineFromString( yoke,
 }
 
 function compileTopLevel( yoke, essence, then ) {
+    
+    // INTERPRET NOTE: It doesn't seem to make the load time faster
+    // or the file footprint slimmer, but the commented-out code
+    // code marked "INTERPRET NOTE" runs essence compilation at load
+    // time rather than compile time.
+//    return compileLiteral( yoke, startGensymIndex(), essence,
+    
     return compileEssence( yoke, startGensymIndex(), null, essence,
         function ( yoke, gsi, compiled ) {
         
@@ -1644,6 +1657,15 @@ function invokeTopLevel( yoke, pkRuntime, jsFunc, then ) {
                 yoke,
                 pkRuntime,
                 function ( yoke, result ) {
+                    
+                    // INTERPRET NOTE: It doesn't seem to make the
+                    // load time faster or the file footprint slimmer,
+                    // but the commented-out code marked "INTERPRET
+                    // NOTE" runs essence expansion at load time
+                    // rather than compile time.
+//                    return pkRuntime.conveniences_interpretEssence(
+//                        result, yoke );
+                    
                     return pkRet( yoke, result );
                 }
             );
