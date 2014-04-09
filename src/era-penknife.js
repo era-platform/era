@@ -3476,7 +3476,7 @@ PkRuntime.prototype.conveniences_interpretEssence = function (
     var self = this;
     if ( opt_yoke === void 0 )
         opt_yoke = self.conveniences_syncYoke;
-    return self.conveniences_withEffectsForInterpret( yoke,
+    return self.conveniences_withEffectsForInterpret( opt_yoke,
         function ( yoke ) {
         
         return self.callMethod( yoke, "essence-interpret",
