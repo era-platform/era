@@ -3349,7 +3349,12 @@ PkRuntime.prototype.conveniences_syncYoke = {
         
         // TODO: Test to see what value is best for all browsers.
         // TODO: Put this constant somewhere more configurable.
-        var maxStack = 1000;
+        // NOTE: Firefox 28 breaks in the reader demo if this value
+        // exceeds 217. Chrome 34 can handle 1236 sometimes, but it's
+        // inconsistent, and its sweet spot seems to be around
+        // 500-1000. IE 11 can handle 367 sometimes, but it's
+        // inconsistent.
+        var maxStack = 100;
         
         if ( self.internal < maxStack ) {
             var maybeYokeAndResult = step( {
