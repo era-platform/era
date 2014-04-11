@@ -47,6 +47,7 @@ var tasks = [];
 
 if ( args.test ) tasks.push( function ( then ) {
     Function( readFiles( [
+        "src/era-misc-strmap-avl.js",
         "src/era-misc.js",
         "test/harness-first.js",
         "test/test-bigint.js",
@@ -63,6 +64,7 @@ if ( args.build ) tasks.push( function ( then ) {
     
     var $pk = Function(
         readFiles( [
+            "src/era-misc-strmap-avl.js",
             "src/era-misc.js",
             "src/era-reader.js",
             "src/era-penknife.js",
