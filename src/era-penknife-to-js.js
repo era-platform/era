@@ -1488,8 +1488,8 @@ function compileAndDefineFromString( yoke,
                 } );
             
             return runWait( yoke, function ( yoke ) {
-                return pkRuntime.conveniences_macroexpandArrays(
-                    tryExpr.val, yoke );
+                return pkRuntime.conveniences_macroexpandArrays( yoke,
+                    tryExpr.val );
             }, function ( yoke, macroexpanded ) {
             
             if ( reportError( macroexpanded, "Macroexpansion" ) ) {
@@ -1502,8 +1502,8 @@ function compileAndDefineFromString( yoke,
             }
             
             return runWait( yoke, function ( yoke ) {
-                return pkRuntime.conveniences_pkDrop(
-                    macroexpanded, yoke );
+                return pkRuntime.conveniences_pkDrop( yoke,
+                    macroexpanded );
             }, function ( yoke, macroexpandedDrop ) {
             
             if ( reportError( macroexpandedDrop,
@@ -1537,8 +1537,8 @@ function compileAndDefineFromString( yoke,
             }
             
             return runWait( yoke, function ( yoke ) {
-                return pkRuntime.conveniences_pkDrop(
-                    commandResult, yoke );
+                return pkRuntime.conveniences_pkDrop( yoke,
+                    commandResult );
             }, function ( yoke, commandResultDrop ) {
             
             if ( reportError( commandResultDrop,
@@ -1546,14 +1546,14 @@ function compileAndDefineFromString( yoke,
                 return finish( yoke );
             
             return runWait( yoke, function ( yoke ) {
-                return pkRuntime.conveniences_runDefinitions( yoke );
+                return pkRuntime.runDefinitions( yoke );
             }, function ( yoke, defined ) {
             
             if ( reportError( defined, "Definition" ) )
                 return finish( yoke );
             
             return runWait( yoke, function ( yoke ) {
-                return pkRuntime.conveniences_pkDrop( defined, yoke );
+                return pkRuntime.conveniences_pkDrop( yoke, defined );
             }, function ( yoke, definedDrop ) {
             
             if ( reportError( definedDrop,
@@ -1664,7 +1664,7 @@ function invokeTopLevel( yoke, pkRuntime, jsFunc, then ) {
                     // NOTE" runs essence expansion at load time
                     // rather than compile time.
 //                    return pkRuntime.conveniences_interpretEssence(
-//                        result, yoke );
+//                        yoke, result );
                     
                     return pkRet( yoke, result );
                 }
@@ -1766,8 +1766,8 @@ function invokeFileTopLevel( yoke, pkRuntime, jsFuncs, then ) {
         }
         
         return runWait( yoke, function ( yoke ) {
-            return pkRuntime.conveniences_pkDrop(
-                commandResult, yoke );
+            return pkRuntime.conveniences_pkDrop( yoke,
+                commandResult );
         }, function ( yoke, commandResultDrop ) {
         
         if ( reportError( commandResultDrop,
@@ -1775,14 +1775,14 @@ function invokeFileTopLevel( yoke, pkRuntime, jsFuncs, then ) {
             return finish( yoke );
         
         return runWait( yoke, function ( yoke ) {
-            return pkRuntime.conveniences_runDefinitions( yoke );
+            return pkRuntime.runDefinitions( yoke );
         }, function ( yoke, defined ) {
         
         if ( reportError( defined, "Definition" ) )
             return finish( yoke );
         
         return runWait( yoke, function ( yoke ) {
-            return pkRuntime.conveniences_pkDrop( defined, yoke );
+            return pkRuntime.conveniences_pkDrop( yoke, defined );
         }, function ( yoke, definedDrop ) {
         
         if ( reportError( definedDrop,

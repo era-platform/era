@@ -474,6 +474,7 @@ function pkErrLen( yoke, args, message ) {
 }
 function yokeWithRider( yoke, rider ) {
     return {
+        pkRuntime: yoke.pkRuntime,
         yokeRider: rider,
         effectToken: yoke.effectToken,
         internal: yoke.internal,
@@ -828,6 +829,8 @@ var maxCachedNat = 10;
 })();
 
 
+// TODO: Whenver we refer to the `pkRuntime` or (in this function)
+// `self`, refer to `yoke.pkRuntime` instead.
 function makePkRuntime() {
     // NOTE: The function PkRuntime() is defined further below.
     var self = new PkRuntime().init_();
@@ -3282,6 +3285,7 @@ PkRuntime.prototype.mapEffect_ = function ( yoke, func ) {
                                     effectToken.special.jsPayload.
                                         effects );
                                 var updatedYoke = {
+                                    pkRuntime: pureYoke.pkRuntime,
                                     yokeRider: pureYoke.yokeRider,
                                     effectToken:
                                         newEffectToken.unwrapped,
@@ -3333,6 +3337,7 @@ PkRuntime.prototype.withAvailableEffectsReplaced = function (
     
     var effectToken = makeEffectToken( effects );
     var empoweredYoke = {
+        pkRuntime: yoke.pkRuntime,
         yokeRider: pk( "imperative-yoke", effectToken.wrapped ),
         effectToken: effectToken.unwrapped,
         internal: yoke.internal,
@@ -3342,6 +3347,7 @@ PkRuntime.prototype.withAvailableEffectsReplaced = function (
         return body( empoweredYoke );
     }, function ( empoweredYoke, result ) {
         var disempoweredYoke = {
+            pkRuntime: yoke.pkRuntime,
             yokeRider: yoke.yokeRider,
             effectToken: yoke.effectToken,
             internal: empoweredYoke.internal,
@@ -3350,13 +3356,16 @@ PkRuntime.prototype.withAvailableEffectsReplaced = function (
         return runRet( disempoweredYoke, result );
     } );
 };
-PkRuntime.prototype.conveniences_debuggableSyncYoke = {
-    yokeRider: pk( "pure-yoke" ),
-    effectToken: null,
-    internal: null,
-    runWaitLinear: function ( step, then ) {
-        return then( step( this ) );
-    }
+PkRuntime.prototype.conveniences_debuggableSyncYoke = function () {
+    return {
+        pkRuntime: this,
+        yokeRider: pk( "pure-yoke" ),
+        effectToken: null,
+        internal: null,
+        runWaitLinear: function ( step, then ) {
+            return then( step( this ) );
+        }
+    };
 };
 PkRuntime.prototype.conveniences_runSyncYoke = function (
     maybeYokeAndResult ) {
@@ -3376,68 +3385,76 @@ PkRuntime.prototype.conveniences_runSyncYoke = function (
         throw new Error();
     return finalYokeAndResult;
 };
-PkRuntime.prototype.conveniences_syncYoke = {
-    yokeRider: pk( "pure-yoke" ),
-    effectToken: null,
-    internal: 0,
-    runWaitLinear: function ( step, then ) {
-        var self = this;
-        
-        // TODO: Test to see what value is best for all browsers.
-        // TODO: Put this constant somewhere more configurable.
-        // NOTE: Firefox 28 breaks in the reader demo if this value
-        // exceeds 217. Chrome 34 can handle 1236 sometimes, but it's
-        // inconsistent, and its sweet spot seems to be around
-        // 500-1000. IE 11 can handle 367 sometimes, but it's
-        // inconsistent.
-        var maxStack = 100;
-        
-        if ( self.internal < maxStack ) {
-            var maybeYokeAndResult = step( {
-                yokeRider: self.yokeRider,
-                effectToken: self.effectToken,
-                internal: self.internal + 1,
-                runWaitLinear: self.runWaitLinear
-            } );
-            if ( maybeYokeAndResult.type === "done" )
-                return then( maybeYokeAndResult );
-            return { type: "deferrer", go: function ( defer, then2 ) {
-                syncYokeCall( maybeYokeAndResult, defer,
-                    function ( yokeAndResult ) {
-                    
-                    var yoke = yokeAndResult.yoke;
-                    syncYokeCall(
-                        then( runRet( {
-                            yokeRider: yoke.yokeRider,
-                            effectToken: yoke.effectToken,
-                            internal: 0,
-                            runWaitLinear: yoke.runWaitLinear
-                        }, yokeAndResult.result ) ),
-                        defer, then2 );
-                } );
-            } };
-        } else {
-            return { type: "deferrer", go: function ( defer, then2 ) {
-                syncYokeCall( step( {
+PkRuntime.prototype.conveniences_syncYoke = function () {
+    return {
+        pkRuntime: this,
+        yokeRider: pk( "pure-yoke" ),
+        effectToken: null,
+        internal: 0,
+        runWaitLinear: function ( step, then ) {
+            var self = this;
+            
+            // TODO: Test to see what value is best for all browsers.
+            // TODO: Put this constant somewhere more configurable.
+            // NOTE: Firefox 28 breaks in the reader demo if this
+            // value exceeds 217. Chrome 34 can handle 1236 sometimes,
+            // but it's inconsistent, and its sweet spot seems to be
+            // around 500-1000. IE 11 can handle 367 sometimes, but
+            // it's inconsistent.
+            var maxStack = 100;
+            
+            if ( self.internal < maxStack ) {
+                var maybeYokeAndResult = step( {
+                    pkRuntime: self.pkRuntime,
                     yokeRider: self.yokeRider,
                     effectToken: self.effectToken,
-                    internal: 0,
+                    internal: self.internal + 1,
                     runWaitLinear: self.runWaitLinear
-                } ), defer, function ( yokeAndResult ) {
-                    syncYokeCall(
-                        then( yokeAndResult ), defer, then2 );
                 } );
-            } };
+                if ( maybeYokeAndResult.type === "done" )
+                    return then( maybeYokeAndResult );
+                return { type: "deferrer", go:
+                    function ( defer, then2 ) {
+                    
+                    syncYokeCall( maybeYokeAndResult, defer,
+                        function ( yokeAndResult ) {
+                        
+                        var yoke = yokeAndResult.yoke;
+                        syncYokeCall(
+                            then( runRet( {
+                                pkRuntime: yoke.pkRuntime,
+                                yokeRider: yoke.yokeRider,
+                                effectToken: yoke.effectToken,
+                                internal: 0,
+                                runWaitLinear: yoke.runWaitLinear
+                            }, yokeAndResult.result ) ),
+                            defer, then2 );
+                    } );
+                } };
+            } else {
+                return { type: "deferrer", go:
+                    function ( defer, then2 ) {
+                    
+                    syncYokeCall( step( {
+                        pkRuntime: self.pkRuntime,
+                        yokeRider: self.yokeRider,
+                        effectToken: self.effectToken,
+                        internal: 0,
+                        runWaitLinear: self.runWaitLinear
+                    } ), defer, function ( yokeAndResult ) {
+                        syncYokeCall(
+                            then( yokeAndResult ), defer, then2 );
+                    } );
+                } };
+            }
         }
-    }
+    };
 };
-PkRuntime.prototype.conveniences_macroexpand = function (
-    expr, opt_yoke ) {
+PkRuntime.prototype.conveniences_macroexpand = function ( yoke,
+    expr ) {
     
     var self = this;
-    if ( opt_yoke === void 0 )
-        opt_yoke = self.conveniences_syncYoke;
-    return self.runWaitTryGetmacFork( opt_yoke, "macroexpand-to-fork",
+    return self.runWaitTryGetmacFork( yoke, "macroexpand-to-fork",
         function ( yoke ) {
         
         return self.callMethod( yoke, "macroexpand-to-fork", pkList(
@@ -3458,8 +3475,8 @@ PkRuntime.prototype.conveniences_macroexpand = function (
         } );
     } );
 };
-PkRuntime.prototype.conveniences_macroexpandArrays = function (
-    arrayExpr, opt_yoke ) {
+PkRuntime.prototype.conveniences_macroexpandArrays = function ( yoke,
+    arrayExpr ) {
     
     function arraysToConses( arrayExpr ) {
         // TODO: Use something like Lathe.js's _.likeArray() and
@@ -3495,18 +3512,16 @@ PkRuntime.prototype.conveniences_macroexpandArrays = function (
         }
     }
     
-    return this.conveniences_macroexpand(
-        arraysToConses( arrayExpr ), opt_yoke );
+    return this.conveniences_macroexpand( yoke,
+        arraysToConses( arrayExpr ) );
 };
-PkRuntime.prototype.conveniences_pkDrop = function ( val, opt_yoke ) {
-    if ( opt_yoke === void 0 )
-        opt_yoke = this.conveniences_syncYoke;
-    return this.pkDrop( opt_yoke, val, function ( yoke ) {
+PkRuntime.prototype.conveniences_pkDrop = function ( yoke, val ) {
+    return this.pkDrop( yoke, val, function ( yoke ) {
         return pkRet( yoke, pkNil );
     } );
 };
-PkRuntime.prototype.conveniences_withEffectsForInterpret = function (
-    yoke, func ) {
+PkRuntime.prototype.conveniences_withEffectsForInterpret =
+    function ( yoke, func ) {
     
     var self = this;
     // TODO: See if we should be temporarily augmenting the available
@@ -3518,26 +3533,16 @@ PkRuntime.prototype.conveniences_withEffectsForInterpret = function (
         return func( yoke );
     } );
 };
-PkRuntime.prototype.conveniences_interpretEssence = function (
-    essence, opt_yoke ) {
+PkRuntime.prototype.conveniences_interpretEssence = function ( yoke,
+    essence ) {
     
     var self = this;
-    if ( opt_yoke === void 0 )
-        opt_yoke = self.conveniences_syncYoke;
-    return self.conveniences_withEffectsForInterpret( opt_yoke,
+    return self.conveniences_withEffectsForInterpret( yoke,
         function ( yoke ) {
         
         return self.callMethod( yoke, "essence-interpret",
             pkList( essence, pkNil ) );
     } );
-};
-PkRuntime.prototype.conveniences_runDefinitions = function (
-    opt_yoke ) {
-    
-    var self = this;
-    if ( opt_yoke === void 0 )
-        opt_yoke = self.conveniences_syncYoke;
-    return self.runDefinitions( opt_yoke );
 };
 
 // TODO: Define a staged conditional, preferably from the Penknife

@@ -50,7 +50,7 @@ window.onload = function () {
     function generateOutput() {
         var startMillis = new Date().getTime();
         var pkRuntime = makePkRuntime();
-        var yoke = pkRuntime.conveniences_syncYoke;
+        var yoke = pkRuntime.conveniences_syncYoke();
         
         var maybeYokeAndResult = invokeFileTopLevel( yoke,
             pkRuntime,

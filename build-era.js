@@ -80,7 +80,7 @@ if ( args.build ) tasks.push( function ( then ) {
     
     
     var pkRuntime = $pk.makePkRuntime();
-    var yoke = pkRuntime.conveniences_syncYoke;
+    var yoke = pkRuntime.conveniences_syncYoke();
     
     var maybeYokeAndResult = $pk.compileAndDefineFromString( yoke,
         pkRuntime,
