@@ -827,16 +827,10 @@ var maxCachedNat = 10;
     }
 })();
 
-function PkRuntime() {}
-PkRuntime.prototype.init_ = function () {
-    var self = this;
-    self.meta_ = strMap();
-    // NOTE: We make definition side effects wait in a queue, so that
-    // definition-reading can be understood as a pure operation on an
-    // immutable snapshot of the environment. Then we don't have to
-    // say every yoke has access to definition-reading side effects.
-    self.defQueueTail_ = { end: true };
-    self.defQueueHead_ = self.defQueueTail_;
+
+function makePkRuntime() {
+    // NOTE: The function PkRuntime() is defined further below.
+    var self = new PkRuntime().init_();
     
     function globalName( name ) {
         return pkQualifiedName( pkStrNameUnsafeMemoized( name ) );
@@ -1999,7 +1993,7 @@ PkRuntime.prototype.init_ = function () {
     
     // This takes an explicit input and installs it as the implicit
     // yoke. It also takes the old implicit yoke and returns it as the
-    // explict output.
+    // explicit output.
     defFunc( "yoke-trade", 1, function ( yoke, newYokeRider ) {
         var newYoke = yokeWithRider( yoke, newYokeRider );
         return pkRet( newYoke, yoke.yokeRider );
@@ -2451,6 +2445,19 @@ PkRuntime.prototype.init_ = function () {
                 jsStr.substring( jsStart, jsStop ) ) );
     } );
     
+    return self;
+}
+
+function PkRuntime() {}
+PkRuntime.prototype.init_ = function () {
+    var self = this;
+    self.meta_ = strMap();
+    // NOTE: We make definition side effects wait in a queue, so that
+    // definition-reading can be understood as a pure operation on an
+    // immutable snapshot of the environment. Then we don't have to
+    // say every yoke has access to definition-reading side effects.
+    self.defQueueTail_ = { end: true };
+    self.defQueueHead_ = self.defQueueTail_;
     return self;
 };
 PkRuntime.prototype.getMeta_ = function ( name ) {
@@ -3532,9 +3539,6 @@ PkRuntime.prototype.conveniences_runDefinitions = function (
         opt_yoke = self.conveniences_syncYoke;
     return self.runDefinitions( opt_yoke );
 };
-function makePkRuntime() {
-    return new PkRuntime().init_();
-}
 
 // TODO: Define a staged conditional, preferably from the Penknife
 // side.
