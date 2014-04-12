@@ -1337,9 +1337,10 @@ PkRuntime.prototype.init_ = function () {
             "pkRuntime",
             "then",
             
-            // TODO: This commented-out line may help when debugging
-            // compiled code, but it uses the hackish Pk#toString().
-            // See if we should make it a debug option or something.
+            // TODO: This first commented-out line may help when
+            // debugging compiled code, but it uses the hackish
+            // Pk#toString(). See if we should make it a debug option
+            // or something.
 //            "// " + essence + "\n" +
 //            "// @sourceURL=" + Math.random() + "\n" +
 //            "debugger;\n" +
@@ -1828,18 +1829,23 @@ PkRuntime.prototype.init_ = function () {
         return listAppend( yoke, thenCaptures, elseCaptures,
             function ( yoke, branchCaptures ) {
         
-        // TODO: See if there's a way to do this without mutation
-        // without our time performance becoming a quadratic (or
-        // worse) function of the number of `branchCaptures`.
-        var bcDedupMap = strMap();
-        return listKeep( yoke, branchCaptures, function ( pkName ) {
+        return listFoldlJsAsync( yoke,
+            { bcDedupMap: strMap(), revBcDedup: pkNil },
+            branchCaptures,
+            function ( yoke, state, pkName, then ) {
+            
             var jsName = pkName.special.unqualifiedNameJson;
-            var entry = bcDedupMap.get( jsName );
+            var entry = state.bcDedupMap.get( jsName );
             if ( entry !== void 0 )
-                return false;
-            bcDedupMap.set( jsName, true );
-            return true;
-        }, function ( yoke, bcDedup ) {
+                return then( yoke, state );
+            return then( yoke, {
+                bcDedupMap:
+                    state.bcDedupMap.plusEntry( jsName, true ),
+                revBcDedup: pkCons( pkName, state.revBcDedup )
+            } );
+        }, function ( yoke, bcDedupState ) {
+        return listRev( yoke, bcDedupState.revBcDedup,
+            function ( yoke, bcDedup ) {
         
         function fulfill( getTine, then ) {
             return self.makeSubEssenceUnderMappendedArgs_(
@@ -1902,6 +1908,7 @@ PkRuntime.prototype.init_ = function () {
         
         } );
         
+        } );
         } );
         
         } );
@@ -2628,36 +2635,38 @@ PkRuntime.prototype.makeSubEssenceUnderMappendedArgs_ = function (
     
     var self = this;
     
-    // TODO: See if there's a way to do this without mutation without
-    // our time performance becoming a quadratic (or worse) function
-    // of the length of `argList`.
-    var map = strMap();
-    function getEntry( pkName ) {
+    function getEntry( argMap, pkName ) {
         var jsName = pkName.special.unqualifiedNameJson;
-        return map.get( jsName );
+        return argMap.get( jsName );
     }
     
     // Build an deduplicated version of `argList`, where a duplicated
     // name only appears in its last occurrence. For instance, abac
     // becomes bac. The result is `latestOccurrenceArgList`. While
-    // building this result, also initialize `map` so we can easily
+    // building this result, also initialize `argMap` so we can easily
     // detect whether a name in `captures` is local or nonlocal later
     // on.
     return listRev( yoke, argList, function ( yoke, revArgList ) {
-    return listMap( yoke, revArgList, function ( yoke, pkName ) {
+    return listFoldlJsAsync( yoke,
+        { argMap: strMap(), maybeArgList: pkNil },
+        revArgList,
+        function ( yoke, state, pkName, then ) {
         
         var jsName = pkName.special.unqualifiedNameJson;
-        var entry = map.get( jsName );
-        if ( entry === void 0 ) {
-            map.set( jsName, { dups: pkNil, indices: pkNil } );
-            return pkRet( yoke, pkYep( pkName ) );
-        } else {
-            return pkRet( yoke, pkNil );
-        }
-    }, function ( yoke, revMaybeArgList ) {
-    return listRev( yoke, revMaybeArgList,
-        function ( yoke, maybeArgList ) {
-    return listMappend( yoke, maybeArgList,
+        if ( state.argMap.has( jsName ) )
+            return then( yoke, {
+                argMap: state.argMap,
+                maybeArgList: pkCons( pkNil, state.maybeArgList )
+            } );
+        else
+            return then( yoke, {
+                argMap: state.argMap.plusEntry(
+                    jsName, { dups: pkNil, indices: pkNil } ),
+                maybeArgList:
+                    pkCons( pkYep( pkName ), state.maybeArgList )
+            } );
+    }, function ( yoke, maybeArgState ) {
+    return listMappend( yoke, maybeArgState.maybeArgList,
         function ( yoke, maybePkName ) {
         
         if ( maybePkName.tag === "yep" )
@@ -2675,7 +2684,9 @@ PkRuntime.prototype.makeSubEssenceUnderMappendedArgs_ = function (
             expr,
             self.deriveGetFork_( nonlocalGetForkOrNull,
                 function ( yoke, name, then ) {
-                    return then( yoke, getEntry( name ) !== void 0 );
+                    return then( yoke,
+                        getEntry( maybeArgState.argMap, name ) !==
+                            void 0 );
                 } ),
             gensymBase
         ) );
@@ -2688,80 +2699,99 @@ PkRuntime.prototype.makeSubEssenceUnderMappendedArgs_ = function (
     var cont = listGet( innerGetTine, 1 );
     
     return listKeep( yoke, captures, function ( pkName ) {
-        return getEntry( pkName ) === void 0;
+        return getEntry( maybeArgState.argMap, pkName ) === void 0;
     }, function ( yoke, nonlocalNames ) {
     return listLen( yoke, nonlocalNames,
         function ( yoke, lenNonlocalNames ) {
     
-    return listEach( yoke, captures, function ( pkName ) {
-        var entry = getEntry( pkName );
-        if ( entry !== void 0 )  // local
-            entry.dups = pk( "succ", entry.dups );
-    }, function ( yoke ) {
-    return listFoldlJsAsync( yoke,
-        lenNonlocalNames,
-        latestOccurrenceArgList,
-        function ( yoke, i, pkName, then ) {
+    return listFoldlJsAsync( yoke, maybeArgState.argMap, captures,
+        function ( yoke, argMap, pkName, then ) {
         
-        var entry = getEntry( pkName );
+        var jsName = pkName.special.unqualifiedNameJson;
+        var entry = argMap.get( jsName );
+        if ( entry === void 0 )  // nonlocal
+            return then( yoke, argMap );
+        // local
+        return then( yoke, argMap.plusEntry( jsName, {
+            dups: pk( "succ", entry.dups ),
+            indices: entry.indices
+        } ) );
+    }, function ( yoke, argMap ) {
+    return listFoldlJsAsync( yoke,
+        { argMap: argMap, i: lenNonlocalNames },
+        latestOccurrenceArgList,
+        function ( yoke, state, pkName, then ) {
+        
+        var jsName = pkName.special.unqualifiedNameJson;
+        var entry = state.argMap.get( jsName );
         return listFoldNatJsAsync( yoke,
-            { i: i, revIndices: pkNil },
+            { i: state.i, revIndices: pkNil },
             entry.dups,
-            function ( yoke, frame, then ) {
+            function ( yoke, state2, then ) {
             
             return then( yoke, {
-                i: pk( "succ", frame.i ),
-                revIndices: pkCons( frame.i, frame.revIndices )
+                i: pk( "succ", state2.i ),
+                revIndices: pkCons( state2.i, state2.revIndices )
             } );
-        }, function ( yoke, frame ) {
-            return listRev( yoke, frame.revIndices,
+        }, function ( yoke, state2 ) {
+            return listRev( yoke, state2.revIndices,
                 function ( yoke, indices ) {
                 
-                entry.indices = indices;
-                return then( yoke, frame.i );
+                return then( yoke, {
+                    argMap: state.argMap.plusEntry( jsName,
+                        { dups: entry.dups, indices: indices } ),
+                    i: state2.i
+                } );
             } );
         } );
-    }, function ( yoke, stopIndex ) {
+    }, function ( yoke, argMapState ) {
     return listFoldlJsAsync( yoke,
-        { nonlocalI: pkNil, revInEssences: pkNil },
+        { argMap: argMapState.argMap,
+            nonlocalI: pkNil, revInEssences: pkNil },
         captures,
-        function ( yoke, frame, pkName, then ) {
+        function ( yoke, state, pkName, then ) {
         
-        var entry = getEntry( pkName );
+        var jsName = pkName.special.unqualifiedNameJson;
+        var entry = state.argMap.get( jsName );
         if ( entry === void 0 ) {
             // nonlocal
             return then( yoke, {
-                nonlocalI: pk( "succ", frame.nonlocalI ),
+                argMap: state.argMap,
+                nonlocalI: pk( "succ", state.nonlocalI ),
                 revInEssences:
-                    pkCons( pk( "param-essence", frame.nonlocalI ),
-                        frame.revInEssences )
+                    pkCons( pk( "param-essence", state.nonlocalI ),
+                        state.revInEssences )
             } );
         } else {
             // local
             if ( entry.indices.tag !== "cons" )
                 throw new Error();
             var localI = entry.indices.ind( 0 );
-            entry.indices = entry.indices.ind( 1 );
             return then( yoke, {
-                nonlocalI: frame.nonlocalI,
+                argMap: state.argMap.plusEntry( jsName, {
+                    dups: entry.dups,
+                    indices: entry.indices.ind( 1 )
+                } ),
+                nonlocalI: state.nonlocalI,
                 revInEssences:
                     pkCons( pk( "param-essence", localI ),
-                        frame.revInEssences )
+                        state.revInEssences )
             } );
         }
-    }, function ( yoke, frame ) {
-    return listRev( yoke, frame.revInEssences,
+    }, function ( yoke, revInEssencesState ) {
+    return listRev( yoke, revInEssencesState.revInEssences,
         function ( yoke, inEssences ) {
     return runWaitTry( yoke, function ( yoke ) {
         return self.callMethod( yoke, "call",
             pkList( cont, pkList( inEssences ) ) );
     }, function ( yoke, outEssence ) {
-    return listMap( yoke, maybeArgList,
+    return listMap( yoke, maybeArgState.maybeArgList,
         function ( yoke, maybePkName ) {
         
         if ( maybePkName.tag === "yep" )
             return pkRet( yoke,
-                getEntry( maybePkName.ind( 0 ) ).dups );
+                getEntry( revInEssencesState.argMap,
+                    maybePkName.ind( 0 ) ).dups );
         else
             return pkRet( yoke, pkNil );
     }, function ( yoke, dupsList ) {
@@ -2780,7 +2810,6 @@ PkRuntime.prototype.makeSubEssenceUnderMappendedArgs_ = function (
     
     }
     
-    } );
     } );
     } );
     } );
@@ -3388,10 +3417,6 @@ PkRuntime.prototype.conveniences_syncYoke = {
                     internal: 0,
                     runWaitLinear: self.runWaitLinear
                 } ), defer, function ( yokeAndResult ) {
-                    // TODO: In this part of the code, the stack still
-                    // seems to get pretty tall, even with maxStack
-                    // set to 10. Figure out what's going on here and
-                    // if it's going to break.
                     syncYokeCall(
                         then( yokeAndResult ), defer, then2 );
                 } );
