@@ -2455,12 +2455,11 @@ function PkRuntime() {}
 PkRuntime.prototype.init_ = function () {
     var self = this;
     self.meta_ = strMap();
-    // NOTE: We make definition side effects wait in a queue, so that
+    // NOTE: We make definition side effects wait so that
     // definition-reading can be understood as a pure operation on an
     // immutable snapshot of the environment. Then we don't have to
     // say every yoke has access to definition-reading side effects.
-    self.defQueueTail_ = { end: true };
-    self.defQueueHead_ = self.defQueueTail_;
+    self.revDefs_ = null;
     return self;
 };
 PkRuntime.prototype.getMeta_ = function ( name ) {
@@ -2650,7 +2649,7 @@ PkRuntime.prototype.makeSubEssenceUnderMappendedArgs_ = function (
         return argMap.get( jsName );
     }
     
-    // Build an deduplicated version of `argList`, where a duplicated
+    // Build a deduplicated version of `argList`, where a duplicated
     // name only appears in its last occurrence. For instance, abac
     // becomes bac. The result is `latestOccurrenceArgList`. While
     // building this result, also initialize `argMap` so we can easily
@@ -3037,27 +3036,25 @@ return pkRet( yoke, pk( "getmac-fork",
     } );
 };
 PkRuntime.prototype.enqueueDef_ = function ( yoke, body ) {
-    this.defQueueTail_.end = false;
-    this.defQueueTail_.def = body;
-    this.defQueueTail_.next = { end: true };
-    this.defQueueTail_ = this.defQueueTail_.next;
+    this.revDefs_ = { first: body, rest: this.revDefs_ };
     return pkRet( yoke, pkNil );
 };
 PkRuntime.prototype.runDefinitions = function ( yoke ) {
-    var queue = this.defQueueHead_;
-    this.defQueueHead_ =
-    this.defQueueTail_ = { end: true };
+    var revDefs = this.revDefs_;
+    this.revDefs_ = null;
     
-    return go( yoke, queue );
-    function go( yoke, queue ) {
-        if ( queue.end )
-            return pkRet( yoke, pkNil );
-        return runWaitTry( yoke, function ( yoke ) {
-            return runRet( yoke, queue.def.call( {} ) );
-        }, function ( yoke, ignored ) {
-            return go( yoke, queue.next );
-        } );
-    }
+    return jsListRev( yoke, revDefs, function ( yoke, defs ) {
+        return go( yoke, defs );
+        function go( yoke, defs ) {
+            if ( defs === null )
+                return pkRet( yoke, pkNil );
+            return runWaitTry( yoke, function ( yoke ) {
+                return runRet( yoke, defs.first.call( {} ) );
+            }, function ( yoke, ignored ) {
+                return go( yoke, defs.rest );
+            } );
+        }
+    } );
 };
 PkRuntime.prototype.defVal = function ( name, val ) {
     var meta = this.prepareMeta_( name, "val" );
