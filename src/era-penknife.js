@@ -833,7 +833,7 @@ var maxCachedNat = 10;
 // `self`, refer to `yoke.pkRuntime` instead.
 function makePkRuntime() {
     // NOTE: The function PkRuntime() is defined further below.
-    var self = new PkRuntime().init_();
+    var self = new PkRuntime().init_( strMap(), null );
     
     function globalName( name ) {
         return pkQualifiedName( pkStrNameUnsafeMemoized( name ) );
@@ -2452,14 +2452,14 @@ function makePkRuntime() {
 }
 
 function PkRuntime() {}
-PkRuntime.prototype.init_ = function () {
+PkRuntime.prototype.init_ = function ( meta, revDefs ) {
     var self = this;
-    self.meta_ = strMap();
+    self.meta_ = meta;
     // NOTE: We make definition side effects wait so that
     // definition-reading can be understood as a pure operation on an
     // immutable snapshot of the environment. Then we don't have to
     // say every yoke has access to definition-reading side effects.
-    self.revDefs_ = null;
+    self.revDefs_ = revDefs;
     return self;
 };
 PkRuntime.prototype.getMeta_ = function ( name ) {
