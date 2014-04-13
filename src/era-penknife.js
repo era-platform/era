@@ -1331,7 +1331,6 @@ function makePkRuntime() {
             "cachedNats",
             
             "yoke",
-            "pkRuntime",
             "then",
             
             // TODO: This first commented-out line may help when
@@ -1365,7 +1364,6 @@ function makePkRuntime() {
             cachedNats,
             
             yoke,
-            self,
             function ( yoke, result ) {
                 return pkRet( yoke, result );
             }
@@ -3344,7 +3342,7 @@ PkRuntime.prototype.withAvailableEffectsReplaced = function (
         return body( empoweredYoke );
     }, function ( empoweredYoke, result ) {
         var disempoweredYoke = {
-            pkRuntime: yoke.pkRuntime,
+            pkRuntime: empoweredYoke.pkRuntime,
             yokeRider: yoke.yokeRider,
             effectToken: yoke.effectToken,
             internal: empoweredYoke.internal,

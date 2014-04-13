@@ -562,7 +562,7 @@ function compileDupsOfOne( yoke,
                     resultVar: dupsVar,
                     code:
                         "runWaitTry( yoke, function ( yoke ) {\n" +
-                        "    return pkRuntime.pkDup( yoke, " +
+                        "    return yoke.pkRuntime.pkDup( yoke, " +
                                 sourceVar + ", " +
                                 compiledNumberOfDups.val.resultVar +
                                 " " +
@@ -803,9 +803,10 @@ function compileEssence(
                 resultVar: resultVar,
                 code:
                     "runWaitTry( yoke, function ( yoke ) {\n" +
-                    "    return runRet( yoke, pkRuntime.getVal( " +
-                            compiledName.val.resultVar + " " +
-                        ") );\n" +
+                    "    return runRet( yoke, " +
+                            "yoke.pkRuntime.getVal( " +
+                                compiledName.val.resultVar + " " +
+                            ") );\n" +
                     "}, " + callbackVar + " )"
             } ),
             compiledName.val.revStatements
@@ -860,7 +861,7 @@ function compileEssence(
 //                    "        return " + fn + ".special.call( yoke, " +
 //                                fn + ".special.captures, " + fnArgs +
 //                            " );\n" +
-                    "    return pkRuntime.callMethod( yoke, " +
+                    "    return yoke.pkRuntime.callMethod( yoke, " +
                             "\"call\", " +
                             "pkList( " + fn + ", " + fnArgs + " ) " +
                         ");\n" +
@@ -1406,9 +1407,7 @@ function pkReadAll( yoke, string, then ) {
 
 // TODO: Factor out some common functionality between this and
 // invokeFileTopLevel().
-function compileAndDefineFromString( yoke,
-    pkRuntime, pkCodeString, then ) {
-    
+function compileAndDefineFromString( yoke, pkCodeString, then ) {
     return pkReadAll( yoke, pkCodeString,
         function ( yoke, tryExprs ) {
         
@@ -1488,8 +1487,9 @@ function compileAndDefineFromString( yoke,
                 } );
             
             return runWait( yoke, function ( yoke ) {
-                return pkRuntime.conveniences_macroexpandArrays( yoke,
-                    tryExpr.val );
+                return yoke.pkRuntime.
+                    conveniences_macroexpandArrays( yoke,
+                        tryExpr.val );
             }, function ( yoke, macroexpanded ) {
             
             if ( reportError( macroexpanded, "Macroexpansion" ) ) {
@@ -1502,7 +1502,7 @@ function compileAndDefineFromString( yoke,
             }
             
             return runWait( yoke, function ( yoke ) {
-                return pkRuntime.conveniences_pkDrop( yoke,
+                return yoke.pkRuntime.conveniences_pkDrop( yoke,
                     macroexpanded );
             }, function ( yoke, macroexpandedDrop ) {
             
@@ -1521,7 +1521,6 @@ function compileAndDefineFromString( yoke,
                 } );
             
             return invokeTopLevel( yoke,
-                pkRuntime,
                 Function( "return " + jsFuncCode.val + ";" )(),
                 function ( yoke, commandResult ) {
             
@@ -1537,7 +1536,7 @@ function compileAndDefineFromString( yoke,
             }
             
             return runWait( yoke, function ( yoke ) {
-                return pkRuntime.conveniences_pkDrop( yoke,
+                return yoke.pkRuntime.conveniences_pkDrop( yoke,
                     commandResult );
             }, function ( yoke, commandResultDrop ) {
             
@@ -1546,14 +1545,15 @@ function compileAndDefineFromString( yoke,
                 return finish( yoke );
             
             return runWait( yoke, function ( yoke ) {
-                return pkRuntime.runDefinitions( yoke );
+                return yoke.pkRuntime.runDefinitions( yoke );
             }, function ( yoke, defined ) {
             
             if ( reportError( defined, "Definition" ) )
                 return finish( yoke );
             
             return runWait( yoke, function ( yoke ) {
-                return pkRuntime.conveniences_pkDrop( yoke, defined );
+                return yoke.pkRuntime.conveniences_pkDrop( yoke,
+                    defined );
             }, function ( yoke, definedDrop ) {
             
             if ( reportError( definedDrop,
@@ -1607,7 +1607,7 @@ function compileTopLevel( yoke, essence, then ) {
             
             "cachedNats, " +
             
-            "yoke, pkRuntime, then ) {\n" +
+            "yoke, then ) {\n" +
         "\n" +
         // TODO: This commented-out line may help when debugging
         // compiled code, but it uses the hackish Pk#toString().
@@ -1626,11 +1626,12 @@ function compileTopLevel( yoke, essence, then ) {
     } );
 }
 
-function invokeTopLevel( yoke, pkRuntime, jsFunc, then ) {
+function invokeTopLevel( yoke, jsFunc, then ) {
     return runWait( yoke, function ( yoke ) {
         // TODO: Does this really count as a "convenience"?
-        return pkRuntime.conveniences_withEffectsForInterpret( yoke,
-            function ( yoke ) {
+        return yoke.pkRuntime.
+            conveniences_withEffectsForInterpret( yoke,
+                function ( yoke ) {
             
             // TODO: See if there's a more convenient way to manage
             // all these variables.
@@ -1655,7 +1656,6 @@ function invokeTopLevel( yoke, pkRuntime, jsFunc, then ) {
                 cachedNats,
                 
                 yoke,
-                pkRuntime,
                 function ( yoke, result ) {
                     
                     // INTERPRET NOTE: It doesn't seem to make the
@@ -1663,8 +1663,9 @@ function invokeTopLevel( yoke, pkRuntime, jsFunc, then ) {
                     // but the commented-out code marked "INTERPRET
                     // NOTE" runs essence expansion at load time
                     // rather than compile time.
-//                    return pkRuntime.conveniences_interpretEssence(
-//                        yoke, result );
+//                    return yoke.pkRuntime.
+//                        conveniences_interpretEssence( yoke,
+//                          result );
                     
                     return pkRet( yoke, result );
                 }
@@ -1677,7 +1678,7 @@ function invokeTopLevel( yoke, pkRuntime, jsFunc, then ) {
 
 // TODO: Factor out some common functionality between this and
 // compileAndDefineFromString().
-function invokeFileTopLevel( yoke, pkRuntime, jsFuncs, then ) {
+function invokeFileTopLevel( yoke, jsFuncs, then ) {
     var n = jsFuncs.length;
     return go( yoke, 0, null );
     function go( yoke, i, retDisplays ) {
@@ -1747,7 +1748,7 @@ function invokeFileTopLevel( yoke, pkRuntime, jsFuncs, then ) {
         
         var jsFunc = jsFuncs[ i ];
         
-        return invokeTopLevel( yoke, pkRuntime, jsFunc,
+        return invokeTopLevel( yoke, jsFunc,
             function ( yoke, commandResult ) {
         
         if ( reportError( commandResult,
@@ -1766,7 +1767,7 @@ function invokeFileTopLevel( yoke, pkRuntime, jsFuncs, then ) {
         }
         
         return runWait( yoke, function ( yoke ) {
-            return pkRuntime.conveniences_pkDrop( yoke,
+            return yoke.pkRuntime.conveniences_pkDrop( yoke,
                 commandResult );
         }, function ( yoke, commandResultDrop ) {
         
@@ -1775,14 +1776,15 @@ function invokeFileTopLevel( yoke, pkRuntime, jsFuncs, then ) {
             return finish( yoke );
         
         return runWait( yoke, function ( yoke ) {
-            return pkRuntime.runDefinitions( yoke );
+            return yoke.pkRuntime.runDefinitions( yoke );
         }, function ( yoke, defined ) {
         
         if ( reportError( defined, "Definition" ) )
             return finish( yoke );
         
         return runWait( yoke, function ( yoke ) {
-            return pkRuntime.conveniences_pkDrop( yoke, defined );
+            return yoke.pkRuntime.conveniences_pkDrop( yoke,
+                defined );
         }, function ( yoke, definedDrop ) {
         
         if ( reportError( definedDrop,
@@ -1808,15 +1810,15 @@ function invokeFileTopLevel( yoke, pkRuntime, jsFuncs, then ) {
 // pkNil
 // pkCons
 // pkList
-// pkRuntime.getVal
-// pkRuntime.callMethod
+// yoke.pkRuntime.getVal
+// yoke.pkRuntime.callMethod
 // pkStrNameRaw
 // pkQualifiedName
 // pkYep
 // pkPairName
 // pkStrUnsafe
 // runWaitTry
-// pkRuntime.pkDup
+// yoke.pkRuntime.pkDup
 // listLenIsNat
 // yoke
 // pkErr

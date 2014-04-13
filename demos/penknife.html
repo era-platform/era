@@ -458,11 +458,9 @@ window.onload = function () {
         var yoke = pkRuntime.conveniences_syncYoke();
         
         var maybeYokeAndResult = compileAndDefineFromString( yoke,
-            pkRuntime,
             document.getElementById( "pk-prelude" ).firstChild.data,
             function ( yoke, preludeDisplays ) {
         return compileAndDefineFromString( yoke,
-            pkRuntime,
             document.getElementById( "code-in-textarea" ).value,
             function ( yoke, textareaDisplays ) {
         

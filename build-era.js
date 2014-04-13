@@ -83,7 +83,6 @@ if ( args.build ) tasks.push( function ( then ) {
     var yoke = pkRuntime.conveniences_syncYoke();
     
     var maybeYokeAndResult = $pk.compileAndDefineFromString( yoke,
-        pkRuntime,
         readFile( "demos/penknife-compiled-src.pk" ),
         function ( yoke, displays ) {
     
