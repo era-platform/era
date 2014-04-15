@@ -853,8 +853,7 @@ function compileEssence(
 //                    "        return " + fn + ".special.call( yoke, " +
 //                                fn + ".special.captures, " + fnArgs +
 //                            " );\n" +
-                    "    return yoke.pkRuntime.callMethod( yoke, " +
-                            "\"call\", " +
+                    "    return callMethod( yoke, \"call\", " +
                             "pkList( " + fn + ", " + fnArgs + " ) " +
                         ");\n" +
                     "}, " + callbackVar + " )"
@@ -1507,9 +1506,7 @@ function compileAndDefineFromString( yoke, pkCodeString, then ) {
                 "Parse",
                 function ( yoke ) {
             return runWait( yoke, function ( yoke ) {
-                return yoke.pkRuntime.
-                    conveniences_macroexpandArrays( yoke,
-                        tryExpr.val );
+                return macroexpandArrays( yoke, tryExpr.val );
             }, function ( yoke, macroexpanded ) {
             return reportError( yoke, macroexpanded, "Macroexpansion",
                 function ( yoke ) {
@@ -1593,11 +1590,7 @@ function compileTopLevel( yoke, essence, then ) {
 
 function invokeTopLevel( yoke, jsFunc, then ) {
     return runWait( yoke, function ( yoke ) {
-        // TODO: Does this really count as a "convenience"?
-        return yoke.pkRuntime.
-            conveniences_withEffectsForInterpret( yoke,
-                function ( yoke ) {
-            
+        return withEffectsForInterpret( yoke, function ( yoke ) {
             return jsFunc( yoke, compiledCodeHelper,
                 function ( yoke, result ) {
                     
@@ -1606,9 +1599,7 @@ function invokeTopLevel( yoke, jsFunc, then ) {
                     // but the commented-out code marked "INTERPRET
                     // NOTE" runs essence expansion at load time
                     // rather than compile time.
-//                    return yoke.pkRuntime.
-//                        conveniences_interpretEssence( yoke,
-//                          result );
+//                    return interpretEssence( yoke, result );
                     
                     return pkRet( yoke, result );
                 }
@@ -1646,7 +1637,6 @@ function invokeFileTopLevel( yoke, jsFuncs, then ) {
 //
 // yoke
 // yoke.pkRuntime.getVal
-// yoke.pkRuntime.callMethod
 // then (only used in compiledLinkedListToString)
 // next (only used in compiledLinkedListToString)
 //
@@ -1669,6 +1659,7 @@ function invokeFileTopLevel( yoke, jsFuncs, then ) {
 // pkRet
 // runRet
 // pkDup
+// callMethod
 // pkfnLinear (only used in compiledLinkedListToString)
 // runWaitOne (only used in compiledLinkedListToString)
 // cachedNats (only used in an optimization)
@@ -1689,6 +1680,7 @@ var compiledCodeHelper = {
     pkRet: pkRet,
     runRet: runRet,
     pkDup: pkDup,
+    callMethod: callMethod,
     pkfnLinear: pkfnLinear,
     runWaitOne: runWaitOne,
     
@@ -1696,6 +1688,7 @@ var compiledCodeHelper = {
 };
 var compiledCodeHelperInit;
 (function () {
+    // TODO: Put these in a deterministic order.
     var arr = [];
     strMap().setObj( compiledCodeHelper ).each( function ( k, v ) {
         arr.push( "var " + k + " = cch." + k + ";" );

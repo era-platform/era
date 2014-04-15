@@ -75,7 +75,8 @@ if ( args.build ) tasks.push( function ( then ) {
         "return { pkNil: pkNil, pkRet: pkRet,\n" +
         "    makePkRuntime: makePkRuntime,\n" +
         "    compileAndDefineFromString:\n" +
-        "        compileAndDefineFromString };\n"
+        "        compileAndDefineFromString,\n" +
+        "    runSyncYoke: runSyncYoke };\n"
     )();
     
     
@@ -175,7 +176,7 @@ if ( args.build ) tasks.push( function ( then ) {
     
     } );
     
-    pkRuntime.conveniences_runSyncYoke( maybeYokeAndResult );
+    $pk.runSyncYoke( maybeYokeAndResult );
 } );
 
 

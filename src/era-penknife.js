@@ -82,7 +82,7 @@
 //   effects, and pkReadAll() in era-penknife-to-js.js works around
 //   that using mutation of its own.
 // - The trampoline in syncYokeCall(), conveniences_syncYoke(), and
-//   conveniences_runSyncYoke() uses mutation.
+//   runSyncYoke() uses mutation.
 // - A few local loops use very simple mutation. (The reader and
 //   trampoline deserve special attention because they make
 //   side-effectful closures and pass them off to other parts of the
@@ -342,9 +342,9 @@ function pkStr( jsStr ) {
     // NOTE: This sanity check is just here in case some code happens
     // to be buggy. We always have valid Unicode by the time we get
     // here, even if that means we do a sanity check beforehand. (See
-    // conveniences_macroexpandArrays(), for example.) If we ever
-    // can't afford to do this linear-time check of all the
-    // characters, we should consider removing this.
+    // macroexpandArrays(), for example.) If we ever can't afford to
+    // do this linear-time check of all the characters, we should
+    // consider removing this.
     if ( !isValidUnicode( jsStr ) )
         throw new Error();
     return pkStrUnsafe( jsStr );
@@ -1032,7 +1032,7 @@ function makePkRuntime() {
         var firstClassYoke = listGet( args, 0 );
         var func = listGet( args, 1 );
         return runWaitTry( yoke, function ( yoke ) {
-            return yoke.pkRuntime.callMethod( yoke, "call",
+            return callMethod( yoke, "call",
                 pkList( func, pkList( pkNil ) ) );
         }, function ( yoke, replacementYoke ) {
             if ( replacementYoke.tag !== "nil" )
@@ -1050,7 +1050,7 @@ function makePkRuntime() {
         var func = listGet( args, 1 );
         var wrappedEffectToken = firstClassYoke.ind( 0 );
         return runWaitTry( yoke, function ( yoke ) {
-            return yoke.pkRuntime.callMethod( yoke, "call", pkList(
+            return callMethod( yoke, "call", pkList(
                 func,
                 pkList( pkYep( wrappedEffectToken ) )
             ) );
@@ -1250,19 +1250,16 @@ function makePkRuntime() {
         function ( yoke, essence, captures ) {
         
         return runWaitTry( yoke, function ( yoke ) {
-            return yoke.pkRuntime.callMethod( yoke,
-                "essence-interpret",
+            return callMethod( yoke, "essence-interpret",
                 pkList( essence.ind( 0 ), captures ) );
         }, function ( yoke, op ) {
             return listMap( yoke, essence.ind( 1 ),
                 function ( yoke, essence ) {
                 
-                return yoke.pkRuntime.callMethod( yoke,
-                    "essence-interpret",
+                return callMethod( yoke, "essence-interpret",
                     pkList( essence, captures ) );
             }, function ( yoke, args ) {
-                return yoke.pkRuntime.callMethod( yoke, "call",
-                    pkList( op, args ) );
+                return callMethod( yoke, "call", pkList( op, args ) );
             } );
         } );
     } );
@@ -1388,8 +1385,7 @@ function makePkRuntime() {
         var argsDupCount = essence.ind( 1 );
         var bodyEssence = essence.ind( 2 );
         return listMap( yoke, captures, function ( yoke, capture ) {
-            return yoke.pkRuntime.callMethod( yoke,
-                "essence-interpret",
+            return callMethod( yoke, "essence-interpret",
                 pkList( capture, nonlocalCaptures ) );
         }, function ( yoke, captures ) {
             return pkRet( yoke, pkfnLinear(
@@ -1412,7 +1408,7 @@ function makePkRuntime() {
                                 pkLinearAsNonlinear( capture ) );
                         }, function ( yoke, captures ) {
                             
-                            return yoke.pkRuntime.callMethod( yoke,
+                            return callMethod( yoke,
                                 "essence-interpret",
                                 pkList( bodyEssence, captures ) );
                         } );
@@ -1429,8 +1425,7 @@ function makePkRuntime() {
         var thenEssence = essence.ind( 2 );
         var elseEssence = essence.ind( 3 );
         return runWaitTry( yoke, function ( yoke ) {
-            return yoke.pkRuntime.callMethod( yoke,
-                "essence-interpret",
+            return callMethod( yoke, "essence-interpret",
                 pkList( condEssence, outerCaptures ) );
         }, function ( yoke, condValue ) {
             // TODO: See if there's a better way for us to respect
@@ -1460,8 +1455,7 @@ function makePkRuntime() {
                 var essence = listGet( essenceAndCounts, 0 );
                 var count = getCount( essenceAndCounts );
                 return runWaitTry( yoke, function ( yoke ) {
-                    return yoke.pkRuntime.callMethod( yoke,
-                        "essence-interpret",
+                    return callMethod( yoke, "essence-interpret",
                         pkList( essence, outerCaptures ) );
                 }, function ( yoke, value ) {
                     return pkRet( yoke, pkList( value, count ) );
@@ -1484,8 +1478,7 @@ function makePkRuntime() {
                         return pkRet( yoke,
                             pkLinearAsNonlinear( innerCapture ) );
                     }, function ( yoke, wrappedInnerCaptures ) {
-                        return yoke.pkRuntime.callMethod( yoke,
-                            "essence-interpret",
+                        return callMethod( yoke, "essence-interpret",
                             pkList(
                                 branchEssence,
                                 wrappedInnerCaptures ) );
@@ -1502,8 +1495,7 @@ function makePkRuntime() {
         var numbersOfDups = essence.ind( 2 );
         var bodyEssence = essence.ind( 3 );
         return runWaitTry( yoke, function ( yoke ) {
-            return yoke.pkRuntime.callMethod( yoke,
-                "essence-interpret",
+            return callMethod( yoke, "essence-interpret",
                 pkList( sourceEssence, outerCaptures ) );
         }, function ( yoke, sourceValue ) {
         return listLenEq( yoke, sourceValue, numbersOfDups,
@@ -1517,8 +1509,7 @@ function makePkRuntime() {
         return listMap( yoke, captureEssences,
             function ( yoke, essence ) {
             
-            return yoke.pkRuntime.callMethod( yoke,
-                "essence-interpret",
+            return callMethod( yoke, "essence-interpret",
                 pkList( essence, outerCaptures ) );
         }, function ( yoke, evaluatedOuterCaptures ) {
         return listMapTwo( yoke, sourceValue, numbersOfDups,
@@ -1541,8 +1532,7 @@ function makePkRuntime() {
             return pkRet( yoke, pkLinearAsNonlinear( capture ) );
         }, function ( yoke, innerCaptures ) {
             
-            return yoke.pkRuntime.callMethod( yoke,
-                "essence-interpret",
+            return callMethod( yoke, "essence-interpret",
                 pkList( bodyEssence, innerCaptures ) );
         } );
         } );
@@ -1584,7 +1574,7 @@ function makePkRuntime() {
             function ( yoke, expr, getFork, gensymBase ) {
             
             return runWaitOne( yoke, function ( yoke ) {
-                return yoke.pkRuntime.callMethod( yoke, "call",
+                return callMethod( yoke, "call",
                     pkList( getFork, pkList( expr ) ) );
             } );
         } );
@@ -1593,8 +1583,7 @@ function makePkRuntime() {
         function ( yoke, expr, getFork, gensymBase ) {
         
         return runWaitTry( yoke, function ( yoke ) {
-            return yoke.pkRuntime.callMethod( yoke,
-                "macroexpand-to-fork",
+            return callMethod( yoke, "macroexpand-to-fork",
                 pkList( expr.ind( 0 ), getFork, gensymBase ) );
         }, function ( yoke, opFork ) {
             if ( opFork.isLinear() )
@@ -1608,11 +1597,8 @@ function makePkRuntime() {
                 return pkRet( yoke, opFork );
             }, function ( yoke, getTine, maybeMacro ) {
                 var macroexpander = maybeMacro.tag === "yep" ?
-                    maybeMacro.ind( 0 ) :
-                    yoke.pkRuntime.nonMacroMacroexpander();
-                return yoke.pkRuntime.callMethod( yoke, "call",
-                    pkList(
-                    
+                    maybeMacro.ind( 0 ) : nonMacroMacroexpander;
+                return callMethod( yoke, "call", pkList(
                     macroexpander,
                     pkList(
                         opFork, expr.ind( 1 ), getFork, gensymBase )
@@ -1642,12 +1628,9 @@ function makePkRuntime() {
             "macroexpand-to-fork",
             function ( yoke ) {
             
-            return yoke.pkRuntime.callMethod( yoke,
-                "macroexpand-to-fork",
-                pkList(
-                
+            return callMethod( yoke, "macroexpand-to-fork", pkList(
                 listGet( body, 1 ),
-                yoke.pkRuntime.deriveGetFork_( nonlocalGetFork,
+                deriveGetFork( nonlocalGetFork,
                     function ( yoke, name, then ) {
                     
                     return then( yoke, isParamName( name ) );
@@ -1696,9 +1679,7 @@ function makePkRuntime() {
                     function ( yoke, bodyInEssences ) {
                 
                 return runWaitTry( yoke, function ( yoke ) {
-                    return yoke.pkRuntime.callMethod( yoke, "call",
-                        pkList(
-                        
+                    return callMethod( yoke, "call", pkList(
                         listGet( bodyGetTine, 1 ),
                         pkList( bodyInEssences )
                     ) );
@@ -1784,8 +1765,7 @@ function makePkRuntime() {
                 "macroexpand-to-fork",
                 function ( yoke ) {
                 
-                return yoke.pkRuntime.callMethod( yoke,
-                    "macroexpand-to-fork",
+                return callMethod( yoke, "macroexpand-to-fork",
                     pkList( expr, getFork, gensymBase ) );
             }, function ( yoke, getTine, maybeMacro ) {
                 return then( yoke, getTine, listGet( getTine, 0 ) );
@@ -1839,8 +1819,8 @@ function makePkRuntime() {
             function ( yoke, bcDedup ) {
         
         function fulfill( getTine, then ) {
-            return yoke.pkRuntime.makeSubEssenceUnderMappendedArgs_(
-                yoke, getTine, null, gensymBase, bcDedup,
+            return makeSubEssenceUnderMappendedArgs( yoke,
+                getTine, null, gensymBase, bcDedup,
                 function ( yoke, captures, dupsList, outEssence ) {
                 
                 if ( !listLenIs( captures, 0 ) )
@@ -1871,7 +1851,7 @@ function makePkRuntime() {
             pkGetTine( outerCaptures,
                 function ( yoke, outerEssences ) {
                 
-                return yoke.pkRuntime.fulfillGetTine( yoke,
+                return fulfillGetTine( yoke,
                     condGetTine, outerEssences,
                     function ( yoke, condEssence, outerEssences ) {
                     
@@ -1943,14 +1923,13 @@ function makePkRuntime() {
             "macroexpand-to-fork",
             function ( yoke ) {
             
-            return yoke.pkRuntime.callMethod( yoke,
-                "macroexpand-to-fork",
+            return callMethod( yoke, "macroexpand-to-fork",
                 pkList( sourceExpr, nonlocalGetFork, gensymBase ) );
         }, function ( yoke, sourceGetTine, maybeMacro ) {
         
         var sourceCaptures = listGet( sourceGetTine, 0 );
         
-        return yoke.pkRuntime.makeSubEssenceUnderMappendedArgs_( yoke,
+        return makeSubEssenceUnderMappendedArgs( yoke,
             bodyExpr, nonlocalGetFork, gensymBase, varNames,
             function ( yoke,
                 bodyCaptures, bodyDupsList, bodyEssence ) {
@@ -1963,7 +1942,7 @@ function makePkRuntime() {
             ), function ( yoke, captures, outerEssences ) {
                 var sourceGetTine = listGet( captures, 0 ).ind( 0 );
                 
-                return yoke.pkRuntime.fulfillGetTine( yoke,
+                return fulfillGetTine( yoke,
                     sourceGetTine, outerEssences,
                     function ( yoke, sourceEssence, outerEssences ) {
                     
@@ -2009,9 +1988,7 @@ function makePkRuntime() {
     // is only to invalidate old effect tokens, this utility is up to
     // that task.
     defFunc( "update-the-effect-token", 0, function ( yoke ) {
-        return yoke.pkRuntime.mapEffect_( yoke,
-            function ( yoke, effects ) {
-            
+        return mapEffect( yoke, function ( yoke, effects ) {
             if ( !effects.canUseImperativeCapabilities )
                 return pkErr( yoke,
                     "Called update-the-effect-token without access " +
@@ -2027,9 +2004,7 @@ function makePkRuntime() {
                 "qualified name" );
         if ( val.isLinear() )
             return pkErr( yoke, "Called defval with a linear value" );
-        return yoke.pkRuntime.mapEffect_( yoke,
-            function ( yoke, effects ) {
-            
+        return mapEffect( yoke, function ( yoke, effects ) {
             if ( !effects.canDefine )
                 return pkErr( yoke,
                     "Called defval without access to top-level " +
@@ -2047,9 +2022,7 @@ function makePkRuntime() {
         if ( macro.isLinear() )
             return pkErr( yoke,
                 "Called defmacro with a linear macro" );
-        return yoke.pkRuntime.mapEffect_( yoke,
-            function ( yoke, effects ) {
-            
+        return mapEffect( yoke, function ( yoke, effects ) {
             if ( !effects.canDefine )
                 return pkErr( yoke,
                     "Called defval without access to top-level " +
@@ -2078,9 +2051,7 @@ function makePkRuntime() {
             if ( keys.isLinear() )
                 return pkErr( yoke,
                     "Called deftag with a linear args list" );
-            return yoke.pkRuntime.mapEffect_( yoke,
-                function ( yoke, effects ) {
-                
+            return mapEffect( yoke, function ( yoke, effects ) {
                 if ( !effects.canDefine )
                     return pkErr( yoke,
                         "Called deftag without access to top-level " +
@@ -2110,9 +2081,7 @@ function makePkRuntime() {
             if ( argNames.isLinear() )
                 return pkErr( yoke,
                     "Called defmethod with a linear args list" );
-            return yoke.pkRuntime.mapEffect_( yoke,
-                function ( yoke, effects ) {
-                
+            return mapEffect( yoke, function ( yoke, effects ) {
                 if ( !effects.canDefine )
                     return pkErr( yoke,
                         "Called defmethod without access to " +
@@ -2137,9 +2106,7 @@ function makePkRuntime() {
         if ( impl.isLinear() )
             return pkErr( yoke,
                 "Called set-impl with a linear function" );
-        return yoke.pkRuntime.mapEffect_( yoke,
-            function ( yoke, effects ) {
-            
+        return mapEffect( yoke, function ( yoke, effects ) {
             if ( !effects.canDefine )
                 return pkErr( yoke,
                     "Called set-impl without access to top-level " +
@@ -2147,8 +2114,8 @@ function makePkRuntime() {
             return yoke.pkRuntime.enqueueDef_( yoke, function () {
                 return yoke.pkRuntime.setImpl( methodName, tagName,
                     function ( yoke, args ) {
-                        return yoke.pkRuntime.callMethod( yoke,
-                            "call", pkList( impl, args ) );
+                        return callMethod( yoke, "call",
+                            pkList( impl, args ) );
                     } );
             } );
         } );
@@ -2159,9 +2126,7 @@ function makePkRuntime() {
     } );
     
     defFunc( "unwrap", 1, function ( yoke, wrapped ) {
-        return yoke.pkRuntime.pkUnwrap( yoke, wrapped,
-            function ( yoke, unwrapped ) {
-            
+        return pkUnwrap( yoke, wrapped, function ( yoke, unwrapped ) {
             return pkRet( yoke, unwrapped );
         } );
     } );
@@ -2198,13 +2163,13 @@ function makePkRuntime() {
         // TODO: See if we should be temporarily augmenting the
         // available side effects, rather than temporarily replacing
         // them.
-        return yoke.pkRuntime.withAvailableEffectsReplaced( yoke, {
+        return withAvailableEffectsReplaced( yoke, {
             canUseImperativeCapabilities: true,
             canDefine: false
         }, function ( innerYoke ) {
             return runWaitTry( innerYoke, function ( innerYoke ) {
-                return innerYoke.pkRuntime.callMethod( innerYoke,
-                    "call", pkList( body, pkList( mboxEnv ) ) );
+                return callMethod( innerYoke, "call",
+                    pkList( body, pkList( mboxEnv ) ) );
             }, function ( innerYoke, result ) {
                 mboxEnvContents.isValidMutableEnvironment = false;
                 return pkRet( innerYoke, result );
@@ -2219,9 +2184,7 @@ function makePkRuntime() {
             return pkErr( yoke,
                 "Called mbox-new with a linear assigned value" );
         return runWaitTry( yoke, function ( yoke ) {
-            return yoke.pkRuntime.mapEffect_( yoke,
-                function ( yoke, effects ) {
-                
+            return mapEffect( yoke, function ( yoke, effects ) {
                 if ( !effects.canUseImperativeCapabilities )
                     return pkErr( yoke,
                         "Called mbox-new without access to " +
@@ -2254,9 +2217,7 @@ function makePkRuntime() {
             return pkErr( yoke,
                 "Called mbox-eq with a non-token box" );
         return runWaitTry( yoke, function ( yoke ) {
-            return yoke.pkRuntime.mapEffect_( yoke,
-                function ( yoke, effects ) {
-                
+            return mapEffect( yoke, function ( yoke, effects ) {
                 if ( !effects.canUseImperativeCapabilities )
                     return pkErr( yoke,
                         "Called mbox-eq without access to " +
@@ -2288,9 +2249,7 @@ function makePkRuntime() {
             return pkErr( yoke,
                 "Called mbox-get with a non-token box" );
         return runWaitTry( yoke, function ( yoke ) {
-            return yoke.pkRuntime.mapEffect_( yoke,
-                function ( yoke, effects ) {
-                
+            return mapEffect( yoke, function ( yoke, effects ) {
                 if ( !effects.canUseImperativeCapabilities )
                     return pkErr( yoke,
                         "Called mbox-get without access to " +
@@ -2322,9 +2281,7 @@ function makePkRuntime() {
         if ( newState.isLinear() )
             return pkErr( yoke,
                 "Called mbox-set with a linear assigned value" );
-        return yoke.pkRuntime.mapEffect_( yoke,
-            function ( yoke, effects ) {
-            
+        return mapEffect( yoke, function ( yoke, effects ) {
             if ( !effects.canUseImperativeCapabilities )
                 return pkErr( yoke,
                     "Called mbox-set without access to imperative " +
@@ -2465,6 +2422,8 @@ function makePkRuntime() {
     return self;
 }
 
+// TODO: The PkRuntime methods are interspersed with global functions.
+// Reorganize this code.
 function PkRuntime() {}
 PkRuntime.prototype.init_ = function ( meta, revDefs ) {
     this.meta_ = meta;
@@ -2495,9 +2454,6 @@ PkRuntime.prototype.prepareMeta_ = function (
     }
     return meta;
 };
-// TODO: Move this global function out of the way of the other
-// PkRuntime methods. (Actually, the surrounding methods should be
-// global functions too, so this location might be just fine.)
 function pkDup( yoke, val, count, then ) {
     
     // If we're only trying to get one duplicate, we already have our
@@ -2524,7 +2480,7 @@ function pkDup( yoke, val, count, then ) {
         } );
     if ( val.tag === "nonlinear-as-linear" )
         return runWaitTry( yoke, function ( yoke ) {
-            return yoke.pkRuntime.callMethod( yoke, "call", pkList(
+            return callMethod( yoke, "call", pkList(
                 val.special.duplicator,
                 pkList( val.special.innerValue, count )
             ) );
@@ -2575,23 +2531,18 @@ function pkDup( yoke, val, count, then ) {
         } );
     }
 }
-// TODO: Move this global function out of the way of the other
-// PkRuntime methods. (Actually, the surrounding methods should be
-// global functions too, so this location might be just fine.)
 function pkDrop( yoke, val, then ) {
     return pkDup( yoke, val, pkNil, function ( yoke, nothing ) {
         return then( yoke );
     } );
-};
-PkRuntime.prototype.pkUnwrap = function ( yoke, val, then ) {
-    // TODO: Make this a global function, since it doesn't use `this`.
-    
+}
+function pkUnwrap( yoke, val, then ) {
     if ( val.tag !== "nonlinear-as-linear" )
         return pkErr( yoke,
             "Tried to unwrap a value that wasn't a " +
             "nonlinear-as-linear" );
     return runWaitTry( yoke, function ( yoke ) {
-        return yoke.pkRuntime.callMethod( yoke, "call", pkList(
+        return callMethod( yoke, "call", pkList(
             val.special.unwrapper,
             pkList( val.special.innerValue )
         ) );
@@ -2601,11 +2552,8 @@ PkRuntime.prototype.pkUnwrap = function ( yoke, val, then ) {
                 "Unwrapped a value and got a linear value" );
         return then( yoke, unwrapped );
     } );
-};
-PkRuntime.prototype.fulfillGetTine = function (
-    yoke, getTine, essences, then ) {
-    
-    // TODO: Make this a global function, since it doesn't use `this`.
+}
+function fulfillGetTine( yoke, getTine, essences, then ) {
     return listFoldl( yoke,
         pkList( pkNil, essences ), listGet( getTine, 0 ),
         function ( yoke, takenRevAndNot, name ) {
@@ -2626,7 +2574,7 @@ PkRuntime.prototype.fulfillGetTine = function (
             function ( yoke, taken ) {
             
             return runWaitTry( yoke, function ( yoke ) {
-                return yoke.pkRuntime.callMethod( yoke, "call",
+                return callMethod( yoke, "call",
                     pkList(
                         listGet( getTine, 1 ), pkList( taken ) ) );
             }, function ( yoke, resultEssence ) {
@@ -2635,18 +2583,14 @@ PkRuntime.prototype.fulfillGetTine = function (
             } );
         } );
     } );
-};
-PkRuntime.prototype.fulfillGetTines = function (
-    yoke, getTines, essences, then ) {
-    
-    // TODO: Make this a global function, since it doesn't use `this`.
+}
+function fulfillGetTines( yoke, getTines, essences, then ) {
     if ( getTines.tag !== "cons" )
         return then( yoke, pkNil, essences );
-    return yoke.pkRuntime.fulfillGetTine( yoke,
-        getTines.ind( 0 ), essences,
+    return fulfillGetTine( yoke, getTines.ind( 0 ), essences,
         function ( yoke, outEssence, inEssencesRemaining ) {
         
-        return yoke.pkRuntime.fulfillGetTines( yoke,
+        return fulfillGetTines( yoke,
             getTines.ind( 1 ), inEssencesRemaining,
             function ( yoke, outEssences, inEssencesRemaining ) {
             
@@ -2657,13 +2601,9 @@ PkRuntime.prototype.fulfillGetTines = function (
             } );
         } );
     } );
-};
-PkRuntime.prototype.makeSubEssenceUnderMappendedArgs_ = function (
-    yoke, expr, nonlocalGetForkOrNull, gensymBase, argList, then ) {
-    
-    // TODO: Make this a global function, since it doesn't use `this`.
-    // However, consider that this uses the private deriveGetFork_().
-    
+}
+function makeSubEssenceUnderMappendedArgs( yoke,
+    expr, nonlocalGetForkOrNull, gensymBase, argList, then ) {
     
     function getEntry( argMap, pkName ) {
         var jsName = pkName.special.unqualifiedNameJson;
@@ -2711,11 +2651,9 @@ PkRuntime.prototype.makeSubEssenceUnderMappendedArgs_ = function (
         "macroexpand-to-fork",
         function ( yoke ) {
         
-        return yoke.pkRuntime.callMethod( yoke,
-            "macroexpand-to-fork", pkList(
-            
+        return callMethod( yoke, "macroexpand-to-fork", pkList(
             expr,
-            yoke.pkRuntime.deriveGetFork_( nonlocalGetForkOrNull,
+            deriveGetFork( nonlocalGetForkOrNull,
                 function ( yoke, name, then ) {
                     return then( yoke,
                         getEntry( maybeArgState.argMap, name ) !==
@@ -2815,7 +2753,7 @@ PkRuntime.prototype.makeSubEssenceUnderMappendedArgs_ = function (
     return listRev( yoke, revInEssencesState.revInEssences,
         function ( yoke, inEssences ) {
     return runWaitTry( yoke, function ( yoke ) {
-        return yoke.pkRuntime.callMethod( yoke, "call",
+        return callMethod( yoke, "call",
             pkList( cont, pkList( inEssences ) ) );
     }, function ( yoke, outEssence ) {
     return listMap( yoke, maybeArgState.maybeArgList,
@@ -2846,10 +2784,8 @@ PkRuntime.prototype.makeSubEssenceUnderMappendedArgs_ = function (
     } );
     } );
     } );
-};
-PkRuntime.prototype.forkGetter = function ( nameForError ) {
-    // TODO: Make this a global function, since it doesn't use `this`.
-    
+}
+function forkGetter( nameForError ) {
     return pkfn( function ( yoke, args ) {
         // NOTE: This reads definitions. We maintain the metaphor that
         // we work with an immutable snapshot of the definitions, so
@@ -2887,14 +2823,8 @@ PkRuntime.prototype.forkGetter = function ( nameForError ) {
             } );
         }
     } );
-};
-PkRuntime.prototype.deriveGetFork_ = function (
-    nonlocalGetFork, isLocalName ) {
-    
-    // TODO: Make this a global function, since it doesn't use `this`.
-    // However, consider that it's private for some reason.
-    
-    
+}
+function deriveGetFork( nonlocalGetFork, isLocalName ) {
     return pkfn( function ( yoke, args ) {
         if ( !listLenIs( args, 1 ) )
             return pkErrLen( yoke, args, "Called a get-fork" );
@@ -2931,12 +2861,12 @@ PkRuntime.prototype.deriveGetFork_ = function (
             // the user can define methods too, and the user's own
             // macros can pass forks to them.)
             return runWaitOne( yoke, function ( yoke ) {
-                return yoke.pkRuntime.callMethod( yoke, "call",
+                return callMethod( yoke, "call",
                     pkList( nonlocalGetFork, pkList( name ) ) );
             } );
         }
     } );
-};
+}
 PkRuntime.prototype.runWaitTryGetmacFork = function (
     yoke, nameForError, func, then ) {
     
@@ -2945,7 +2875,7 @@ PkRuntime.prototype.runWaitTryGetmacFork = function (
         return func( yoke );
     }, function ( yoke, fork ) {
         return runWaitTry( yoke, function ( yoke ) {
-            return self.callMethod( yoke, "fork-to-getmac",
+            return callMethod( yoke, "fork-to-getmac",
                 pkList( fork ) );
         }, function ( yoke, results ) {
             if ( !(isList( results ) && listLenIs( results, 2 )) )
@@ -2983,57 +2913,51 @@ PkRuntime.prototype.runWaitTryGetmacFork = function (
         } );
     } );
 };
-PkRuntime.prototype.nonMacroMacroexpander = function () {
-    // TODO: Make this a global function, since it doesn't use `this`.
-    
-    return pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 4 ) )
-            return pkErrLen( yoke, args,
-                "Called a non-macro's macroexpander" );
-        var fork = listGet( args, 0 );
-        var argsList = listGet( args, 1 );
-        var getFork = listGet( args, 2 );
-        var gensymBase = listGet( args, 3 );
-        if ( !isList( argsList ) )
-            return pkErr( yoke,
-                "Called a non-macro's macroexpander with a " +
-                "non-list args list" );
-        if ( getFork.isLinear() )
-            return pkErr( yoke,
-                "Called a non-macro's macroexpander with a linear " +
-                "get-fork" );
-        if ( !isUnqualifiedName( gensymBase ) )
-            return pkErr( yoke,
-                "Called a non-macro's macroexpander with a gensym " +
-                "base that wasn't an unqualified name" );
-        return yoke.pkRuntime.runWaitTryGetmacFork( yoke,
-            "the fork parameter to a non-macro's macroexpander",
-            function ( yoke ) {
-            
-            return pkRet( yoke, fork );
-        }, function ( yoke, funcGetTine, funcMaybeMacro ) {
-            return parseList( yoke, argsList, pkNil );
-            function parseList( yoke, list, revGetTinesSoFar ) {
-                if ( list.tag !== "cons" )
-                    return listRev( yoke, revGetTinesSoFar,
-                        function ( yoke, getTines ) {
+var nonMacroMacroexpander = pkfn( function ( yoke, args ) {
+    if ( !listLenIs( args, 4 ) )
+        return pkErrLen( yoke, args,
+            "Called a non-macro's macroexpander" );
+    var fork = listGet( args, 0 );
+    var argsList = listGet( args, 1 );
+    var getFork = listGet( args, 2 );
+    var gensymBase = listGet( args, 3 );
+    if ( !isList( argsList ) )
+        return pkErr( yoke,
+            "Called a non-macro's macroexpander with a non-list " +
+            "args list" );
+    if ( getFork.isLinear() )
+        return pkErr( yoke,
+            "Called a non-macro's macroexpander with a linear " +
+            "get-fork" );
+    if ( !isUnqualifiedName( gensymBase ) )
+        return pkErr( yoke,
+            "Called a non-macro's macroexpander with a gensym base " +
+            "that wasn't an unqualified name" );
+    return yoke.pkRuntime.runWaitTryGetmacFork( yoke,
+        "the fork parameter to a non-macro's macroexpander",
+        function ( yoke ) {
+        
+        return pkRet( yoke, fork );
+    }, function ( yoke, funcGetTine, funcMaybeMacro ) {
+        return parseList( yoke, argsList, pkNil );
+        function parseList( yoke, list, revGetTinesSoFar ) {
+            if ( list.tag !== "cons" )
+                return listRev( yoke, revGetTinesSoFar,
+                    function ( yoke, getTines ) {
+                    
+                    var allGetTines = pkCons( funcGetTine, getTines );
+                    return listMappend( yoke, allGetTines,
+                        function ( yoke, getTine ) {
                         
-                        var allGetTines =
-                            pkCons( funcGetTine, getTines );
-                        return listMappend( yoke, allGetTines,
-                            function ( yoke, getTine ) {
-                            
-                            return pkRet( yoke,
-                                listGet( getTine, 0 ) );
-                        }, function ( yoke, allNames ) {
-                            // <indentation-reset>
+                        return pkRet( yoke, listGet( getTine, 0 ) );
+                    }, function ( yoke, allNames ) {
+                        // <indentation-reset>
 return pkRet( yoke, pk( "getmac-fork",
     pkGetTineLinear( allNames, pkList( pkYep( allGetTines ) ),
         function ( yoke, captures, allInEssences ) {
         
         var allGetTines = listGet( captures, 0 ).ind( 0 );
-        return yoke.pkRuntime.fulfillGetTines( yoke,
-            allGetTines, allInEssences,
+        return fulfillGetTines( yoke, allGetTines, allInEssences,
             function ( yoke, allOutEssences, inEssencesRemaining ) {
             
             if ( !listLenIs( inEssencesRemaining, 0 ) )
@@ -3046,27 +2970,22 @@ return pkRet( yoke, pk( "getmac-fork",
     } ),
     pkNil
 ) );
-                            // </indentation-reset>
-                        } );
+                        // </indentation-reset>
                     } );
-                return yoke.pkRuntime.runWaitTryGetmacFork( yoke,
-                    "macroexpand-to-fork",
-                    function ( yoke ) {
-                    
-                    return yoke.pkRuntime.callMethod( yoke,
-                        "macroexpand-to-fork",
-                        pkList(
-                            list.ind( 0 ), getFork, gensymBase ) );
-                }, function ( yoke, getTine, maybeMacro ) {
-                    return parseList(
-                        yoke,
-                        list.ind( 1 ),
-                        pkCons( getTine, revGetTinesSoFar ) );
                 } );
-            }
-        } );
+            return yoke.pkRuntime.runWaitTryGetmacFork( yoke,
+                "macroexpand-to-fork",
+                function ( yoke ) {
+                
+                return callMethod( yoke, "macroexpand-to-fork",
+                    pkList( list.ind( 0 ), getFork, gensymBase ) );
+            }, function ( yoke, getTine, maybeMacro ) {
+                return parseList( yoke, list.ind( 1 ),
+                    pkCons( getTine, revGetTinesSoFar ) );
+            } );
+        }
     } );
-};
+} );
 PkRuntime.prototype.enqueueDef_ = function ( yoke, body ) {
     this.revDefs_ = { first: body, rest: this.revDefs_ };
     return pkRet( yoke, pkNil );
@@ -3128,8 +3047,8 @@ PkRuntime.prototype.defMethod = function ( name, args ) {
 PkRuntime.prototype.callMethodRaw = function (
     yoke, methodName, args ) {
     
-    // TODO: Make this a global function, since it doesn't use `this`.
-    // However, consider that it uses the private getMeta_().
+    // NOTE: This doesn't use `this`, but it does access the private
+    // method getMeta_(), which is why it's a method.
     
     // TODO: These error messages implicitly use Pk#toString(), which
     // is hackishly designed. Figure out what kind of externalization
@@ -3149,14 +3068,11 @@ PkRuntime.prototype.callMethodRaw = function (
             tagName );
     return impl.call( yoke, args );
 };
-PkRuntime.prototype.callMethod = function (
-    yoke, jsMethodName, args ) {
-    
-    // TODO: Make this a global function, since it doesn't use `this`.
+function callMethod( yoke, jsMethodName, args ) {
     return yoke.pkRuntime.callMethodRaw( yoke,
         pkQualifiedName( pkStrNameUnsafeMemoized( jsMethodName ) ),
         args );
-};
+}
 PkRuntime.prototype.setImpl = function ( methodName, tagName, impl ) {
     // TODO: These error messages implicitly use Pk#toString(), which
     // is hackishly designed. Figure out what kind of externalization
@@ -3256,14 +3172,11 @@ PkRuntime.prototype.getMacro = function ( name ) {
     
     return pkRawErr( "Unbound variable " + name );
 };
-PkRuntime.prototype.mapEffect_ = function ( yoke, func ) {
-    // TODO: Make this a global function, since it doesn't use `this`.
-    
+function mapEffect( yoke, func ) {
     var yokeRider = yoke.yokeRider;
     var pureYoke = yokeWithRider( yoke, pk( "pure-yoke" ) );
     return runWaitTry( pureYoke, function ( pureYoke ) {
-        return pureYoke.pkRuntime.callMethod( pureYoke,
-            "yoke-map-wrapped-effect-token",
+        return callMethod( pureYoke, "yoke-map-wrapped-effect-token",
             pkList(
                 yokeRider,
                 pkfn( function ( pureYoke, args ) {
@@ -3281,8 +3194,7 @@ PkRuntime.prototype.mapEffect_ = function ( yoke, func ) {
                             return pkErr( pureYoke,
                                 "Called " + us + " with a value " +
                                 "that wasn't a nonlinear-as-linear" );
-                        return pureYoke.pkRuntime.pkUnwrap( pureYoke,
-                            wrappedEffectToken,
+                        return pkUnwrap( pureYoke, wrappedEffectToken,
                             function ( pureYoke, effectToken ) {
                             
                             if ( effectToken.tag !== "token" )
@@ -3312,10 +3224,9 @@ PkRuntime.prototype.mapEffect_ = function ( yoke, func ) {
                             }, function ( pureYoke, ignoredNil ) {
                                 if ( ignoredNil.tag !== "nil" )
                                     return pkErr( pureYoke,
-                                        "Internally used " +
-                                        "mapEffect_ with a " +
-                                        "function that returned a " +
-                                        "non-nil value" );
+                                        "Internally used mapEffect " +
+                                        "with a function that " +
+                                        "returned a non-nil value" );
                                 var newEffectToken = makeEffectToken(
                                     effectToken.special.jsPayload.
                                         effects );
@@ -3346,7 +3257,7 @@ PkRuntime.prototype.mapEffect_ = function ( yoke, func ) {
                         }, function ( pureYoke, ignoredNil ) {
                             if ( ignoredNil.tag !== "nil" )
                                 return pkErr( pureYoke,
-                                    "Internally used mapEffect_ " +
+                                    "Internally used mapEffect " +
                                     "with a function that returned " +
                                     "a non-nil value" );
                             return pkRet( yoke, pkNil );
@@ -3362,14 +3273,12 @@ PkRuntime.prototype.mapEffect_ = function ( yoke, func ) {
         var yoke = yokeWithRider( pureYoke, newYokeRider );
         return pkRet( yoke, pkNil );
     } );
-};
+}
 // TODO: Figure out if we should manage `withAvailableEffectsReplaced`
 // in a more encapsulated and/or generalized way.
 // TODO: Figure out if we should allow users to pass in arbitrary
 // `effects` values like this.
-PkRuntime.prototype.withAvailableEffectsReplaced = function (
-    yoke, effects, body ) {
-    
+function withAvailableEffectsReplaced( yoke, effects, body ) {
     var effectToken = makeEffectToken( effects );
     var empoweredYoke = {
         pkRuntime: yoke.pkRuntime,
@@ -3390,7 +3299,7 @@ PkRuntime.prototype.withAvailableEffectsReplaced = function (
         };
         return runRet( disempoweredYoke, result );
     } );
-};
+}
 PkRuntime.prototype.conveniences_debuggableSyncYoke = function () {
     return {
         pkRuntime: this,
@@ -3402,9 +3311,7 @@ PkRuntime.prototype.conveniences_debuggableSyncYoke = function () {
         }
     };
 };
-PkRuntime.prototype.conveniences_runSyncYoke = function (
-    maybeYokeAndResult ) {
-    
+function runSyncYoke( maybeYokeAndResult ) {
     var deferred = [];
     var finalYokeAndResult = null;
     syncYokeCall( maybeYokeAndResult, function ( actionToDefer ) {
@@ -3419,7 +3326,7 @@ PkRuntime.prototype.conveniences_runSyncYoke = function (
     if ( deferred.length !== 0 || finalYokeAndResult === null )
         throw new Error();
     return finalYokeAndResult;
-};
+}
 PkRuntime.prototype.conveniences_syncYoke = function () {
     return {
         pkRuntime: this,
@@ -3485,19 +3392,14 @@ PkRuntime.prototype.conveniences_syncYoke = function () {
         }
     };
 };
-PkRuntime.prototype.conveniences_macroexpand = function ( yoke,
-    expr ) {
-    
-    // TODO: Make this a global function, since it doesn't use `this`.
+function macroexpand( yoke, expr ) {
     return yoke.pkRuntime.runWaitTryGetmacFork( yoke,
         "macroexpand-to-fork",
         function ( yoke ) {
         
-        return yoke.pkRuntime.callMethod( yoke, "macroexpand-to-fork",
-            pkList(
-            
+        return callMethod( yoke, "macroexpand-to-fork", pkList(
             expr,
-            yoke.pkRuntime.forkGetter( "the top-level get-fork" ),
+            forkGetter( "the top-level get-fork" ),
             pkStrNameUnsafeMemoized( "root-gensym-base" )
         ) );
     }, function ( yoke, getTine, maybeMacro ) {
@@ -3506,19 +3408,14 @@ PkRuntime.prototype.conveniences_macroexpand = function ( yoke,
                 "Got a top-level macroexpansion result with captures"
                 );
         return runWaitTry( yoke, function ( yoke ) {
-            return yoke.pkRuntime.callMethod( yoke, "call",
+            return callMethod( yoke, "call",
                 pkList( listGet( getTine, 1 ), pkList( pkNil ) ) );
         }, function ( yoke, essence ) {
             return pkRet( yoke, essence );
         } );
     } );
-};
-PkRuntime.prototype.conveniences_macroexpandArrays = function ( yoke,
-    arrayExpr ) {
-    
-    // TODO: Make this a global function, since it doesn't use `this`.
-    
-    
+}
+function macroexpandArrays( yoke, arrayExpr ) {
     function arraysToConses( arrayExpr ) {
         // TODO: Use something like Lathe.js's _.likeArray() and
         // _.likeObjectLiteral() here.
@@ -3553,34 +3450,24 @@ PkRuntime.prototype.conveniences_macroexpandArrays = function ( yoke,
         }
     }
     
-    return yoke.pkRuntime.conveniences_macroexpand( yoke,
-        arraysToConses( arrayExpr ) );
-};
-PkRuntime.prototype.conveniences_withEffectsForInterpret =
-    function ( yoke, func ) {
-    
-    // TODO: Make this a global function, since it doesn't use `this`.
-    
+    return macroexpand( yoke, arraysToConses( arrayExpr ) );
+}
+function withEffectsForInterpret( yoke, func, then ) {
     // TODO: See if we should be temporarily augmenting the available
     // side effects, rather than temporarily replacing them.
-    return yoke.pkRuntime.withAvailableEffectsReplaced( yoke, {
+    return withAvailableEffectsReplaced( yoke, {
         canUseImperativeCapabilities: true,
         canDefine: true
     }, function ( yoke ) {
         return func( yoke );
     } );
 };
-PkRuntime.prototype.conveniences_interpretEssence = function ( yoke,
-    essence ) {
-    
-    // TODO: Make this a global function, since it doesn't use `this`.
-    return yoke.pkRuntime.conveniences_withEffectsForInterpret( yoke,
-        function ( yoke ) {
-        
-        return yoke.pkRuntime.callMethod( yoke, "essence-interpret",
+function interpretEssence( yoke, essence ) {
+    return withEffectsForInterpret( yoke, function ( yoke ) {
+        return callMethod( yoke, "essence-interpret",
             pkList( essence, pkNil ) );
     } );
-};
+}
 
 // TODO: Define a staged conditional, preferably from the Penknife
 // side.
