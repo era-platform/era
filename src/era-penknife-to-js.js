@@ -1570,18 +1570,8 @@ function compileTopLevel( yoke, essence, then ) {
     return compiledLinkedListToString( yoke, compiled.val,
         function ( yoke, code ) {
     
-    // TODO: See if there's a more convenient way to manage all these
-    // variables.
     return then( yoke, { ok: true, val:
-        "function ( " +
-            "Pk, pkNil, pkCons, pkList, pkStrNameRaw, " +
-            "pkQualifiedName, pkYep, pkPairName, pkStrUnsafe, " +
-            "runWaitTry, listLenIsNat, pkErr, pkRet, runRet, " +
-            "pkfnLinear, runWaitOne, " +
-            
-            "cachedNats, " +
-            
-            "yoke, then ) {\n" +
+        "function ( yoke, cch, then ) {\n" +
         "\n" +
         // TODO: This first commented-out line may help when debugging
         // compiled code, but it uses the hackish Pk#toString(). See
@@ -1589,8 +1579,9 @@ function compileTopLevel( yoke, essence, then ) {
 //        "// " + essence + "\n" +
 //        "// @sourceURL=" + Math.random() + "\n" +
 //        "debugger;\n" +
+        compiledCodeHelperInit + "\n" +
+        "\n" +
         code + "\n" +
-        
         "\n" +
         "}"
     } );
@@ -1607,29 +1598,7 @@ function invokeTopLevel( yoke, jsFunc, then ) {
             conveniences_withEffectsForInterpret( yoke,
                 function ( yoke ) {
             
-            // TODO: See if there's a more convenient way to manage
-            // all these variables.
-            return jsFunc(
-                Pk,
-                pkNil,
-                pkCons,
-                pkList,
-                pkStrNameRaw,
-                pkQualifiedName,
-                pkYep,
-                pkPairName,
-                pkStrUnsafe,
-                runWaitTry,
-                listLenIsNat,
-                pkErr,
-                pkRet,
-                runRet,
-                pkfnLinear,
-                runWaitOne,
-                
-                cachedNats,
-                
-                yoke,
+            return jsFunc( yoke, compiledCodeHelper,
                 function ( yoke, result ) {
                     
                     // INTERPRET NOTE: It doesn't seem to make the
@@ -1675,26 +1644,60 @@ function invokeFileTopLevel( yoke, jsFuncs, then ) {
 // NOTE: The generated code snippets depend on the following free
 // variables:
 //
+// yoke
+// yoke.pkRuntime.getVal
+// yoke.pkRuntime.callMethod
+// yoke.pkRuntime.pkDup
+// then (only used in compiledLinkedListToString)
+// next (only used in compiledLinkedListToString)
+//
+// They also depend on these free variables, but compiledCodeHelper
+// and compiledCodeHelperInit manage these as fields of a single `cch`
+// variable:
+//
 // new Pk().init_
 // pkNil
 // pkCons
 // pkList
-// yoke.pkRuntime.getVal
-// yoke.pkRuntime.callMethod
 // pkStrNameRaw
 // pkQualifiedName
 // pkYep
 // pkPairName
 // pkStrUnsafe
 // runWaitTry
-// yoke.pkRuntime.pkDup
 // listLenIsNat
-// yoke
 // pkErr
 // pkRet
 // runRet
-// cachedNats (only used in an optimization)
 // pkfnLinear (only used in compiledLinkedListToString)
-// then (only used in compiledLinkedListToString)
 // runWaitOne (only used in compiledLinkedListToString)
-// next (only used in compiledLinkedListToString)
+// cachedNats (only used in an optimization)
+
+var compiledCodeHelper = {
+    Pk: Pk,
+    pkNil: pkNil,
+    pkCons: pkCons,
+    pkList: pkList,
+    pkStrNameRaw: pkStrNameRaw,
+    pkQualifiedName: pkQualifiedName,
+    pkYep: pkYep,
+    pkPairName: pkPairName,
+    pkStrUnsafe: pkStrUnsafe,
+    runWaitTry: runWaitTry,
+    listLenIsNat: listLenIsNat,
+    pkErr: pkErr,
+    pkRet: pkRet,
+    runRet: runRet,
+    pkfnLinear: pkfnLinear,
+    runWaitOne: runWaitOne,
+    
+    cachedNats: cachedNats
+};
+var compiledCodeHelperInit;
+(function () {
+    var arr = [];
+    strMap().setObj( compiledCodeHelper ).each( function ( k, v ) {
+        arr.push( "var " + k + " = cch." + k + ";" );
+    } );
+    compiledCodeHelperInit = arr.join( "\n" );
+})();

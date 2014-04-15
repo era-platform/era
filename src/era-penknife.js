@@ -1326,33 +1326,7 @@ function makePkRuntime() {
             resultVar: compiled.val.resultVar
         }, function ( yoke, code ) {
         
-        // TODO: See if there's a more convenient way to manage all
-        // these variables.
-        return Function(
-            nlcsVar,
-            
-            "Pk",
-            "pkNil",
-            "pkCons",
-            "pkList",
-            "pkStrNameRaw",
-            "pkQualifiedName",
-            "pkYep",
-            "pkPairName",
-            "pkStrUnsafe",
-            "runWaitTry",
-            "listLenIsNat",
-            "pkErr",
-            "pkRet",
-            "runRet",
-            "pkfnLinear",
-            "runWaitOne",
-            
-            "cachedNats",
-            
-            "yoke",
-            "then",
-            
+        return Function( "yoke", nlcsVar, "cch", "then",
             // TODO: This first commented-out line may help when
             // debugging compiled code, but it uses the hackish
             // Pk#toString(). See if we should make it a debug option
@@ -1360,30 +1334,10 @@ function makePkRuntime() {
 //            "// " + essence + "\n" +
 //            "// @sourceURL=" + Math.random() + "\n" +
 //            "debugger;\n" +
+            compiledCodeHelperInit + "\n" +
+            "\n" +
             code
-        )(
-            nonlocalCaptures,
-            
-            Pk,
-            pkNil,
-            pkCons,
-            pkList,
-            pkStrNameRaw,
-            pkQualifiedName,
-            pkYep,
-            pkPairName,
-            pkStrUnsafe,
-            runWaitTry,
-            listLenIsNat,
-            pkErr,
-            pkRet,
-            runRet,
-            pkfnLinear,
-            runWaitOne,
-            
-            cachedNats,
-            
-            yoke,
+        )( yoke, nonlocalCaptures, compiledCodeHelper,
             function ( yoke, result ) {
                 return pkRet( yoke, result );
             }
