@@ -20,10 +20,9 @@
 /let-list (str)
     (struct-get-args/if
         (qualified-name-eq
-          qname.istring-end (nl-get-tag-name linear-as-nonlinear.msg))
+          qname.string (nl-get-tag-name linear-as-nonlinear.msg))
       msg
-      quote.\[
-        Called err-fn with a message that wasn't an istring-end])
+      quote.\[Called err-fn with a message that wasn't a string])
   raise.str)
 
 (defmacro qname.err /fn args

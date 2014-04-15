@@ -417,10 +417,10 @@ function isNat( x ) {
     return x.tag === "succ" || x.tag === "nil";
 }
 function isIstring( x ) {
-    return x.tag === "istring-cons" || x.tag === "istring-end";
+    return x.tag === "istring-cons" || x.tag === "string";
 }
 // NOTE: For now, isUnqualifiedName( x ) and isQualifiedName( x )
-// imply x.isLinear(). If we ever extend them to include linear
+// imply !x.isLinear(). If we ever extend them to include linear
 // values, we should take a look at any code that calls them to see if
 // it needs to change to respect linearity.
 function isUnqualifiedName( x ) {
@@ -946,14 +946,6 @@ function makePkRuntime() {
                 "istring" );
         return pkRet( yoke,
             pk( "istring-cons", prefix, interpolation, rest ) );
-    } );
-    defTag( "istring-end", "suffix" );
-    defFunc( "istring-end", 1, function ( yoke, suffix ) {
-        if ( suffix.tag !== "string" )
-            return pkErr( yoke,
-                "Called istring-end with a suffix that wasn't a " +
-                "string" );
-        return pkRet( yoke, pk( "istring-end", suffix ) );
     } );
     defTag( "string-name", "string" );
     defFunc( "string-name", 1, function ( yoke, string ) {
@@ -1566,6 +1558,12 @@ function makePkRuntime() {
         } );
     }
     arrEach( [
+        // TODO: Manage this list of names elsewhere.
+        
+        // Almost a name
+        "string",
+        
+        // Actually names
         "string-name",
         "pair-name",
         "qualified-name"
@@ -1612,11 +1610,12 @@ function makePkRuntime() {
         
         if ( !listLenIs( body, 2 ) )
             return pkErrLen( yoke, body, "Expanded fn" );
-        var paramName = listGet( body, 0 );
-        if ( !isUnqualifiedName( paramName ) )
-            return pkErr( yoke,
-                "Expanded fn with a var that wasn't an unqualified " +
-                "name" );
+        
+        return runWaitTry( yoke, function ( yoke ) {
+            return callMethod( yoke, "to-unqualified-name",
+                pkList( listGet( body, 0 ) ) );
+        }, function ( yoke, paramName ) {
+        
         function isParamName( name ) {
             return paramName.special.unqualifiedNameJson ===
                 name.special.unqualifiedNameJson;
@@ -1703,6 +1702,8 @@ function makePkRuntime() {
         } );
         
         } );
+        
+        } );
     } );
     
     defMacro( "quote",
@@ -1729,23 +1730,49 @@ function makePkRuntime() {
         
         if ( !listLenIs( body, 1 ) )
             return pkErrLen( yoke, body, "Expanded qname" );
-        var name = body.ind( 0 );
-        if ( !isUnqualifiedName( name ) )
-            return pkErr( yoke,
-                "Expanded qname with a value that wasn't an " +
-                "unqualified name" );
+        
+        return runWaitTry( yoke, function ( yoke ) {
+            return callMethod( yoke, "to-unqualified-name",
+                pkList( listGet( body, 0 ) ) );
+        }, function ( yoke, name ) {
         return runWaitTry( yoke, function ( yoke ) {
             return runRet( yoke, yoke.pkRuntime.qualifyName( name ) );
         }, function ( yoke, name ) {
-            return pkDrop( yoke, fork, function ( yoke ) {
-                return pkRet( yoke, pk( "getmac-fork",
-                    pkGetTine( pkNil, function ( yoke, essences ) {
-                        return pkRet( yoke,
-                            pk( "literal-essence", name ) );
-                    } ),
-                    pkNil
-                ) );
-            } );
+        return pkDrop( yoke, fork, function ( yoke ) {
+        
+        return pkRet( yoke, pk( "getmac-fork",
+            pkGetTine( pkNil, function ( yoke, essences ) {
+                return pkRet( yoke,
+                    pk( "literal-essence", name ) );
+            } ),
+            pkNil
+        ) );
+        
+        } );
+        } );
+        } );
+    } );
+    defMacro( "uqname",
+        function ( yoke, fork, body, getFork, gensymBase ) {
+        
+        if ( !listLenIs( body, 1 ) )
+            return pkErrLen( yoke, body, "Expanded uqname" );
+        
+        return runWaitTry( yoke, function ( yoke ) {
+            return callMethod( yoke, "to-unqualified-name",
+                pkList( listGet( body, 0 ) ) );
+        }, function ( yoke, name ) {
+        return pkDrop( yoke, fork, function ( yoke ) {
+        
+        return pkRet( yoke, pk( "getmac-fork",
+            pkGetTine( pkNil, function ( yoke, essences ) {
+                return pkRet( yoke,
+                    pk( "literal-essence", name ) );
+            } ),
+            pkNil
+        ) );
+        
+        } );
         } );
     } );
     
@@ -1908,17 +1935,11 @@ function makePkRuntime() {
                 "Expanded let-list with a non-list list of element " +
                 "variables" );
         
-        return listAll( yoke, varNames, function ( varName ) {
-            return isUnqualifiedName( varName );
-        }, function ( yoke, valid ) {
-        
-        if ( !valid )
-            return pkErr( yoke,
-                "Expanded let-list with an element variable that " +
-                "wasn't an unqualified name" );
-        
+        return listMap( yoke, varNames, function ( yoke, varName ) {
+            return callMethod( yoke, "to-unqualified-name",
+                pkList( varName ) );
+        }, function ( yoke, varNames ) {
         return pkDrop( yoke, fork, function ( yoke ) {
-        
         return yoke.pkRuntime.runWaitTryGetmacFork( yoke,
             "macroexpand-to-fork",
             function ( yoke ) {
@@ -1963,9 +1984,7 @@ function makePkRuntime() {
         } );
         
         } );
-        
         } );
-        
         } );
     } );
     
@@ -2042,7 +2061,7 @@ function makePkRuntime() {
                 "Called deftag with a non-list list of argument " +
                 "names" );
         return listAll( yoke, argNames, function ( argName ) {
-            return !isUnqualifiedName( argName );
+            return isUnqualifiedName( argName );
         }, function ( yoke, valid ) {
             if ( !valid )
                 return pkErr( yoke,
@@ -2330,6 +2349,25 @@ function makePkRuntime() {
             return pkErr( yoke,
                 "Called struct-get-args with a non-struct" );
         return pkRet( yoke, pkGetArgs( struct ) );
+    } );
+    
+    defMethod( "to-unqualified-name", "x" );
+    arrEach( [
+        // TODO: Manage this list of names elsewhere.
+        "string-name",
+        "pair-name",
+        "qualified-name"
+    ], function ( nameTag ) {
+        setStrictImpl( "to-unqualified-name", nameTag,
+            function ( yoke, args ) {
+            
+            return pkRet( yoke, listGet( args, 0 ) );
+        } );
+    } );
+    setStrictImpl( "to-unqualified-name", "string",
+        function ( yoke, args ) {
+        
+        return pkRet( yoke, pkStrNameRaw( listGet( args, 0 ) ) );
     } );
     
     defFunc( "is-an-unqualified-name", 1, function ( yoke, x ) {
@@ -2795,18 +2833,20 @@ function forkGetter( nameForError ) {
             return pkErrLen( yoke, args, "Called " + nameForError );
         var name = listGet( args, 0 );
         
-        if ( isUnqualifiedName( name ) )
-            return runWaitTry( yoke, function ( yoke ) {
-                return runRet( yoke,
-                    yoke.pkRuntime.qualifyName( name ) );
-            }, function ( yoke, name ) {
-                return handleQualifiedName( yoke, name );
-            } );
-        else if ( isQualifiedName( name ) )
+        if ( isQualifiedName( name ) )
             return handleQualifiedName( yoke, name );
         else
-            return pkErr( yoke,
-                "Called " + nameForError + " with a non-name" );
+            return runWaitTry( yoke, function ( yoke ) {
+                return callMethod( yoke, "to-unqualified-name",
+                    pkList( name ) );
+            }, function ( yoke, name ) {
+                return runWaitTry( yoke, function ( yoke ) {
+                    return runRet( yoke,
+                        yoke.pkRuntime.qualifyName( name ) );
+                }, function ( yoke, name ) {
+                    return handleQualifiedName( yoke, name );
+                } );
+            } );
         
         function handleQualifiedName( yoke, name ) {
             return runWaitTry( yoke, function ( yoke ) {
@@ -2830,25 +2870,29 @@ function deriveGetFork( nonlocalGetFork, isLocalName ) {
             return pkErrLen( yoke, args, "Called a get-fork" );
         var name = listGet( args, 0 );
         
-        if ( isUnqualifiedName( name ) )
-            return isLocalName( yoke, name,
-                function ( yoke, isLocal ) {
-                
-                if ( !isLocal )
-                    return handleNonlocal( yoke );
-                return pkRet( yoke, pk( "getmac-fork",
-                    pkGetTine( pkList( name ),
-                        function ( yoke, essences ) {
-                        
-                        return pkRet( yoke, listGet( essences, 0 ) );
-                    } ),
-                    pkNil
-                ) );
-            } );
-        else if ( isQualifiedName( name ) )
+        if ( isQualifiedName( name ) )
             return handleNonlocal( yoke );
         else
-            return pkErr( yoke, "Called a get-fork with a non-name" );
+            return runWaitTry( yoke, function ( yoke ) {
+                return callMethod( yoke, "to-unqualified-name",
+                    pkList( name ) );
+            }, function ( yoke, name ) {
+                return isLocalName( yoke, name,
+                    function ( yoke, isLocal ) {
+                    
+                    if ( !isLocal )
+                        return handleNonlocal( yoke );
+                    return pkRet( yoke, pk( "getmac-fork",
+                        pkGetTine( pkList( name ),
+                            function ( yoke, essences ) {
+                            
+                            return pkRet( yoke,
+                                listGet( essences, 0 ) );
+                        } ),
+                        pkNil
+                    ) );
+                } );
+            } );
         
         function handleNonlocal( yoke ) {
             // NOTE: We don't verify the output of nonlocalGetFork.
@@ -3421,7 +3465,7 @@ function macroexpandArrays( yoke, arrayExpr ) {
         // _.likeObjectLiteral() here.
         if ( typeof arrayExpr === "string"
             && isValidUnicode( arrayExpr ) ) {
-            return pkStrName( arrayExpr );
+            return pkStrUnsafe( arrayExpr );
         } else if ( arrayExpr instanceof Array ) {
             return pkListFromArr(
                 arrMap( arrayExpr, arraysToConses ) );
@@ -3433,7 +3477,9 @@ function macroexpandArrays( yoke, arrayExpr ) {
             var suffix = contents.pop().text;
             if ( suffix === void 0 )
                 throw new Error();
-            var result = pk( "istring-end", pkStrUnsafe( suffix ) );
+            if ( !isValidUnicode( suffix ) )
+                throw new Error();
+            var result = pkStrUnsafe( suffix );
             while ( contents.length !== 0 ) {
                 var interpolation = contents.pop().val;
                 var prefix = contents.pop().text;
