@@ -2,9 +2,6 @@
 // Copyright 2014 Ross Angle. Released under the MIT License.
 "use strict";
 
-// TODO: Import this file as part of the Penknife demo, and try it
-// out.
-
 
 function strToSource( str ) {
     return JSON.stringify( str ).
@@ -217,7 +214,7 @@ function natToJsList( yoke, nat, then ) {
 
 // TODO: Right now this abuses Pk#toString(), which doesn't support
 // bigints. Even if that method did support bigints, this operation's
-// steps between yoke waits would take unbounded time. Fix this.
+// steps between yoke waits would take non-constant time. Fix this.
 // TODO: Whoops, when the nat is zero, this converts to "nil". Make it
 // convert to "0", not that it matters very much.
 function natToJsStringAsync( yoke, nat, then ) {
@@ -1359,7 +1356,7 @@ function runDeferTrampoline() {
 function pkReadAll( yoke, string, then ) {
     function read( stream, onEnd, onFailure, onSuccess ) {
         // TODO: Integrate yoke-passing into the reader so we don't
-        // have to run for an arbitrary amount of time like this.
+        // have to run for a non-constant amount of time like this.
         var readResult;
         reader( {
             stream: stream,
@@ -1504,11 +1501,7 @@ function compileAndDefineFromString( yoke, pkCodeString, then ) {
     return pkReadAll( yoke, pkCodeString,
         function ( yoke, tryExprs ) {
         
-        var tryExprsList = null;
-        for ( var i = tryExprs.length - 1; 0 <= i; i-- )
-            tryExprsList =
-                { first: tryExprs[ i ], rest: tryExprsList };
-        return processCommands( yoke, tryExprsList,
+        return processCommands( yoke, jsListFromArr( tryExprs ),
             function ( yoke, tryExpr, reportError, then ) {
             
             return reportError( yoke,
@@ -1590,9 +1583,9 @@ function compileTopLevel( yoke, essence, then ) {
             
             "yoke, then ) {\n" +
         "\n" +
-        // TODO: This commented-out line may help when debugging
-        // compiled code, but it uses the hackish Pk#toString().
-        // See if we should make it a debug option or something.
+        // TODO: This first commented-out line may help when debugging
+        // compiled code, but it uses the hackish Pk#toString(). See
+        // if we should make it a debug option or something.
 //        "// " + essence + "\n" +
 //        "// @sourceURL=" + Math.random() + "\n" +
 //        "debugger;\n" +
@@ -1658,10 +1651,7 @@ function invokeTopLevel( yoke, jsFunc, then ) {
 }
 
 function invokeFileTopLevel( yoke, jsFuncs, then ) {
-    var jsFuncsList = null;
-    for ( var i = jsFuncs.length - 1; 0 <= i; i-- )
-        jsFuncsList = { first: jsFuncs[ i ], rest: jsFuncsList };
-    return processCommands( yoke, jsFuncsList,
+    return processCommands( yoke, jsListFromArr( jsFuncs ),
         function ( yoke, jsFunc, reportError, then ) {
         
         return invokeTopLevel( yoke, jsFunc,

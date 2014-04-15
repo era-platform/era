@@ -69,6 +69,25 @@
 //     comparison.
 //     // TODO: Add some way to actually make comparable tokens.
 
+// NOTE: The entire implementation of Penknife uses pure JS functions
+// except for these parts:
+//
+// - Any part of the code may throw a JavaScript exception if Penknife
+//   has a bug.
+// - The `call-with-mbox-env` operator uses mutation, since that's
+//   exactly what it's designed to support.
+// - The PkRuntime global environment uses mutation. (TODO: Make
+//   modified copies instead of mutating the original.)
+// - The reader in era-reader.js uses mutation and deferring side
+//   effects, and pkReadAll() in era-penknife-to-js.js works around
+//   that using mutation of its own.
+// - The trampoline in syncYokeCall(), conveniences_syncYoke(), and
+//   conveniences_runSyncYoke() uses mutation.
+// - A few local loops use very simple mutation. (The reader and
+//   trampoline deserve special attention because they make
+//   side-effectful closures and pass them off to other parts of the
+//   code.)
+
 
 function Pk() {}
 Pk.prototype.init_ = function (
@@ -2679,7 +2698,7 @@ PkRuntime.prototype.makeSubEssenceUnderMappendedArgs_ = function (
     yoke, expr, nonlocalGetForkOrNull, gensymBase, argList, then ) {
     
     // TODO: Make this a global function, since it doesn't use `this`.
-    // However, consider that this uses deriveGetFork_
+    // However, consider that this uses the private deriveGetFork_().
     
     
     function getEntry( argMap, pkName ) {
