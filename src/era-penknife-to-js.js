@@ -557,14 +557,9 @@ function compileDupsOfOne( yoke,
                     type: "async",
                     callbackVar: callbackVar,
                     resultVar: dupsVar,
-                    code:
-                        "runWaitTry( yoke, function ( yoke ) {\n" +
-                        "    return yoke.pkRuntime.pkDup( yoke, " +
-                                sourceVar + ", " +
-                                compiledNumberOfDups.val.resultVar +
-                                " " +
-                            ");\n" +
-                        "}, " + callbackVar + " )"
+                    code: "pkDup( yoke, " + sourceVar + ", " +
+                        compiledNumberOfDups.val.resultVar + ", " +
+                        callbackVar + " )"
                 },
                 rest: compiledNumberOfDups.val.revStatements
             },
@@ -1647,7 +1642,6 @@ function invokeFileTopLevel( yoke, jsFuncs, then ) {
 // yoke
 // yoke.pkRuntime.getVal
 // yoke.pkRuntime.callMethod
-// yoke.pkRuntime.pkDup
 // then (only used in compiledLinkedListToString)
 // next (only used in compiledLinkedListToString)
 //
@@ -1669,6 +1663,7 @@ function invokeFileTopLevel( yoke, jsFuncs, then ) {
 // pkErr
 // pkRet
 // runRet
+// pkDup
 // pkfnLinear (only used in compiledLinkedListToString)
 // runWaitOne (only used in compiledLinkedListToString)
 // cachedNats (only used in an optimization)
@@ -1688,6 +1683,7 @@ var compiledCodeHelper = {
     pkErr: pkErr,
     pkRet: pkRet,
     runRet: runRet,
+    pkDup: pkDup,
     pkfnLinear: pkfnLinear,
     runWaitOne: runWaitOne,
     

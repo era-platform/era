@@ -1399,10 +1399,9 @@ function makePkRuntime() {
                 var bodyEssence = bodyEssenceAndCaptures.ind( 0 );
                 var captures = bodyEssenceAndCaptures.ind( 1 );
                 
-                return runWaitTry( yoke, function ( yoke ) {
-                    return yoke.pkRuntime.pkDup( yoke,
-                        args, argsDupCount );
-                }, function ( yoke, argsDuplicates ) {
+                return pkDup( yoke, args, argsDupCount,
+                    function ( yoke, argsDuplicates ) {
+                    
                     return listAppend( yoke, captures, argsDuplicates,
                         function ( yoke, captures ) {
                         
@@ -1473,7 +1472,11 @@ function makePkRuntime() {
                     
                     var value = listGet( valueAndCount, 0 );
                     var count = listGet( valueAndCount, 1 );
-                    return yoke.pkRuntime.pkDup( yoke, value, count );
+                    return pkDup( yoke, value, count,
+                        function ( yoke, values ) {
+                        
+                        return pkRet( yoke, values );
+                    } );
                 }, function ( yoke, innerCaptures ) {
                     return listMap( yoke, innerCaptures,
                         function ( yoke, innerCapture ) {
@@ -1521,8 +1524,11 @@ function makePkRuntime() {
         return listMapTwo( yoke, sourceValue, numbersOfDups,
             function ( yoke, sourceElem, numberOfDups ) {
             
-            return yoke.pkRuntime.pkDup( yoke,
-                sourceElem, numberOfDups );
+            return pkDup( yoke, sourceElem, numberOfDups,
+                function ( yoke, elemDups ) {
+                
+                return pkRet( yoke, elemDups );
+            } );
         }, function ( yoke, dupsPerElem ) {
         return listFlattenOnce( yoke, dupsPerElem,
             function ( yoke, dups ) {
@@ -2491,13 +2497,16 @@ PkRuntime.prototype.prepareMeta_ = function (
     }
     return meta;
 };
-PkRuntime.prototype.pkDup = function ( yoke, val, count ) {
+// TODO: Move this global function out of the way of the other
+// PkRuntime methods. (Actually, the surrounding methods should be
+// global functions too, so this location might be just fine.)
+function pkDup( yoke, val, count, then ) {
     // TODO: Make this a global function, since it doesn't use `this`.
     
     // If we're only trying to get one duplicate, we already have our
     // answer, regardless of whether the value is linear.
     if ( count.tag === "succ" && count.ind( 0 ).tag === "nil" )
-        return pkRet( yoke, pkList( val ) );
+        return then( yoke, pkList( val ) );
     
     if ( !val.isLinear() ) {
         // NOTE: This includes tags "nil", "string", "string-name",
@@ -2544,7 +2553,7 @@ PkRuntime.prototype.pkDup = function ( yoke, val, count ) {
                         val.special.unwrapper
                     ) );
                 }, function ( yoke, outerValues ) {
-                    return pkRet( yoke, outerValues );
+                    return then( yoke, outerValues );
                 } );
             } );
         } );
@@ -2553,23 +2562,25 @@ PkRuntime.prototype.pkDup = function ( yoke, val, count ) {
     } );
     function withDups( args, rebuild ) {
         return listMap( yoke, args, function ( yoke, arg ) {
-            return yoke.pkRuntime.pkDup( yoke, arg, count );
+            return pkDup( yoke, arg, count,
+                function ( yoke, argDups ) {
+                
+                return pkRet( yoke, argDups );
+            } );
         }, function ( yoke, argsDuplicates ) {
             return listMapMultiWithLen( yoke, count, argsDuplicates,
                 function ( yoke, args ) {
                 
                 return pkRet( yoke, rebuild( args ) );
             }, function ( yoke, result ) {
-                return pkRet( yoke, result );
+                return then( yoke, result );
             } );
         } );
     }
-};
+}
 PkRuntime.prototype.pkDrop = function ( yoke, val, then ) {
     // TODO: Make this a global function, since it doesn't use `this`.
-    return runWaitTry( yoke, function ( yoke ) {
-        return yoke.pkRuntime.pkDup( yoke, val, pkNil );
-    }, function ( yoke, nothing ) {
+    return pkDup( yoke, val, pkNil, function ( yoke, nothing ) {
         return then( yoke );
     } );
 };
