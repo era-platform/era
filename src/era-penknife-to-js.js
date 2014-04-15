@@ -1458,8 +1458,9 @@ function processCommands( yoke, commands, processCommand, then ) {
         } );
         
         return runWait( yoke, function ( yoke ) {
-            return yoke.pkRuntime.conveniences_pkDrop( yoke,
-                commandResult );
+            return pkDrop( yoke, commandResult, function ( yoke ) {
+                return pkRet( yoke, pkNil );
+            } );
         }, function ( yoke, commandResultDrop ) {
         return reportError( yoke, revDisplays2, commandResultDrop,
             "Command result drop",
@@ -1471,8 +1472,9 @@ function processCommands( yoke, commands, processCommand, then ) {
             "Definition",
             function ( yoke ) {
         return runWait( yoke, function ( yoke ) {
-            return yoke.pkRuntime.conveniences_pkDrop( yoke,
-                defined );
+            return pkDrop( yoke, defined, function ( yoke ) {
+                return pkRet( yoke, pkNil );
+            } );
         }, function ( yoke, definedDrop ) {
         return reportError( yoke, revDisplays2, definedDrop,
             "Definition result drop",
@@ -1512,8 +1514,11 @@ function compileAndDefineFromString( yoke, pkCodeString, then ) {
             return reportError( yoke, macroexpanded, "Macroexpansion",
                 function ( yoke ) {
             return runWait( yoke, function ( yoke ) {
-                return yoke.pkRuntime.conveniences_pkDrop( yoke,
-                    macroexpanded );
+                return pkDrop( yoke, macroexpanded,
+                    function ( yoke ) {
+                    
+                    return pkRet( yoke, pkNil );
+                } );
             }, function ( yoke, macroexpandedDrop ) {
             return reportError( yoke, macroexpandedDrop,
                 "Macroexpansion result drop",

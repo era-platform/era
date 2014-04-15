@@ -1636,7 +1636,7 @@ function makePkRuntime() {
                 name.special.unqualifiedNameJson;
         }
         
-        return yoke.pkRuntime.pkDrop( yoke, fork, function ( yoke ) {
+        return pkDrop( yoke, fork, function ( yoke ) {
         
         return yoke.pkRuntime.runWaitTryGetmacFork( yoke,
             "macroexpand-to-fork",
@@ -1729,7 +1729,7 @@ function makePkRuntime() {
         
         if ( !listLenIs( body, 1 ) )
             return pkErrLen( yoke, body, "Expanded quote" );
-        return yoke.pkRuntime.pkDrop( yoke, fork, function ( yoke ) {
+        return pkDrop( yoke, fork, function ( yoke ) {
             return pkRet( yoke, pk( "getmac-fork",
                 pkGetTineLinear( pkNil,
                     pkList( pkYep( listGet( body, 0 ) ) ),
@@ -1756,9 +1756,7 @@ function makePkRuntime() {
         return runWaitTry( yoke, function ( yoke ) {
             return runRet( yoke, yoke.pkRuntime.qualifyName( name ) );
         }, function ( yoke, name ) {
-            return yoke.pkRuntime.pkDrop( yoke, fork,
-                function ( yoke ) {
-                
+            return pkDrop( yoke, fork, function ( yoke ) {
                 return pkRet( yoke, pk( "getmac-fork",
                     pkGetTine( pkNil, function ( yoke, essences ) {
                         return pkRet( yoke,
@@ -1779,7 +1777,7 @@ function makePkRuntime() {
         var thenExpr = listGet( body, 1 );
         var elseExpr = listGet( body, 2 );
         
-        return yoke.pkRuntime.pkDrop( yoke, fork, function ( yoke ) {
+        return pkDrop( yoke, fork, function ( yoke ) {
         
         function tryGetFork( yoke, expr, then ) {
             return yoke.pkRuntime.runWaitTryGetmacFork( yoke,
@@ -1939,7 +1937,7 @@ function makePkRuntime() {
                 "Expanded let-list with an element variable that " +
                 "wasn't an unqualified name" );
         
-        return yoke.pkRuntime.pkDrop( yoke, fork, function ( yoke ) {
+        return pkDrop( yoke, fork, function ( yoke ) {
         
         return yoke.pkRuntime.runWaitTryGetmacFork( yoke,
             "macroexpand-to-fork",
@@ -2378,13 +2376,13 @@ function makePkRuntime() {
     } );
     
     defFunc( "is-an-unqualified-name", 1, function ( yoke, x ) {
-        return yoke.pkRuntime.pkDrop( yoke, x, function ( yoke ) {
+        return pkDrop( yoke, x, function ( yoke ) {
             return pkRet( yoke, pkBoolean( isUnqualifiedName( x ) ) );
         } );
     } );
     
     defFunc( "is-a-qualified-name", 1, function ( yoke, x ) {
-        return yoke.pkRuntime.pkDrop( yoke, x, function ( yoke ) {
+        return pkDrop( yoke, x, function ( yoke ) {
             return pkRet( yoke, pkBoolean( isQualifiedName( x ) ) );
         } );
     } );
@@ -2412,7 +2410,7 @@ function makePkRuntime() {
     } );
     
     defFunc( "is-a-comparable-token", 1, function ( yoke, x ) {
-        return yoke.pkRuntime.pkDrop( yoke, x, function ( yoke ) {
+        return pkDrop( yoke, x, function ( yoke ) {
             return pkRet( yoke, pkBoolean( isComparableToken( x ) ) );
         } );
     } );
@@ -2501,7 +2499,6 @@ PkRuntime.prototype.prepareMeta_ = function (
 // PkRuntime methods. (Actually, the surrounding methods should be
 // global functions too, so this location might be just fine.)
 function pkDup( yoke, val, count, then ) {
-    // TODO: Make this a global function, since it doesn't use `this`.
     
     // If we're only trying to get one duplicate, we already have our
     // answer, regardless of whether the value is linear.
@@ -2578,8 +2575,10 @@ function pkDup( yoke, val, count, then ) {
         } );
     }
 }
-PkRuntime.prototype.pkDrop = function ( yoke, val, then ) {
-    // TODO: Make this a global function, since it doesn't use `this`.
+// TODO: Move this global function out of the way of the other
+// PkRuntime methods. (Actually, the surrounding methods should be
+// global functions too, so this location might be just fine.)
+function pkDrop( yoke, val, then ) {
     return pkDup( yoke, val, pkNil, function ( yoke, nothing ) {
         return then( yoke );
     } );
@@ -3556,12 +3555,6 @@ PkRuntime.prototype.conveniences_macroexpandArrays = function ( yoke,
     
     return yoke.pkRuntime.conveniences_macroexpand( yoke,
         arraysToConses( arrayExpr ) );
-};
-PkRuntime.prototype.conveniences_pkDrop = function ( yoke, val ) {
-    // TODO: Make this a global function, since it doesn't use `this`.
-    return yoke.pkRuntime.pkDrop( yoke, val, function ( yoke ) {
-        return pkRet( yoke, pkNil );
-    } );
 };
 PkRuntime.prototype.conveniences_withEffectsForInterpret =
     function ( yoke, func ) {
