@@ -1587,7 +1587,7 @@ function withEffectsForInterpret( yoke, func, then ) {
     }, function ( yoke ) {
         return func( yoke );
     } );
-};
+}
 function interpretEssence( yoke, essence ) {
     return withEffectsForInterpret( yoke, function ( yoke ) {
         return callMethod( yoke, "essence-interpret",
@@ -3217,8 +3217,6 @@ function makePkRuntime() {
     return self;
 }
 
-// TODO: The PkRuntime methods are interspersed with global functions.
-// Reorganize this code.
 function PkRuntime() {}
 PkRuntime.prototype.init_ = function ( meta, revDefs ) {
     this.meta_ = meta;
