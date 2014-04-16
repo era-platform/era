@@ -235,23 +235,29 @@ textarea { display: block; }
   (mappend lsts /fn-with-args (lst)
     lst))
 
+(defval qname.is-a-string /fn-with-args (x)
+  (nl-isa qname.string linear-as-nonlinear.x))
+
+(defval qname.string-eq /fn-with-args (a b)
+  (unqualified-name-eq string-name.a string-name.b))
+
 ; TODO: See if this should just be internal to the definition of `qq`.
 (defval qname.expand-qq
 /fix/fn-with-args
-  (expand-qq qq-name uq-name uqs-name return-list level x)
+  (expand-qq qq-str uq-str uqs-str return-list level x)
 /let recur
   (fn-with-args (return-list level x)
-    (expand-qq qq-name uq-name uqs-name return-list level x))
+    (expand-qq qq-str uq-str uqs-str return-list level x))
 /let as-list
   (fn-with-args (expr)
     (if return-list (list qname.list expr) expr))
 /let parse-escape
-  (fn-with-args (name)
+  (fn-with-args (str)
     (if-struct cons (first rest) x
       (if (nat-eq len.x (succ/succ/nil))
         (let-list (first second) x
-        /if is-an-unqualified-name.first
-          (if (unqualified-name-eq first name)
+        /if is-a-string.first
+          (if (string-eq first str)
             yep.second
             (nil))
           (nil))
@@ -259,12 +265,12 @@ textarea { display: block; }
       (nil)))
 ; TODO: Remove some of the duplicate branches from the following code.
 /if-struct nil () level
-  (if-struct yep (x) parse-escape.qq-name
-    (as-list/list qname.list (list qname.quote qq-name)
+  (if-struct yep (x) parse-escape.qq-str
+    (as-list/list qname.list (list qname.quote qq-str)
       (recur (nil) succ.level x))
-  /if-struct yep (x) parse-escape.uq-name
+  /if-struct yep (x) parse-escape.uq-str
     as-list.x
-  /if-struct yep (x) parse-escape.uqs-name
+  /if-struct yep (x) parse-escape.uqs-str
     (if return-list
       x
       err.\[
@@ -274,14 +280,14 @@ textarea { display: block; }
       (recur (yep/nil) level elem))
     (as-list/list qname.qname x))
 /if-struct succ (pred-level) level
-  (if-struct yep (x) parse-escape.qq-name
-    (as-list/list qname.list (list qname.quote qq-name)
+  (if-struct yep (x) parse-escape.qq-str
+    (as-list/list qname.list (list qname.quote qq-str)
       (recur (nil) succ.level x))
-  /if-struct yep (x) parse-escape.uq-name
-    (as-list/list qname.list (list qname.quote uq-name)
+  /if-struct yep (x) parse-escape.uq-str
+    (as-list/list qname.list (list qname.quote uq-str)
       (recur (nil) pred-level x))
-  /if-struct yep (x) parse-escape.uqs-name
-    (as-list/list qname.list (list qname.quote uqs-name)
+  /if-struct yep (x) parse-escape.uqs-str
+    (as-list/list qname.list (list qname.quote uqs-str)
       (recur (nil) pred-level x))
   /if is-a-list.x
     (as-list/cons qname.append /map x /fn-with-args (elem)

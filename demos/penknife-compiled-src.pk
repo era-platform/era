@@ -36,11 +36,11 @@
 (defmacro qname.fn-with-args /fn args
 /let-list (op-fork body get-fork gensym-base) args
 /let-list (arglist body) body
-/let g-args (pair-name gensym-base quote.args)
+/let g-args (pair-name gensym-base uqname.args)
 /macroexpand-to-fork
   (list qname.fn g-args (list qname.let-list arglist g-args body))
   get-fork
-  (pair-name gensym-base quote.body-of-fn-with-args))
+  (pair-name gensym-base uqname.body-of-fn-with-args))
 
 (defval qname.fix
 /let fix
@@ -69,7 +69,7 @@
 ; TODO: We have another definition of `len` below that's much shorter.
 ; See if we should replace it with this method-based version.
 ;
-;(defmethod qname.len quote.(collection))
+;(defmethod qname.len /list uqname.collection)
 ;(set-impl qname.len qname.nil /fn-with-args (collection)
 ;  (nil))
 ;(set-impl qname.len qname.cons /fn-with-args (collection)
@@ -79,9 +79,9 @@
 (defmacro qname.if-struct
 /fn-with-args (op-fork body get-fork gensym-base)
 /let-list (tag-name args x then else) body
-/let g-x (pair-name gensym-base quote.x)
-/let g-nl-x (pair-name gensym-base quote.nl-x)
-/let g-ignored (pair-name gensym-base quote.ignored)
+/let g-x (pair-name gensym-base uqname.x)
+/let g-nl-x (pair-name gensym-base uqname.nl-x)
+/let g-ignored (pair-name gensym-base uqname.ignored)
 /macroexpand-to-fork
   (list qname.let g-nl-x (list qname.linear-as-nonlinear x)
   /list qname.let g-x (list qname.nl-get-linear g-nl-x)
@@ -93,7 +93,7 @@
     ; Let `g-x` be dropped.
     else)
   get-fork
-  (pair-name gensym-base quote.body-of-if-struct))
+  (pair-name gensym-base uqname.body-of-if-struct))
 
 (defval qname.fold-nat /fix/fn-with-args (foldl-nat init nat func)
 /if-struct succ (pred) nat
@@ -173,32 +173,32 @@
 (defmacro qname.defmacro-codegen
 /fn-with-args (op-fork body get-fork gensym-base)
 /let-list (name body-var gensym-names codegen-body) body
-/let gbase (pair-name gensym-base quote.defmacro-codegen)
-/let gbase-gensyms (pair-name gbase quote.gensyms)
-/let g-op-fork (pair-name gbase-gensyms quote.g-op-fork)
-/let g-get-fork (pair-name gbase-gensyms quote.g-get-fork)
-/let g-gensym-base (pair-name gbase-gensyms quote.g-gensym-base)
-/let g-gbase (pair-name gbase-gensyms quote.g-gbase)
-/let g-gbase-gensyms (pair-name gbase-gensyms quote.g-gbase-gensyms)
+/let gbase (pair-name gensym-base uqname.defmacro-codegen)
+/let gbase-gensyms (pair-name gbase uqname.gensyms)
+/let g-op-fork (pair-name gbase-gensyms uqname.g-op-fork)
+/let g-get-fork (pair-name gbase-gensyms uqname.g-get-fork)
+/let g-gensym-base (pair-name gbase-gensyms uqname.g-gensym-base)
+/let g-gbase (pair-name gbase-gensyms uqname.g-gbase)
+/let g-gbase-gensyms (pair-name gbase-gensyms uqname.g-gbase-gensyms)
 /macroexpand-to-fork
   (list qname.defmacro (list qname.qname name)
   /list qname.fn-with-args
     (list g-op-fork body-var g-get-fork g-gensym-base)
   /list qname.let g-gbase
-    (list qname.pair-name g-gensym-base (list qname.quote name))
+    (list qname.pair-name g-gensym-base (list qname.uqname name))
   /list qname.let g-gbase-gensyms
-    (list qname.pair-name g-gbase (list qname.quote quote.gensyms))
+    (list qname.pair-name g-gbase (list qname.uqname quote.gensyms))
   /list qname.let-list gensym-names
     (cons qname.list /map gensym-names /fn-with-args (gensym-name)
       (list qname.pair-name g-gbase-gensyms
-        (list qname.quote gensym-name)))
+        (list qname.uqname gensym-name)))
   /list qname.macroexpand-to-fork
     codegen-body
     g-get-fork
     (list qname.pair-name g-gbase
-      (list qname.quote quote.macroexpansion)))
+      (list qname.uqname quote.macroexpansion)))
   get-fork
-  (pair-name gbase quote.macroexpansion))
+  (pair-name gbase uqname.macroexpansion))
 
 (defmacro-codegen let-list-and-rest body (g-heads g-tail)
 /let-list (head-vars tail-var lst body) body
@@ -221,23 +221,29 @@
   (mappend lsts /fn-with-args (lst)
     lst))
 
+(defval qname.is-a-string /fn-with-args (x)
+  (nl-isa qname.string linear-as-nonlinear.x))
+
+(defval qname.string-eq /fn-with-args (a b)
+  (unqualified-name-eq string-name.a string-name.b))
+
 ; TODO: See if this should just be internal to the definition of `qq`.
 (defval qname.expand-qq
 /fix/fn-with-args
-  (expand-qq qq-name uq-name uqs-name return-list level x)
+  (expand-qq qq-str uq-str uqs-str return-list level x)
 /let recur
   (fn-with-args (return-list level x)
-    (expand-qq qq-name uq-name uqs-name return-list level x))
+    (expand-qq qq-str uq-str uqs-str return-list level x))
 /let as-list
   (fn-with-args (expr)
     (if return-list (list qname.list expr) expr))
 /let parse-escape
-  (fn-with-args (name)
+  (fn-with-args (str)
     (if-struct cons (first rest) x
       (if (nat-eq len.x (succ/succ/nil))
         (let-list (first second) x
-        /if is-an-unqualified-name.first
-          (if (unqualified-name-eq first name)
+        /if is-a-string.first
+          (if (string-eq first str)
             yep.second
             (nil))
           (nil))
@@ -245,12 +251,12 @@
       (nil)))
 ; TODO: Remove some of the duplicate branches from the following code.
 /if-struct nil () level
-  (if-struct yep (x) parse-escape.qq-name
-    (as-list/list qname.list (list qname.quote qq-name)
+  (if-struct yep (x) parse-escape.qq-str
+    (as-list/list qname.list (list qname.quote qq-str)
       (recur (nil) succ.level x))
-  /if-struct yep (x) parse-escape.uq-name
+  /if-struct yep (x) parse-escape.uq-str
     as-list.x
-  /if-struct yep (x) parse-escape.uqs-name
+  /if-struct yep (x) parse-escape.uqs-str
     (if return-list
       x
       err.\[
@@ -260,14 +266,14 @@
       (recur (yep/nil) level elem))
     (as-list/list qname.qname x))
 /if-struct succ (pred-level) level
-  (if-struct yep (x) parse-escape.qq-name
-    (as-list/list qname.list (list qname.quote qq-name)
+  (if-struct yep (x) parse-escape.qq-str
+    (as-list/list qname.list (list qname.quote qq-str)
       (recur (nil) succ.level x))
-  /if-struct yep (x) parse-escape.uq-name
-    (as-list/list qname.list (list qname.quote uq-name)
+  /if-struct yep (x) parse-escape.uq-str
+    (as-list/list qname.list (list qname.quote uq-str)
       (recur (nil) pred-level x))
-  /if-struct yep (x) parse-escape.uqs-name
-    (as-list/list qname.list (list qname.quote uqs-name)
+  /if-struct yep (x) parse-escape.uqs-str
+    (as-list/list qname.list (list qname.quote uqs-str)
       (recur (nil) pred-level x))
   /if is-a-list.x
     (as-list/cons qname.append /map x /fn-with-args (elem)
