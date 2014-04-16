@@ -834,6 +834,767 @@ function pkGetTine( names, func ) {
     } );
 }
 
+function pkDup( yoke, val, count, then ) {
+    
+    // If we're only trying to get one duplicate, we already have our
+    // answer, regardless of whether the value is linear.
+    if ( count.tag === "succ" && count.ind( 0 ).tag === "nil" )
+        return then( yoke, pkList( val ) );
+    
+    if ( !val.isLinear() ) {
+        // NOTE: This includes tags "nil", "string", "string-name",
+        // "pair-name", and "qualified-name".
+        return withDups( pkNil, function ( ignored ) {
+            return val;
+        } );
+    }
+    if ( val.tag === "fn" )
+        return withDups( val.special.captures, function ( captures ) {
+            return new Pk().init_(
+                null, "fn", pkNil, captures.isLinear(),
+                {
+                    captures: captures,
+                    call: val.special.call,
+                    string: val.special.string
+                } );
+        } );
+    if ( val.tag === "nonlinear-as-linear" )
+        return runWaitTry( yoke, function ( yoke ) {
+            return callMethod( yoke, "call", pkList(
+                val.special.duplicator,
+                pkList( val.special.innerValue, count )
+            ) );
+        }, function ( yoke, innerValues ) {
+            if ( !isList( innerValues ) )
+                return pkErr( yoke,
+                    "Got a non-list from a linear value's custom " +
+                    "duplicator function." );
+            return listLenIsNat( yoke, innerValues, count,
+                function ( yoke, correct ) {
+                
+                if ( !correct )
+                    return pkErr( yoke,
+                        "Got a list of incorrect length from a " +
+                        "linear value's custom duplicator function."
+                        );
+                return listMap( yoke, innerValues,
+                    function ( yoke, innerValue ) {
+                    
+                    return pkRet( yoke, pkNonlinearAsLinear(
+                        innerValue,
+                        val.special.duplicator,
+                        val.special.unwrapper
+                    ) );
+                }, function ( yoke, outerValues ) {
+                    return then( yoke, outerValues );
+                } );
+            } );
+        } );
+    return withDups( pkGetArgs( val ), function ( args ) {
+        return pkRebuild( val, args );
+    } );
+    function withDups( args, rebuild ) {
+        return listMap( yoke, args, function ( yoke, arg ) {
+            return pkDup( yoke, arg, count,
+                function ( yoke, argDups ) {
+                
+                return pkRet( yoke, argDups );
+            } );
+        }, function ( yoke, argsDuplicates ) {
+            return listMapMultiWithLen( yoke, count, argsDuplicates,
+                function ( yoke, args ) {
+                
+                return pkRet( yoke, rebuild( args ) );
+            }, function ( yoke, result ) {
+                return then( yoke, result );
+            } );
+        } );
+    }
+}
+function pkDrop( yoke, val, then ) {
+    return pkDup( yoke, val, pkNil, function ( yoke, nothing ) {
+        return then( yoke );
+    } );
+}
+function pkUnwrap( yoke, val, then ) {
+    if ( val.tag !== "nonlinear-as-linear" )
+        return pkErr( yoke,
+            "Tried to unwrap a value that wasn't a " +
+            "nonlinear-as-linear" );
+    return runWaitTry( yoke, function ( yoke ) {
+        return callMethod( yoke, "call", pkList(
+            val.special.unwrapper,
+            pkList( val.special.innerValue )
+        ) );
+    }, function ( yoke, unwrapped ) {
+        if ( unwrapped.isLinear() )
+            return pkErr( yoke,
+                "Unwrapped a value and got a linear value" );
+        return then( yoke, unwrapped );
+    } );
+}
+function fulfillGetTine( yoke, getTine, essences, then ) {
+    return listFoldl( yoke,
+        pkList( pkNil, essences ), listGet( getTine, 0 ),
+        function ( yoke, takenRevAndNot, name ) {
+            var notTaken = listGet( takenRevAndNot, 1 );
+            if ( notTaken.tag !== "cons" )
+                return pkErr( yoke,
+                    "An internal fulfillGetTine operation " +
+                    "encountered fewer input essences than " +
+                    "required by the get-tines." );
+            return pkRet( yoke, pkList(
+                pkCons( notTaken.ind( 0 ),
+                    listGet( takenRevAndNot, 0 ) ),
+                notTaken.ind( 1 )
+            ) );
+        }, function ( yoke, takenRevAndNot ) {
+        
+        return listRev( yoke, listGet( takenRevAndNot, 0 ),
+            function ( yoke, taken ) {
+            
+            return runWaitTry( yoke, function ( yoke ) {
+                return callMethod( yoke, "call",
+                    pkList(
+                        listGet( getTine, 1 ), pkList( taken ) ) );
+            }, function ( yoke, resultEssence ) {
+                return then( yoke,
+                    resultEssence, listGet( takenRevAndNot, 1 ) );
+            } );
+        } );
+    } );
+}
+function fulfillGetTines( yoke, getTines, essences, then ) {
+    if ( getTines.tag !== "cons" )
+        return then( yoke, pkNil, essences );
+    return fulfillGetTine( yoke, getTines.ind( 0 ), essences,
+        function ( yoke, outEssence, inEssencesRemaining ) {
+        
+        return fulfillGetTines( yoke,
+            getTines.ind( 1 ), inEssencesRemaining,
+            function ( yoke, outEssences, inEssencesRemaining ) {
+            
+            return runWaitOne( yoke, function ( yoke ) {
+                return then( yoke,
+                    pkCons( outEssence, outEssences ),
+                    inEssencesRemaining );
+            } );
+        } );
+    } );
+}
+function makeSubEssenceUnderMappendedArgs( yoke,
+    expr, nonlocalGetForkOrNull, gensymBase, argList, then ) {
+    
+    function getEntry( argMap, pkName ) {
+        var jsName = pkName.special.unqualifiedNameJson;
+        return argMap.get( jsName );
+    }
+    
+    // Build a deduplicated version of `argList`, where a duplicated
+    // name only appears in its last occurrence. For instance, abac
+    // becomes bac. The result is `latestOccurrenceArgList`. While
+    // building this result, also initialize `argMap` so we can easily
+    // detect whether a name in `captures` is local or nonlocal later
+    // on.
+    return listRev( yoke, argList, function ( yoke, revArgList ) {
+    return listFoldlJsAsync( yoke,
+        { argMap: strMap(), maybeArgList: pkNil },
+        revArgList,
+        function ( yoke, state, pkName, then ) {
+        
+        var jsName = pkName.special.unqualifiedNameJson;
+        if ( state.argMap.has( jsName ) )
+            return then( yoke, {
+                argMap: state.argMap,
+                maybeArgList: pkCons( pkNil, state.maybeArgList )
+            } );
+        else
+            return then( yoke, {
+                argMap: state.argMap.plusEntry(
+                    jsName, { dups: pkNil, indices: pkNil } ),
+                maybeArgList:
+                    pkCons( pkYep( pkName ), state.maybeArgList )
+            } );
+    }, function ( yoke, maybeArgState ) {
+    return listMappend( yoke, maybeArgState.maybeArgList,
+        function ( yoke, maybePkName ) {
+        
+        if ( maybePkName.tag === "yep" )
+            return pkRet( yoke, pkList( maybePkName.ind( 0 ) ) );
+        else
+            return pkRet( yoke, pkNil );
+    }, function ( yoke, latestOccurrenceArgList ) {
+    
+    if ( nonlocalGetForkOrNull === null )
+        return next( yoke, expr );
+    return runWaitTryGetmacFork( yoke, "macroexpand-to-fork",
+        function ( yoke ) {
+        
+        return callMethod( yoke, "macroexpand-to-fork", pkList(
+            expr,
+            deriveGetFork( nonlocalGetForkOrNull,
+                function ( yoke, name, then ) {
+                    return then( yoke,
+                        getEntry( maybeArgState.argMap, name ) !==
+                            void 0 );
+                } ),
+            gensymBase
+        ) );
+    }, function ( yoke, innerGetTine, maybeMacro ) {
+        return next( yoke, innerGetTine );
+    } );
+    function next( yoke, innerGetTine ) {
+    
+    var captures = listGet( innerGetTine, 0 );
+    var cont = listGet( innerGetTine, 1 );
+    
+    return listKeep( yoke, captures, function ( pkName ) {
+        return getEntry( maybeArgState.argMap, pkName ) === void 0;
+    }, function ( yoke, nonlocalNames ) {
+    return listLen( yoke, nonlocalNames,
+        function ( yoke, lenNonlocalNames ) {
+    
+    return listFoldlJsAsync( yoke, maybeArgState.argMap, captures,
+        function ( yoke, argMap, pkName, then ) {
+        
+        var jsName = pkName.special.unqualifiedNameJson;
+        var entry = argMap.get( jsName );
+        if ( entry === void 0 )  // nonlocal
+            return then( yoke, argMap );
+        // local
+        return then( yoke, argMap.plusEntry( jsName, {
+            dups: pk( "succ", entry.dups ),
+            indices: entry.indices
+        } ) );
+    }, function ( yoke, argMap ) {
+    return listFoldlJsAsync( yoke,
+        { argMap: argMap, i: lenNonlocalNames },
+        latestOccurrenceArgList,
+        function ( yoke, state, pkName, then ) {
+        
+        var jsName = pkName.special.unqualifiedNameJson;
+        var entry = state.argMap.get( jsName );
+        return listFoldNatJsAsync( yoke,
+            { i: state.i, revIndices: pkNil },
+            entry.dups,
+            function ( yoke, state2, then ) {
+            
+            return then( yoke, {
+                i: pk( "succ", state2.i ),
+                revIndices: pkCons( state2.i, state2.revIndices )
+            } );
+        }, function ( yoke, state2 ) {
+            return listRev( yoke, state2.revIndices,
+                function ( yoke, indices ) {
+                
+                return then( yoke, {
+                    argMap: state.argMap.plusEntry( jsName,
+                        { dups: entry.dups, indices: indices } ),
+                    i: state2.i
+                } );
+            } );
+        } );
+    }, function ( yoke, argMapState ) {
+    return listFoldlJsAsync( yoke,
+        { argMap: argMapState.argMap,
+            nonlocalI: pkNil, revInEssences: pkNil },
+        captures,
+        function ( yoke, state, pkName, then ) {
+        
+        var jsName = pkName.special.unqualifiedNameJson;
+        var entry = state.argMap.get( jsName );
+        if ( entry === void 0 ) {
+            // nonlocal
+            return then( yoke, {
+                argMap: state.argMap,
+                nonlocalI: pk( "succ", state.nonlocalI ),
+                revInEssences:
+                    pkCons( pk( "param-essence", state.nonlocalI ),
+                        state.revInEssences )
+            } );
+        } else {
+            // local
+            if ( entry.indices.tag !== "cons" )
+                throw new Error();
+            var localI = entry.indices.ind( 0 );
+            return then( yoke, {
+                argMap: state.argMap.plusEntry( jsName, {
+                    dups: entry.dups,
+                    indices: entry.indices.ind( 1 )
+                } ),
+                nonlocalI: state.nonlocalI,
+                revInEssences:
+                    pkCons( pk( "param-essence", localI ),
+                        state.revInEssences )
+            } );
+        }
+    }, function ( yoke, revInEssencesState ) {
+    return listRev( yoke, revInEssencesState.revInEssences,
+        function ( yoke, inEssences ) {
+    return runWaitTry( yoke, function ( yoke ) {
+        return callMethod( yoke, "call",
+            pkList( cont, pkList( inEssences ) ) );
+    }, function ( yoke, outEssence ) {
+    return listMap( yoke, maybeArgState.maybeArgList,
+        function ( yoke, maybePkName ) {
+        
+        if ( maybePkName.tag === "yep" )
+            return pkRet( yoke,
+                getEntry( revInEssencesState.argMap,
+                    maybePkName.ind( 0 ) ).dups );
+        else
+            return pkRet( yoke, pkNil );
+    }, function ( yoke, dupsList ) {
+    
+    return then( yoke, nonlocalNames, dupsList, outEssence );
+    
+    } );
+    } );
+    } );
+    } );
+    } );
+    } );
+    
+    } );
+    } );
+    
+    }
+    
+    } );
+    } );
+    } );
+}
+function forkGetter( nameForError ) {
+    return pkfn( function ( yoke, args ) {
+        // NOTE: This reads definitions. We maintain the metaphor that
+        // we work with an immutable snapshot of the definitions, so
+        // we may want to refactor this to be closer to that metaphor
+        // someday.
+        if ( !listLenIs( args, 1 ) )
+            return pkErrLen( yoke, args, "Called " + nameForError );
+        var name = listGet( args, 0 );
+        
+        if ( isQualifiedName( name ) )
+            return handleQualifiedName( yoke, name );
+        else
+            return runWaitTry( yoke, function ( yoke ) {
+                return callMethod( yoke, "to-unqualified-name",
+                    pkList( name ) );
+            }, function ( yoke, name ) {
+                return runWaitTry( yoke, function ( yoke ) {
+                    return runRet( yoke,
+                        yoke.pkRuntime.qualifyName( name ) );
+                }, function ( yoke, name ) {
+                    return handleQualifiedName( yoke, name );
+                } );
+            } );
+        
+        function handleQualifiedName( yoke, name ) {
+            return runWaitTry( yoke, function ( yoke ) {
+                return runRet( yoke,
+                    yoke.pkRuntime.getMacro( name ) );
+            }, function ( yoke, maybeMacro ) {
+                return pkRet( yoke, pk( "getmac-fork",
+                    pkGetTine( pkNil, function ( yoke, essences ) {
+                        return pkRet( yoke,
+                            pk( "main-essence", name ) );
+                    } ),
+                    maybeMacro
+                ) );
+            } );
+        }
+    } );
+}
+function deriveGetFork( nonlocalGetFork, isLocalName ) {
+    return pkfn( function ( yoke, args ) {
+        if ( !listLenIs( args, 1 ) )
+            return pkErrLen( yoke, args, "Called a get-fork" );
+        var name = listGet( args, 0 );
+        
+        if ( isQualifiedName( name ) )
+            return handleNonlocal( yoke );
+        else
+            return runWaitTry( yoke, function ( yoke ) {
+                return callMethod( yoke, "to-unqualified-name",
+                    pkList( name ) );
+            }, function ( yoke, name ) {
+                return isLocalName( yoke, name,
+                    function ( yoke, isLocal ) {
+                    
+                    if ( !isLocal )
+                        return handleNonlocal( yoke );
+                    return pkRet( yoke, pk( "getmac-fork",
+                        pkGetTine( pkList( name ),
+                            function ( yoke, essences ) {
+                            
+                            return pkRet( yoke,
+                                listGet( essences, 0 ) );
+                        } ),
+                        pkNil
+                    ) );
+                } );
+            } );
+        
+        function handleNonlocal( yoke ) {
+            // NOTE: We don't verify the output of nonlocalGetFork.
+            // Forks are anything that works with the fork-to-getmac
+            // method and possibly other methods, and if we sanitize
+            // this output using fork-to-getmac followed by
+            // getmac-fork, we inhibit support for those other
+            // methods. (By "other methods," I don't necessarily mean
+            // methods that are part of this language implementation;
+            // the user can define methods too, and the user's own
+            // macros can pass forks to them.)
+            return runWaitOne( yoke, function ( yoke ) {
+                return callMethod( yoke, "call",
+                    pkList( nonlocalGetFork, pkList( name ) ) );
+            } );
+        }
+    } );
+}
+function runWaitTryGetmacFork( yoke, nameForError, func, then ) {
+    return runWaitTry( yoke, function ( yoke ) {
+        return func( yoke );
+    }, function ( yoke, fork ) {
+        return runWaitTry( yoke, function ( yoke ) {
+            return callMethod( yoke, "fork-to-getmac",
+                pkList( fork ) );
+        }, function ( yoke, results ) {
+            if ( !(isList( results ) && listLenIs( results, 2 )) )
+                return pkErr( yoke,
+                    "Got a non-pair from " + nameForError );
+            var getTine = listGet( results, 0 );
+            var maybeMacro = listGet( results, 1 );
+            
+            // TODO: Using isEnoughGetTineDeep() like this might be
+            // inefficient, but in every place we call
+            // runWaitTryGetmacFork(), the getTine might be provided
+            // by user-defined code, so it might be invalid. See if we
+            // would be better off making a "get-tine" type which
+            // validates the list upon construction.
+            return isEnoughGetTineDeep( yoke, getTine,
+                function ( yoke, valid ) {
+                
+                if ( !valid )
+                    return pkErr( yoke,
+                        "Got an invalid get-tine from " + nameForError
+                        );
+                if ( maybeMacro.tag === "nil" ) {
+                    // Do nothing.
+                } else if ( maybeMacro.tag !== "yep" ) {
+                    return pkErr( yoke,
+                        "Got a non-maybe value for the macro " +
+                        "result of " + nameForError );
+                } else if ( maybeMacro.isLinear() ) {
+                    return pkErr( yoke,
+                        "Got a linear value for the macro result " +
+                        "of " + nameForError );
+                }
+                return then( yoke, getTine, maybeMacro );
+            } );
+        } );
+    } );
+}
+var nonMacroMacroexpander = pkfn( function ( yoke, args ) {
+    if ( !listLenIs( args, 4 ) )
+        return pkErrLen( yoke, args,
+            "Called a non-macro's macroexpander" );
+    var fork = listGet( args, 0 );
+    var argsList = listGet( args, 1 );
+    var getFork = listGet( args, 2 );
+    var gensymBase = listGet( args, 3 );
+    if ( !isList( argsList ) )
+        return pkErr( yoke,
+            "Called a non-macro's macroexpander with a non-list " +
+            "args list" );
+    if ( getFork.isLinear() )
+        return pkErr( yoke,
+            "Called a non-macro's macroexpander with a linear " +
+            "get-fork" );
+    if ( !isUnqualifiedName( gensymBase ) )
+        return pkErr( yoke,
+            "Called a non-macro's macroexpander with a gensym base " +
+            "that wasn't an unqualified name" );
+    return runWaitTryGetmacFork( yoke,
+        "the fork parameter to a non-macro's macroexpander",
+        function ( yoke ) {
+        
+        return pkRet( yoke, fork );
+    }, function ( yoke, funcGetTine, funcMaybeMacro ) {
+        return parseList( yoke, argsList, pkNil );
+        function parseList( yoke, list, revGetTinesSoFar ) {
+            if ( list.tag !== "cons" )
+                return listRev( yoke, revGetTinesSoFar,
+                    function ( yoke, getTines ) {
+                    
+                    var allGetTines = pkCons( funcGetTine, getTines );
+                    return listMappend( yoke, allGetTines,
+                        function ( yoke, getTine ) {
+                        
+                        return pkRet( yoke, listGet( getTine, 0 ) );
+                    }, function ( yoke, allNames ) {
+                        // <indentation-reset>
+return pkRet( yoke, pk( "getmac-fork",
+    pkGetTineLinear( allNames, pkList( pkYep( allGetTines ) ),
+        function ( yoke, captures, allInEssences ) {
+        
+        var allGetTines = listGet( captures, 0 ).ind( 0 );
+        return fulfillGetTines( yoke, allGetTines, allInEssences,
+            function ( yoke, allOutEssences, inEssencesRemaining ) {
+            
+            if ( !listLenIs( inEssencesRemaining, 0 ) )
+                throw new Error();
+            return pkRet( yoke,
+                pk( "call-essence",
+                    allOutEssences.ind( 0 ),
+                    allOutEssences.ind( 1 ) ) );
+        } );
+    } ),
+    pkNil
+) );
+                        // </indentation-reset>
+                    } );
+                } );
+            return runWaitTryGetmacFork( yoke,
+                "macroexpand-to-fork",
+                function ( yoke ) {
+                
+                return callMethod( yoke, "macroexpand-to-fork",
+                    pkList( list.ind( 0 ), getFork, gensymBase ) );
+            }, function ( yoke, getTine, maybeMacro ) {
+                return parseList( yoke, list.ind( 1 ),
+                    pkCons( getTine, revGetTinesSoFar ) );
+            } );
+        }
+    } );
+} );
+function callMethod( yoke, jsMethodName, args ) {
+    return yoke.pkRuntime.callMethodRaw( yoke,
+        pkQualifiedName( pkStrNameUnsafeMemoized( jsMethodName ) ),
+        args );
+}
+function mapEffect( yoke, func ) {
+    var yokeRider = yoke.yokeRider;
+    var pureYoke = yokeWithRider( yoke, pk( "pure-yoke" ) );
+    return runWaitTry( pureYoke, function ( pureYoke ) {
+        return callMethod( pureYoke, "yoke-map-wrapped-effect-token",
+            pkList(
+                yokeRider,
+                pkfn( function ( pureYoke, args ) {
+                    var us =
+                        "a yoke-map-wrapped-effect-token callback";
+                    if ( !listLenIs( args, 1 ) )
+                        return pkErrLen( pureYoke, args,
+                            "Called " + us );
+                    var maybeWrappedEffectToken = listGet( args, 0 );
+                    if ( maybeWrappedEffectToken.tag === "yep" ) {
+                        var wrappedEffectToken =
+                            maybeWrappedEffectToken.ind( 0 );
+                        if ( wrappedEffectToken.tag
+                            !== "nonlinear-as-linear" )
+                            return pkErr( pureYoke,
+                                "Called " + us + " with a value " +
+                                "that wasn't a nonlinear-as-linear" );
+                        return pkUnwrap( pureYoke, wrappedEffectToken,
+                            function ( pureYoke, effectToken ) {
+                            
+                            if ( effectToken.tag !== "token" )
+                                return pkErr( pureYoke,
+                                    "Called " + us + " with a " +
+                                    "value that wasn't a wrapped " +
+                                    "token" );
+                            if ( yoke.effectToken === null
+                                || !tokenEq( yoke.effectToken,
+                                    effectToken ) )
+                                return pkErr( pureYoke,
+                                    "Called " + us + " with a " +
+                                    "token that wasn't the current " +
+                                    "effect token" );
+                            if ( !effectToken.special.jsPayload.
+                                effects.canUseImperativeCapabilities )
+                                return pkErr( pureYoke,
+                                    "Called " + us + " without " +
+                                    "access to imperative side " +
+                                    "effects" );
+                            return runWaitTry( pureYoke,
+                                function ( pureYoke ) {
+                                
+                                return func( pureYoke,
+                                    effectToken.special.jsPayload.
+                                        effects );
+                            }, function ( pureYoke, ignoredNil ) {
+                                if ( ignoredNil.tag !== "nil" )
+                                    return pkErr( pureYoke,
+                                        "Internally used mapEffect " +
+                                        "with a function that " +
+                                        "returned a non-nil value" );
+                                var newEffectToken = makeEffectToken(
+                                    effectToken.special.jsPayload.
+                                        effects );
+                                var updatedYoke = {
+                                    pkRuntime: pureYoke.pkRuntime,
+                                    yokeRider: pureYoke.yokeRider,
+                                    effectToken:
+                                        newEffectToken.unwrapped,
+                                    internal: pureYoke.internal,
+                                    runWaitLinear:
+                                        pureYoke.runWaitLinear
+                                };
+                                return pkRet( updatedYoke,
+                                    pkYep( newEffectToken.wrapped ) );
+                            } );
+                        } );
+                        
+                    } else if (
+                        maybeWrappedEffectToken.tag === "nil" ) {
+                        
+                        return runWaitTry( pureYoke,
+                            function ( pureYoke ) {
+                            
+                            return func( pureYoke, {
+                                canUseImperativeCapabilities: false,
+                                canDefine: false
+                            } );
+                        }, function ( pureYoke, ignoredNil ) {
+                            if ( ignoredNil.tag !== "nil" )
+                                return pkErr( pureYoke,
+                                    "Internally used mapEffect " +
+                                    "with a function that returned " +
+                                    "a non-nil value" );
+                            return pkRet( yoke, pkNil );
+                        } );
+                    } else {
+                        return pkErr( pureYoke,
+                            "Called " + us + " with a non-maybe" );
+                    }
+                } )
+            )
+        );
+    }, function ( pureYoke, newYokeRider ) {
+        var yoke = yokeWithRider( pureYoke, newYokeRider );
+        return pkRet( yoke, pkNil );
+    } );
+}
+// TODO: Figure out if we should manage `withAvailableEffectsReplaced`
+// in a more encapsulated and/or generalized way.
+// TODO: Figure out if we should allow users to pass in arbitrary
+// `effects` values like this.
+function withAvailableEffectsReplaced( yoke, effects, body ) {
+    var effectToken = makeEffectToken( effects );
+    var empoweredYoke = {
+        pkRuntime: yoke.pkRuntime,
+        yokeRider: pk( "imperative-yoke", effectToken.wrapped ),
+        effectToken: effectToken.unwrapped,
+        internal: yoke.internal,
+        runWaitLinear: yoke.runWaitLinear
+    };
+    return runWait( empoweredYoke, function ( empoweredYoke ) {
+        return body( empoweredYoke );
+    }, function ( empoweredYoke, result ) {
+        var disempoweredYoke = {
+            pkRuntime: empoweredYoke.pkRuntime,
+            yokeRider: yoke.yokeRider,
+            effectToken: yoke.effectToken,
+            internal: empoweredYoke.internal,
+            runWaitLinear: empoweredYoke.runWaitLinear
+        };
+        return runRet( disempoweredYoke, result );
+    } );
+}
+function runSyncYoke( maybeYokeAndResult ) {
+    var deferred = [];
+    var finalYokeAndResult = null;
+    syncYokeCall( maybeYokeAndResult, function ( actionToDefer ) {
+        deferred.push( actionToDefer );
+    }, function ( yokeAndResult ) {
+        if ( deferred.length !== 0 || finalYokeAndResult !== null )
+            throw new Error();
+        finalYokeAndResult = yokeAndResult;
+    } );
+    while ( deferred.length !== 0 )
+        deferred.shift()();
+    if ( deferred.length !== 0 || finalYokeAndResult === null )
+        throw new Error();
+    return finalYokeAndResult;
+}
+function macroexpand( yoke, expr ) {
+    return runWaitTryGetmacFork( yoke, "macroexpand-to-fork",
+        function ( yoke ) {
+        
+        return callMethod( yoke, "macroexpand-to-fork", pkList(
+            expr,
+            forkGetter( "the top-level get-fork" ),
+            pkStrNameUnsafeMemoized( "root-gensym-base" )
+        ) );
+    }, function ( yoke, getTine, maybeMacro ) {
+        if ( !listLenIs( listGet( getTine, 0 ), 0 ) )
+            return pkErr( yoke,
+                "Got a top-level macroexpansion result with captures"
+                );
+        return runWaitTry( yoke, function ( yoke ) {
+            return callMethod( yoke, "call",
+                pkList( listGet( getTine, 1 ), pkList( pkNil ) ) );
+        }, function ( yoke, essence ) {
+            return pkRet( yoke, essence );
+        } );
+    } );
+}
+function macroexpandArrays( yoke, arrayExpr ) {
+    function arraysToConses( arrayExpr ) {
+        // TODO: Use something like Lathe.js's _.likeArray() and
+        // _.likeObjectLiteral() here.
+        if ( typeof arrayExpr === "string"
+            && isValidUnicode( arrayExpr ) ) {
+            return pkStrUnsafe( arrayExpr );
+        } else if ( arrayExpr instanceof Array ) {
+            return pkListFromArr(
+                arrMap( arrayExpr, arraysToConses ) );
+        } else if ( typeof arrayExpr === "object"
+            && arrayExpr !== null
+            && arrayExpr.type === "interpolatedString" ) {
+            
+            var contents = arrayExpr.parts.slice();
+            var suffix = contents.pop().text;
+            if ( suffix === void 0 )
+                throw new Error();
+            if ( !isValidUnicode( suffix ) )
+                throw new Error();
+            var result = pkStrUnsafe( suffix );
+            while ( contents.length !== 0 ) {
+                var interpolation = contents.pop().val;
+                var prefix = contents.pop().text;
+                if ( prefix === void 0 || interpolation === void 0 )
+                    throw new Error();
+                result = pk( "istring-cons",
+                    pkStrUnsafe( prefix ),
+                    arraysToConses( interpolation ),
+                    result );
+            }
+            return result;
+        } else {
+            throw new Error();
+        }
+    }
+    
+    return macroexpand( yoke, arraysToConses( arrayExpr ) );
+}
+function withEffectsForInterpret( yoke, func, then ) {
+    // TODO: See if we should be temporarily augmenting the available
+    // side effects, rather than temporarily replacing them.
+    return withAvailableEffectsReplaced( yoke, {
+        canUseImperativeCapabilities: true,
+        canDefine: true
+    }, function ( yoke ) {
+        return func( yoke );
+    } );
+};
+function interpretEssence( yoke, essence ) {
+    return withEffectsForInterpret( yoke, function ( yoke ) {
+        return callMethod( yoke, "essence-interpret",
+            pkList( essence, pkNil ) );
+    } );
+}
+
 var cachedNats = [];
 // TODO: Put this constant somewhere more configurable.
 // NOTE: There seems to be a plateau once this is as high as 3. We're
@@ -2488,540 +3249,6 @@ PkRuntime.prototype.prepareMeta_ = function (
     }
     return meta;
 };
-function pkDup( yoke, val, count, then ) {
-    
-    // If we're only trying to get one duplicate, we already have our
-    // answer, regardless of whether the value is linear.
-    if ( count.tag === "succ" && count.ind( 0 ).tag === "nil" )
-        return then( yoke, pkList( val ) );
-    
-    if ( !val.isLinear() ) {
-        // NOTE: This includes tags "nil", "string", "string-name",
-        // "pair-name", and "qualified-name".
-        return withDups( pkNil, function ( ignored ) {
-            return val;
-        } );
-    }
-    if ( val.tag === "fn" )
-        return withDups( val.special.captures, function ( captures ) {
-            return new Pk().init_(
-                null, "fn", pkNil, captures.isLinear(),
-                {
-                    captures: captures,
-                    call: val.special.call,
-                    string: val.special.string
-                } );
-        } );
-    if ( val.tag === "nonlinear-as-linear" )
-        return runWaitTry( yoke, function ( yoke ) {
-            return callMethod( yoke, "call", pkList(
-                val.special.duplicator,
-                pkList( val.special.innerValue, count )
-            ) );
-        }, function ( yoke, innerValues ) {
-            if ( !isList( innerValues ) )
-                return pkErr( yoke,
-                    "Got a non-list from a linear value's custom " +
-                    "duplicator function." );
-            return listLenIsNat( yoke, innerValues, count,
-                function ( yoke, correct ) {
-                
-                if ( !correct )
-                    return pkErr( yoke,
-                        "Got a list of incorrect length from a " +
-                        "linear value's custom duplicator function."
-                        );
-                return listMap( yoke, innerValues,
-                    function ( yoke, innerValue ) {
-                    
-                    return pkRet( yoke, pkNonlinearAsLinear(
-                        innerValue,
-                        val.special.duplicator,
-                        val.special.unwrapper
-                    ) );
-                }, function ( yoke, outerValues ) {
-                    return then( yoke, outerValues );
-                } );
-            } );
-        } );
-    return withDups( pkGetArgs( val ), function ( args ) {
-        return pkRebuild( val, args );
-    } );
-    function withDups( args, rebuild ) {
-        return listMap( yoke, args, function ( yoke, arg ) {
-            return pkDup( yoke, arg, count,
-                function ( yoke, argDups ) {
-                
-                return pkRet( yoke, argDups );
-            } );
-        }, function ( yoke, argsDuplicates ) {
-            return listMapMultiWithLen( yoke, count, argsDuplicates,
-                function ( yoke, args ) {
-                
-                return pkRet( yoke, rebuild( args ) );
-            }, function ( yoke, result ) {
-                return then( yoke, result );
-            } );
-        } );
-    }
-}
-function pkDrop( yoke, val, then ) {
-    return pkDup( yoke, val, pkNil, function ( yoke, nothing ) {
-        return then( yoke );
-    } );
-}
-function pkUnwrap( yoke, val, then ) {
-    if ( val.tag !== "nonlinear-as-linear" )
-        return pkErr( yoke,
-            "Tried to unwrap a value that wasn't a " +
-            "nonlinear-as-linear" );
-    return runWaitTry( yoke, function ( yoke ) {
-        return callMethod( yoke, "call", pkList(
-            val.special.unwrapper,
-            pkList( val.special.innerValue )
-        ) );
-    }, function ( yoke, unwrapped ) {
-        if ( unwrapped.isLinear() )
-            return pkErr( yoke,
-                "Unwrapped a value and got a linear value" );
-        return then( yoke, unwrapped );
-    } );
-}
-function fulfillGetTine( yoke, getTine, essences, then ) {
-    return listFoldl( yoke,
-        pkList( pkNil, essences ), listGet( getTine, 0 ),
-        function ( yoke, takenRevAndNot, name ) {
-            var notTaken = listGet( takenRevAndNot, 1 );
-            if ( notTaken.tag !== "cons" )
-                return pkErr( yoke,
-                    "An internal fulfillGetTine operation " +
-                    "encountered fewer input essences than " +
-                    "required by the get-tines." );
-            return pkRet( yoke, pkList(
-                pkCons( notTaken.ind( 0 ),
-                    listGet( takenRevAndNot, 0 ) ),
-                notTaken.ind( 1 )
-            ) );
-        }, function ( yoke, takenRevAndNot ) {
-        
-        return listRev( yoke, listGet( takenRevAndNot, 0 ),
-            function ( yoke, taken ) {
-            
-            return runWaitTry( yoke, function ( yoke ) {
-                return callMethod( yoke, "call",
-                    pkList(
-                        listGet( getTine, 1 ), pkList( taken ) ) );
-            }, function ( yoke, resultEssence ) {
-                return then( yoke,
-                    resultEssence, listGet( takenRevAndNot, 1 ) );
-            } );
-        } );
-    } );
-}
-function fulfillGetTines( yoke, getTines, essences, then ) {
-    if ( getTines.tag !== "cons" )
-        return then( yoke, pkNil, essences );
-    return fulfillGetTine( yoke, getTines.ind( 0 ), essences,
-        function ( yoke, outEssence, inEssencesRemaining ) {
-        
-        return fulfillGetTines( yoke,
-            getTines.ind( 1 ), inEssencesRemaining,
-            function ( yoke, outEssences, inEssencesRemaining ) {
-            
-            return runWaitOne( yoke, function ( yoke ) {
-                return then( yoke,
-                    pkCons( outEssence, outEssences ),
-                    inEssencesRemaining );
-            } );
-        } );
-    } );
-}
-function makeSubEssenceUnderMappendedArgs( yoke,
-    expr, nonlocalGetForkOrNull, gensymBase, argList, then ) {
-    
-    function getEntry( argMap, pkName ) {
-        var jsName = pkName.special.unqualifiedNameJson;
-        return argMap.get( jsName );
-    }
-    
-    // Build a deduplicated version of `argList`, where a duplicated
-    // name only appears in its last occurrence. For instance, abac
-    // becomes bac. The result is `latestOccurrenceArgList`. While
-    // building this result, also initialize `argMap` so we can easily
-    // detect whether a name in `captures` is local or nonlocal later
-    // on.
-    return listRev( yoke, argList, function ( yoke, revArgList ) {
-    return listFoldlJsAsync( yoke,
-        { argMap: strMap(), maybeArgList: pkNil },
-        revArgList,
-        function ( yoke, state, pkName, then ) {
-        
-        var jsName = pkName.special.unqualifiedNameJson;
-        if ( state.argMap.has( jsName ) )
-            return then( yoke, {
-                argMap: state.argMap,
-                maybeArgList: pkCons( pkNil, state.maybeArgList )
-            } );
-        else
-            return then( yoke, {
-                argMap: state.argMap.plusEntry(
-                    jsName, { dups: pkNil, indices: pkNil } ),
-                maybeArgList:
-                    pkCons( pkYep( pkName ), state.maybeArgList )
-            } );
-    }, function ( yoke, maybeArgState ) {
-    return listMappend( yoke, maybeArgState.maybeArgList,
-        function ( yoke, maybePkName ) {
-        
-        if ( maybePkName.tag === "yep" )
-            return pkRet( yoke, pkList( maybePkName.ind( 0 ) ) );
-        else
-            return pkRet( yoke, pkNil );
-    }, function ( yoke, latestOccurrenceArgList ) {
-    
-    if ( nonlocalGetForkOrNull === null )
-        return next( yoke, expr );
-    return runWaitTryGetmacFork( yoke, "macroexpand-to-fork",
-        function ( yoke ) {
-        
-        return callMethod( yoke, "macroexpand-to-fork", pkList(
-            expr,
-            deriveGetFork( nonlocalGetForkOrNull,
-                function ( yoke, name, then ) {
-                    return then( yoke,
-                        getEntry( maybeArgState.argMap, name ) !==
-                            void 0 );
-                } ),
-            gensymBase
-        ) );
-    }, function ( yoke, innerGetTine, maybeMacro ) {
-        return next( yoke, innerGetTine );
-    } );
-    function next( yoke, innerGetTine ) {
-    
-    var captures = listGet( innerGetTine, 0 );
-    var cont = listGet( innerGetTine, 1 );
-    
-    return listKeep( yoke, captures, function ( pkName ) {
-        return getEntry( maybeArgState.argMap, pkName ) === void 0;
-    }, function ( yoke, nonlocalNames ) {
-    return listLen( yoke, nonlocalNames,
-        function ( yoke, lenNonlocalNames ) {
-    
-    return listFoldlJsAsync( yoke, maybeArgState.argMap, captures,
-        function ( yoke, argMap, pkName, then ) {
-        
-        var jsName = pkName.special.unqualifiedNameJson;
-        var entry = argMap.get( jsName );
-        if ( entry === void 0 )  // nonlocal
-            return then( yoke, argMap );
-        // local
-        return then( yoke, argMap.plusEntry( jsName, {
-            dups: pk( "succ", entry.dups ),
-            indices: entry.indices
-        } ) );
-    }, function ( yoke, argMap ) {
-    return listFoldlJsAsync( yoke,
-        { argMap: argMap, i: lenNonlocalNames },
-        latestOccurrenceArgList,
-        function ( yoke, state, pkName, then ) {
-        
-        var jsName = pkName.special.unqualifiedNameJson;
-        var entry = state.argMap.get( jsName );
-        return listFoldNatJsAsync( yoke,
-            { i: state.i, revIndices: pkNil },
-            entry.dups,
-            function ( yoke, state2, then ) {
-            
-            return then( yoke, {
-                i: pk( "succ", state2.i ),
-                revIndices: pkCons( state2.i, state2.revIndices )
-            } );
-        }, function ( yoke, state2 ) {
-            return listRev( yoke, state2.revIndices,
-                function ( yoke, indices ) {
-                
-                return then( yoke, {
-                    argMap: state.argMap.plusEntry( jsName,
-                        { dups: entry.dups, indices: indices } ),
-                    i: state2.i
-                } );
-            } );
-        } );
-    }, function ( yoke, argMapState ) {
-    return listFoldlJsAsync( yoke,
-        { argMap: argMapState.argMap,
-            nonlocalI: pkNil, revInEssences: pkNil },
-        captures,
-        function ( yoke, state, pkName, then ) {
-        
-        var jsName = pkName.special.unqualifiedNameJson;
-        var entry = state.argMap.get( jsName );
-        if ( entry === void 0 ) {
-            // nonlocal
-            return then( yoke, {
-                argMap: state.argMap,
-                nonlocalI: pk( "succ", state.nonlocalI ),
-                revInEssences:
-                    pkCons( pk( "param-essence", state.nonlocalI ),
-                        state.revInEssences )
-            } );
-        } else {
-            // local
-            if ( entry.indices.tag !== "cons" )
-                throw new Error();
-            var localI = entry.indices.ind( 0 );
-            return then( yoke, {
-                argMap: state.argMap.plusEntry( jsName, {
-                    dups: entry.dups,
-                    indices: entry.indices.ind( 1 )
-                } ),
-                nonlocalI: state.nonlocalI,
-                revInEssences:
-                    pkCons( pk( "param-essence", localI ),
-                        state.revInEssences )
-            } );
-        }
-    }, function ( yoke, revInEssencesState ) {
-    return listRev( yoke, revInEssencesState.revInEssences,
-        function ( yoke, inEssences ) {
-    return runWaitTry( yoke, function ( yoke ) {
-        return callMethod( yoke, "call",
-            pkList( cont, pkList( inEssences ) ) );
-    }, function ( yoke, outEssence ) {
-    return listMap( yoke, maybeArgState.maybeArgList,
-        function ( yoke, maybePkName ) {
-        
-        if ( maybePkName.tag === "yep" )
-            return pkRet( yoke,
-                getEntry( revInEssencesState.argMap,
-                    maybePkName.ind( 0 ) ).dups );
-        else
-            return pkRet( yoke, pkNil );
-    }, function ( yoke, dupsList ) {
-    
-    return then( yoke, nonlocalNames, dupsList, outEssence );
-    
-    } );
-    } );
-    } );
-    } );
-    } );
-    } );
-    
-    } );
-    } );
-    
-    }
-    
-    } );
-    } );
-    } );
-}
-function forkGetter( nameForError ) {
-    return pkfn( function ( yoke, args ) {
-        // NOTE: This reads definitions. We maintain the metaphor that
-        // we work with an immutable snapshot of the definitions, so
-        // we may want to refactor this to be closer to that metaphor
-        // someday.
-        if ( !listLenIs( args, 1 ) )
-            return pkErrLen( yoke, args, "Called " + nameForError );
-        var name = listGet( args, 0 );
-        
-        if ( isQualifiedName( name ) )
-            return handleQualifiedName( yoke, name );
-        else
-            return runWaitTry( yoke, function ( yoke ) {
-                return callMethod( yoke, "to-unqualified-name",
-                    pkList( name ) );
-            }, function ( yoke, name ) {
-                return runWaitTry( yoke, function ( yoke ) {
-                    return runRet( yoke,
-                        yoke.pkRuntime.qualifyName( name ) );
-                }, function ( yoke, name ) {
-                    return handleQualifiedName( yoke, name );
-                } );
-            } );
-        
-        function handleQualifiedName( yoke, name ) {
-            return runWaitTry( yoke, function ( yoke ) {
-                return runRet( yoke,
-                    yoke.pkRuntime.getMacro( name ) );
-            }, function ( yoke, maybeMacro ) {
-                return pkRet( yoke, pk( "getmac-fork",
-                    pkGetTine( pkNil, function ( yoke, essences ) {
-                        return pkRet( yoke,
-                            pk( "main-essence", name ) );
-                    } ),
-                    maybeMacro
-                ) );
-            } );
-        }
-    } );
-}
-function deriveGetFork( nonlocalGetFork, isLocalName ) {
-    return pkfn( function ( yoke, args ) {
-        if ( !listLenIs( args, 1 ) )
-            return pkErrLen( yoke, args, "Called a get-fork" );
-        var name = listGet( args, 0 );
-        
-        if ( isQualifiedName( name ) )
-            return handleNonlocal( yoke );
-        else
-            return runWaitTry( yoke, function ( yoke ) {
-                return callMethod( yoke, "to-unqualified-name",
-                    pkList( name ) );
-            }, function ( yoke, name ) {
-                return isLocalName( yoke, name,
-                    function ( yoke, isLocal ) {
-                    
-                    if ( !isLocal )
-                        return handleNonlocal( yoke );
-                    return pkRet( yoke, pk( "getmac-fork",
-                        pkGetTine( pkList( name ),
-                            function ( yoke, essences ) {
-                            
-                            return pkRet( yoke,
-                                listGet( essences, 0 ) );
-                        } ),
-                        pkNil
-                    ) );
-                } );
-            } );
-        
-        function handleNonlocal( yoke ) {
-            // NOTE: We don't verify the output of nonlocalGetFork.
-            // Forks are anything that works with the fork-to-getmac
-            // method and possibly other methods, and if we sanitize
-            // this output using fork-to-getmac followed by
-            // getmac-fork, we inhibit support for those other
-            // methods. (By "other methods," I don't necessarily mean
-            // methods that are part of this language implementation;
-            // the user can define methods too, and the user's own
-            // macros can pass forks to them.)
-            return runWaitOne( yoke, function ( yoke ) {
-                return callMethod( yoke, "call",
-                    pkList( nonlocalGetFork, pkList( name ) ) );
-            } );
-        }
-    } );
-}
-function runWaitTryGetmacFork( yoke, nameForError, func, then ) {
-    return runWaitTry( yoke, function ( yoke ) {
-        return func( yoke );
-    }, function ( yoke, fork ) {
-        return runWaitTry( yoke, function ( yoke ) {
-            return callMethod( yoke, "fork-to-getmac",
-                pkList( fork ) );
-        }, function ( yoke, results ) {
-            if ( !(isList( results ) && listLenIs( results, 2 )) )
-                return pkErr( yoke,
-                    "Got a non-pair from " + nameForError );
-            var getTine = listGet( results, 0 );
-            var maybeMacro = listGet( results, 1 );
-            
-            // TODO: Using isEnoughGetTineDeep() like this might be
-            // inefficient, but in every place we call
-            // runWaitTryGetmacFork(), the getTine might be provided
-            // by user-defined code, so it might be invalid. See if we
-            // would be better off making a "get-tine" type which
-            // validates the list upon construction.
-            return isEnoughGetTineDeep( yoke, getTine,
-                function ( yoke, valid ) {
-                
-                if ( !valid )
-                    return pkErr( yoke,
-                        "Got an invalid get-tine from " + nameForError
-                        );
-                if ( maybeMacro.tag === "nil" ) {
-                    // Do nothing.
-                } else if ( maybeMacro.tag !== "yep" ) {
-                    return pkErr( yoke,
-                        "Got a non-maybe value for the macro " +
-                        "result of " + nameForError );
-                } else if ( maybeMacro.isLinear() ) {
-                    return pkErr( yoke,
-                        "Got a linear value for the macro result " +
-                        "of " + nameForError );
-                }
-                return then( yoke, getTine, maybeMacro );
-            } );
-        } );
-    } );
-}
-var nonMacroMacroexpander = pkfn( function ( yoke, args ) {
-    if ( !listLenIs( args, 4 ) )
-        return pkErrLen( yoke, args,
-            "Called a non-macro's macroexpander" );
-    var fork = listGet( args, 0 );
-    var argsList = listGet( args, 1 );
-    var getFork = listGet( args, 2 );
-    var gensymBase = listGet( args, 3 );
-    if ( !isList( argsList ) )
-        return pkErr( yoke,
-            "Called a non-macro's macroexpander with a non-list " +
-            "args list" );
-    if ( getFork.isLinear() )
-        return pkErr( yoke,
-            "Called a non-macro's macroexpander with a linear " +
-            "get-fork" );
-    if ( !isUnqualifiedName( gensymBase ) )
-        return pkErr( yoke,
-            "Called a non-macro's macroexpander with a gensym base " +
-            "that wasn't an unqualified name" );
-    return runWaitTryGetmacFork( yoke,
-        "the fork parameter to a non-macro's macroexpander",
-        function ( yoke ) {
-        
-        return pkRet( yoke, fork );
-    }, function ( yoke, funcGetTine, funcMaybeMacro ) {
-        return parseList( yoke, argsList, pkNil );
-        function parseList( yoke, list, revGetTinesSoFar ) {
-            if ( list.tag !== "cons" )
-                return listRev( yoke, revGetTinesSoFar,
-                    function ( yoke, getTines ) {
-                    
-                    var allGetTines = pkCons( funcGetTine, getTines );
-                    return listMappend( yoke, allGetTines,
-                        function ( yoke, getTine ) {
-                        
-                        return pkRet( yoke, listGet( getTine, 0 ) );
-                    }, function ( yoke, allNames ) {
-                        // <indentation-reset>
-return pkRet( yoke, pk( "getmac-fork",
-    pkGetTineLinear( allNames, pkList( pkYep( allGetTines ) ),
-        function ( yoke, captures, allInEssences ) {
-        
-        var allGetTines = listGet( captures, 0 ).ind( 0 );
-        return fulfillGetTines( yoke, allGetTines, allInEssences,
-            function ( yoke, allOutEssences, inEssencesRemaining ) {
-            
-            if ( !listLenIs( inEssencesRemaining, 0 ) )
-                throw new Error();
-            return pkRet( yoke,
-                pk( "call-essence",
-                    allOutEssences.ind( 0 ),
-                    allOutEssences.ind( 1 ) ) );
-        } );
-    } ),
-    pkNil
-) );
-                        // </indentation-reset>
-                    } );
-                } );
-            return runWaitTryGetmacFork( yoke,
-                "macroexpand-to-fork",
-                function ( yoke ) {
-                
-                return callMethod( yoke, "macroexpand-to-fork",
-                    pkList( list.ind( 0 ), getFork, gensymBase ) );
-            }, function ( yoke, getTine, maybeMacro ) {
-                return parseList( yoke, list.ind( 1 ),
-                    pkCons( getTine, revGetTinesSoFar ) );
-            } );
-        }
-    } );
-} );
 PkRuntime.prototype.enqueueDef_ = function ( yoke, body ) {
     this.revDefs_ = { first: body, rest: this.revDefs_ };
     return pkRet( yoke, pkNil );
@@ -3104,11 +3331,6 @@ PkRuntime.prototype.callMethodRaw = function (
             tagName );
     return impl.call( yoke, args );
 };
-function callMethod( yoke, jsMethodName, args ) {
-    return yoke.pkRuntime.callMethodRaw( yoke,
-        pkQualifiedName( pkStrNameUnsafeMemoized( jsMethodName ) ),
-        args );
-}
 PkRuntime.prototype.setImpl = function ( methodName, tagName, impl ) {
     // TODO: These error messages implicitly use Pk#toString(), which
     // is hackishly designed. Figure out what kind of externalization
@@ -3208,134 +3430,6 @@ PkRuntime.prototype.getMacro = function ( name ) {
     
     return pkRawErr( "Unbound variable " + name );
 };
-function mapEffect( yoke, func ) {
-    var yokeRider = yoke.yokeRider;
-    var pureYoke = yokeWithRider( yoke, pk( "pure-yoke" ) );
-    return runWaitTry( pureYoke, function ( pureYoke ) {
-        return callMethod( pureYoke, "yoke-map-wrapped-effect-token",
-            pkList(
-                yokeRider,
-                pkfn( function ( pureYoke, args ) {
-                    var us =
-                        "a yoke-map-wrapped-effect-token callback";
-                    if ( !listLenIs( args, 1 ) )
-                        return pkErrLen( pureYoke, args,
-                            "Called " + us );
-                    var maybeWrappedEffectToken = listGet( args, 0 );
-                    if ( maybeWrappedEffectToken.tag === "yep" ) {
-                        var wrappedEffectToken =
-                            maybeWrappedEffectToken.ind( 0 );
-                        if ( wrappedEffectToken.tag
-                            !== "nonlinear-as-linear" )
-                            return pkErr( pureYoke,
-                                "Called " + us + " with a value " +
-                                "that wasn't a nonlinear-as-linear" );
-                        return pkUnwrap( pureYoke, wrappedEffectToken,
-                            function ( pureYoke, effectToken ) {
-                            
-                            if ( effectToken.tag !== "token" )
-                                return pkErr( pureYoke,
-                                    "Called " + us + " with a " +
-                                    "value that wasn't a wrapped " +
-                                    "token" );
-                            if ( yoke.effectToken === null
-                                || !tokenEq( yoke.effectToken,
-                                    effectToken ) )
-                                return pkErr( pureYoke,
-                                    "Called " + us + " with a " +
-                                    "token that wasn't the current " +
-                                    "effect token" );
-                            if ( !effectToken.special.jsPayload.
-                                effects.canUseImperativeCapabilities )
-                                return pkErr( pureYoke,
-                                    "Called " + us + " without " +
-                                    "access to imperative side " +
-                                    "effects" );
-                            return runWaitTry( pureYoke,
-                                function ( pureYoke ) {
-                                
-                                return func( pureYoke,
-                                    effectToken.special.jsPayload.
-                                        effects );
-                            }, function ( pureYoke, ignoredNil ) {
-                                if ( ignoredNil.tag !== "nil" )
-                                    return pkErr( pureYoke,
-                                        "Internally used mapEffect " +
-                                        "with a function that " +
-                                        "returned a non-nil value" );
-                                var newEffectToken = makeEffectToken(
-                                    effectToken.special.jsPayload.
-                                        effects );
-                                var updatedYoke = {
-                                    pkRuntime: pureYoke.pkRuntime,
-                                    yokeRider: pureYoke.yokeRider,
-                                    effectToken:
-                                        newEffectToken.unwrapped,
-                                    internal: pureYoke.internal,
-                                    runWaitLinear:
-                                        pureYoke.runWaitLinear
-                                };
-                                return pkRet( updatedYoke,
-                                    pkYep( newEffectToken.wrapped ) );
-                            } );
-                        } );
-                        
-                    } else if (
-                        maybeWrappedEffectToken.tag === "nil" ) {
-                        
-                        return runWaitTry( pureYoke,
-                            function ( pureYoke ) {
-                            
-                            return func( pureYoke, {
-                                canUseImperativeCapabilities: false,
-                                canDefine: false
-                            } );
-                        }, function ( pureYoke, ignoredNil ) {
-                            if ( ignoredNil.tag !== "nil" )
-                                return pkErr( pureYoke,
-                                    "Internally used mapEffect " +
-                                    "with a function that returned " +
-                                    "a non-nil value" );
-                            return pkRet( yoke, pkNil );
-                        } );
-                    } else {
-                        return pkErr( pureYoke,
-                            "Called " + us + " with a non-maybe" );
-                    }
-                } )
-            )
-        );
-    }, function ( pureYoke, newYokeRider ) {
-        var yoke = yokeWithRider( pureYoke, newYokeRider );
-        return pkRet( yoke, pkNil );
-    } );
-}
-// TODO: Figure out if we should manage `withAvailableEffectsReplaced`
-// in a more encapsulated and/or generalized way.
-// TODO: Figure out if we should allow users to pass in arbitrary
-// `effects` values like this.
-function withAvailableEffectsReplaced( yoke, effects, body ) {
-    var effectToken = makeEffectToken( effects );
-    var empoweredYoke = {
-        pkRuntime: yoke.pkRuntime,
-        yokeRider: pk( "imperative-yoke", effectToken.wrapped ),
-        effectToken: effectToken.unwrapped,
-        internal: yoke.internal,
-        runWaitLinear: yoke.runWaitLinear
-    };
-    return runWait( empoweredYoke, function ( empoweredYoke ) {
-        return body( empoweredYoke );
-    }, function ( empoweredYoke, result ) {
-        var disempoweredYoke = {
-            pkRuntime: empoweredYoke.pkRuntime,
-            yokeRider: yoke.yokeRider,
-            effectToken: yoke.effectToken,
-            internal: empoweredYoke.internal,
-            runWaitLinear: empoweredYoke.runWaitLinear
-        };
-        return runRet( disempoweredYoke, result );
-    } );
-}
 PkRuntime.prototype.conveniences_debuggableSyncYoke = function () {
     return {
         pkRuntime: this,
@@ -3347,22 +3441,6 @@ PkRuntime.prototype.conveniences_debuggableSyncYoke = function () {
         }
     };
 };
-function runSyncYoke( maybeYokeAndResult ) {
-    var deferred = [];
-    var finalYokeAndResult = null;
-    syncYokeCall( maybeYokeAndResult, function ( actionToDefer ) {
-        deferred.push( actionToDefer );
-    }, function ( yokeAndResult ) {
-        if ( deferred.length !== 0 || finalYokeAndResult !== null )
-            throw new Error();
-        finalYokeAndResult = yokeAndResult;
-    } );
-    while ( deferred.length !== 0 )
-        deferred.shift()();
-    if ( deferred.length !== 0 || finalYokeAndResult === null )
-        throw new Error();
-    return finalYokeAndResult;
-}
 PkRuntime.prototype.conveniences_syncYoke = function () {
     return {
         pkRuntime: this,
@@ -3428,83 +3506,6 @@ PkRuntime.prototype.conveniences_syncYoke = function () {
         }
     };
 };
-function macroexpand( yoke, expr ) {
-    return runWaitTryGetmacFork( yoke, "macroexpand-to-fork",
-        function ( yoke ) {
-        
-        return callMethod( yoke, "macroexpand-to-fork", pkList(
-            expr,
-            forkGetter( "the top-level get-fork" ),
-            pkStrNameUnsafeMemoized( "root-gensym-base" )
-        ) );
-    }, function ( yoke, getTine, maybeMacro ) {
-        if ( !listLenIs( listGet( getTine, 0 ), 0 ) )
-            return pkErr( yoke,
-                "Got a top-level macroexpansion result with captures"
-                );
-        return runWaitTry( yoke, function ( yoke ) {
-            return callMethod( yoke, "call",
-                pkList( listGet( getTine, 1 ), pkList( pkNil ) ) );
-        }, function ( yoke, essence ) {
-            return pkRet( yoke, essence );
-        } );
-    } );
-}
-function macroexpandArrays( yoke, arrayExpr ) {
-    function arraysToConses( arrayExpr ) {
-        // TODO: Use something like Lathe.js's _.likeArray() and
-        // _.likeObjectLiteral() here.
-        if ( typeof arrayExpr === "string"
-            && isValidUnicode( arrayExpr ) ) {
-            return pkStrUnsafe( arrayExpr );
-        } else if ( arrayExpr instanceof Array ) {
-            return pkListFromArr(
-                arrMap( arrayExpr, arraysToConses ) );
-        } else if ( typeof arrayExpr === "object"
-            && arrayExpr !== null
-            && arrayExpr.type === "interpolatedString" ) {
-            
-            var contents = arrayExpr.parts.slice();
-            var suffix = contents.pop().text;
-            if ( suffix === void 0 )
-                throw new Error();
-            if ( !isValidUnicode( suffix ) )
-                throw new Error();
-            var result = pkStrUnsafe( suffix );
-            while ( contents.length !== 0 ) {
-                var interpolation = contents.pop().val;
-                var prefix = contents.pop().text;
-                if ( prefix === void 0 || interpolation === void 0 )
-                    throw new Error();
-                result = pk( "istring-cons",
-                    pkStrUnsafe( prefix ),
-                    arraysToConses( interpolation ),
-                    result );
-            }
-            return result;
-        } else {
-            throw new Error();
-        }
-    }
-    
-    return macroexpand( yoke, arraysToConses( arrayExpr ) );
-}
-function withEffectsForInterpret( yoke, func, then ) {
-    // TODO: See if we should be temporarily augmenting the available
-    // side effects, rather than temporarily replacing them.
-    return withAvailableEffectsReplaced( yoke, {
-        canUseImperativeCapabilities: true,
-        canDefine: true
-    }, function ( yoke ) {
-        return func( yoke );
-    } );
-};
-function interpretEssence( yoke, essence ) {
-    return withEffectsForInterpret( yoke, function ( yoke ) {
-        return callMethod( yoke, "essence-interpret",
-            pkList( essence, pkNil ) );
-    } );
-}
 
 // TODO: Define a staged conditional, preferably from the Penknife
 // side.
