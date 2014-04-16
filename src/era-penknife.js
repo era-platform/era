@@ -1588,8 +1588,7 @@ function makePkRuntime() {
                 return pkErr( yoke,
                     "Got a linear fork for the operator when doing " +
                     "macroexpand-to-fork for a cons" );
-            return yoke.pkRuntime.runWaitTryGetmacFork( yoke,
-                "macroexpand-to-fork",
+            return runWaitTryGetmacFork( yoke, "macroexpand-to-fork",
                 function ( yoke ) {
                 
                 return pkRet( yoke, opFork );
@@ -1623,8 +1622,7 @@ function makePkRuntime() {
         
         return pkDrop( yoke, fork, function ( yoke ) {
         
-        return yoke.pkRuntime.runWaitTryGetmacFork( yoke,
-            "macroexpand-to-fork",
+        return runWaitTryGetmacFork( yoke, "macroexpand-to-fork",
             function ( yoke ) {
             
             return callMethod( yoke, "macroexpand-to-fork", pkList(
@@ -1788,8 +1786,7 @@ function makePkRuntime() {
         return pkDrop( yoke, fork, function ( yoke ) {
         
         function tryGetFork( yoke, expr, then ) {
-            return yoke.pkRuntime.runWaitTryGetmacFork( yoke,
-                "macroexpand-to-fork",
+            return runWaitTryGetmacFork( yoke, "macroexpand-to-fork",
                 function ( yoke ) {
                 
                 return callMethod( yoke, "macroexpand-to-fork",
@@ -1940,8 +1937,7 @@ function makePkRuntime() {
                 pkList( varName ) );
         }, function ( yoke, varNames ) {
         return pkDrop( yoke, fork, function ( yoke ) {
-        return yoke.pkRuntime.runWaitTryGetmacFork( yoke,
-            "macroexpand-to-fork",
+        return runWaitTryGetmacFork( yoke, "macroexpand-to-fork",
             function ( yoke ) {
             
             return callMethod( yoke, "macroexpand-to-fork",
@@ -2685,8 +2681,7 @@ function makeSubEssenceUnderMappendedArgs( yoke,
     
     if ( nonlocalGetForkOrNull === null )
         return next( yoke, expr );
-    return yoke.pkRuntime.runWaitTryGetmacFork( yoke,
-        "macroexpand-to-fork",
+    return runWaitTryGetmacFork( yoke, "macroexpand-to-fork",
         function ( yoke ) {
         
         return callMethod( yoke, "macroexpand-to-fork", pkList(
@@ -2911,10 +2906,7 @@ function deriveGetFork( nonlocalGetFork, isLocalName ) {
         }
     } );
 }
-PkRuntime.prototype.runWaitTryGetmacFork = function (
-    yoke, nameForError, func, then ) {
-    
-    var self = this;
+function runWaitTryGetmacFork( yoke, nameForError, func, then ) {
     return runWaitTry( yoke, function ( yoke ) {
         return func( yoke );
     }, function ( yoke, fork ) {
@@ -2956,7 +2948,7 @@ PkRuntime.prototype.runWaitTryGetmacFork = function (
             } );
         } );
     } );
-};
+}
 var nonMacroMacroexpander = pkfn( function ( yoke, args ) {
     if ( !listLenIs( args, 4 ) )
         return pkErrLen( yoke, args,
@@ -2977,7 +2969,7 @@ var nonMacroMacroexpander = pkfn( function ( yoke, args ) {
         return pkErr( yoke,
             "Called a non-macro's macroexpander with a gensym base " +
             "that wasn't an unqualified name" );
-    return yoke.pkRuntime.runWaitTryGetmacFork( yoke,
+    return runWaitTryGetmacFork( yoke,
         "the fork parameter to a non-macro's macroexpander",
         function ( yoke ) {
         
@@ -3017,7 +3009,7 @@ return pkRet( yoke, pk( "getmac-fork",
                         // </indentation-reset>
                     } );
                 } );
-            return yoke.pkRuntime.runWaitTryGetmacFork( yoke,
+            return runWaitTryGetmacFork( yoke,
                 "macroexpand-to-fork",
                 function ( yoke ) {
                 
@@ -3437,8 +3429,7 @@ PkRuntime.prototype.conveniences_syncYoke = function () {
     };
 };
 function macroexpand( yoke, expr ) {
-    return yoke.pkRuntime.runWaitTryGetmacFork( yoke,
-        "macroexpand-to-fork",
+    return runWaitTryGetmacFork( yoke, "macroexpand-to-fork",
         function ( yoke ) {
         
         return callMethod( yoke, "macroexpand-to-fork", pkList(
