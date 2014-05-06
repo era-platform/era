@@ -54,4 +54,18 @@ addArithmeticTest(
         parse( "3" ) ).remainder,
     "1" );
 
+addArithmeticTest( parse( "100" ).zapPlus( parse( "-99" ) ), "1" );
+addArithmeticTest( parse( "100" ).zapPlus( parse( "-100" ) ), "0" );
+addArithmeticTest( parse( "100" ).zapPlus( parse( "-250" ) ),
+    "-150" );
+addArithmeticTest(
+    parse( "100000000" ).zapPlus( parse( "-99000000" ) ),
+    "1000000" );
+addArithmeticTest(
+    parse( "100000000" ).zapPlus( parse( "-100000000" ) ),
+    "0" );
+addArithmeticTest(
+    parse( "100000000" ).zapPlus( parse( "-250000000" ) ),
+    "-150000000" );
+
 })();

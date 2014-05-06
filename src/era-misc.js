@@ -413,7 +413,7 @@ BigInt.prototype.zapPlus = function ( other ) {
         if ( carry !== 0 )
             a.push( 1 );
     } else {
-        // NOTE: The possible values of `carry` are -1, 0, and 1.
+        // NOTE: The possible values of `carry` are -1 and 0.
         var carry = 0;
         var i = 0;
         for ( ; i < bn; i++ ) {
@@ -432,13 +432,11 @@ BigInt.prototype.zapPlus = function ( other ) {
             a[ i ] = digitSum & 0xFFFF;
             carry = (digitSum >>> 16) - 1;
         }
-        if ( carry !== 0 )
-            a.push( carry );
         if ( carry === -1 ) {
             this.sign_ *= -1;
             for ( var i = 0, n = a.length; i < n; i++ )
                 a[ i ] = ~a[ i ] & 0xFFFF;
-            this.zapPlus( new BigInt().init_( 1, [ 1 ] ) );
+            this.zapPlus( new BigInt().init_( -1, [ 1 ] ) );
         }
     }
     return this.normalize_();
