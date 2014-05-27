@@ -190,10 +190,13 @@ var dummyMutableEnvironment;
     dummyMutableEnvironment = pkToken( dummyContents = {
         stringRep: "dummyEnv",
         comparable: false,
+        isMutableBox: false,
         mutableBoxState: pkNil,
         mutableBoxEnvironment: null,
         isValidMutableEnvironment: false,
-        canDefine: false
+        canDefine: false,
+        canYield: false,
+        coroutineNext: null
     } );
     dummyContents.mutableBoxEnvironment = dummyMutableEnvironment;
 })();
@@ -436,6 +439,9 @@ function listLenIs( x, n ) {
 }
 function runRet( yoke, val ) {
     return { type: "done", yoke: yoke, result: val };
+}
+function runYield( yoke, out, then ) {
+    return { type: "yield", yoke: yoke, out: out, then: then };
 }
 function pkRet( yoke, val ) {
     return runRet( yoke, pkYep( val ) );
@@ -1459,28 +1465,23 @@ function macroexpandArrays( yoke, arrayExpr ) {
 // TODO: See if we should be temporarily augmenting the `yokeRider`,
 // rather than temporarily replacing it.
 function withTopLevelEffects( yoke, body ) {
-    var empoweredYoke = {
-        pkRuntime: yoke.pkRuntime,
-        yokeRider: pk( "definer-yoke", pkToken( {
+    var empoweredYoke =
+        yokeWithRider( yoke, pk( "definer-yoke", pkToken( {
             stringRep: "definer",
             comparable: false,
+            isMutableBox: false,
             mutableBoxState: pkNil,
             mutableBoxEnvironment: dummyMutableEnvironment,
             isValidMutableEnvironment: false,
-            canDefine: true
-        } ) ),
-        internal: yoke.internal,
-        runWaitLinear: yoke.runWaitLinear
-    };
+            canDefine: true,
+            canYield: false,
+            coroutineNext: null
+        } ) ) );
     return runWaitTry( empoweredYoke, function ( empoweredYoke ) {
         return body( empoweredYoke );
     }, function ( empoweredYoke, result ) {
-        var disempoweredYoke = {
-            pkRuntime: empoweredYoke.pkRuntime,
-            yokeRider: yoke.yokeRider,
-            internal: empoweredYoke.internal,
-            runWaitLinear: empoweredYoke.runWaitLinear
-        };
+        var disempoweredYoke =
+            yokeWithRider( empoweredYoke, yoke.yokeRider );
         if ( empoweredYoke.yokeRider.tag !== "definer-yoke" )
             return pkErr( disempoweredYoke,
                 "Returned from a top-level command with a yoke " +
@@ -2780,23 +2781,32 @@ function makePkRuntime() {
     //   (This is important for graph algorithms.)
     // - Write to a mutable box in a valid environment.
     // - Read from a mutable box in a valid environment.
+    // - TODO: Add coroutine operations to this list.
     //
     defFunc( "call-with-mbox-env", 1, function ( yoke, body ) {
         var mboxEnvContents;
         var mboxEnv = pkToken( mboxEnvContents = {
             stringRep: "env",
             comparable: false,
+            isMutableBox: false,
             mutableBoxState: pkNil,
             mutableBoxEnvironment: dummyMutableEnvironment,
             isValidMutableEnvironment: true,
-            canDefine: false
+            canDefine: false,
+            canYield: false,
+            coroutineNext: null
         } );
-        return runWaitTry( yoke, function ( yoke ) {
+        return runWait( yoke, function ( yoke ) {
             return callMethod( yoke, "call",
                 pkList( body, pkList( mboxEnv ) ) );
         }, function ( yoke, result ) {
+            // NOTE: We invalidate the environment even if there's an
+            // error.
+            // TODO: Test this to make sure we can't obtain a
+            // top-level reference to a valid mutable environment by
+            // using an error.
             mboxEnvContents.isValidMutableEnvironment = false;
-            return pkRet( yoke, result );
+            return runRet( yoke, result );
         } );
     } );
     defFunc( "mbox-new", 2, function ( yoke, mboxEnv, initState ) {
@@ -2812,10 +2822,13 @@ function makePkRuntime() {
         return pkRet( yoke, pkToken( {
             stringRep: "mbox",
             comparable: false,
+            isMutableBox: true,
             mutableBoxState: initState,
             mutableBoxEnvironment: mboxEnv,
             isValidMutableEnvironment: false,
-            canDefine: false
+            canDefine: false,
+            canYield: false,
+            coroutineNext: null
         } ) );
     } );
     defFunc( "mbox-eq", 3, function ( yoke, mboxEnv, mboxA, mboxB ) {
@@ -2828,6 +2841,12 @@ function makePkRuntime() {
         if ( !mboxEnv.special.jsPayload.isValidMutableEnvironment )
             return pkErr( yoke,
                 "Called mbox-eq with an invalid environment" );
+        if ( !(true
+            && mboxA.special.jsPayload.isMutableBox
+            && mboxB.special.jsPayload.isMutableBox
+        ) )
+            return pkErr( yoke,
+                "Called mbox-eq with a non-box token" );
         if ( !(true
             && tokenEq( mboxEnv,
                 mboxA.special.jsPayload.mutableBoxEnvironment )
@@ -2848,6 +2867,9 @@ function makePkRuntime() {
         if ( !mboxEnv.special.jsPayload.isValidMutableEnvironment )
             return pkErr( yoke,
                 "Called mbox-get with an invalid environment" );
+        if ( !mbox.special.jsPayload.isMutableBox )
+            return pkErr( yoke,
+                "Called mbox-get with a non-box token" );
         if ( !tokenEq( mboxEnv,
             mbox.special.jsPayload.mutableBoxEnvironment ) )
             return pkErr( yoke,
@@ -2869,12 +2891,196 @@ function makePkRuntime() {
         if ( !mboxEnv.special.jsPayload.isValidMutableEnvironment )
             return pkErr( yoke,
                 "Called mbox-set with an invalid environment" );
+        if ( !mbox.special.jsPayload.isMutableBox )
+            return pkErr( yoke,
+                "Called mbox-get with a non-box token" );
         if ( !tokenEq( mboxEnv,
             mbox.special.jsPayload.mutableBoxEnvironment ) )
             return pkErr( yoke,
                 "Called mbox-set with an incorrect environment" );
         mbox.special.jsPayload.mutableBoxState = newState;
         return pkRet( yoke, pkNil );
+    } );
+    // TODO: Test `coroutine-new`, `yield-into`, and `yield-out`. If
+    // they work, reimplement mutable boxes operations in terms of
+    // them, and see if the speed is comparable. If speed is an issue,
+    // it's acceptable to have both coroutines and mutable boxes.
+    defFunc( "coroutine-new", 2, function ( yoke, mboxEnv, body ) {
+        if ( mboxEnv.tag !== "token" )
+            return pkErr( yoke,
+                "Called coroutine-new with a non-token environment" );
+        if ( body.isLinear() )
+            return pkErr( yoke,
+                "Called coroutine-new with a linear implementation" );
+        if ( !mboxEnv.special.jsPayload.isValidMutableEnvironment )
+            return pkErr( yoke,
+                "Called mbox-new with an invalid environment" );
+        var yielderTokenContents;
+        var yielderToken = pkToken( yielderTokenContents = {
+            stringRep: "mbox",
+            comparable: false,
+            isMutableBox: false,
+            mutableBoxState: pkNil,
+            mutableBoxEnvironment: mboxEnv,
+            isValidMutableEnvironment: false,
+            canDefine: false,
+            canYield: true,
+            coroutineNext: null
+        } );
+        var coroutineContents;
+        return pkRet( yoke, pkToken( coroutineContents = {
+            stringRep: "mbox",
+            comparable: false,
+            isMutableBox: false,
+            mutableBoxState: pkNil,
+            mutableBoxEnvironment: mboxEnv,
+            isValidMutableEnvironment: false,
+            canDefine: false,
+            canYield: false,
+            coroutineNext: function ( yoke, input ) {
+                if ( input.isLinear() )
+                    return pkErr( yoke,
+                        "Yielded to a coroutine with a linear value"
+                        );
+                var clientYokeRider = yoke.yokeRider;
+                var coroutineYoke =
+                    yokeWithRider( yoke, pk( "pure-yoke" ) );
+                
+                // Prevent resuming the coroutine while it's running.
+                coroutineContents.coroutineNext = null;
+                
+                return coroutineYoke.runWaitLinear(
+                    function ( coroutineYoke ) {
+                    
+                    return callMethod( coroutineYoke, "call",
+                        pkList(
+                            body, pkList( yielderToken, input ) ) );
+                }, function ( yokeAndResult ) {
+                    return go( clientYokeRider, yokeAndResult );
+                } );
+                function go( clientYokeRider, yokeAndResult ) {
+                    // NOTE: We invalidate the yielder even if there's
+                    // an error.
+                    // TODO: Test this to make sure we can't obtain a
+                    // top-level reference to a valid yielder token by
+                    // using an error.
+                    yielderToken.special.jsPayload.canYield = false;
+                    var clientYoke = yokeWithRider(
+                        yokeAndResult.yoke, coroutineYokeRider );
+                    if ( yokeAndResult.type === "yield" ) {
+                        if ( yokeAndResult.out.isLinear() )
+                            return pkErr( clientYoke,
+                                "Yielded from a coroutine with a " +
+                                "linear value" );
+                        var coroutineYokeRider =
+                            yokeAndResult.yoke.yokeRider;
+                        var coroutineThen = yokeAndResult.then;
+                        coroutineContents.coroutineNext =
+                            function ( yoke, input ) {
+                            
+                            var clientYokeRider = yoke.yokeRider;
+                            var coroutineYoke = yokeWithRider(
+                                yoke, coroutineYokeRider );
+                            yielderToken.special.jsPayload.canYield =
+                                true;
+                            
+                            // Prevent resuming the coroutine while
+                            // it's running.
+                            coroutineContents.coroutineNext = null;
+                            
+                            return coroutineYoke.runWaitLinear(
+                                function ( coroutineYoke ) {
+                                
+                                return coroutineThen(
+                                    coroutineYoke, input );
+                            }, function ( yokeAndResult ) {
+                                return go(
+                                    clientYokeRider, yokeAndResult );
+                            } );
+                        };
+                        return pkRet( clientYoke, yokeAndResult.out );
+                    } else {  // yokeAndResult.type === "done"
+                        if ( yokeAndResult.yoke.yokeRider.tag !==
+                            "pure-yoke" )
+                            return pkErr( clientYoke,
+                                "Returned from a coroutine with a " +
+                                "yoke that wasn't a pure-yoke" );
+                        if ( yokeAndResult.result.isLinear() )
+                            return pkErr( clientYoke,
+                                "Returned from a coroutine with a " +
+                                "linear return value" );
+                        coroutineContents.coroutineNext = null;
+                        return pkRet( clientYoke,
+                            yokeAndResult.result );
+                    }
+                }
+            }
+        } ) );
+    } );
+    // TODO: See if we should implement actual coroutines, rather than
+    // what we have now, which is asymmetric coroutines. We lose
+    // organizational structure that way (essentially giving up GOSUB
+    // for GOTO), but maybe we gain something else. If we decide to
+    // make the change, here are some steps to get started:
+    //
+    //  - Merge `yield-into` and `yield-out` into a single `yield`.
+    //  - Redesign what happens when a coroutine returns. Perhaps
+    //    `coroutine-new` coroutines should cause an error when they
+    //    return.
+    //  - Make the body of `call-with-mbox-env` execute as a
+    //    coroutine. When it returns, it should return from the
+    //    `call-box-with-mbox-env` call.
+    //  - Keep track of the current coroutine token as part of the
+    //    yoke, so that `yield` can modify the current coroutine's
+    //    `coroutineNext` state.
+    //
+    // There's a particular reason for the current (asymmetric)
+    // coroutines being what they are. Perhaps mutable boxes have good
+    // generality for defining local custom side effects because they
+    // can hold the status (and folded history) of a single-threaded,
+    // single-nondeterministic-branch imperative computation. Process
+    // control and sub-interpreters would be nice features to support
+    // anyway, so generalizing mutable boxes to suspendable
+    // computations could reduce the overall number of things we need
+    // to model.
+    //
+    defFunc( "yield-into", 3,
+        function ( yoke, mboxEnv, coroutine, input ) {
+        
+        if ( mboxEnv.tag !== "token" )
+            return pkErr( yoke,
+                "Called yield-into with a non-token environment" );
+        if ( coroutine.tag !== "token" )
+            return pkErr( yoke,
+                "Called yield-into with a non-token coroutine" );
+        if ( input.isLinear() )
+            return pkErr( yoke,
+                "Called yield-into with a linear input value" );
+        if ( !mboxEnv.special.jsPayload.isValidMutableEnvironment )
+            return pkErr( yoke,
+                "Called yield-into with an invalid environment" );
+        if ( !tokenEq( mboxEnv,
+            coroutine.special.jsPayload.mutableBoxEnvironment ) )
+            return pkErr( yoke,
+                "Called yield-into with an incorrect environment" );
+        var coroutineNext = coroutine.special.jsPayload.coroutineNext;
+        if ( coroutineNext === null )
+            return pkErr( yoke,
+                "Called yield-into with a token that didn't " +
+                "represent a currently suspended coroutine" );
+        return coroutineNext( yoke, input );
+    } );
+    defFunc( "yield-out", 2, function ( yoke, yielderToken, output ) {
+        if ( yielderToken.tag !== "token" )
+            return pkErr( yoke,
+                "Called yield-out with a non-token yielder token" );
+        if ( yielderToken.special.jsPayload.canYield )
+            return pkErr( yoke,
+                "Called yield-out with a token other than the " +
+                "current yielder token" );
+        return runYield( yoke, output, function ( yoke, input ) {
+            return pkRet( yoke, input );
+        } );
     } );
     
     defFunc( "nl-get-linear", 1, function ( yoke, nl ) {
@@ -3264,7 +3470,7 @@ PkRuntime.prototype.conveniences_syncYoke = function () {
                     internal: self.internal + 1,
                     runWaitLinear: self.runWaitLinear
                 } );
-                if ( maybeYokeAndResult.type === "done" )
+                if ( maybeYokeAndResult.type !== "deferrer" )
                     return then( maybeYokeAndResult );
                 return { type: "deferrer", go:
                     function ( defer, then2 ) {
