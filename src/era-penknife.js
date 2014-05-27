@@ -751,6 +751,18 @@ function listMapTwo( yoke, a, b, func, then ) {
     } );
 }
 
+function toUnqualifiedName( yoke, x, then ) {
+    return runWaitTry( yoke, function ( yoke ) {
+        return callMethod( yoke, "to-unqualified-name", pkList( x ) );
+    }, function ( yoke, name ) {
+        if ( !isUnqualifiedName( name ) )
+            return pkErr( yoke,
+                "Returned from to-unqualified-name with a value " +
+                "that wasn't an unqualified name" );
+        return then( yoke, name );
+    } );
+}
+
 function isEnoughGetTineShallow( x ) {
     return isList( x ) && listLenIs( x, 2 ) &&
         isList( listGet( x, 0 ) );
@@ -1139,10 +1151,9 @@ function forkGetter( nameForError ) {
         if ( isQualifiedName( name ) )
             return handleQualifiedName( yoke, name );
         else
-            return runWaitTry( yoke, function ( yoke ) {
-                return callMethod( yoke, "to-unqualified-name",
-                    pkList( name ) );
-            }, function ( yoke, name ) {
+            return toUnqualifiedName( yoke, name,
+                function ( yoke, name ) {
+                
                 return runWaitTry( yoke, function ( yoke ) {
                     return runRet( yoke,
                         yoke.pkRuntime.qualifyName( name ) );
@@ -1176,10 +1187,9 @@ function deriveGetFork( nonlocalGetFork, isLocalName ) {
         if ( isQualifiedName( name ) )
             return handleNonlocal( yoke );
         else
-            return runWaitTry( yoke, function ( yoke ) {
-                return callMethod( yoke, "to-unqualified-name",
-                    pkList( name ) );
-            }, function ( yoke, name ) {
+            return toUnqualifiedName( yoke, name,
+                function ( yoke, name ) {
+                
                 return isLocalName( yoke, name,
                     function ( yoke, isLocal ) {
                     
@@ -2238,10 +2248,8 @@ function makePkRuntime() {
         if ( !listLenIs( body, 2 ) )
             return pkErrLen( yoke, body, "Expanded fn" );
         
-        return runWaitTry( yoke, function ( yoke ) {
-            return callMethod( yoke, "to-unqualified-name",
-                pkList( listGet( body, 0 ) ) );
-        }, function ( yoke, paramName ) {
+        return toUnqualifiedName( yoke, listGet( body, 0 ),
+            function ( yoke, paramName ) {
         
         function isParamName( name ) {
             return paramName.special.unqualifiedNameJson ===
@@ -2357,10 +2365,8 @@ function makePkRuntime() {
         if ( !listLenIs( body, 1 ) )
             return pkErrLen( yoke, body, "Expanded qname" );
         
-        return runWaitTry( yoke, function ( yoke ) {
-            return callMethod( yoke, "to-unqualified-name",
-                pkList( listGet( body, 0 ) ) );
-        }, function ( yoke, name ) {
+        return toUnqualifiedName( yoke, listGet( body, 0 ),
+            function ( yoke, name ) {
         return runWaitTry( yoke, function ( yoke ) {
             return runRet( yoke, yoke.pkRuntime.qualifyName( name ) );
         }, function ( yoke, name ) {
@@ -2384,10 +2390,8 @@ function makePkRuntime() {
         if ( !listLenIs( body, 1 ) )
             return pkErrLen( yoke, body, "Expanded uqname" );
         
-        return runWaitTry( yoke, function ( yoke ) {
-            return callMethod( yoke, "to-unqualified-name",
-                pkList( listGet( body, 0 ) ) );
-        }, function ( yoke, name ) {
+        return toUnqualifiedName( yoke, listGet( body, 0 ),
+            function ( yoke, name ) {
         return pkDrop( yoke, fork, function ( yoke ) {
         
         return pkRet( yoke, pk( "getmac-fork",
@@ -2561,8 +2565,11 @@ function makePkRuntime() {
                 "variables" );
         
         return listMap( yoke, varNames, function ( yoke, varName ) {
-            return callMethod( yoke, "to-unqualified-name",
-                pkList( varName ) );
+            return toUnqualifiedName( yoke, varName,
+                function ( yoke, name ) {
+                
+                return pkRet( yoke, name );
+            } );
         }, function ( yoke, varNames ) {
         return pkDrop( yoke, fork, function ( yoke ) {
         return runWaitTryGetmacFork( yoke, "macroexpand-to-fork",
