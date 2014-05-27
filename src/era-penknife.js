@@ -28,10 +28,9 @@
 //   private JavaScript function
 //     Something which can process a "yoke," an argument list, and the
 //     encapsulated value and return a yoke and a result value. The
-//     yoke is typically a linear value, and transforming it this way
-//     represents imperative side effects. If this transformation uses
-//     any side effects, those effects correspond to some linear input
-//     value and some linear output value (typically the yoke).
+//     yokes are simply other input or output values that are
+//     implicitly threaded through the program to achieve some local
+//     imperative techniques.
 //
 // nonlinear-as-linear:
 //   private inner value
@@ -194,46 +193,10 @@ var dummyMutableEnvironment;
         mutableBoxState: pkNil,
         mutableBoxEnvironment: null,
         isValidMutableEnvironment: false,
-        effects: {
-            canUseImperativeCapabilities: false,
-            canDefine: false
-        }
+        canDefine: false
     } );
     dummyContents.mutableBoxEnvironment = dummyMutableEnvironment;
 })();
-function makeEffectToken( jsPayloadEffects ) {
-    // NOTE: Whenever we do side effects, we roughly understand them
-    // as transformations of some linear value that represents the
-    // outside world. That's why we wrap up the effect token as a
-    // linear value here.
-    var token = pkToken( {
-        stringRep: "effect",
-        comparable: false,
-        mutableBoxState: pkNil,
-        mutableBoxEnvironment: dummyMutableEnvironment,
-        isValidMutableEnvironment: false,
-        effects: jsPayloadEffects
-    } );
-    var result = {};
-    result.unwrapped = token;
-    result.wrapped = pkNonlinearAsLinear(
-        token,
-        pkfn( function ( yoke, args ) {
-            if ( !listLenIs( args, 2 ) )
-                return pkErrLen( pureYoke, args,
-                    "Called a duplicator" );
-            return pkErr( yoke,
-                "Can't duplicate or drop a wrapped effect token" );
-        } ),
-        pkfn( function ( yoke, args ) {
-            if ( !listLenIs( args, 1 ) )
-                return pkErrLen( pureYoke, args,
-                    "Called an unwrapper" );
-            return pkRet( yoke, listGet( args, 0 ) );
-        } )
-    );
-    return result;
-}
 function pk( tag, var_args ) {
     var args = pkListFromArr( [].slice.call( arguments, 1 ) );
     return new Pk().init_( null, tag, args, args.isLinear(), {} );
@@ -495,7 +458,6 @@ function yokeWithRider( yoke, rider ) {
     return {
         pkRuntime: yoke.pkRuntime,
         yokeRider: rider,
-        effectToken: yoke.effectToken,
         internal: yoke.internal,
         runWaitLinear: yoke.runWaitLinear
     };
@@ -1373,150 +1335,36 @@ function callMethod( yoke, jsMethodName, args ) {
         pkQualifiedName( pkStrNameUnsafeMemoized( jsMethodName ) ),
         args );
 }
-function mapEffect( yoke, func ) {
+function hasDefinerToken( yoke, then ) {
     var yokeRider = yoke.yokeRider;
     var pureYoke = yokeWithRider( yoke, pk( "pure-yoke" ) );
     return runWaitTry( pureYoke, function ( pureYoke ) {
-        return callMethod( pureYoke, "yoke-map-wrapped-effect-token",
-            pkList(
-                yokeRider,
-                pkfn( function ( pureYoke, args ) {
-                    var us =
-                        "a yoke-map-wrapped-effect-token callback";
-                    if ( !listLenIs( args, 1 ) )
-                        return pkErrLen( pureYoke, args,
-                            "Called " + us );
-                    var maybeWrappedEffectToken = listGet( args, 0 );
-                    if ( maybeWrappedEffectToken.tag === "yep" ) {
-                        var wrappedEffectToken =
-                            maybeWrappedEffectToken.ind( 0 );
-                        if ( wrappedEffectToken.tag
-                            !== "nonlinear-as-linear" )
-                            return pkErr( pureYoke,
-                                "Called " + us + " with a value " +
-                                "that wasn't a nonlinear-as-linear" );
-                        return pkUnwrap( pureYoke, wrappedEffectToken,
-                            function ( pureYoke, effectToken ) {
-                            
-                            if ( effectToken.tag !== "token" )
-                                return pkErr( pureYoke,
-                                    "Called " + us + " with a " +
-                                    "value that wasn't a wrapped " +
-                                    "token" );
-                            if ( yoke.effectToken === null
-                                || !tokenEq( yoke.effectToken,
-                                    effectToken ) )
-                                return pkErr( pureYoke,
-                                    "Called " + us + " with a " +
-                                    "token that wasn't the current " +
-                                    "effect token" );
-                            if ( !effectToken.special.jsPayload.
-                                effects.canUseImperativeCapabilities )
-                                return pkErr( pureYoke,
-                                    "Called " + us + " without " +
-                                    "access to imperative side " +
-                                    "effects" );
-                            return runWaitTry( pureYoke,
-                                function ( pureYoke ) {
-                                
-                                return func( pureYoke,
-                                    effectToken.special.jsPayload.
-                                        effects );
-                            }, function ( pureYoke, ignoredNil ) {
-                                if ( ignoredNil.tag !== "nil" )
-                                    return pkErr( pureYoke,
-                                        "Internally used mapEffect " +
-                                        "with a function that " +
-                                        "returned a non-nil value" );
-                                var newEffectToken = makeEffectToken(
-                                    effectToken.special.jsPayload.
-                                        effects );
-                                var updatedYoke = {
-                                    pkRuntime: pureYoke.pkRuntime,
-                                    yokeRider: pureYoke.yokeRider,
-                                    effectToken:
-                                        newEffectToken.unwrapped,
-                                    internal: pureYoke.internal,
-                                    runWaitLinear:
-                                        pureYoke.runWaitLinear
-                                };
-                                return pkRet( updatedYoke,
-                                    pkYep( newEffectToken.wrapped ) );
-                            } );
-                        } );
-                        
-                    } else if (
-                        maybeWrappedEffectToken.tag === "nil" ) {
-                        
-                        return runWaitTry( pureYoke,
-                            function ( pureYoke ) {
-                            
-                            return func( pureYoke, {
-                                canUseImperativeCapabilities: false,
-                                canDefine: false
-                            } );
-                        }, function ( pureYoke, ignoredNil ) {
-                            if ( ignoredNil.tag !== "nil" )
-                                return pkErr( pureYoke,
-                                    "Internally used mapEffect " +
-                                    "with a function that returned " +
-                                    "a non-nil value" );
-                            return pkRet( yoke, pkNil );
-                        } );
-                    } else {
-                        return pkErr( pureYoke,
-                            "Called " + us + " with a non-maybe" );
-                    }
-                } )
-            )
-        );
-    }, function ( pureYoke, newYokeRider ) {
-        var yoke = yokeWithRider( pureYoke, newYokeRider );
-        return pkRet( yoke, pkNil );
-    } );
-}
-// TODO: Figure out if we should manage `withAvailableEffectsReplaced`
-// in a more encapsulated and/or generalized way.
-// TODO: Figure out if we should allow users to pass in arbitrary
-// `effects` values like this.
-function withAvailableEffectsReplaced( yoke, effects, body ) {
-    var effectToken = makeEffectToken( effects );
-    var empoweredYoke = {
-        pkRuntime: yoke.pkRuntime,
-        yokeRider: pk( "imperative-yoke", effectToken.wrapped ),
-        effectToken: effectToken.unwrapped,
-        internal: yoke.internal,
-        runWaitLinear: yoke.runWaitLinear
-    };
-    return runWait( empoweredYoke, function ( empoweredYoke ) {
-        return body( empoweredYoke );
-    }, function ( empoweredYoke, result ) {
-        return runWaitTry( empoweredYoke, function ( empoweredYoke ) {
-            
-            // We do a `mapEffect` just to enforce that the current
-            // yoke refers to the current effect token.
-            //
-            // NOTE: We don't even check for
-            // `effects.canUseImperativeCapabilities` like
-            // `update-the-effect-token` does. That's because even
-            // though we're updating the effect token imperatively,
-            // we're just going to throw away the result.
-            //
-            return mapEffect( empoweredYoke,
-                function ( empoweredYoke, effects ) {
-                
-                return pkRet( empoweredYoke, pkNil );
-            } );
-        }, function ( empoweredYoke, ignoredNil ) {
-            var disempoweredYoke = {
-                pkRuntime: empoweredYoke.pkRuntime,
-                yokeRider: yoke.yokeRider,
-                effectToken: yoke.effectToken,
-                internal: empoweredYoke.internal,
-                runWaitLinear: empoweredYoke.runWaitLinear
-            };
-            return runRet( disempoweredYoke, result );
-        } );
+        return callMethod( pureYoke, "yoke-get-definer-token",
+            pkList( yokeRider ) );
+    }, function ( pureYoke, maybeDefinerToken ) {
+        if ( pureYoke.yokeRider.tag !== "pure-yoke" )
+            return pkErr( yoke,
+                "Returned from yoke-get-definer-token with a yoke " +
+                "other than the given one" );
+        
+        if ( maybeDefinerToken.tag === "yep" ) {
+            var definerToken = maybeDefinerToken.ind( 0 );
+            if ( definerToken.tag !== "token" )
+                return pkErr( yoke,
+                    "Returned from yoke-get-definer-token with a " +
+                    "non-token" );
+            if ( !definerToken.special.jsPayload.canDefine )
+                return pkErr( yoke,
+                    "Returned from yoke-get-definer-token with a " +
+                    "token other than the current definer token" );
+            return then( yoke, true );
+        } else if ( maybeDefinerToken.tag === "nil" ) {
+            return then( yoke, false );
+        } else {
+            return pkErr( yoke,
+                "Returned from yoke-get-definer-token with a " +
+                "non-maybe" );
+        }
     } );
 }
 function runSyncYoke( maybeYokeAndResult ) {
@@ -1596,18 +1444,48 @@ function macroexpandArrays( yoke, arrayExpr ) {
     
     return macroexpand( yoke, arraysToConses( arrayExpr ) );
 }
-function withEffectsForInterpret( yoke, func, then ) {
-    // TODO: See if we should be temporarily augmenting the available
-    // side effects, rather than temporarily replacing them.
-    return withAvailableEffectsReplaced( yoke, {
-        canUseImperativeCapabilities: true,
-        canDefine: true
-    }, function ( yoke ) {
-        return func( yoke );
+// TODO: Figure out if we should manage `withTopLevelEffects` in a
+// more generalized way.
+// TODO: See if we should be temporarily augmenting the `yokeRider`,
+// rather than temporarily replacing it.
+function withTopLevelEffects( yoke, body ) {
+    var empoweredYoke = {
+        pkRuntime: yoke.pkRuntime,
+        yokeRider: pk( "definer-yoke", pkToken( {
+            stringRep: "definer",
+            comparable: false,
+            mutableBoxState: pkNil,
+            mutableBoxEnvironment: dummyMutableEnvironment,
+            isValidMutableEnvironment: false,
+            canDefine: true
+        } ) ),
+        internal: yoke.internal,
+        runWaitLinear: yoke.runWaitLinear
+    };
+    return runWaitTry( empoweredYoke, function ( empoweredYoke ) {
+        return body( empoweredYoke );
+    }, function ( empoweredYoke, result ) {
+        var disempoweredYoke = {
+            pkRuntime: empoweredYoke.pkRuntime,
+            yokeRider: yoke.yokeRider,
+            internal: empoweredYoke.internal,
+            runWaitLinear: empoweredYoke.runWaitLinear
+        };
+        if ( empoweredYoke.yokeRider.tag !== "definer-yoke" )
+            return pkErr( disempoweredYoke,
+                "Returned from a top-level command with a yoke " +
+                "that wasn't a definer-yoke" );
+        var definerToken = empoweredYoke.yokeRider.ind( 0 );
+        if ( !definerToken.special.jsPayload.canDefine )
+            return pkErr( disempoweredYoke,
+                "Returned from a top-level command with a " +
+                "non-current definer token" );
+        definerToken.special.jsPayload.canDefine = false;
+        return pkRet( disempoweredYoke, result );
     } );
 }
 function interpretEssence( yoke, essence ) {
-    return withEffectsForInterpret( yoke, function ( yoke ) {
+    return withTopLevelEffects( yoke, function ( yoke ) {
         return callMethod( yoke, "essence-interpret",
             pkList( essence, pkNil ) );
     } );
@@ -1795,46 +1673,17 @@ function makePkRuntime() {
     } );
     
     defTag( "pure-yoke" );
-    defTag( "imperative-yoke", "wrapped-effect-token" );
-    defMethod( "yoke-map-wrapped-effect-token", "yoke", "func" );
-    setStrictImpl( "yoke-map-wrapped-effect-token", "pure-yoke",
+    defTag( "definer-yoke", "definer-token" );
+    defMethod( "yoke-get-definer-token", "yoke" );
+    setStrictImpl( "yoke-get-definer-token", "pure-yoke",
         function ( yoke, args ) {
         
-        var firstClassYoke = listGet( args, 0 );
-        var func = listGet( args, 1 );
-        return runWaitTry( yoke, function ( yoke ) {
-            return callMethod( yoke, "call",
-                pkList( func, pkList( pkNil ) ) );
-        }, function ( yoke, replacementYoke ) {
-            if ( replacementYoke.tag !== "nil" )
-                return pkErr( yoke,
-                    "During a yoke-map-wrapped-effect-token of a " +
-                    "pure-yoke, received a non-nil replacement " +
-                    "token" );
-            return pkRet( yoke, firstClassYoke );
-        } );
+        return pkRet( yoke, pkNil );
     } );
-    setStrictImpl( "yoke-map-wrapped-effect-token", "imperative-yoke",
+    setStrictImpl( "yoke-get-definer-token", "definer-yoke",
         function ( yoke, args ) {
         
-        var firstClassYoke = listGet( args, 0 );
-        var func = listGet( args, 1 );
-        var wrappedEffectToken = firstClassYoke.ind( 0 );
-        return runWaitTry( yoke, function ( yoke ) {
-            return callMethod( yoke, "call", pkList(
-                func,
-                pkList( pkYep( wrappedEffectToken ) )
-            ) );
-        }, function ( yoke, maybeNewWrappedEffectToken ) {
-            if ( maybeNewWrappedEffectToken.tag !== "yep" )
-                return pkErr( yoke,
-                    "During a yoke-map-wrapped-effect-token of an " +
-                    "imperative-yoke, received a non-yep " +
-                    "replacement token" );
-            return pkRet( yoke,
-                pk( "imperative-yoke",
-                    maybeNewWrappedEffectToken.ind( 0 ) ) );
-        } );
+        return pkRet( yoke, pkYep( listGet( args, 0 ).ind( 0 ) ) );
     } );
     
     defTag( "getmac-fork", "get-tine", "maybe-macro" );
@@ -2771,26 +2620,6 @@ function makePkRuntime() {
         return pkRet( newYoke, yoke.yokeRider );
     } );
     
-    // NOTE: This does nothing visible in a program that respects
-    // linearity, but if a program has been keeping nonlinear
-    // references to effect tokens (either by unwrapping the wrapped
-    // ones or by storing the wrapped ones inside linear-as-nonlinear
-    // wrappers), this will install a fresh effect token so that all
-    // the old references are useless. Other operations with
-    // imperative side effects accomplish this as well, because that's
-    // what effect tokens are really for; however, if someone's goal
-    // is only to invalidate old effect tokens, this utility is up to
-    // that task.
-    defFunc( "update-the-effect-token", 0, function ( yoke ) {
-        return mapEffect( yoke, function ( yoke, effects ) {
-            if ( !effects.canUseImperativeCapabilities )
-                return pkErr( yoke,
-                    "Called update-the-effect-token without access " +
-                    "to imperative side effects" );
-            return pkRet( yoke, pkNil );
-        } );
-    } );
-    
     defFunc( "defval", 2, function ( yoke, name, val ) {
         if ( !isQualifiedName( name ) )
             return pkErr( yoke,
@@ -2798,8 +2627,8 @@ function makePkRuntime() {
                 "qualified name" );
         if ( val.isLinear() )
             return pkErr( yoke, "Called defval with a linear value" );
-        return mapEffect( yoke, function ( yoke, effects ) {
-            if ( !effects.canDefine )
+        return hasDefinerToken( yoke, function ( yoke, canDefine ) {
+            if ( !canDefine )
                 return pkErr( yoke,
                     "Called defval without access to top-level " +
                     "definition side effects" );
@@ -2816,10 +2645,10 @@ function makePkRuntime() {
         if ( macro.isLinear() )
             return pkErr( yoke,
                 "Called defmacro with a linear macro" );
-        return mapEffect( yoke, function ( yoke, effects ) {
-            if ( !effects.canDefine )
+        return hasDefinerToken( yoke, function ( yoke, canDefine ) {
+            if ( !canDefine )
                 return pkErr( yoke,
-                    "Called defval without access to top-level " +
+                    "Called defmacro without access to top-level " +
                     "definition side effects" );
             return yoke.pkRuntime.enqueueDef_( yoke, function () {
                 return yoke.pkRuntime.defMacro( name, macro );
@@ -2845,8 +2674,10 @@ function makePkRuntime() {
             if ( keys.isLinear() )
                 return pkErr( yoke,
                     "Called deftag with a linear args list" );
-            return mapEffect( yoke, function ( yoke, effects ) {
-                if ( !effects.canDefine )
+            return hasDefinerToken( yoke,
+                function ( yoke, canDefine ) {
+                
+                if ( !canDefine )
                     return pkErr( yoke,
                         "Called deftag without access to top-level " +
                         "definition side effects" );
@@ -2875,8 +2706,10 @@ function makePkRuntime() {
             if ( argNames.isLinear() )
                 return pkErr( yoke,
                     "Called defmethod with a linear args list" );
-            return mapEffect( yoke, function ( yoke, effects ) {
-                if ( !effects.canDefine )
+            return hasDefinerToken( yoke,
+                function ( yoke, canDefine ) {
+                
+                if ( !canDefine )
                     return pkErr( yoke,
                         "Called defmethod without access to " +
                         "top-level definition side effects" );
@@ -2900,8 +2733,8 @@ function makePkRuntime() {
         if ( impl.isLinear() )
             return pkErr( yoke,
                 "Called set-impl with a linear function" );
-        return mapEffect( yoke, function ( yoke, effects ) {
-            if ( !effects.canDefine )
+        return hasDefinerToken( yoke, function ( yoke, canDefine ) {
+            if ( !canDefine )
                 return pkErr( yoke,
                     "Called set-impl without access to top-level " +
                     "definition side effects" );
@@ -2949,25 +2782,14 @@ function makePkRuntime() {
             mutableBoxState: pkNil,
             mutableBoxEnvironment: dummyMutableEnvironment,
             isValidMutableEnvironment: true,
-            effects: {
-                canUseImperativeCapabilities: false,
-                canDefine: false
-            }
-        } );
-        // TODO: See if we should be temporarily augmenting the
-        // available side effects, rather than temporarily replacing
-        // them.
-        return withAvailableEffectsReplaced( yoke, {
-            canUseImperativeCapabilities: true,
             canDefine: false
-        }, function ( innerYoke ) {
-            return runWaitTry( innerYoke, function ( innerYoke ) {
-                return callMethod( innerYoke, "call",
-                    pkList( body, pkList( mboxEnv ) ) );
-            }, function ( innerYoke, result ) {
-                mboxEnvContents.isValidMutableEnvironment = false;
-                return pkRet( innerYoke, result );
-            } );
+        } );
+        return runWaitTry( yoke, function ( yoke ) {
+            return callMethod( yoke, "call",
+                pkList( body, pkList( mboxEnv ) ) );
+        }, function ( yoke, result ) {
+            mboxEnvContents.isValidMutableEnvironment = false;
+            return pkRet( yoke, result );
         } );
     } );
     defFunc( "mbox-new", 2, function ( yoke, mboxEnv, initState ) {
@@ -2977,31 +2799,17 @@ function makePkRuntime() {
         if ( initState.isLinear() )
             return pkErr( yoke,
                 "Called mbox-new with a linear assigned value" );
-        return runWaitTry( yoke, function ( yoke ) {
-            return mapEffect( yoke, function ( yoke, effects ) {
-                if ( !effects.canUseImperativeCapabilities )
-                    return pkErr( yoke,
-                        "Called mbox-new without access to " +
-                        "imperative side effects" );
-                return pkRet( yoke, pkNil );
-            } );
-        }, function ( yoke, ignoredNil ) {
-            if ( !mboxEnv.special.jsPayload.
-                isValidMutableEnvironment )
-                return pkErr( yoke,
-                    "Called mbox-new with an invalid environment" );
-            return pkRet( yoke, pkToken( {
-                stringRep: "mbox",
-                comparable: false,
-                mutableBoxState: initState,
-                mutableBoxEnvironment: mboxEnv,
-                isValidMutableEnvironment: false,
-                effects: {
-                    canUseImperativeCapabilities: false,
-                    canDefine: false
-                }
-            } ) );
-        } );
+        if ( !mboxEnv.special.jsPayload.isValidMutableEnvironment )
+            return pkErr( yoke,
+                "Called mbox-new with an invalid environment" );
+        return pkRet( yoke, pkToken( {
+            stringRep: "mbox",
+            comparable: false,
+            mutableBoxState: initState,
+            mutableBoxEnvironment: mboxEnv,
+            isValidMutableEnvironment: false,
+            canDefine: false
+        } ) );
     } );
     defFunc( "mbox-eq", 3, function ( yoke, mboxEnv, mboxA, mboxB ) {
         if ( mboxEnv.tag !== "token" )
@@ -3010,30 +2818,18 @@ function makePkRuntime() {
         if ( !(mboxA.tag === "token" && mboxB.tag === "token") )
             return pkErr( yoke,
                 "Called mbox-eq with a non-token box" );
-        return runWaitTry( yoke, function ( yoke ) {
-            return mapEffect( yoke, function ( yoke, effects ) {
-                if ( !effects.canUseImperativeCapabilities )
-                    return pkErr( yoke,
-                        "Called mbox-eq without access to " +
-                        "imperative side effects" );
-                return pkRet( yoke, pkNil );
-            } );
-        }, function ( yoke, ignoredNil ) {
-            if ( !mboxEnv.special.jsPayload.
-                isValidMutableEnvironment )
-                return pkErr( yoke,
-                    "Called mbox-eq with an invalid environment" );
-            if ( !(true
-                && tokenEq( mboxEnv,
-                    mboxA.special.jsPayload.mutableBoxEnvironment )
-                && tokenEq( mboxEnv,
-                    mboxB.special.jsPayload.mutableBoxEnvironment )
-            ) )
-                return pkErr( yoke,
-                    "Called mbox-eq with an incorrect environment" );
-            return pkRet( yoke,
-                pkBoolean( tokenEq( mboxA, mboxB ) ) );
-        } );
+        if ( !mboxEnv.special.jsPayload.isValidMutableEnvironment )
+            return pkErr( yoke,
+                "Called mbox-eq with an invalid environment" );
+        if ( !(true
+            && tokenEq( mboxEnv,
+                mboxA.special.jsPayload.mutableBoxEnvironment )
+            && tokenEq( mboxEnv,
+                mboxB.special.jsPayload.mutableBoxEnvironment )
+        ) )
+            return pkErr( yoke,
+                "Called mbox-eq with an incorrect environment" );
+        return pkRet( yoke, pkBoolean( tokenEq( mboxA, mboxB ) ) );
     } );
     defFunc( "mbox-get", 2, function ( yoke, mboxEnv, mbox ) {
         if ( mboxEnv.tag !== "token" )
@@ -3042,26 +2838,14 @@ function makePkRuntime() {
         if ( mbox.tag !== "token" )
             return pkErr( yoke,
                 "Called mbox-get with a non-token box" );
-        return runWaitTry( yoke, function ( yoke ) {
-            return mapEffect( yoke, function ( yoke, effects ) {
-                if ( !effects.canUseImperativeCapabilities )
-                    return pkErr( yoke,
-                        "Called mbox-get without access to " +
-                        "imperative side effects" );
-                return pkRet( yoke, pkNil );
-            } );
-        }, function ( yoke, ignoredNil ) {
-            if ( !mboxEnv.special.jsPayload.
-                isValidMutableEnvironment )
-                return pkErr( yoke,
-                    "Called mbox-get with an invalid environment" );
-            if ( !tokenEq( mboxEnv,
-                mbox.special.jsPayload.mutableBoxEnvironment ) )
-                return pkErr( yoke,
-                    "Called mbox-get with an incorrect environment" );
-            return pkRet( yoke,
-                mbox.special.jsPayload.mutableBoxState );
-        } );
+        if ( !mboxEnv.special.jsPayload.isValidMutableEnvironment )
+            return pkErr( yoke,
+                "Called mbox-get with an invalid environment" );
+        if ( !tokenEq( mboxEnv,
+            mbox.special.jsPayload.mutableBoxEnvironment ) )
+            return pkErr( yoke,
+                "Called mbox-get with an incorrect environment" );
+        return pkRet( yoke, mbox.special.jsPayload.mutableBoxState );
     } );
     defFunc( "mbox-set", 3,
         function ( yoke, mboxEnv, mbox, newState ) {
@@ -3075,22 +2859,15 @@ function makePkRuntime() {
         if ( newState.isLinear() )
             return pkErr( yoke,
                 "Called mbox-set with a linear assigned value" );
-        return mapEffect( yoke, function ( yoke, effects ) {
-            if ( !effects.canUseImperativeCapabilities )
-                return pkErr( yoke,
-                    "Called mbox-set without access to imperative " +
-                    "side effects" );
-            if ( !mboxEnv.special.jsPayload.
-                isValidMutableEnvironment )
-                return pkErr( yoke,
-                    "Called mbox-set with an invalid environment" );
-            if ( !tokenEq( mboxEnv,
-                mbox.special.jsPayload.mutableBoxEnvironment ) )
-                return pkErr( yoke,
-                    "Called mbox-set with an incorrect environment" );
-            mbox.special.jsPayload.mutableBoxState = newState;
-            return pkRet( yoke, pkNil );
-        } );
+        if ( !mboxEnv.special.jsPayload.isValidMutableEnvironment )
+            return pkErr( yoke,
+                "Called mbox-set with an invalid environment" );
+        if ( !tokenEq( mboxEnv,
+            mbox.special.jsPayload.mutableBoxEnvironment ) )
+            return pkErr( yoke,
+                "Called mbox-set with an incorrect environment" );
+        mbox.special.jsPayload.mutableBoxState = newState;
+        return pkRet( yoke, pkNil );
     } );
     
     defFunc( "nl-get-linear", 1, function ( yoke, nl ) {
@@ -3450,7 +3227,6 @@ PkRuntime.prototype.conveniences_debuggableSyncYoke = function () {
     return {
         pkRuntime: this,
         yokeRider: pk( "pure-yoke" ),
-        effectToken: null,
         internal: null,
         runWaitLinear: function ( step, then ) {
             return then( step( this ) );
@@ -3461,7 +3237,6 @@ PkRuntime.prototype.conveniences_syncYoke = function () {
     return {
         pkRuntime: this,
         yokeRider: pk( "pure-yoke" ),
-        effectToken: null,
         internal: 0,
         runWaitLinear: function ( step, then ) {
             var self = this;
@@ -3479,7 +3254,6 @@ PkRuntime.prototype.conveniences_syncYoke = function () {
                 var maybeYokeAndResult = step( {
                     pkRuntime: self.pkRuntime,
                     yokeRider: self.yokeRider,
-                    effectToken: self.effectToken,
                     internal: self.internal + 1,
                     runWaitLinear: self.runWaitLinear
                 } );
@@ -3496,7 +3270,6 @@ PkRuntime.prototype.conveniences_syncYoke = function () {
                             then( runRet( {
                                 pkRuntime: yoke.pkRuntime,
                                 yokeRider: yoke.yokeRider,
-                                effectToken: yoke.effectToken,
                                 internal: 0,
                                 runWaitLinear: yoke.runWaitLinear
                             }, yokeAndResult.result ) ),
@@ -3510,7 +3283,6 @@ PkRuntime.prototype.conveniences_syncYoke = function () {
                     syncYokeCall( step( {
                         pkRuntime: self.pkRuntime,
                         yokeRider: self.yokeRider,
-                        effectToken: self.effectToken,
                         internal: 0,
                         runWaitLinear: self.runWaitLinear
                     } ), defer, function ( yokeAndResult ) {

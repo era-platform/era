@@ -1590,7 +1590,7 @@ function compileTopLevel( yoke, essence, then ) {
 
 function invokeTopLevel( yoke, jsFunc, then ) {
     return runWait( yoke, function ( yoke ) {
-        return withEffectsForInterpret( yoke, function ( yoke ) {
+        return withTopLevelEffects( yoke, function ( yoke ) {
             return jsFunc( yoke, compiledCodeHelper,
                 function ( yoke, result ) {
                     
