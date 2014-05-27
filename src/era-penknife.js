@@ -1491,14 +1491,32 @@ function withAvailableEffectsReplaced( yoke, effects, body ) {
     return runWait( empoweredYoke, function ( empoweredYoke ) {
         return body( empoweredYoke );
     }, function ( empoweredYoke, result ) {
-        var disempoweredYoke = {
-            pkRuntime: empoweredYoke.pkRuntime,
-            yokeRider: yoke.yokeRider,
-            effectToken: yoke.effectToken,
-            internal: empoweredYoke.internal,
-            runWaitLinear: empoweredYoke.runWaitLinear
-        };
-        return runRet( disempoweredYoke, result );
+        return runWaitTry( empoweredYoke, function ( empoweredYoke ) {
+            
+            // We do a `mapEffect` just to enforce that the current
+            // yoke refers to the current effect token.
+            //
+            // NOTE: We don't even check for
+            // `effects.canUseImperativeCapabilities` like
+            // `update-the-effect-token` does. That's because even
+            // though we're updating the effect token imperatively,
+            // we're just going to throw away the result.
+            //
+            return mapEffect( empoweredYoke,
+                function ( empoweredYoke, effects ) {
+                
+                return pkRet( empoweredYoke, pkNil );
+            } );
+        }, function ( empoweredYoke, ignoredNil ) {
+            var disempoweredYoke = {
+                pkRuntime: empoweredYoke.pkRuntime,
+                yokeRider: yoke.yokeRider,
+                effectToken: yoke.effectToken,
+                internal: empoweredYoke.internal,
+                runWaitLinear: empoweredYoke.runWaitLinear
+            };
+            return runRet( disempoweredYoke, result );
+        } );
     } );
 }
 function runSyncYoke( maybeYokeAndResult ) {
