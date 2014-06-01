@@ -99,8 +99,9 @@ A=B
 <a A == b B>
 
 The paper's equality of dependent pair types is defined like so. We
-encode the propositional AND connective as @s(...), since the coercion
-that motivates this definition uses both operands exactly once apiece:
+encode the propositional "and" connective as @s(...), since the
+coercion that motivates this definition uses both operands exactly
+once apiece:
 
 @s(a:!rs.A B{a})=@s(c:!rs.C D{c})
 - is defined as -
@@ -151,24 +152,27 @@ the definition of sigma equality for values rather than types:
 @s(<#fst.x A{b} == #fst.y C{d}> <#snd.x B{a} == #snd.y D{c}>)
 
 We have two problems: Where are a, b, c, and d defined in the
-consequence of that rule? How can we be comfortable the semantics of
-#fst and #snd when they impose an ordering on the contents of an
+consequence of that rule? How can we be comfortable with the semantics
+of #fst and #snd when they impose an ordering on the contents of an
 otherwise unordered connective like dependent @s(...)?
 
-We can solve these problems by changing to a more elaborate notation:
+For that matter, we've had another problem since we started
+investigating equality on @s(...). We've been treating the two sides
+of the equality as though they have the same order too.
 
-<x @s(a:A{b} b:B{a}) == y @s(c:C{d} d:D{c})>
-@s(<<#get a x @s(a:A{b} b:B{a})> A{b} ==
-    <#get c y @s(c:C{d} d:D{c})> C{d}>
-   <<#get b x @s(a:A{b} b:B{a})> B{a} ==
-    <#get d y @s(c:C{d} d:D{c})> D{c}>)
+Let's solve all three of these problems by separating variables and
+element labels into two concepts, "x$" and "x:". We'll use "#x:" to
+access label "x:" instead of using #fst or #snd.
 
-Now the variables appearing in the types can refer to the definitions
-inside type annotations in the terms, and the element we're retrieving
-is specified by name rather than by position. Unfortunately, this
-notation now contains a lot of redundant information, and we'll
-probably need a completely different notation when we're dealing with
-@s[...] rather than @s(...), aka pi rather than sigma.
+<x w$@s(m:a$A{b} n:b$B{a}) == y z$@s(m:c$C{d} n:d$D{c})>
+@s(<#m:.x a$A{b} == #m:.y c$C{d}> <#n:.x b$B{a} == #n:.y d$D{c}>)
+
+Note that in the process of applying this rule, any uses of variables
+"w" and "z" would need to be substituted with $s(m:a n:b) and
+$s(m:c n:d).
+
+At this point, the use of patterns instead of variables has been
+pretty much forgotten.
 
 ---
 
@@ -177,24 +181,127 @@ the calculus of structures itself. They're metacircular and, for now,
 very incomplete.
 
 
-[-A -B (A B Type Type)]
-
-([A Type] [B Type])
+(Type Type)
 -- Make any non-dependent [_ _] or (_ _)
-[A B Type]
+Type
 
 ()
 -- Make [] or ()
 Type
 
-[-rst.a:A B{a} Type]
+[-.A Type]
 -- Make any non-dependent [_ _ ...] or (_ _ ...) with any index type
-[(a:A -rst.B{a}) Type]
+-- that exists before this construction step, which isn't quite as
+-- expressive as dependent (a$_ _{a}) or [-.a$_ _{a}] but comes close
+[(A []) Type]
+
+[-.A Type]
+-- Same as above, but using clearer linear implications
+[-.[-.A ()] Type]
+
+[A Type]
+-- Same as above, but if locality isn't a concern (and maybe we didn't
+-- have locality anyway, if we needed A to appear in a negative
+-- position in the premiss and a positive position in the conclusion)
+Type
+
+-- NOTE: This rule is especially experimental! It might not be
+-- correct in any way.
+[-.(m:-.x1$x n:[m:y1$y n:z1$z])
+  (m:-.(x2$x <x1 x == x2 x> x$Type)
+    n:[m:(y2$y <y1 y == y2 y> y$Type)
+        n:(z2$z <z1 z == z2 z> z$Type)])]
+-- Make the dependent structure
+-- (m:-.x$_{y}{z} n:[m:y$_{x}{z} n:z$_{x}{y}])
+Type
 
 
-How would that be expanded to dependent types? Maybe booleans would
-help somehow.
+That last rule is meant to suggest a whole family of rules, but what
+are the rules to construct the family? How about...
 
+Define the notation <x1$ -- x2> to mean this:
 
-([A Type] [B Type])
-[-2 A B Type]
+(x1$(type:Type val:#type:.x1) <#type:.x1 = #type:.x2>
+  <#val:.x1 #type:.x1 == #val:.x2 #type:.x2>)
+
+[-.(<x1$ -- x2> <y1$ -- y2>) (<x2$ -- x1> <y2$ -- y1>)]
+-- Make any dependent (x$_{y} y$_{x}).
+Type
+
+[-.[<x1$ -- x2> <y1$ -- y2>] [<x2$ -- x1> <y2$ -- y1>]]
+-- Make any dependent [x$_{y} y$_{x}].
+Type
+
+()
+-- Lift the inference rule
+-- "([a$A{b}{c} b$B{a}{c}] c$C{a}{b}) |-
+-- [(a$A{b}{c} c$C{a}{b}) b$B{a}{c}]"
+[-.([<a1$ -- a> <b1$ -- b>] <c1$ -- c>)
+  [(<a2$ -- a> <c2$ -- c>) <b2$ -- b>]]
+
+()
+-- Lift the inference rule "() |- [-.A A]"
+[-.() [-.<a1$ -- a2> <a2$ -- a1>]]
+
+This technique seems resilient to changes in the meaning of
+<x1$ -- x2>, <_ == _>, <_ = _>, and "Type". Let's do this over again
+with a universe hierarchy.
+
+Meanwhile, oops, the above were actually non-dependent inference
+rules. Dependent ones would have operated on values of dependent
+structure types. Let's use the notation "A=B" to mean that a structure
+is represented by the type variable A now, but that its value will be
+used as a type written "B".
+
+Define the notation <x1$ -- x2 :: u> to mean this:
+
+(x1$(type:t$u val:v$t) <t u == #type:.x2 u>
+  <v t == #val:.x2 #type:.x2>)
+
+[-.(<x1$ -- x2 :: U=a$A{a}{b}> <y1$ -- y2 :: U=b$B{a}{b}>)
+  (<x2$ -- x1 :: U> <y2$ -- y1 :: U>)]
+--
+U=(a$A{a}{b} b$B{a}{b})
+
+[-.[<x1$ -- x2 :: U=a$A{a}{b}> <y1$ -- y2 :: U=b$B{a}{b}>]
+  [<x2$ -- x1 :: U> <y2$ -- y1 :: U>]]
+--
+U=[a$A{a}{b} b$B{a}{b}]
+
+UParent
+--
+[-.(u$UParent
+     <x1$ -- x :: u=([a$A{a}{b}{c} b$B{a}{b}{c}] c$C{a}{b}{c})>)
+  <x2$ -- x :: u=[(a$A{a}{b}{c} c$C{a}{b}{c}) b$B{a}{b}{c}]>]
+
+UParent
+--
+[-.u$UParent [-.<a1$ -- a2 :: u=A> <a2$ -- a1 :: u=A>]]
+
+Now for new stuff:
+
+TODO: Figure out how to construct and deconstruct values of dependent
+structure types. Here's an incomplete attempt:
+  UParent
+  --
+  [-.(u$UParent <x3$ -- x1 :: u=a$A{a}{b}> <x4$ -- x2 :: u=b$B{a}{b}>)
+    <x5$ -- x6 :: u=(a$A{a}{b} b$B{a}{b})>]
+
+T
+-- Extract reflexivity
+[-.x$T <x T == x T>]
+
+(U1 U2)
+-- Extract coercion
+[-.(t1$U1 t2$U2 <t1 U1 == t2 U2> x1$t1) (x2$t2 <x1 t1 == x2 t2>)]
+
+U
+-- Extract cumulativity (remembering that == is actually coercive
+-- subtyping rather than coercive equality, despite the notation)
+[-.(t$U x1$t) (x2$U <x1 t == x2 U>)]
+--
+-- TODO: Actually this might be incorrect, since it can transport
+-- values to (presumably empty) types. Adding another layer (xx$x1)
+-- would make it impossible to transport empty types. Perhaps we'll
+-- need to reintroduce the "Type" constant if the empty type
+-- interpretation doesn't work out.
