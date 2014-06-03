@@ -116,6 +116,16 @@ function jsListMap( yoke, list, func, then ) {
         return jsListRev( yoke, revResult, then );
     } );
 }
+function jsListAnySync( yoke, list, func, then ) {
+    return runWaitOne( yoke, function ( yoke ) {
+        if ( list === null )
+            return then( yoke, false );
+        var result = func( list.first );
+        if ( result )
+            return then( yoke, result );
+        return jsListAnySync( yoke, list.rest, func, then );
+    } );
+}
 function jsListDoubleAny( yoke, init, listA, listB, func, then ) {
     return jsListShortDoubleFoldl( yoke, false, listA, listB,
         function ( yoke, state, elemA, elemB, then ) {
@@ -130,13 +140,11 @@ function jsListDoubleAny( yoke, init, listA, listB, func, then ) {
     } );
 }
 function jsListAllSync( yoke, list, func, then ) {
-    return runWaitOne( yoke, function ( yoke ) {
-        if ( list === null )
-            return then( yoke, true );
-        var result = func( list.first );
-        if ( !result )
-            return then( yoke, result );
-        return jsListAllSync( yoke, list.rest, func, then );
+    return jsListAnySync( yoke, list, function ( elem ) {
+        var result = func( elem );
+        return result ? null : { val: result };
+    }, function ( yoke, result ) {
+        return then( yoke, result === null ? true : result.val );
     } );
 }
 function jsListCut( yoke, list, i, then ) {
@@ -227,31 +235,41 @@ BigIntLeaf.prototype.promoteSelf = function ( yoke, then ) {
         bigIntLeafZero_, then );
 };
 BigIntLeaf.prototype.getDepthPlusOne = function ( yoke, then ) {
-    return bigIntZero_;
+    return runWaitOne( yoke, function ( yoke ) {
+        return then( yoke, bigIntZero_ );
+    } );
 };
 BigIntLeaf.prototype.complement = function ( yoke, then ) {
-    return new BigIntLeaf().init_( 0xFFFF ^ this.val_ );
-};
-BigIntLeaf.prototype.plusOne = function ( yoke, then ) {
-    var result = this.val_ + 1;
     return runWaitOne( yoke, function ( yoke ) {
-        return then( yoke, result & 0xFFFF, (result >>> 16) !== 0 );
+        return then( yoke,
+            new BigIntLeaf().init_( 0xFFFF ^ this.val_ ) );
     } );
 };
-BigIntLeaf.prototype.plus = function ( yoke, other, then ) {
-    var result = this.val_ + other.val_;
+BigIntLeaf.prototype.plusCarry = function ( yoke,
+    other, carry, then ) {
+    
+    var result = this.val_ + other.val_ + (carry ? 1 : 0);
     return runWaitOne( yoke, function ( yoke ) {
-        return then( yoke, result & 0xFFFF, result >>> 16 );
+        return then( yoke, new BigIntLeaf().init_( result & 0xFFFF ),
+            (result >>> 16) !== 0 );
     } );
 };
-BigIntLeaf.prototype.times = function ( yoke, other, then ) {
-    var result = this.val_ * other.val_;
+BigIntLeaf.prototype.minusCarry = function ( yoke,
+    other, carry, then ) {
+    
+    var result = this.val_ + (0xFFFF ^ other.val_) + (carry ? 0 : 1);
     return runWaitOne( yoke, function ( yoke ) {
-        return then( yoke, result & 0xFFFF, result >>> 16 );
+        return then( yoke, new BigIntLeaf().init_( result & 0xFFFF ),
+            (result >>> 16) === 0 );
     } );
 };
 BigIntLeaf.prototype.isZero = function () {
     return this.val_ === 0;
+};
+BigIntLeaf.prototype.asZero = function ( yoke, then ) {
+    return runWaitOne( yoke, function ( yoke ) {
+        return then( yoke, bigIntLeafZero_ );
+    } );
 };
 BigIntLeaf.prototype.compareTo = function ( yoke, other, then ) {
     var result = this.val_ < other.val_ ? -1 :
@@ -261,7 +279,7 @@ BigIntLeaf.prototype.compareTo = function ( yoke, other, then ) {
     } );
 };
 BigIntLeaf.prototype.divModSmall = function ( yoke,
-    carryMod, divisor, then ) {
+    divisor, carryMod, then ) {
     
     // NOTE: We assume (0 <= carryMod < divisor <= 0x2000000000). Yes,
     // that's 37 bits of `carryMod`. We use an intermediate value of
@@ -271,11 +289,22 @@ BigIntLeaf.prototype.divModSmall = function ( yoke,
     var divResult = ~~(beforeDiv / divisor);
     var modResult = beforeDiv % divisor;
     return runWaitOne( yoke, function ( yoke ) {
-        return then( yoke, divResult, modResult );
+        return then( yoke, new BigIntLeaf().init_( divResult ),
+            modResult );
     } );
 };
-BigIntLeaf.prototype.timesPlusSmall = function ( yoke,
-    carry, factor, then ) {
+BigIntLeaf.prototype.divMod = function ( yoke,
+    divisor, carryMod, then ) {
+    
+    return this.divModSmall( yoke, divisor.val_, carryMod.val_,
+        function ( yoke, divResult, modResult ) {
+        
+        return then( yoke, divResult,
+            new BigIntLeaf().init_( modResult ) );
+    } );
+};
+BigIntLeaf.prototype.timesCarrySmall = function ( yoke,
+    factor, carry, then ) {
     
     // NOTE: We assume (0 <= carry < factor <= 0x2000000000). Yes,
     // that's 37 bits of `carryMod`. We use an intermediate value of
@@ -283,7 +312,17 @@ BigIntLeaf.prototype.timesPlusSmall = function ( yoke,
     // precision.
     var result = this.val_ * factor + carry;
     return runWaitOne( yoke, function ( yoke ) {
-        return then( yoke, afterTimes & 0xFFFF, result >>> 16 );
+        return then( yoke, new BigIntLeaf().init_( result & 0xFFFF ),
+            ~~(result / 0x10000) );
+    } );
+};
+BigIntLeaf.prototype.timesCarry = function ( yoke,
+    other, carry, then ) {
+    
+    return this.timesCarrySmall( yoke, other.val_, carry.val_,
+        function ( yoke, result, carry ) {
+        
+        return then( yoke, result, new BigIntLeaf().init_( carry ) );
     } );
 };
 
@@ -353,12 +392,6 @@ BigIntPart.prototype.promoteSub = function ( yoke, digit, then ) {
             { first: digit, rest: digits.rest }, then );
     } );
 };
-BigIntPart.prototype.getPromotedZero_ = function ( yoke, then ) {
-    var self = this;
-    return self.getZeroDigits( function ( yoke, zeroDigits ) {
-        return self.withDigits( yoke, zeroDigits, then );
-    } );
-};
 BigIntPart.prototype.promoteSelfWithMaybeCarryAndZero_ =
     function ( yoke, carry, zeroDigit, then ) {
     
@@ -382,7 +415,7 @@ BigIntPart.prototype.maybePromoteSelfWithCarry = function ( yoke,
         return runWaitOne( yoke, function ( yoke ) {
             return then( yoke, self );
         } );
-    return self.getPromotedZero_( yoke, function ( yoke, zeroDigit ) {
+    return self.asZero( yoke, function ( yoke, zeroDigit ) {
         return self.promoteSelfWithMaybeCarryAndZero_( yoke,
             carry, zeroDigit, then );
     } );
@@ -395,8 +428,10 @@ BigIntPart.prototype.maybePromoteSelfWithBooleanCarry =
         return runWaitOne( yoke, function ( yoke ) {
             return then( yoke, self );
         } );
-    return self.getPromotedZero_( yoke, function ( yoke, zeroDigit ) {
-        return zeroDigit.plusOne( yoke, function ( yoke, oneDigit ) {
+    return self.asZero( yoke, function ( yoke, zeroDigit ) {
+        return zeroDigit.plusCarry( yoke, zeroDigit, true,
+            function ( yoke, oneDigit, ignoredCarry ) {
+            
             return self.promoteSelfWithMaybeCarryAndZero_( yoke,
                 oneDigit, zeroDigit, then );
         } );
@@ -404,7 +439,7 @@ BigIntPart.prototype.maybePromoteSelfWithBooleanCarry =
 };
 BigIntPart.prototype.promoteSelf = function ( yoke, then ) {
     var self = this;
-    return self.getPromotedZero_( yoke, function ( yoke, zeroDigit ) {
+    return self.asZero( yoke, function ( yoke, zeroDigit ) {
         return self.promoteSelfWithMaybeCarryAndZero_( yoke,
             zeroDigit, zeroDigit, then );
     } );
@@ -422,19 +457,70 @@ BigIntPart.prototype.complement = function ( yoke, then ) {
         return self.withDigits( yoke, digits, then );
     } );
 };
-BigIntPart.prototype.plusOne = function ( yoke, then ) {
+BigIntPart.prototype.plusCarry = function ( yoke,
+    other, carry, then ) {
+    
     var self = this;
+    
+    // Optimization: If this segment of the bigint is just full of
+    // zeros and the carry is also zero, we can just skip over the
+    // whole segment.
+    if ( self.isZero() && !carry )
+        return runWaitOne( yoke, function ( yoke ) {
+            return then( yoke, other, false );
+        } );
+    // Optimization: If both things to add to this are zero, we can
+    // just skip the addition.
+    if ( other.isZero() && !carry )
+        return runWaitOne( yoke, function ( yoke ) {
+            return then( yoke, self, false );
+        } );
+    
     var a = self.digits_;
-    return jsListFoldl( yoke, {
-        carry: true,
+    var b = other.digits_;
+    return jsListDoubleFoldl( yoke, {
+        carry: carry,
         revResult: null
-    }, a, function ( yoke, state, aDigit, then ) {
-        if ( !state.carry )
-            return then( yoke, {
-                carry: false,
-                revResult: { first: aDigit, rest: state.revResult }
+    }, a, b, function ( yoke, state, aDigit, bDigit, then ) {
+        return aDigit.plusCarry( yoke, bDigit, state.carry,
+            function ( yoke, total, carry ) {
+            
+            return then( yoke, { carry: carry, revResult:
+                { first: total, rest: state.revResult } } );
+        } );
+    }, function ( yoke, state ) {
+        return jsListRev( yoke, state.revResult,
+            function ( yoke, resultDigits ) {
+            
+            return self.withDigits( yoke, resultDigits,
+                function ( yoke, result ) {
+                
+                return then( yoke, result, state.carry );
             } );
-        return aDigit.plusOne( yoke, function ( yoke, total, carry ) {
+        } );
+    } );
+};
+BigIntPart.prototype.minusCarry = function ( yoke,
+    other, carry, then ) {
+    
+    var self = this;
+    
+    // Optimization: If both things to subtract from this are zero, we
+    // can just skip the subtraction.
+    if ( other.isZero() && !carry )
+        return runWaitOne( yoke, function ( yoke ) {
+            return then( yoke, self, false );
+        } );
+    
+    var a = self.digits_;
+    var b = other.digits_;
+    return jsListDoubleFoldl( yoke, {
+        carry: carry,
+        revResult: null
+    }, a, b, function ( yoke, state, aDigit, bDigit, then ) {
+        return aDigit.minusCarry( yoke, bDigit, state.carry,
+            function ( yoke, total, carry ) {
+            
             return then( yoke, {
                 carry: carry,
                 revResult: { first: total, rest: state.revResult }
@@ -452,43 +538,10 @@ BigIntPart.prototype.plusOne = function ( yoke, then ) {
         } );
     } );
 };
-BigIntPart.prototype.plus = function ( yoke, other, then ) {
-    var self = this;
-    var a = self.digits_;
-    var b = other.digits_;
-    return jsListDoubleFoldl( yoke, {
-        carry: this.zeroDigit_,
-        revResult: null
-    }, a, b, function ( yoke, state, aDigit, bDigit, then ) {
-        return state.carry.plus( yoke, aDigit,
-            function ( yoke, total, carry1 ) {
-        return total.plus( yoke, bDigit,
-            function ( yoke, total, carry2 ) {
-        return carry1.plus( yoke, carry2,
-            function ( yoke, carry, ignoredCarryCarry ) {
-        
-        return then( yoke, {
-            carry: carry,
-            revResult: { first: total, rest: state.revResult }
-        } );
-        
-        } );
-        } );
-        } );
-    }, function ( yoke, state ) {
-        return jsListRev( yoke, state.revResult,
-            function ( yoke, resultDigits ) {
-            
-            return self.withDigits( yoke, resultDigits,
-                function ( yoke, result ) {
-                
-                return then( yoke, result,
-                    self.promoteSub( state.carry ) );
-            } );
-        } );
-    } );
-};
 BigIntPart.prototype.times = function ( yoke, other, then ) {
+    
+    // TODO: See if this can be more efficient.
+    
     var self = this;
     var a = self.digits_;
     var b = other.digits_;
@@ -509,18 +562,13 @@ BigIntPart.prototype.times = function ( yoke, other, then ) {
             carry: self.zeroDigit_,
             adTimesBRev: stateA.padLittle
         }, b, function ( yoke, stateB, bd, then ) {
-            return ad.times( yoke, bd,
-                function ( yoke, adTimesBd, carry1 ) {
-            return adTimesBd.plus( yoke, stateB.carry,
-                function ( yoke, adTimesBd, carry2 ) {
-            return carry1.plus( yoke, carry2,
-                function ( yoke, carry, ignoredCarryCarry ) {
-            
-            return then( yoke, { carry: carry, adTimesBRev:
-                { first: adTimesBd, rest: stateB.adTimesBRev } } );
-            
-            } );
-            } );
+            return ad.timesCarry( yoke, bd, stateB.carry,
+                function ( yoke, adTimesBd, carry ) {
+                
+                return then( yoke, { carry: carry, adTimesBRev: {
+                    first: adTimesBd,
+                    rest: stateB.adTimesBRev
+                } } );
             } );
         }, function ( yoke, stateB ) {
             if ( stateA.padBig === null )
@@ -534,7 +582,7 @@ BigIntPart.prototype.times = function ( yoke, other, then ) {
                 function ( yoke, adTimesBDigits ) {
             return self.withDigits( yoke, adTimesBDigits,
                 function ( yoke, adTimesB ) {
-            return stateA.result.plus( yoke, adTimesB,
+            return stateA.result.plusCarry( yoke, adTimesB, false,
                 function ( yoke, result, ignoredCarry ) {
             
             return then( yoke, {
@@ -580,6 +628,12 @@ BigIntPart.prototype.times = function ( yoke, other, then ) {
 BigIntPart.prototype.isZero = function () {
     return this.isZero_;
 };
+BigIntPart.prototype.asZero = function ( yoke, then ) {
+    var self = this;
+    return self.getZeroDigits( function ( yoke, zeroDigits ) {
+        return self.withDigits( yoke, zeroDigits, then );
+    } );
+};
 BigIntPart.prototype.compareTo = function ( yoke, other, then ) {
     var a = this.digits_;
     var b = other.digits_;
@@ -599,7 +653,7 @@ BigIntPart.prototype.compareTo = function ( yoke, other, then ) {
     } );
 };
 BigIntPart.prototype.divModSmall = function ( yoke,
-    carryMod, divisor, then ) {
+    divisor, carryMod, then ) {
     
     var self = this;
     
@@ -617,7 +671,7 @@ BigIntPart.prototype.divModSmall = function ( yoke,
             carry: carryMod,
             resultDigits: null
         }, aRev, function ( yoke, state, ad, then ) {
-            return ad.divModSmall( yoke, state.carry, divisor,
+            return ad.divModSmall( yoke, divisor, state.carry,
                 function ( yoke, resultDigit, carry ) {
                 
                 return then( yoke, { carry: carry, resultDigits:
@@ -633,8 +687,159 @@ BigIntPart.prototype.divModSmall = function ( yoke,
         } );
     } );
 };
-BigIntLeaf.prototype.timesPlusSmall = function ( yoke,
-    carry, factor, then ) {
+BigIntPart.prototype.divModSub_ = function ( yoke,
+    divisor, carryMod, then ) {
+    
+    var self = this;
+    
+    // Optimization: If this segment of the bigint is just full of
+    // zeros and the carry is also zero, we can just skip over the
+    // whole segment.
+    if ( self.isZero() && carryMod.isZero() )
+        return runWaitOne( yoke, function ( yoke ) {
+            return then( yoke, self, carryMod );
+        } );
+    
+    var a = self.digits_;
+    return jsListRev( yoke, a, function ( yoke, aRev ) {
+        return jsListFoldl( yoke, {
+            carry: carryMod,
+            resultDigits: null
+        }, aRev, function ( yoke, state, ad, then ) {
+            return ad.divMod( yoke, divisor, state.carry,
+                function ( yoke, resultDigit, carry ) {
+                
+                return then( yoke, { carry: carry, resultDigits:
+                    { first: resultDigit,
+                        rest: state.resultDigits } } );
+            } );
+        }, function ( yoke, state ) {
+            return self.withDigits( yoke, state.resultDigits,
+                function ( yoke, result ) {
+                
+                return then( yoke, result, state.carry );
+            } );
+        } );
+    } );
+};
+BigIntPart.prototype.divMod = function ( yoke,
+    divisor, carryMod, then ) {
+    
+    // TODO: See if this can be more efficient.
+    
+    var self = this;
+    if ( divisor.isZero() )
+        throw new Error();
+    
+    // Optimization: If this segment of the bigint is just full of
+    // zeros and the carry is also zero, we can just skip over the
+    // whole segment.
+    if ( self.isZero() && carryMod.isZero() )
+        return runWaitOne( yoke, function ( yoke ) {
+            return then( yoke, self, carryMod );
+        } );
+    
+    return self.getZeroDigits( yoke, function ( yoke, zeroDigits ) {
+    return self.asZero( yoke, function ( yoke, zero ) {
+    return zero.plusCarry( yoke, zero, true,
+        function ( yoke, one, ignoredCarry ) {
+    
+    function digitsToNum( yoke, digits, then ) {
+        return jsListAppend( yoke, digits, zeroDigits,
+            function ( yoke, digits ) {
+        return jsListCut( yoke, digits, zeroDigits,
+            function ( yoke, digits, bigPart ) {
+        return self.withDigits( yoke, digits, function ( yoke, num ) {
+        
+        return then( yoke, num, bigPart );
+        
+        } );
+        } );
+        } );
+    }
+    
+    var oneDigit = one.digits_.first;
+    
+    return jsListAppend( yoke, self.digits_, carryMod.digits_,
+        function ( yoke, remainderDigits ) {
+    
+    return go( yoke, remainderDigits, divisor.digits_ );
+    function go( yoke, remainderDigits, divisorDigits ) {
+        return digitsToNum( yoke, remainderDigits.rest,
+            function ( yoke, nextRemainder, ignoredBigPart ) {
+        return digitsToNum( yoke, divisorDigits.rest,
+            function ( yoke, nextDivisor, ignoredBigPart ) {
+        
+        if ( !nextRemainder.isZero() && !nextDivisor.isZero() )
+            return go( yoke,
+                remainderDigits.rest, divisorDigits.rest );
+        if ( !nextDivisor.isZero() )
+            return then( yoke, zero, self );
+        
+        return divisorDigits.first.plusCarry( yoke,
+            self.zeroDigit_, true,
+            function ( yoke, subDivisor, carry ) {
+            
+            if ( carry )
+                return digitsToNum( yoke, remainderDigits.rest,
+                    function ( yoke, quotientTerm, ignoredBigPart ) {
+                    
+                    return useQuotientTerm( yoke, quotientTerm );
+                } );
+            
+            return digitsToNum( yoke, remainderDigits,
+                function ( yoke, remainder, carryDigits ) {
+            return remainder.divModSub_( yoke,
+                subDivisor, carryDigits.first,
+                function ( yoke, quotientTerm, ignoredSubRemainder ) {
+            
+            if ( quotientTerm.isZero() && carryMod.isZero() )
+                return self.compareTo( yoke, divisor,
+                    function ( yoke, selfVsDivisor ) {
+                    
+                    return useQuotientTerm( yoke,
+                        selfVsDivisor === 0 ? one : quotientTerm );
+                } );
+            return useQuotientTerm( yoke, quotientTerm );
+            
+            } );
+            } );
+            
+            
+            function useQuotientTerm( yoke, quotientTerm ) {
+                return divisor.timesCarry( yoke, quotientTerm, zero,
+                    function ( yoke, valueToSubtract, carry1 ) {
+                return self.minusCarry( yoke, valueToSubtract, false,
+                    function ( yoke, newSelf, carry2 ) {
+                return carryMod.minusCarry( yoke, carry1, carry2,
+                    function ( yoke, newCarryMod, ignoredCarry ) {
+                return newSelf.divMod( yoke, divisor, newCarryMod,
+                    function ( yoke, divResult, modResult ) {
+                return divResult.plusCarry( yoke, quotientTerm, false,
+                    function ( yoke, divResult, ignoredCarry ) {
+                
+                return then( yoke, divResult, modResult );
+                
+                } );
+                } );
+                } );
+                } );
+                } );
+            }
+        } );
+        
+        } );
+        } );
+    }
+    
+    } );
+    
+    } );
+    } );
+    } );
+};
+BigIntPart.prototype.timesCarrySmall = function ( yoke,
+    factor, carry, then ) {
     
     var self = this;
     
@@ -651,7 +856,7 @@ BigIntLeaf.prototype.timesPlusSmall = function ( yoke,
         carry: carry,
         resultDigits: null
     }, a, function ( yoke, state, ad, then ) {
-        return ad.timesPlusSmall( yoke, state.carry, factor,
+        return ad.timesCarrySmall( yoke, factor, state.carry,
             function ( yoke, resultDigit, carry ) {
             
             return then( yoke, { carry: carry, resultDigits:
@@ -788,22 +993,25 @@ BigInt.prototype.compareTo = function ( yoke, other, then ) {
     } );
 };
 function bigDigitTwosComplement_( yoke, digit, then ) {
-    return digit.complement( yoke, function ( yoke, cp0 ) {
-        return cp0.plusOne( yoke, then );
+    return digit.asZero( yoke, function ( yoke, zero ) {
+        return digit.complement( yoke, function ( yoke, cp0 ) {
+            return cp0.plusCarry( yoke, zero, true, then );
+        } );
     } );
 }
 BigInt.prototype.plusOne = function ( yoke, then ) {
     var self = this;
     var as = self.sign_;
     if ( 0 <= as ) {
-        return self.part_.plusOne( yoke,
+        return self.part_.asZero( yoke, function ( yoke, zero ) {
+        return self.part_.plusCarry( yoke, zero, true,
             function ( yoke, result, carry ) {
-        return result.maybePromoteSelfWithBooleanCarry( yoke,
-            carry,
+        return result.maybePromoteSelfWithBooleanCarry( yoke, carry,
             function ( yoke, result ) {
         
         return then( yoke, new BigInt().init_( 1, result ) );
         
+        } );
         } );
         } );
     } else {
@@ -832,7 +1040,8 @@ BigInt.prototype.plus = function ( yoke, other, then ) {
     } else if ( (0 <= self.sign_) === (0 <= other.sign_) ) {
         return bigDigitCommensurate_( yoke, self.part_, other.part_,
             function ( yoke, a, b ) {
-        return a.plus( b, function ( yoke, result, carry ) {
+        return a.plusCarry( yoke, b, false,
+            function ( yoke, result, carry ) {
         return result.maybePromoteSelfWithCarry( yoke, carry,
             function ( yoke, result ) {
         
@@ -853,7 +1062,8 @@ BigInt.prototype.plus = function ( yoke, other, then ) {
             function ( yoke, nb, ignoredIsZero ) {
         // NOTE: If the value were zero, we would have taken the above
         // branch instead.
-        return a.plus( yoke, nb, function ( yoke, result, carry ) {
+        return a.plusCarry( yoke, nb, false,
+            function ( yoke, result, carry ) {
         
         if ( carry.isZero() ) {
             // The two's complement representation hasn't righted
@@ -908,22 +1118,68 @@ BigInt.prototype.times = function ( yoke, other, then ) {
         } );
     if ( other.sign_ === -1 )
         return other.times( yoke, self, then );
-    return self.part_.times( yoke, other.part_,
+    
+    return bigDigitCommensurate( yoke, self.part_, other.part_,
+        function ( yoke, a, b ) {
+    return a.asZero( yoke, function ( yoke, zero ) {
+    return a.timesCarry( yoke, b, zero,
         function ( yoke, result, carry ) {
-        
-        return result.maybePromoteSelfWithCarry( yoke, carry,
-            function ( yoke, result ) {
+    return result.maybePromoteSelfWithCarry( yoke, carry,
+        function ( yoke, result ) {
+    
+    // NOTE: We normalize in case the sign is 0.
+    return new BigInt().init_( 1, result ).normalize( yoke, then );
+    
+    } );
+    } );
+    } );
+    } );
+};
+BigInt.prototype.divModTowardZero = function ( yoke, other, then ) {
+    var self = this;
+    
+    // NOTE: These examples may clarify the following negations.
+    //
+    //  9  /   2  =   4  R   1  because   9  =   2  *   4  +   1
+    //  9  /  -2  =  -4  R   1  because   9  =  -2  *  -4  +   1
+    // -9  /   2  =  -4  R  -1  because  -9  =   2  *  -4  +  -1
+    // -9  /  -2  =   4  R  -1  because  -9  =  -2  *   4  +  -1
+    //
+    if ( self.sign_ === -1 )
+        return self.neg().divMod( yoke, other,
+            function ( yoke, divResult, modResult ) {
             
-            // NOTE: We normalize in case the sign is 0.
-            return new BigInt().init_( 1, result ).normalize( yoke,
-                then );
+            return then( yoke, divResult.neg(), modResult.neg() );
         } );
+    if ( other.sign_ === -1 )
+        return self.divMod( yoke, other.neg(),
+            function ( yoke, divResult, modResult ) {
+            
+            return then( yoke, divResult.neg(), modResult );
+        } );
+    
+    return bigDigitCommensurate( yoke, self.part_, other.part_,
+        function ( yoke, a, b ) {
+    return a.asZero( yoke, function ( yoke, zero ) {
+    return a.divMod( yoke, b, zero,
+        function ( yoke, divResult, modResult ) {
+    // NOTE: We normalize in case there are new all-zero digits or the
+    // sign is 0.
+    return new BigInt().init_( 1, divResult ).normalize( yoke,
+        function ( yoke, divResult ) {
+    return new BigInt().init_( 1, modResult ).normalize( yoke,
+        function ( yoke, modResult ) {
+    
+    return then( yoke, divResult, modResult );
+    
+    } );
+    } );
+    } );
+    } );
     } );
 };
 // TODO: Add shiftedLeft() and shiftedRightWithRemainder(), at least
 // for small numbers of bits.
-// TODO: Add dividedByTowardZeroWithRemainder(), or some other full
-// division of bigints.
 BigInt.prototype.toStringInRadix = function ( yoke, base, then ) {
     var alphabet = "0123456789ABCDEF".split( "" );
     if ( !(2 <= base && base <= alphabet.length) )
@@ -938,7 +1194,7 @@ BigInt.prototype.toStringInRadix = function ( yoke, base, then ) {
                     return then( yoke, "-" + result );
                 return then( yoke, result );
             }
-            return digitsLeft.divModSmall( yoke, 0, base,
+            return digitsLeft.divModSmall( yoke, base, 0,
                 function ( yoke, div, mod ) {
                 
                 return go( yoke, alphabet[ mod ] + result, div );
@@ -973,7 +1229,7 @@ function bigIntFromStringInRadix( yoke, base, string, then ) {
             if ( digitValue === void 0 )
                 return then( yoke, null );
             
-            return result.timesPlusSmall( yoke, digitValue, base,
+            return result.timesCarrySmall( yoke, base, digitValue,
                 function ( yoke, result, carry ) {
             // NOTE: Since we only have radixes up to 16, the `carry`
             // can't be bigger than 4 bits, so a `BigIntLeaf` can
