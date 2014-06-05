@@ -2022,6 +2022,7 @@ AvlMap.prototype.plusObj = function ( yoke, obj, then ) {
     // in the object, but that's okay because the order of entries in
     // this map is entirely determined by its comparator.
     var entries = null;
+    // TODO: Implement objOwnEach() for the purposes of this file.
     objOwnEach( obj, function ( k, v ) {
         entries = { first: { k: k, v: v }, rest: entries };
     } );
