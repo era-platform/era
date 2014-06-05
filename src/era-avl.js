@@ -90,6 +90,9 @@ function jsListDoubleFoldl( yoke, init, listA, listB, func, then ) {
         return then( yoke, state );
     } );
 }
+// NOTE: This is guaranteed to have O( n ) time complexity in the
+// length of the `backwardFirst` list, JS object allocation time
+// notwithstanding.
 function jsListRevAppend( yoke, backwardFirst, forwardSecond, then ) {
     return jsListFoldl( yoke, forwardSecond, backwardFirst,
         function ( yoke, forwardSecond, elem, then ) {
@@ -1606,25 +1609,96 @@ function avlBranchConcatenate_( yoke, branches, then ) {
         } );
     } );
 }
-// TODO: Finish implementing this.
-function avlMerge_( yoke, a, b, then ) {
+function avlMerge_( yoke, processBoth, a, b, then ) {
+    var simpleMerging = processBoth !== null;
+    // TOOD: Make sure this algorithm is near-optimal both when
+    // `simpleMerging` is true and when it's false. When it's false,
+    // this algorithm certainly takes at least O( m + n ) time because
+    // it transforms every element.
+    //
+    // Online forum advice for merging AVL trees seems to recommend
+    // the use of sorted vectors, building the tree by bisecting the
+    // vector. We don't really have bigint-indexable vectors, and
+    // bisecting a bigint would have its own time complexity to worry
+    // about, so that's not an obvious way forward.
+    //
+    // (Yes, we're worrying about bigint operation complexity while
+    // not worrying about JavaScript object allocation complexity.)
     
+    function toLeft( val ) {
+        return simpleMerging ? val :
+            { left: { val: val }, right: null };
+    }
+    function toRight( val ) {
+        return simpleMerging ? val :
+            { left: null, right: { val: val } };
+    }
+    function toBothKeys( left, right ) {
+        return right;
+    }
+    function toBoth( left, right ) {
+        return simpleMerging ? processBoth( left, right ) :
+            { left: { val: left }, right: { val: right } };
+    }
     function mapLeft( yoke, aBranch, then ) {
+        if ( simpleMerging )
+            return runWaitOne( yoke, function ( yoke ) {
+                return then( yoke, aBranch );
+            } );
         aBranch.mapShortFoldAsc( yoke, null,
             function ( yoke, state, k, v, then ) {
             
-            return then( yoke, { left: { val: v }, right: null },
-                !"exitedEarly" );
+            return then( yoke, toLeft( v ), !"exitedEarly" );
         }, then );
     }
     function mapRight( yoke, bBranch, then ) {
+        if ( simpleMerging )
+            return runWaitOne( yoke, function ( yoke ) {
+                return then( yoke, aBranch );
+            } );
         bBranch.mapShortFoldAsc( yoke, null,
             function ( yoke, state, k, v, then ) {
             
-            return then( yoke, { left: null, right: { val: v } },
-                !"exitedEarly" );
+            return then( yoke, toRight( v ), !"exitedEarly" );
         }, then );
     }
+    
+    function negativeUnaryPlusBigUnary( yoke, a, b, then ) {
+        return jsListTails( yoke, a, b, function ( yoke, a, b ) {
+            if ( a !== null )
+                throw new Error();
+            return then( yoke, b );
+        } );
+    }
+    function unaryPlusBigUnary( yoke, a, b, then ) {
+        // NOTE: By using jsListRevAppend with a short first argument,
+        // we avoid iterating over the whole depth.
+        return jsListRevAppend( yoke, a, b, then );
+    }
+    function signedUnaryPlusBigUnary( yoke, a, b, then ) {
+        if ( a.sign < 0 )
+            return negativeUnaryPlusBigUnary( yoke, a.abs, b, then );
+        else
+            return unaryPlusBigUnary( yoke, a.abs, b, then );
+    }
+    
+    function combineBranchChanges( yoke,
+        thatBranch, thatChange, otherChange, then ) {
+        
+        // NOTE: This can call thatChange() or otherChange()
+        // synchronously.
+        
+        var getBranchChange = thatBranch.maxDepthAdvantage === null ?
+            otherChange : thatChange;
+        
+        return getBranchChange( yoke,
+            function ( yoke, branchChange ) {
+            
+            return negativeUnaryPlusUnary( yoke,
+                { first: null, rest: null }, branchChange, then );
+        } );
+    }
+    
     
     if ( a instanceof AvlLeaf_ )
         return b.getMaxDepth( yoke, function ( yoke, maxDepth ) {
@@ -1645,64 +1719,115 @@ function avlMerge_( yoke, a, b, then ) {
         function ( aVsB ) {
     
     if ( aVsB === 0 ) {
-        return avlMerge_( yoke,
+        return avlMerge_( yoke, processBoth,
             a.branches_[ -1 ].branch, b.branches[ -1 ].branch,
-            function ( yoke, lesserMaxDepthChanges, lesser ) {
-        return runWaitOne( yoke, function ( yoke ) {
-        return avlMerge_( yoke,
+            function ( yoke, lesserChanges, lesser ) {
+        return unaryPlusBigUnary( yoke,
+            a.branches_[ -1 ].maxDepthAdvantage, lesserChanges.left,
+            function ( yoke, lesserAdvantage ) {
+        return avlMerge_( yoke, processBoth,
             a.branches_[ 1 ].branch, b.branches[ 1 ].branch,
-            function ( yoke, biggerMaxDepthChanges, bigger ) {
+            function ( yoke, biggerChanges, bigger ) {
+        return unaryPlusBigUnary( yoke,
+            a.branches_[ 1 ].maxDepthAdvantage, biggerChanges.left,
+            function ( yoke, biggerAdvantage ) {
         
         var branches = {};
-        branches[ -1 ] = { branch: lesser, maxDepthAdvantage: null };
-        branches[ 1 ] = { branch: bigger, maxDepthAdvantage: null };
+        branches[ -1 ] =
+            { branch: lesser, maxDepthAdvantage: lesserAdvantage };
+        branches[ 1 ] =
+            { branch: bigger, maxDepthAdvantage: biggerAdvantage };
         
-        // TODO: Change `branches` based on the depth changes.
-        
-        return avlBranchMakeBalanced_( yoke, b.key_,
-            { left: { val: a.val_ }, right: { val: b.val_ } },
+        return avlBranchMakeBalanced_( yoke,
+            toBothKeys( a.key_, b.key_ ), toBoth( a.val_, b.val_ ),
             branches,
-            function ( yoke, mergedMaxDepthChanges, merged ) {
+            function ( yoke, balancedChanges, balanced ) {
         
-        var finalMaxDepthChanges = mergedMaxDepthChanges;
+        // TODO: See if iterating over `balancedChanges` makes
+        // avlMerge_() less efficient than it could be.
+        return combineBranchChanges( yoke, a.branches_[ -1 ],
+            function ( yoke, then ) {
+                return signedUnaryPlusBigUnary( yoke,
+                    balancedChanges[ -1 ], lesserChanges.left, then );
+            }, function ( yoke, then ) {
+                return signedUnaryPlusBigUnary( yoke,
+                    balancedChanges[ 1 ], biggerChanges.left, then );
+            }, function ( yoke, aChange ) {
+        return combineBranchChanges( yoke, b.branches_[ -1 ],
+            function ( yoke, then ) {
+                return signedUnaryPlusBigUnary( yoke,
+                    balancedChanges[ -1 ], lesserChanges.right, then
+                    );
+            }, function ( yoke, then ) {
+                return signedUnaryPlusBigUnary( yoke,
+                    balancedChanges[ 1 ], biggerChanges.right, then );
+            }, function ( yoke, aChange ) {
+        
+        var finalMaxDepthChanges = { left: aChange, right: bChange };
         // TODO: Change `finalMaxDepthChanges` based on the depth
         // changes.
-        return then( yoke, finalMaxDepthChanges, merged );
+        return then( yoke, finalMaxDepthChanges, balanced );
+        
+        } );
+        } );
         
         } );
         
+        } );
         } );
         } );
         } );
     } else {
         // TODO: See if this case would be more efficient if we
         // sometimes merged `a.branches_[ -aVsB ].branch` and `b`
-        // instead.
+        // instead. We'd probably need to know which of `a` and `b` is
+        // smallest, and then merge it with the smallest branch of the
+        // other.
         
-        return avlMerge_( yoke, a, b.branches_[ aVsB ].branch,
-            function ( yoke, depthChanges, mergedBranch ) {
+        return avlMerge_( yoke, processBoth,
+            a, b.branches_[ aVsB ].branch,
+            function ( yoke, mergedChanges, mergedBranch ) {
         return mapRight( yoke, b.branches_[ -aVsB ].branch,
             function ( yoke, unmergedBranch ) {
+        return unaryPlusBigUnary( yoke,
+            b.branches_[ aVsB ].maxDepthAdvantage,
+            mergedChanges.right,
+            function ( yoke, mergedAdvantage ) {
         
         var branches = {};
-        branches[ aVsB ] =
-            { branch: mergedBranch, maxDepthAdvantage: null };
-        branches[ -aVsB ] =
-            { branch: unmergedBranch, maxDepthAdvantage: null };
-        
-        // TODO: Change `branches` based on the depth changes.
+        branches[ aVsB ] = { branch: mergedBranch,
+            maxDepthAdvantage: mergedAdvantage };
+        branches[ -aVsB ] = { branch: unmergedBranch,
+            maxDepthAdvantage:
+                b.branches_[ -aVsB ].maxDepthAdvantage };
         
         return avlBranchMakeBalanced_( yoke,
-            b.key_, { left: null, right: { val: b.val_ } }, branches,
-            function ( yoke, mergedMaxDepthChanges, merged ) {
+            b.key_, toRight( b.val_ ), branches,
+            function ( yoke, balancedChanges, balanced ) {
+        // TODO: See if iterating over `balancedChanges[ aVsB ]` and
+        // `balancedChanges[ -aVsB ]` makes avlMerge_() less efficient
+        // than it could be.
+        return signedUnaryPlusBigUnary( yoke,
+            balancedChanges[ aVsB ], mergedChanges.left,
+            function ( yoke, aChange ) {
+        return combineBranchChanges( yoke, b.branches_[ aVsB ],
+            function ( yoke, then ) {
+                return signedUnaryPlusBigUnary( yoke,
+                    balancedChanges[ aVsB ], mergedChanges.right, then
+                    );
+            }, function ( yoke, then ) {
+                return signedUnaryPlusBigUnary( yoke,
+                    balancedChanges[ -aVsB ], null, then );
+            }, function ( yoke, bChange ) {
         
-        var finalMaxDepthChanges = mergedMaxDepthChanges;
-        // TODO: Change `finalMaxDepthChanges` based on the depth
-        // changes.
-        return then( yoke, finalMaxDepthChanges, merged );
+        var finalMaxDepthChanges = { left: aChange, right: bChange };
+        return then( yoke, finalMaxDepthChanges, balanced );
         
         } );
+        } );
+        } );
         
+        } );
         } );
         } );
     }
@@ -1918,21 +2043,15 @@ AvlMap.prototype.plus = function ( yoke, other, then ) {
     var self = this;
     if ( !(other instanceof AvlMap) )
         throw new Error();
-    // TODO: Merge the trees more efficiently than this. We're using
-    // AVL trees, which can supposedly merge in O( log (m + n) ) time,
-    // but this operation is probably O( n * log (m + n) ).
-    return other.contents_.shortFoldAsc( yoke, self,
-        function ( yoke, total, k, v, then ) {
+    return avlMerge_( yoke,
+        function ( a, b ) {
+            return b;
+        },
+        self.contents_, other.contents_,
+        function ( yoke, depthChanges, result ) {
         
-        return total.plusEntry( yoke, k, v, then );
-    }, then );
-    // TODO: Once avlMerge_() is completely implemented, see if this
-    // code will satisfy the above TODO.
-//    return avlMerge_( yoke, self.contents_, other.contents_,
-//        function ( yoke, depthChanges, result ) {
-//        
-//        return then( yoke, result );
-//    } );
+        return then( yoke, new AvlMap().init_( result ) );
+    } );
 };
 // TODO: Find a better name for this.
 AvlMap.prototype.plusTruth = function ( yoke, k, then ) {
