@@ -1252,44 +1252,39 @@ var bigIntZero_ = new BigInt().init_( 0, bigIntLeafZero_ );
 
 
 
-function AvlLeaf_( compare ) {
+function AvlLeaf_() {}
+AvlLeaf_.prototype.init_ = function ( compare ) {
     this.compare_ = compare;
-}
+    return this;
+};
 AvlLeaf_.prototype.getMaybe = function ( yoke, k, then ) {
     return runWaitOne( yoke, function ( yoke ) {
         return then( yoke, null );
     } );
 };
-AvlLeaf_.prototype.minusEntry = function ( yoke, k, then ) {
+AvlLeaf_.prototype.minusAnything_ = function ( yoke, then ) {
     var self = this;
     return runWaitOne( yoke, function ( yoke ) {
-        return then( yoke, self );
+        return then( yoke, !"depthDecreased", self );
     } );
 };
-AvlLeaf_.prototype.minusLeast_ = function ( yoke, then ) {
-    return runWaitOne( yoke, function ( yoke ) {
-        return then( yoke, null );
-    } );
-};
-AvlLeaf_.prototype.minusBiggest_ = function ( yoke, then ) {
-    return runWaitOne( yoke, function ( yoke ) {
-        return then( yoke, null );
-    } );
-};
-AvlLeaf_.prototype.plusEntryAfterComparison_ = function ( yoke,
-    kVsThisKey, k, v, then ) {
+AvlLeaf_.prototype.minusExtremeEntry = function ( yoke,
+    kPolarity, then ) {
     
-    // NOTE: This may call then() synchronously.
-    
-    return then( yoke, { depthIncreased: true,
-        after: new AvlBranch_( this, this, k, v, "balanced" ) } );
+    return this.minusAnything_( yoke, then );
 };
 AvlLeaf_.prototype.plusEntry = function ( yoke, k, v, then ) {
     var self = this;
     return runWaitOne( yoke, function ( yoke ) {
-        return then( yoke, { depthIncreased: true,
-            after: new AvlBranch_( self, self, k, v, "balanced" ) } );
+        return then( yoke, !!"depthIncreased",
+            new AvlBranch_().init_( k, v, {
+                "-1": { branch: self, maxDepthAdvantage: null },
+                "1": { branch: self, maxDepthAdvantage: null }
+            } ) );
     } );
+};
+AvlLeaf_.prototype.minusEntry = function ( yoke, k, then ) {
+    return this.minusAnything_( yoke, then );
 };
 // NOTE: This body takes its args as ( yoke, state, k, v, then ).
 AvlLeaf_.prototype.shortFoldAsc = function ( yoke,
@@ -1311,276 +1306,463 @@ AvlLeaf_.prototype.mapShortFoldAsc = function ( yoke,
 AvlLeaf_.prototype.hasAny = function () {
     return false;
 };
-// TODO: See if we'll use this for something. It might come in handy
-// for merging.
-AvlLeaf_.prototype.getHeight_ = function ( yoke, then ) {
+AvlLeaf_.prototype.getMaxDepth = function ( yoke, then ) {
     return runWaitOne( yoke, function ( yoke ) {
         return then( yoke, null );
     } );
 };
 
-function AvlBranch_( lesser, bigger, key, val, balance ) {
-    this.compare_ = lesser.compare_;
-    this.lesser_ = lesser;
-    this.bigger_ = bigger;
+function AvlBranch_() {}
+AvlBranch_.prototype.init_ = function ( key, val, branches ) {
+    
+    // NOTE: The value of `branches` is an object of the form
+    // { "-1": _, "1": _ }, where the elements are objects of the form
+    // { branch: _, maxDepthAdvantage: _ }. The keys in the -1 branch
+    // are less than this key, and the keys in the 1 branch are
+    // greater.
+    
     this.key_ = key;
     this.val_ = val;
-    this.balance_ = balance;
-}
+    this.branches_ = branches;
+    this.compare_ = branches[ -1 ].compare_;
+    return this;
+};
+function safeCompare_( yoke, compare, ka, kb, then ) {
+    return runWaitOne( yoke, function ( yoke ) {
+    return compare( yoke, ka, kb, function ( yoke, kaVsKb ) {
+    return runWaitOne( yoke, function ( yoke ) {
+    
+    return then( yoke, kaVsKb < 0 ? -1 : kaVsKb === 0 ? 0 : 1 );
+    
+    } );
+    } );
+    } );
+};
 AvlBranch_.prototype.getMaybe = function ( yoke, k, then ) {
     var self = this;
-    return runWaitOne( yoke, function ( yoke ) {
-    return self.compare_( yoke, k, self.key_, function ( yoke, c ) {
-    return runWaitOne( yoke, function ( yoke ) {
-    
-    return then( yoke,
-        c === 0 ? { val: self.val_ } :
-        c < 0 ? self.lesser_.getMaybe( k ) :
-            self.bigger_.getMaybe( k ) );
-    
-    } );
-    } );
+    return safeCompare_( yoke, self.compare_, k, self.key_,
+        function ( yoke, kVsSelf ) {
+        
+        if ( kVsSelf === 0 )
+            return then( yoke, { val: self.val_ } );
+        return self.branches_[ kVsSelf ].getMaybe( yoke, k, then );
     } );
 };
-AvlBranch_.prototype.minusLeast_ = function ( yoke, then ) {
-    var self = this;
-    return runWaitOne( yoke, function ( yoke ) {
-    return self.lesser_.minusLeast_( yoke, function ( yoke, lml ) {
-    return runWaitOne( yoke, function ( yoke ) {
-    
-    if ( lml === null )
-        return then( yoke, { key: self.key_, val: self.val_,
-            depthDecresed: true, after: self.bigger_ } );
-    if ( !lml.depthDecreased )
-        return then( yoke, { key: lml.key, val: lml.val,
-            depthDecreased: false,
-            after: new AvlBranch_( lml.after, self.bigger_,
-                self.key_, self.val_, self.balance_ ) } );
-    if ( self.balance_ === "lesser" ) {
-        return then( yoke, { key: lml.key, val: lml.val,
-            depthDecreased: false,
-            after: new AvlBranch_( lml.after, self.bigger_,
-                self.key_, self.val_, "balanced" ) } );
-    } else if ( self.balance_ === "balanced" ) {
-        return then( yoke, { key: lml.key, val: lml.val,
-            depthDecreased: false,
-            after: new AvlBranch_( lml.after, self.bigger_,
-                self.key_, self.val_, "bigger" ) } );
-    } else if ( self.balance_ === "bigger" ) {
-        return self.bigger_.minusLeast_( yoke,
-            function ( yoke, bml ) {
-        
-        if ( bml === null )
-            throw new Error();
-        var thisKeyVsLesserKey = 1;
-        return lml.after.plusEntryAfterComparison_( yoke,
-            thisKeyVsLesserKey, self.key_, self.val_,
-            function ( yoke, lmlp ) {
-        // NOTE: Since the then() of this and
-        // plusEntryAfterComparison_() are not corecursive, we don't
-        // need to runWaitOne() here.
-        
-        if ( !lmlp.depthIncreased )
-            throw new Error();
-        return then( yoke, { key: lml.key, val: lml.val,
-            depthDecreased: bml.depthDecreased,
-            after: new AvlBranch_( lmlp.after, bml.after,
-                bml.key, bml.val,
-                bml.depthDecreased ? "balanced" : "bigger" ) } );
-        
-        } );
-        
-        } );
-    } else {
-        throw new Error();
-    }
-    
-    } );
-    } );
-    } );
-};
-AvlBranch_.prototype.minusBiggest_ = function ( yoke, then ) {
-    var self = this;
-    return runWaitOne( yoke, function ( yoke ) {
-    return self.lesser_.minusBiggest_( yoke, function ( yoke, bmb ) {
-    return runWaitOne( yoke, function ( yoke ) {
-    
-    if ( bmb === null )
-        return then( yoke, { key: self.key_, val: self.val_,
-            depthDecresed: true, after: self.lesser_ } );
-    if ( !bmb.depthDecreased )
-        return then( yoke, { key: bmb.key, val: bmb.val,
-            depthDecreased: false,
-            after: new AvlBranch_( self.lesser_, bmb.after,
-                self.key_, self.val_, self.balance_ ) } );
-    if ( self.balance_ === "lesser" ) {
-        return self.lesser_.minusBiggest_( yoke,
-            function ( yoke, lmb ) {
-        
-        if ( lmb === null )
-            throw new Error();
-        var thisKeyVsBiggerKey = -1;
-        return bmb.after.plusEntryAfterComparison_( yoke,
-            thisKeyVsBiggerKey, self.key_, self.val_,
-            function ( yoke, bmbp ) {
-        // NOTE: Since the then() of this and
-        // plusEntryAfterComparison_() are not corecursive, we don't
-        // need to runWaitOne() here.
-        
-        if ( !bmbp.depthIncreased )
-            throw new Error();
-        return then( yoke, { key: bmb.key, val: bmb.val,
-            depthDecreased: lmb.depthDecreased,
-            after: new AvlBranch_( lmb.after, bmbp.after,
-                lmb.key, lmb.val,
-                lmb.depthDecreased ? "balanced" : "lesser" ) } );
-        
-        } );
-        
-        } );
-    } else if ( self.balance_ === "balanced" ) {
-        return then( yoke, { key: bmb.key, val: bmb.val,
-            depthDecreased: false,
-            after: new AvlBranch_( self.lesser_, bmb.after,
-                self.key_, self.val_, "lesser" ) } );
-    } else if ( self.balance_ === "bigger" ) {
-        return then( yoke, { key: bmb.key, val: bmb.val,
-            depthDecreased: false,
-            after: new AvlBranch_( self.lesser_, bmb.after,
-                self.key_, self.val_, "balanced" ) } );
-    } else {
-        throw new Error();
-    }
-    
-    } );
-    } );
-    } );
-};
-AvlBranch_.prototype.plusEntryAfterComparison_ = function ( yoke,
-    kVsThisKey, k, v, then ) {
-    
-    // NOTE: This may call then() synchronously.
+AvlBranch_.prototype.minusExtremeEntry = function ( yoke,
+    kPolarity, then ) {
     
     var self = this;
-    if ( kVsThisKey === 0 ) {
-        return then( yoke, { depthIncreased: false,
-            after: new AvlBranch_( self.lesser_, self.bigger_,
-                k, v, self.balance_ ) } );
-    } else if ( kVsThisKey < 0 ) {  // k < self.key_
-        return self.lesser_.plusEntry( yoke, k, v,
-            function ( yoke, subPlus ) {
-        
-        if ( !subPlus.depthIncreased )
-            return then( yoke, { depthIncreased: false,
-                after: new AvlBranch_( subPlus.after, self.bigger_,
-                    self.key_, self.val_, self.balance_ ) } );
-        if ( self.balance_ === "lesser" ) {
-            return subPlus.after.minusBiggest_( yoke,
-                function ( yoke, spmb ) {
-            
-            if ( spmb === null )
-                throw new Error();
-            var thisKeyVsBiggerKey = -1;
-            return self.bigger_.plusEntryAfterComparison_( yoke,
-                thisKeyVsBiggerKey, self.key_, self.val_,
-                function ( yoke, bp ) {
-            return runWaitOne( yoke, function ( yoke ) {
-            
-            if ( !bp.depthIncreased )
-                throw new Error();
-            return then( yoke, {
-                depthIncreased: !spmb.depthDecreased,
-                after: new AvlBranch_( spmb.after, bp.after,
-                    spmb.key, spmb.val,
-                    spmb.depthDecreased ? "balanced" : "lesser" )
-            } );
-            
-            } );
-            } );
-            
-            } );
-        } else if ( self.balance_ === "balanced" ) {
-            return then( yoke, { depthIncreased: false,
-                after: new AvlBranch_( subPlus.after, self.bigger_,
-                    self.key_, self.val_, "lesser" ) } );
-        } else if ( self.balance_ === "bigger" ) {
-            return then( yoke, { depthIncreased: false,
-                after: new AvlBranch_( subPlus.after, self.bigger_,
-                    self.key_, self.val_, "balanced" ) } );
-        } else {
-            throw new Error();
-        }
-        
-        } );
-    } else {  // self.key_ < k
-        return self.bigger_.plusEntry( yoke, k, v,
-            function ( yoke, subPlus ) {
-        
-        if ( !subPlus.depthIncreased )
-            return then( yoke, { depthIncreased: false,
-                after: new AvlBranch_( self.lesser_, subPlus.after,
-                    self.key_, self.val_, self.balance_ ) } );
-        if ( self.balance_ === "lesser" ) {
-            return then( yoke, { depthIncreased: false,
-                after: new AvlBranch_( self.lesser_, subPlus.after,
-                    self.key_, self.val_, "balanced" ) } );
-        } else if ( self.balance_ === "balanced" ) {
-            return then( yoke, { depthIncreased: false,
-                after: new AvlBranch_( self.lesser_, subPlus.after,
-                    self.key_, self.val_, "bigger" ) } );
-        } else if ( self.balance_ === "bigger" ) {
-            return subPlus.after.minusLeast_( yoke,
-                function ( yoke, spml ) {
-            
-            if ( spml === null )
-                throw new Error();
-            var thisKeyVsLesserKey = 1;
-            return self.lesser_.plusEntryAfterComparison_( yoke,
-                thisKeyVsLesserKey, self.key_, self.val_,
-                function ( yoke, lp ) {
-            return runWaitOne( yoke, function ( yoke ) {
-            
-            if ( !lp.depthIncreased )
-                throw new Error();
-            return then( yoke, {
-                depthIncreased: !spml.depthDecreased,
-                after: new AvlBranch_( lp.after, spml.after,
-                    spml.key, spml.val,
-                    spml.depthDecreased ? "balanced" : "bigger" )
-            } );
-            
-            } );
-            } );
-            
-            } );
-        } else {
-            throw new Error();
-        }
-        
-        } );
-    }
+    return runWaitOne( yoke, function ( yoke ) {
+    return self.branches_[ kPolarity ].minusExtremeEntry( yoke,
+        kPolarity,
+        function ( yoke, maxDepthDecreased, entry, branchRemaining ) {
+    return runWaitOne( yoke, function ( yoke ) {
+    
+    if ( entry === null )
+        return then( yoke, !!"maxDepthDecreased",
+            { k: self.key_, v: self.val_ },
+            self.branches_[ -kPolarity ].branch );
+    
+    var modifiedBranches = {};
+    modifiedBranches[ kPolarity ] = { branch: branchRemaining,
+        maxDepthAdvantage:
+            self.branches_[ kPolarity ].maxDepthAdvantage };
+    modifiedBranches[ -kPolarity ] = {
+        branch: self.branches_[ -kPolarity ].branch,
+        maxDepthAdvantage:
+            self.branches_[ -kPolarity ].maxDepthAdvantage };
+    
+    if ( maxDepthDecreased )
+        modifiedBranches[ -kPolarity ].maxDepthAdvantage =
+            { first: null, rest:
+                modifiedBranches[ -kPolarity ].maxDepthAdvantage };
+    
+    return avlBranchMakeBalanced_( yoke,
+        self.key_, self.val_, modifiedBranches,
+        function ( yoke, depthChanges, tree ) {
+    return runWaitOne( yoke, function ( yoke ) {
+    
+    // There are two ways the overall max depth can decrease:
+    //  - Subtracting the entry from one side caused that side to stop
+    //    having more max depth than the other.
+    //  - Subtracting the entry from one side caused that side to have
+    //    much less max depth than the other, and the other lost some
+    //    depth during a rebalancing.
+    var finalMaxDepthDecreased =
+        (self.branches_[ kPolarity ].maxDepthAdvantage !== null
+            && tree.branches_[ kPolarity ].maxDepthAdvantage === null
+        ) ||
+        (maxDepthDecreased
+            && self.branches_[ -kPolarity ].maxDepthAdvantage !== null
+            && depthChanges[ -kPolarity ].sign !== 1);
+    return then( yoke, finalMaxDepthDecreased, entry, tree );
+    
+    } );
+    } );
+    
+    } );
+    } );
+    } );
 };
 AvlBranch_.prototype.plusEntry = function ( yoke, k, v, then ) {
     var self = this;
-    return runWaitOne( yoke, function ( yoke ) {
-    return self.compare_( yoke, k, self.key_,
-        function ( yoke, kVsThisKey ) {
+    return safeCompare_( yoke, self.compare_, k, self.key_,
+        function ( yoke, kVsSelf ) {
+    
+    if ( kVsSelf === 0 )
+        return then( yoke, !"maxDepthIncreased",
+            new AvlBranch_().init_( k, v, self.branches_ ) );
+    
+    return self.branches_[ kVsSelf ].plusEntry( yoke, k, v,
+        function ( yoke, maxDepthIncreased, branchAugmented ) {
+    
+    var modifiedBranches = {};
+    modifiedBranches[ kVsSelf ] = { branch: branchAugmented,
+        maxDepthAdvantage:
+            self.branches_[ kVsSelf ].maxDepthAdvantage };
+    modifiedBranches[ -kVsSelf ] = self.branches_[ -kVsSelf ];
+    
+    if ( maxDepthIncreased )
+        modifiedBranches[ kVsSelf ].maxDepthAdvantage = { first: null,
+            rest: modifiedBranches[ kVsSelf ].maxDepthAdvantage };
+    
+    return avlBranchMakeBalanced_( yoke,
+        self.key_, self.val_, modifiedBranches,
+        function ( yoke, depthChanges, tree ) {
     return runWaitOne( yoke, function ( yoke ) {
     
-    return self.plusEntryAfterComparison_( yoke,
-        kVsThisKey, k, v, then );
+    // There are two ways the overall max depth can increase:
+    //  - Adding the entry to one side caused that side to start
+    //    having more max depth than the other.
+    //  - Adding the entry to one side caused that side to have much
+    //    more max depth than the other, and it didn't lose that edge
+    //    during a rebalancing.
+    var finalMaxDepthIncreased = maxDepthIncreased &&
+        self.branches_[ -kVsSelf ].maxDepthAdvantage === null &&
+        (self.branches_[ kVsSelf ].maxDepthAdvantage === null
+            || (self.branches_[ kVsSelf ].maxDepthAdvantage !== null
+                && depthChanges[ kVsSelf ].sign === 1);
+    return then( yoke, finalMaxDepthIncreased, tree );
     
     } );
     } );
+    
+    } );
+    
     } );
 };
-// NOTE: This body takes its args as ( yoke, state, body, then ).
+function avlBranchMakeBalanced_( yoke, key, val, branches, then ) {
+    return runWaitOne( yoke, function ( yoke ) {
+    
+    var mdLesser = branches[ -1 ].maxDepthAdvantage;
+    var mdBigger = branches[ 1 ].maxDepthAdvantage;
+    
+    if ( (mdLesser === null && mdBigger === null)
+        || (mdLesser === null && mdBigger.rest === null)
+        || (mdBigger === null && mdLesser.rest === null) )
+        return then( yoke, {
+            "-1": { sign: 1, abs: { first: null, rest: null } },
+            "1": { sign: 1, abs: { first: null, rest: null } }
+        }, new AvlBranch_().init_( key, val, branches ) );
+    
+    if ( mdLesser === null ) {
+        var deeper = 1;
+    } else if ( mdBigger === null ) {
+        var deeper = -1;
+    } else {
+        return avlBranchMakeBalanced_( yoke, key, val, {
+            "-1": { branch: branches[ -1 ].branch,
+                maxDepthAdvantage: mdLesser.rest },
+            "1": { branch: branches[ 1 ].branch,
+                maxDepthAdvantage: mdBigger.rest }
+        }, then );
+    }
+    
+    return branches[ deeper ].branch.minusExtremeEntry( yoke, -deeper,
+        function ( yoke, maxDepthDecreased, entry, branchRemaining ) {
+    
+    if ( entry === null )
+        throw new Error();
+    
+    return branches[ -deeper ].branch.plusEntry( yoke, key, val,
+        function ( yoke, maxDepthIncreased, branchAugmented ) {
+    
+    var modifiedBranches = {};
+    modifiedBranches[ deeper ] = { branch: branchRemaining,
+        maxDepthAdvantage: branches[ deeper ].maxDepthAdvantage };
+    modifiedBranches[ -deeper ] = { branch: branchAugmented,
+        maxDepthAdvantage: branches[ -deeper ].maxDepthAdvantage };
+    
+    if ( maxDepthDecreased )
+        modifiedBranches[ deeper ].maxDepthAdvantage =
+            modifiedBranches[ deeper ].maxDepthAdvantage.rest;
+    if ( maxDepthIncreased )
+        modifiedBranches[ deeper ].maxDepthAdvantage =
+            modifiedBranches[ deeper ].maxDepthAdvantage.rest;
+    
+    return avlBranchMakeBalanced_( yoke,
+        entry.k, entry.v, modifiedBranches,
+        function ( yoke, depthChanges, tree ) {
+        
+        var modifiedDepthChanges = {};
+        
+        if ( !maxDepthDecreased )
+            modifiedDepthChanges[ deeper ] = depthChanges[ deeper ];
+        else if ( depthChanges[ deeper ].sign === 1 )
+            modifiedDepthChanges[ deeper ] = {
+                sign:
+                    depthChanges[ deeper ].abs.rest === null ? 0 : 1,
+                abs: depthChanges[ deeper ].abs.rest
+            };
+        else
+            modifiedDepthChanges[ deeper ] = { sign: -1, abs:
+                { first: null, rest: depthChanges[ deeper ].abs } };
+        
+        if ( !maxDepthIncreased )
+            modifiedDepthChanges[ -deeper ] = depthChanges[ -deeper ];
+        else if ( depthChanges[ -deeper ].sign === -1 )
+            modifiedDepthChanges[ -deeper ] = {
+                sign: depthChanges[ -deeper ].abs.rest === null ?
+                    0 : -1,
+                abs: depthChanges[ -deeper ].abs.rest
+            };
+        else
+            modifiedDepthChanges[ -deeper ] = { sign: 1, abs:
+                { first: null, rest: depthChanges[ -deeper ].abs } };
+        
+        return runWaitOne( yoke, function ( yoke ) {
+            return then( yoke, modifiedDepthChanges, tree );
+        } );
+    } );
+    
+    } );
+    
+    } );
+    
+    } );
+}
+function avlBranchConcatenate_( yoke, branches, then ) {
+    // NOTE: Like avlBranchMakeBalanced_(), this assumes all the
+    // elements are already in the proper order, just not necessarily
+    // balanced between the two branches. It's not a merge of
+    // arbitrary trees. For that, see avlMerge_().
+    
+    function attemptShift( yoke, polarity, onFail ) {
+        return branches[ -polarity ].branch.minusExtremeEntry( yoke,
+            polarity,
+            function ( yoke,
+                maxDepthDecreased, entry, branchRemaining ) {
+            
+            if ( entry === null )
+                return onFail( yoke );
+            
+            var modifiedBranches = {};
+            modifiedBranches[ -polarity ] = branches[ -polarity ];
+            modifiedBranches[ polarity ] = branches[ polarity ];
+            
+            if ( maxDepthDecreased )
+                modifiedBranches[ polarity ] = {
+                    branch: branches[ polarity ],
+                    maxDepthAdvantage:
+                        { first: null, rest: branches[ polarity ] }
+                };
+            
+            return avlBranchMakeBalanced_( yoke,
+                entry.k, entry.v, modifiedBranches,
+                function ( yoke, depthChanges, tree ) {
+                
+                function signedUnaryPlusOne( num ) {
+                    return num.sign === -1 ?
+                        { sign: num.abs.rest === null ? 0 : -1,
+                            abs: num.abs.rest } :
+                        { sign: 1,
+                            abs: { first: null, rest: num.abs } };
+                }
+                
+                var modifiedDepthChanges = {};
+                modifiedDepthChanges[ -polarity ] =
+                    signedUnaryPlusOne( depthChanges[ -polarity ] );
+                modifiedDepthChanges[ polarity ] =
+                    signedUnaryPlusOne( depthChanges[ polarity ] );
+                
+                if ( maxDepthDecreased )
+                    modifiedDepthChanges[ -polarity ] =
+                        depthChanges[ polarity ];
+                
+                return then( yoke, modifiedDepthChanges, tree );
+            } );
+        } );
+    }
+    
+    return attemptShift( yoke, 1, function ( yoke ) {
+        return attemptShift( yoke, -1, function ( yoke ) {
+            return then( yoke,
+                {
+                    "-1": { sign: 0, abs: null },
+                    "1": { sign: 0, abs: null }
+                },
+                new AvlLeaf_().init_( branches[ -1 ].branch.compare_ )
+                );
+        } );
+    } );
+}
+// TODO: Finish implementing this.
+function avlMerge_( yoke, a, b, then ) {
+    if ( a instanceof AvlLeaf_ )
+        return b.getMaxDepth( yoke, function ( yoke, maxDepth ) {
+            b.mapShortFoldAsc( yoke, null,
+                function ( yoke, state, k, v, then ) {
+                
+                return then( yoke, { left: null, right: { val: v } },
+                    !"exitedEarly" );
+            }, function ( yoke, b ) {
+                return then( yoke,
+                    { left: maxDepth, right: null }, b );
+            } );
+        } );
+    if ( b instanceof AvlLeaf_ )
+        return a.getMaxDepth( yoke, function ( yoke, maxDepth ) {
+            a.mapShortFoldAsc( yoke, null,
+                function ( yoke, state, k, v, then ) {
+                
+                return then( yoke, { left: { val: v }, right: null },
+                    !"exitedEarly" );
+            }, function ( yoke, a ) {
+                return then( yoke,
+                    { left: null, right: maxDepth }, a );
+            } );
+        } );
+    
+    return safeCompare_( yoke, a.compare_, a.key_, b.key_,
+        function ( aVsB ) {
+    
+    if ( aVsB === 0 ) {
+        return avlMerge_( yoke,
+            a.branches_[ -1 ].branch, b.branches[ -1 ].branch,
+            function ( yoke, lesserMaxDepthChanges, lesser ) {
+        return runWaitOne( yoke, function ( yoke ) {
+        return avlMerge_( yoke,
+            a.branches_[ 1 ].branch, b.branches[ 1 ].branch,
+            function ( yoke, biggerMaxDepthChanges, bigger ) {
+        
+        var branches = {};
+        branches[ -1 ] = { branch: lesser, maxDepthAdvantage: null };
+        branches[ 1 ] = { branch: bigger, maxDepthAdvantage: null };
+        
+        // TODO: Change `branches` based on the depth changes.
+        
+        return avlBranchMakeBalanced_( yoke, b.key_,
+            { left: { val: a.val_ }, right: { val: b.val_ } },
+            branches,
+            function ( yoke, mergedMaxDepthChanges, merged ) {
+        
+        var finalMaxDepthChanges = mergedMaxDepthChanges;
+        // TODO: Change `finalMaxDepthChanges` based on the depth
+        // changes.
+        return then( yoke, finalMaxDepthChanges, merged );
+        
+        } );
+        
+        } );
+        } );
+        } );
+    } else {
+        // TODO: See if this case would be more efficient if we
+        // sometimes merged `a.branches_[ -aVsB ].branch` and `b`
+        // instead.
+        
+        return avlMerge_( yoke, a, b.branches_[ aVsB ].branch,
+            function ( yoke, depthChanges, subBranch ) {
+        
+        var branches = {};
+        branches[ aVsB ] =
+            { branch: subBranch, maxDepthAdvantage: null };
+        branches[ -aVsB ] =
+            { branch: b.branches_[ -aVsB ], maxDepthAdvantage: null };
+        
+        // TODO: Change `branches` based on the depth changes.
+        
+        return avlBranchMakeBalanced_( yoke,
+            b.key_, { left: null, right: { val: b.val_ } }, branches,
+            function ( yoke, mergedMaxDepthChanges, merged ) {
+        
+        var finalMaxDepthChanges = mergedMaxDepthChanges;
+        // TODO: Change `finalMaxDepthChanges` based on the depth
+        // changes.
+        return then( yoke, finalMaxDepthChanges, merged );
+        
+        } );
+        
+        } );
+    }
+    
+    } );
+}
+AvlBranch_.prototype.minusEntry = function ( yoke, k, then ) {
+    var self = this;
+    return safeCompare_( yoke, self.compare_, k, self.key_,
+        function ( yoke, kVsSelf ) {
+    
+    if ( kVsSelf === 0 )
+        return avlBranchConcatenate_( yoke, self.branches_,
+            function ( yoke, depthChanges, tree ) {
+            
+            var maxDepthDecreased = !(depthChanges[ -1 ].sign === 1 &&
+                depthChanges[ 1 ].sign === 1);
+            return then( yoke, maxDepthDecreased, tree );
+        } );
+    
+    return self.branches_[ kVsSelf ].branch.minusEntry( yoke, k,
+        function ( yoke, maxDepthDecreased, branchRemaining ) {
+    
+    var modifiedBranches = {};
+    modifiedBranches[ kVsSelf ] = { branch: branchRemaining,
+        maxDepthAdvantage:
+            self.branches_[ kVsSelf ].maxDepthAdvantage };
+    modifiedBranches[ -kVsSelf ] = {
+        branch: self.branches_[ -kVsSelf ].branch,
+        maxDepthAdvantage:
+            self.branches_[ -kVsSelf ].maxDepthAdvantage
+    };
+    
+    if ( maxDepthDecreased )
+        modifiedBranches[ -kVsSelf ].maxDepthAdvantage =
+            { first: null,
+                rest: self.branches_[ -kVsSelf ].maxDepthAdvantage };
+    
+    return avlBranchMakeBalanced_( yoke,
+        self.key_, self.val_, modifiedBranches,
+        function ( yoke, depthChanges, tree ) {
+    
+    // There are two ways the overall max depth can decrease:
+    //  - Subtracting the entry from one side caused that side to stop
+    //    having more max depth than the other.
+    //  - Subtracting the entry from one side caused that side to have
+    //    much less max depth than the other, and the other lost some
+    //    depth during a rebalancing.
+    var finalMaxDepthDecreased =
+        (self.branches_[ kVsSelf ].maxDepthAdvantage !== null
+            && tree.branches_[ kVsSelf ].maxDepthAdvantage === null
+        ) ||
+        (maxDepthDecreased
+            && self.branches_[ -kVsSelf ].maxDepthAdvantage !== null
+            && depthChanges[ -kVsSelf ].sign !== 1);
+    return then( yoke, finalMaxDepthDecreased, tree );
+    
+    } );
+    
+    } );
+    
+    } );
+};
+// NOTE: This body takes its args as ( yoke, state, k, v, then ).
 AvlBranch_.prototype.shortFoldAsc = function ( yoke,
     state, body, then ) {
     
     var self = this;
     return runWaitOne( yoke, function ( yoke ) {
-    return self.lesser_.shortFoldAsc( yoke, state, body,
+    return self.branches_[ -1 ].branch.shortFoldAsc( yoke,
+        state, body,
         function ( yoke, state, exitedEarly ) {
     return runWaitOne( yoke, function ( yoke ) {
     
@@ -1594,7 +1776,8 @@ AvlBranch_.prototype.shortFoldAsc = function ( yoke,
     if ( exitedEarly )
         return then( yoke, state, !!"exitedEarly" );
     
-    return self.bigger_.shortFoldAsc( yoke, state, body, then );
+    return self.branches_[ 1 ].branch.shortFoldAsc( yoke,
+        state, body, then );
     
     } );
     } );
@@ -1609,7 +1792,8 @@ AvlBranch_.prototype.mapShortFoldAsc = function ( yoke,
     
     var self = this;
     return runWaitOne( yoke, function ( yoke ) {
-    return self.lesser_.mapShortFoldAsc( yoke, state, body,
+    return self.branches_[ -1 ].branch.mapShortFoldAsc( yoke,
+        state, body,
         function ( yoke, state, maybeLesserResult ) {
     return runWaitOne( yoke, function ( yoke ) {
     
@@ -1623,16 +1807,23 @@ AvlBranch_.prototype.mapShortFoldAsc = function ( yoke,
     if ( maybeThisResult === null )
         return then( yoke, state, null );
     
-    return self.bigger_.mapShortFoldAsc( yoke, state, body,
+    return self.branches[ 1 ].branch.mapShortFoldAsc( yoke,
+        state, body,
         function ( yoke, state, maybeBiggerResult ) {
     return runWaitOne( yoke, function ( yoke ) {
     
     if ( maybeBiggerResult === null )
         return then( yoke, state, null );
     
-    return then( yoke, state, { val: new StrAvlBranch_(
-        maybeLesserResult.val, maybeBiggerResult.val,
-        self.key_, maybeThisResult.val, self.balance_ ) } );
+    return then( yoke, state, { val: new AvlBranch_().init_(
+        self.key_, maybeThisResult, {
+            "-1": { branch: maybeLesserResult.val,
+                maxDepthAdvantage:
+                    self.branches[ -1 ].maxDepthAdvantage },
+            "-1": { branch: maybeBiggerResult.val,
+                maxDepthAdvantage:
+                    self.branches[ 1 ].maxDepthAdvantage }
+        } ) } );
     
     } );
     } );
@@ -1647,13 +1838,13 @@ AvlBranch_.prototype.mapShortFoldAsc = function ( yoke,
 AvlBranch_.prototype.hasAny = function () {
     return true;
 };
-// TODO: See if we'll use this for something. It might come in handy
-// for merging.
-AvlBranch_.prototype.getHeight_ = function ( yoke, then ) {
-    var maxSubtree =
-        this.balance_ === "lesser" ? this.lesser_ : this.bigger_;
+AvlBranch_.prototype.getMaxDepth = function ( yoke, then ) {
+    var self = this;
+    var bias =
+        self.branches_[ -1 ].maxDepthAdvantage === null ? 1 : -1;
     return runWaitOne( yoke, function ( yoke ) {
-    return maxSubtree.getHeight_( yoke, function ( yoke, subHeight ) {
+    return self.branches_[ bias ].getMaxDepth( yoke,
+        function ( yoke, subHeight ) {
     return runWaitOne( yoke, function ( yoke ) {
     
     return then( yoke, { first: null, rest: subHeight } );
@@ -1663,115 +1854,105 @@ AvlBranch_.prototype.getHeight_ = function ( yoke, then ) {
     } );
 };
 
+
 function AvlMap() {}
 AvlMap.prototype.init_ = function ( contents ) {
     this.contents_ = contents;
     return this;
 };
-function avlMap() {
-    return new AvlMap().init_( new AvlLeaf_() );
+function avlMap( compare ) {
+    return new AvlMap().init_( new AvlLeaf_().init_( compare ) );
 }
-AvlMap.prototype.has = function ( yoke, k, then ) {
-    return this.getMaybe( yoke, k, function ( yoke, maybe ) {
-        return then( yoke, maybe !== null );
-    } );
+AvlMap.prototype.getMaybe = function ( yoke, k, then ) {
+    return this.contents_.getMaybe( yoke, k, then );
 };
-AvlMap.prototype.get = function ( k ) {
-    return this.getMaybe( yoke, k, function ( yoke, maybe ) {
-        return then( yoke, maybe !== null ? maybe.val : void 0 );
-    } );
-};
-AvlMap.prototype.del = function ( yoke, k, then ) {
-    var self = this;
-    return self.minusEntry( yoke, k, function ( yoke, newContents ) {
-        self.contents_ = newContents.contents_;
-        return then( yoke, self );
-    } );
-};
-AvlMap.prototype.set = function ( yoke, k, v, then ) {
-    var self = this;
-    return self.contents_.plusEntry( yoke, k, v,
-        function ( yoke, newContents ) {
+AvlMap.prototype.minusEntry = function ( yoke, k, then ) {
+    return this.contents_.minusEntry( yoke, k,
+        function ( yoke, maxDepthDecreased, newContents ) {
         
-        self.contents_ = newContents.after;
-        return then( yoke, self );
+        return then( yoke, new AvlMap().init_( newContents ) );
     } );
 };
-AvlMap.prototype.setObj = function ( yoke, obj, then ) {
+AvlMap.prototype.plusEntry = function ( yoke, k, v, then ) {
+    var self = this;
+    return this.contents_.plusEntry( yoke, k, v,
+        function ( yoke, maxDepthIncreased, newContents ) {
+        
+        return then( yoke, new AvlMap().init_( newContents ) );
+    } );
+};
+AvlMap.prototype.plusObj = function ( yoke, obj, then ) {
     // NOTE: This adds the entries in the reverse order they're found
     // in the object, but that's okay because the order of entries in
     // this map is entirely determined by its comparator.
-    var self = this;
     var entries = null;
     objOwnEach( obj, function ( k, v ) {
         entries = { first: { k: k, v: v }, rest: entries };
     } );
-    return go( entries );
-    function go( entries ) {
+    return go( entries, this );
+    function go( entries, total ) {
         return runWaitOne( yoke, function ( yoke ) {
             if ( entries === null )
-                return then( yoke, self );
-            self.set( entries.first.k, entries.first.v );
-            return go( entries.rest );
+                return then( yoke, total );
+            return total.plusEntry( yoke,
+                entries.first.k, entries.first.v,
+                function ( yoke, total ) {
+                
+                return go( entries.rest, total );
+            } );
         } );
     }
 };
-AvlMap.prototype.setAll = function ( yoke, other, then ) {
+AvlMap.prototype.plus = function ( yoke, other, then ) {
+    var self = this;
     if ( !(other instanceof AvlMap) )
         throw new Error();
     // TODO: Merge the trees more efficiently than this. We're using
     // AVL trees, which can supposedly merge in O( log (m + n) ) time,
     // but this operation is probably O( n * log (m + n) ).
-    var self = this;
-    return other.each( yoke, function ( yoke, k, v, then ) {
-        self.set( k, v );
-        return then( yoke );
-    }, function ( yoke ) {
-        return then( yoke, self );
-    } );
-};
-AvlMap.prototype.copy = function () {
-    return new AvlMap().init_( this.contents_ );
-};
-AvlMap.prototype.add = function ( yoke, k, then ) {
-    return this.set( yoke, k, true, then );
-};
-AvlMap.prototype.plusEntry = function ( yoke, k, v, then ) {
-    return this.copy().set( yoke, k, v, then );
-};
-AvlMap.prototype.plus = function ( yoke, other, then ) {
-    return this.copy().setAll( yoke, other then );
+    return other.contents_.shortFoldAsc( yoke, self,
+        function ( yoke, total, k, v, then ) {
+        
+        return total.plusEntry( yoke, k, v, then );
+    }, then );
+    // TODO: Once avlMerge_() is completely implemented, see if this
+    // code will satisfy the above TODO.
+//    return avlMerge_( yoke, self.contents_, other.contents_,
+//        function ( yoke, depthChanges, result ) {
+//        
+//        return then( yoke, result );
+//    } );
 };
 // TODO: Find a better name for this.
 AvlMap.prototype.plusTruth = function ( yoke, k, then ) {
-    return this.copy().add( yoke, k, then );
+    return this.plusEntry( yoke, k, true, then );
 };
 // TODO: Find a better name for this.
 AvlMap.prototype.plusArrTruth = function ( yoke, arr, then ) {
-    var result = this.copy();
     // NOTE: This adds the entries in reverse order, but that's okay
     // because the order of entries in this map is entirely determined
     // by its comparator.
     var entries = null;
+    // TODO: Implement arrEach() for the purposes of this file.
     arrEach( arr, function ( elem ) {
         entries = { first: elem, rest: entries };
     } );
-    return go( entries );
-    function go( entries ) {
+    return go( entries, this );
+    function go( entries, total ) {
         return runWaitOne( yoke, function ( yoke ) {
             if ( entries === null )
-                return then( yoke, result );
-            result.add( entries.first );
-            return go( entries.rest );
+                return then( yoke, total );
+            return total.plusTruth( yoke, entries.first,
+                function ( yoke, total ) {
+                
+                return go( entries.rest, total );
+            } );
         } );
     }
 };
-AvlMap.prototype.minusEntry = function ( yoke, k, then ) {
-    return this.copy().del( yoke, k, then );
-};
 // NOTE: This body takes its args as ( yoke, k, v, then ).
 AvlMap.prototype.any = function ( yoke, body, then ) {
-    return this.contents_.shortFoldAsc( yoke, null,
+    return this.contents_.shortFoldAsc( yoke, false,
         function ( yoke, state, k, v, then ) {
         
         return body( yoke, k, v, function ( yoke, result ) {
@@ -1780,7 +1961,7 @@ AvlMap.prototype.any = function ( yoke, body, then ) {
             return then( yoke, state, !"exitedEarly" );
         } );
     }, function ( yoke, state, exitedEarly ) {
-        return then( yoke, exitedEarly ? state : false );
+        return then( yoke, state );
     } );
 };
 AvlMap.prototype.hasAny = function () {
@@ -1790,12 +1971,10 @@ AvlMap.prototype.hasAny = function () {
 AvlMap.prototype.each = function ( yoke, body, then ) {
     return this.any( yoke, function ( yoke, k, v, then ) {
         return body( yoke, k, v, function ( yoke ) {
-            return runWaitOne( yoke, function ( yoke ) {
-                return then( yoke, false );
-            } );
+            return then( yoke, !"exitedEarly" );
         } );
     }, function ( yoke, ignoredFalse ) {
-        return then( yoke, body );
+        return then( yoke );
     } );
 };
 // NOTE: This body takes its args as ( yoke, k, v, then ).
