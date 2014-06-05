@@ -1608,26 +1608,34 @@ function avlBranchConcatenate_( yoke, branches, then ) {
 }
 // TODO: Finish implementing this.
 function avlMerge_( yoke, a, b, then ) {
+    
+    function mapLeft( yoke, aBranch, then ) {
+        aBranch.mapShortFoldAsc( yoke, null,
+            function ( yoke, state, k, v, then ) {
+            
+            return then( yoke, { left: { val: v }, right: null },
+                !"exitedEarly" );
+        }, then );
+    }
+    function mapRight( yoke, bBranch, then ) {
+        bBranch.mapShortFoldAsc( yoke, null,
+            function ( yoke, state, k, v, then ) {
+            
+            return then( yoke, { left: null, right: { val: v } },
+                !"exitedEarly" );
+        }, then );
+    }
+    
     if ( a instanceof AvlLeaf_ )
         return b.getMaxDepth( yoke, function ( yoke, maxDepth ) {
-            b.mapShortFoldAsc( yoke, null,
-                function ( yoke, state, k, v, then ) {
-                
-                return then( yoke, { left: null, right: { val: v } },
-                    !"exitedEarly" );
-            }, function ( yoke, b ) {
+            return mapRight( yoke, b, function ( yoke, b ) {
                 return then( yoke,
                     { left: maxDepth, right: null }, b );
             } );
         } );
     if ( b instanceof AvlLeaf_ )
         return a.getMaxDepth( yoke, function ( yoke, maxDepth ) {
-            a.mapShortFoldAsc( yoke, null,
-                function ( yoke, state, k, v, then ) {
-                
-                return then( yoke, { left: { val: v }, right: null },
-                    !"exitedEarly" );
-            }, function ( yoke, a ) {
+            return mapLeft( yoke, a, function ( yoke, a ) {
                 return then( yoke,
                     { left: null, right: maxDepth }, a );
             } );
@@ -1672,13 +1680,15 @@ function avlMerge_( yoke, a, b, then ) {
         // instead.
         
         return avlMerge_( yoke, a, b.branches_[ aVsB ].branch,
-            function ( yoke, depthChanges, subBranch ) {
+            function ( yoke, depthChanges, mergedBranch ) {
+        return mapRight( yoke, b.branches_[ -aVsB ].branch,
+            function ( yoke, unmergedBranch ) {
         
         var branches = {};
         branches[ aVsB ] =
-            { branch: subBranch, maxDepthAdvantage: null };
+            { branch: mergedBranch, maxDepthAdvantage: null };
         branches[ -aVsB ] =
-            { branch: b.branches_[ -aVsB ], maxDepthAdvantage: null };
+            { branch: unmergedBranch, maxDepthAdvantage: null };
         
         // TODO: Change `branches` based on the depth changes.
         
@@ -1693,6 +1703,7 @@ function avlMerge_( yoke, a, b, then ) {
         
         } );
         
+        } );
         } );
     }
     
