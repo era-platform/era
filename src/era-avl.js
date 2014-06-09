@@ -541,17 +541,27 @@ BigIntPart.prototype.minusCarry = function ( yoke,
         } );
     } );
 };
-BigIntPart.prototype.times = function ( yoke, other, then ) {
+BigIntPart.prototype.timesCarry = function ( yoke,
+    other, carry, then ) {
+    
+    var self = this;
     
     // TODO: See if this can be more efficient.
     
-    var self = this;
+    // Optimization: If either bigint segment is just full of zeros
+    // and the carry is also zero, we can just skip over the whole
+    // segment.
+    if ( (self.isZero() || other.isZero()) && carry.isZero() )
+        return runWaitOne( yoke, function ( yoke ) {
+            return then( yoke, carry, carry );
+        } );
+    
     var a = self.digits_;
     var b = other.digits_;
     return self.getZeroDigits( yoke, function ( yoke, zeroDigits ) {
-    return jsListAppend( yoke, zeroDigits, zeroDigits,
-        function ( yoke, doubleZeroDigits ) {
-    return self.withDigits( yoke, doubleZeroDigits,
+    return jsListAppend( yoke, carry.digits_, zeroDigits,
+        function ( yoke, doubleCarryDigits ) {
+    return self.withDigits( yoke, doubleCarryDigits,
         function ( yoke, result ) {
     return jsListFoldl( yoke, {
         result: result,
@@ -638,6 +648,16 @@ BigIntPart.prototype.asZero = function ( yoke, then ) {
     } );
 };
 BigIntPart.prototype.compareTo = function ( yoke, other, then ) {
+    
+    // Optimization: If either thing to compare is zero, we can avoid
+    // iterating over the digits.
+    var az = this.isZero();
+    var bz = other.isZero();
+    if ( az || bz )
+        return runWaitOne( yoke, function ( yoke ) {
+            return then( yoke, az && bz ? 0 : az ? -1 : 1 );
+        } );
+    
     var a = this.digits_;
     var b = other.digits_;
     return jsListRev( yoke, a, function ( yoke, aRev ) {
@@ -852,6 +872,12 @@ BigIntPart.prototype.timesCarrySmall = function ( yoke,
     if ( self.isZero() && carry === 0 )
         return runWaitOne( yoke, function ( yoke ) {
             return then( yoke, self, 0 );
+        } );
+    // Optimization: If the factor is zero and the carry is also zero,
+    // we can just use a result of zero.
+    if ( factor === 0 && carry === 0 )
+        return self.asZero( yoke, function ( yoke, zero ) {
+            return then( yoke, zero, 0 );
         } );
     
     var a = self.digits_;
