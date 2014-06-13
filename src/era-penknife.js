@@ -86,6 +86,8 @@
 //   trampoline deserve special attention because they make
 //   side-effectful closures and pass them off to other parts of the
 //   code.)
+// - In era-avl.js, makeQuickLazy() uses mutation to make call-by-need
+//   constant-time thunks for use with finger trees.
 
 
 function Pk() {}
