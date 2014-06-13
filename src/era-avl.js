@@ -5,18 +5,21 @@
 // The utilities in this file aren't yet used, but they represent the
 // start of a more comprehensive approach to JS limit-breaking.
 //
-// This file provides bigint and AVL tree implementations that use a
-// trampoline, taking only a small constant amount of JavaScript stack
-// space (to avoid overflows) and constant time in between each
-// trampoline bounce. Most such libraries abstract away the iteration
-// behind a non-trampolined interface, making it impossible to suspend
-// the iteration once it's begun.
+// This file provides bigint, AVL tree, and finger tree
+// implementations that use a trampoline, taking only a small constant
+// amount of JavaScript stack space (to avoid overflows) and constant
+// time in between each trampoline bounce. Most such libraries
+// abstract away the iteration behind a non-trampolined interface,
+// making it impossible to suspend the iteration once it's begun.
 //
 // The only trampoline functionality used in this file is a method
 // called yoke.wait(). It should be easy to implement this in terms of
 // the runWaitOne() defined in era-penknife.js, but this file is meant
 // to be something of a clean slate. (Note that this file defines its
 // own runWaitOne() as well, and it doesn't have the same meaning.)
+//
+// This file also generates its own trampolines that only support
+// yoke.wait() and no other features. See makeQuickLazy().
 //
 // These utilities, unlike the ones in era-penknife.js and
 // era-penknife-to-js.js, are made paying close attention to how the
@@ -25,12 +28,16 @@
 // stack overflows too, and maybe they do, but this is one case I
 // (Ross Angle) didn't really think about until this file.
 //
-// Bigints and AVL trees will be limitless substitutes for JavaScript
-// numbers and JavaScript object dictionaries (up to the limit of
-// memory allocation, anyway). These won't have the efficiency
-// drawbacks of unary numbers and association lists.
+// Bigints, AVL trees, and finger trees will be limitless substitutes
+// for JavaScript numbers, JavaScript object dictionaries, and
+// JavaScript strings, (up to the limit of memory allocation, anyway).
+// Bigints and AVL trees won't have the efficiency drawbacks of unary
+// numbers and association lists.
 
 // TODO: The above comment is a bit scattered. Edit it.
+
+// TODO: Actually implement a string representation in terms of
+// finger trees.
 
 
 function runWaitOne( yoke, then ) {
@@ -2415,48 +2422,18 @@ FingerTreeDeep.prototype.push = function ( yoke,
 };
 FingerTreeDeep.prototype.pop = function ( yoke, polarity, then ) {
     var self = this;
-    
-    return runWaitOne( yoke, function ( yoke ) {
-    
-    if ( self.digits_[ polarity ].length === 1 ) {
-        return self.lazyNext_.go().pop( yoke, polarity,
-            function ( yoke, maybeNode, rest ) {
-        return runWaitOne( yoke, function ( yoke ) {
+    var n = self.digits_[ polarity ].length;
+    var digits = {};
+    digits[ -polarity ] = self.digits_[ -polarity ];
+    digits[ polarity ] = arrCutWithPolarity(
+        polarity, self.digits_[ polarity ], 0, n - 1 );
+    var poppedElement = arrCutWithPolarity(
+        polarity, self.digits_[ polarity ], n - 1, n )[ 0 ];
+    return makeFingerTreeMaybeDeep( yoke,
+        polarity, self.measure_, digits, self.lazyNext_,
+        function ( yoke, tree ) {
         
-        if ( maybeNode === null ) {
-            return fingerTreePushArr( yoke,
-                new FingerTreeEmpty().init_( self.measure_ ),
-                -polarity,
-                polarity === 1 ?
-                    self.digits[ -1 ].slice().reverse() :
-                    self.digits[ 1 ],
-                function ( yoke, tree ) {
-                
-                return then( yoke,
-                    { val: self.digits[ polarity ][ 0 ] }, tree );
-            } );
-        } else {
-            var digits = {};
-            digits[ -polarity ] = self.digits_[ -polarity ];
-            digits[ polarity ] = maybeNode.val.elements;
-            return then( yoke, { val: self.digits[ polarity ][ 0 ] },
-                new FingerTreeDeep().init_( self.measure_, digits,
-                    makeImmediateLazy( rest ) ) );
-        }
-        
-        } );
-        } );
-    } else {
-        var n = self.digits_[ polarity ].length;
-        digits[ polarity ] = arrCutWithPolarity(
-            polarity, self.digits_[ polarity ], 0, n - 1 );
-        var poppedElement = arrCutWithPolarity(
-            polarity, self.digits_[ polarity ], n - 1, n )[ 0 ];
-        return then( yoke, { val: poppedElement },
-            new FingerTreeDeep().init_(
-                self.measure_, digits, self.lazyNext_ ) );
-    }
-    
+        return then( yoke, { val: poppedElement }, tree );
     } );
 };
 FingerTreeDeep.prototype.getSummaryStack = function ( yoke, then ) {
@@ -2542,19 +2519,52 @@ FingerTreeDeep.prototype.split = function ( yoke, summarySoFar,
         function ( yoke, state, exitedEarly ) {
     
     if ( exitedEarly ) {
-        // TODO: Finish implementing this. Build two trees, and call
-        // `onCompleted()`. Use `state.i`.
-        throw new Error();
+        var n = self.digits_[ polarity ].length;
+        var lateDigits = {};
+        lateDigits[ -polarity ] = self.digits_[ -polarity ];
+        lateDigits[ polarity ] = arrCutWithPolarity(
+            polarity, self.digits_[ polarity ], 0, n - state.i );
+        var earlyDigits = arrCutWithPolarity(
+            polarity, self.digits_[ polarity ], n - state.i, n );
+        
+        return fingerTreePushArr( yoke,
+            new FingerTreeEmpty().init_( self.measure_ ),
+            polarity,
+            polarity === 1 ?
+                earlyDigits : earlyDigits.slice().reverse(),
+            function ( yoke, earlyTree ) {
+        return makeFingerTreeMaybeDeep( yoke, polarity,
+            self.measure_, lateDigits, self.lazyNext_,
+            function ( yoke, lateTree ) {
+        
+        return onCompleted( yoke, earlyTree, lateTree );
+        
+        } );
+        } );
     }
     
     // Try a recursive call on the `lazyNext_`.
     return self.lazyNext_.go().split( yoke,
         state.summarySoFar, summaryStack.rest, polarity, testIsEarly,
         next,
-        function ( yoke, before, after ) {
-            // TODO: Finish implementing this. Build two trees, and
-            // call `onCompleted()`. Use `before` and `after`.
-            throw new Error().
+        function ( yoke, earlyTree, lateTree ) {
+            return fingerTreePushArr( yoke, earlyTree,
+                polarity,
+                polarity === 1 ?
+                    self.digits_[ polarity ] :
+                    self.digits_[ polarity ].slice().reverse(),
+                function ( yoke, earlyTree ) {
+            return fingerTreePushArr( yoke, lateTree,
+                -polarity,
+                -polarity === 1 ?
+                    self.digits_[ -polarity ] :
+                    self.digits_[ -polarity ].slice().reverse(),
+                function ( yoke, lateTree ) {
+            
+            return onCompleted( yoke, earlyTree, lateTree );
+            
+            } );
+            } );
         } );
     function next( yoke, summarySoFar ) {
     
@@ -2564,9 +2574,28 @@ FingerTreeDeep.prototype.split = function ( yoke, summarySoFar,
         function ( yoke, state, exitedEarly ) {
     
     if ( exitedEarly ) {
-        // TODO: Finish implementing this. Build two trees, and call
-        // `onCompleted()`. Use `state.i`.
-        throw new Error();
+        var n = self.digits_[ -polarity ].length;
+        var earlyDigits = {};
+        earlyDigits[ polarity ] = self.digits_[ polarity ];
+        earlyDigits[ -polarity ] = arrCutWithPolarity(
+            polarity, self.digits_[ -polarity ], n - state.i, n );
+        var lateDigits = arrCutWithPolarity(
+            polarity, self.digits_[ -polarity ], 0, n - state.i );
+        
+        return makeFingerTreeMaybeDeep( yoke, polarity,
+            self.measure_, earlyDigits, self.lazyNext_,
+            function ( yoke, earlyTree ) {
+        return fingerTreePushArr( yoke,
+            new FingerTreeEmpty().init_( self.measure_ ),
+            -polarity,
+            -polarity === 1 ?
+                lateDigits : lateDigits.slice().reverse(),
+            function ( yoke, lateTree ) {
+        
+        return onCompleted( yoke, earlyTree, lateTree );
+        
+        } );
+        } );
     }
     
     return onFellOff( yoke, state.summarySoFar );
@@ -2583,6 +2612,44 @@ FingerTreeDeep.prototype.split = function ( yoke, summarySoFar,
 };
 
 
+function makeFingerTreeMaybeDeep( yoke,
+    polarity, measure, digits, lazyNext, then ) {
+    
+    if ( digits[ polarity ].length === 0 ) {
+        return lazyNext.go().pop( yoke, polarity,
+            function ( yoke, maybeNode, rest ) {
+        return runWaitOne( yoke, function ( yoke ) {
+        
+        if ( maybeNode === null ) {
+            return fingerTreePushArr( yoke,
+                new FingerTreeEmpty().init_( measure ),
+                -polarity,
+                polarity === 1 ?
+                    digits[ -1 ].slice().reverse() :
+                    digits[ 1 ],
+                function ( yoke, tree ) {
+                
+                return then( yoke, tree );
+            } );
+        } else {
+            var newDigits = {};
+            newDigits[ -polarity ] = digits[ -polarity ];
+            newDigits[ polarity ] = maybeNode.val.elements;
+            return then( yoke,
+                new FingerTreeDeep().init_(
+                    measure, newDigits, makeImmediateLazy( rest ) ) );
+        }
+        
+        } );
+        } );
+    } else {
+        return runWaitOne( yoke, function ( yoke ) {
+            return then( yoke,
+                new FingerTreeDeep().init_(
+                    measure, digits, lazyNext ) );
+        } );
+    }
+}
 // NOTE: If the `polarity` is `-1`, this will push the elements so
 // they're in the opposite order as they are in the original Array.
 function fingerTreePushArr( yoke, tree, polarity, elems, then ) {
