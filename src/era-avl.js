@@ -187,20 +187,15 @@ function jsListTails( yoke, listA, listB, then ) {
     } );
 }
 
+function jsListFromSmallArr( arr ) {
+    var result = null;
+    for ( var i = arr.length - 1; 0 <= i; i-- )
+        result = { first: arr[ i ], rest: result };
+    return result;
+}
 function arrFoldlAsync( yoke, state, arr, combine, then ) {
-    var n = arr.length;
-    return go( yoke, state, 0 );
-    function go( yoke, state, i ) {
-        return runWaitOne( yoke, function ( yoke ) {
-            if ( n <= i )
-                return then( yoke, state );
-            return combine( yoke, state, arr[ i ],
-                function ( yoke, state ) {
-                
-                return go( yoke, state, i + 1 );
-            } );
-        } );
-    }
+    return jsListFoldl( yoke,
+        state, jsListFromSmallArr( arr ), combine, then );
 }
 
 var bigIntPartsPerPart = 4;
@@ -2501,6 +2496,35 @@ FingerTreeDeep.prototype.splitWithSummaryStack_ = function ( yoke,
     if ( summaryStack === null )
         throw new Error();
     
+    function tryDigit( yoke, summarySoFar, digitElements, then ) {
+        return jsListShortFoldl( yoke,
+            { summarySoFar: summarySoFar, i: 0 },
+            jsListFromSmallArr( polarity === 1 ?
+                digitElements.slice().reverse() : digitElements ),
+            function ( yoke, state, elem, then ) {
+            
+            return self.measure_.measure( yoke, elem,
+                function ( yoke, summary ) {
+            return self.measure_.plus( yoke,
+                arrPlusWithPolarity( polarity,
+                    [ summary ], [ state.summarySoFar ] ),
+                function ( yoke, summarySoFar ) {
+            return testIsEarly( yoke, summarySoFar,
+                function ( yoke, isEarly ) {
+            
+            if ( isEarly )
+                return then( yoke,
+                    { summarySoFar: summarySoFar, i: state.i + 1 },
+                    !"exitedEarly" );
+            else
+                return then( yoke, state.i, !!"exitedEarly" );
+            
+            } );
+            } );
+            } );
+        }, then );
+    }
+    
     return self.measure_.plus( yoke,
         [ summarySoFar, summaryStack.first ],
         function ( yoke, summary ) {
@@ -2510,9 +2534,47 @@ FingerTreeDeep.prototype.splitWithSummaryStack_ = function ( yoke,
     if ( isEarly )
         return onFellOff( yoke, summary );
     
-    // TODO: Implement the rest of this. We still need to try each of
-    // the `polarity`-side digits, try a recursive call on the
-    // `lazyNext_`, and try each of the `-polarity`-side digits.
+    // Try each of the `polarity`-side digits.
+    return tryDigit( yoke, summarySoFar, self.digits_[ polarity ],
+        function ( yoke, state, exitedEarly ) {
+    
+    if ( exitedEarly ) {
+        // TODO: Finish implementing this. Build two trees, and call
+        // `onCompleted()`. Use `state.i`.
+        throw new Error();
+    }
+    
+    // Try a recursive call on the `lazyNext_`.
+    // TODO: Implement `splitWithSummaryStack_` even on
+    // `FingerTreeEmpty` and `FingerTreeSingle`.
+    return self.lazyNext_.go().splitWithSummaryStack_( yoke,
+        state.summarySoFar, summaryStack.rest, polarity, testIsEarly,
+        next,
+        function ( yoke, before, after ) {
+            // TODO: Finish implementing this. Build two trees, and
+            // call `onCompleted()`. Use `before` and `after`.
+            throw new Error().
+        } );
+    function next( yoke, summarySoFar ) {
+    
+    
+    // Try each of the `-polarity`-side digits.
+    return tryDigit( yoke, summarySoFar, self.digits_[ -polarity ],
+        function ( yoke, state, exitedEarly ) {
+    
+    if ( exitedEarly ) {
+        // TODO: Finish implementing this. Build two trees, and call
+        // `onCompleted()`. Use `state.i`.
+        throw new Error();
+    }
+    
+    return onFellOff( yoke, state.summarySoFar );
+    
+    
+    }
+    
+    
+    } );
     
     } );
     } );
