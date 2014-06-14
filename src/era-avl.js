@@ -2401,6 +2401,8 @@ FingerTreeDeep.prototype.push = function ( yoke,
             new FingerTreeDeep().init_(
                 self.measure_, digits,
                 makeQuickLazy( function ( yoke, then ) {
+                    // TODO: Oops, this `makeQuickLazy()` isn't
+                    // constant-time....
                     return oldLazyNext.go().push( yoke,
                         polarity, newNode, then );
                 } ) ) );
@@ -2689,7 +2691,9 @@ function fingerTreeCat( yoke, a, middleElems, b, then ) {
     return runWaitOne( yoke, function ( yoke ) {
         return then( yoke,
             new FingerTreeDeep().init_( a.measure_, digits,
-                makeQuickNext( function ( yoke, then ) {
+                makeQuickLazy( function ( yoke, then ) {
+                    // TODO: Oops, this `makeQuickLazy()` isn't
+                    // constant-time....
                     return fingerTreeCat( yoke,
                         aNext.go(), nextMiddleElems, bNext.go(),
                         then );
