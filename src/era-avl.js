@@ -12,14 +12,10 @@
 // abstract away the iteration behind a non-trampolined interface,
 // making it impossible to suspend the iteration once it's begun.
 //
-// The only trampoline functionality used in this file is a method
-// called yoke.wait(). It should be easy to implement this in terms of
-// the runWaitOne() defined in era-penknife.js, but this file is meant
-// to be something of a clean slate. (Note that this file defines its
-// own runWaitOne() as well, and it doesn't have the same meaning.)
-//
-// This file also generates its own trampolines that only support
-// yoke.wait() and no other features. See makeQuickLazy().
+// The only trampoline functionality used in this file is an undefined
+// function called runWaitOne(). It should work with the runWaitOne()
+// defined in era-penknife.js, but this file is meant to be something
+// of a clean slate.
 //
 // These utilities, unlike the ones in era-penknife.js and
 // era-penknife-to-js.js, are made paying close attention to how the
@@ -30,7 +26,7 @@
 //
 // Bigints, AVL trees, and finger trees will be limitless substitutes
 // for JavaScript numbers, JavaScript object dictionaries, and
-// JavaScript strings, (up to the limit of memory allocation, anyway).
+// JavaScript strings (up to the limit of memory allocation, anyway).
 // Bigints and AVL trees won't have the efficiency drawbacks of unary
 // numbers and association lists.
 
@@ -38,11 +34,6 @@
 
 // TODO: Actually implement a string representation in terms of
 // finger trees.
-
-
-function runWaitOne( yoke, then ) {
-    return yoke.wait( then );
-}
 
 
 function jsListShortFoldl( yoke, init, list, func, then ) {
@@ -2173,40 +2164,33 @@ AvlMap.prototype.map = function ( yoke, body, then ) {
     } );
 };
 
-// NOTE: This is only meant for simple thunks that take constant time
-// to complete, have no errors during execution, and have an
-// equivalent space footprint before and after (plus or minus a
-// constant). This is enough to support finger trees without
-// complicating the performance reasoning regarding value sharing.
-function makeQuickLazy( go ) {
+// NOTE: This is only meant for simple thunks that are memoizable and
+// safe to run more than once concurrently. If the thunk has completed
+// at least once so far, then it won't ever begin executing again
+// because its existing result will be reused.
+function makeLazy( isActuallyLazy, go ) {
     var lazyObj = {};
-    lazyObj.go = function () {
-        var yoke = {};
-        yoke.wait = function ( then ) {
-            return then;
-        };
-        var result;
-        var step = function ( yoke ) {
-            return go( yoke, function ( yoke, givenResult ) {
-                result = givenResult;
-                return null;
-            } );
-        };
-        while ( step !== null )
-            step = step( yoke );
-        return result;
+    lazyObj.go = !isActuallyLazy ? go : function ( yoke, then ) {
+        return go( yoke, function ( yoke, result ) {
+            lazyObj.go = function ( yoke, then ) {
+                return runWaitOne( yoke, function ( yoke ) {
+                    return then( yoke, result );
+                } );
+            };
+            return then( yoke, result );
+        } );
     };
     return lazyObj;
 }
-function makeSyncLazy( go ) {
-    return makeQuickLazy( function ( yoke, then ) {
+function makeSyncLazy( isActuallyLazy, go ) {
+    return makeLazy( isActuallyLazy, function ( yoke, then ) {
         return runWaitOne( yoke, function ( yoke ) {
             return then( yoke, go() );
         } );
     } );
 }
 function makeImmediateLazy( result ) {
-    return makeSyncLazy( function () {
+    return makeSyncLazy( !"isActuallyLazy", function () {
         return result;
     } );
 }
@@ -2225,9 +2209,38 @@ function arrCutWithPolarity( polarity, arr, start, stop ) {
             arr.length - 1 - start, arr.length - 1 - stop );
 }
 
+// Finger trees have three cases and four methods:
+//
+// FingerTreeEmpty
+// FingerTreeSingle
+// FingerTreeDeep
+//
+// tree.push( yoke, polarity, element, then( yoke, tree ) )
+// tree.pop( yoke, polarity, then( yoke, maybeElement, tree ) );
+// tree.getSummaryStack( yoke, then( yoke, summaryStack ) )
+// tree.split( yoke,
+//     summarySoFar, summaryStack, polarity, testIsEarly,
+//     onFellOff( yoke, summarySoFar ),
+//     onCompleted( yoke, earlyTree, LateTree ) )
+//
+// Each case also relies on a `meta` object with three properties:
+//
+// boolean meta.lazy
+// meta.measure( yoke, element, then( yoke, summary ) )
+// meta.plus( yoke, arrayOfSummaries, then( yoke, summary ) )
+//
+// When `meta.lazy` is `true`, the `push` and `pop` operations run in
+// amortized constant time, and the `getSummaryStack` and `split`
+// operations run in logarithmic time. (TODO: Is that true?) All lazy
+// thunks created this way have the same space footprint before and
+// after.
+//
+// When it's `false`, all four of these operations run in logarithmic
+// time. (TODO: Is that true?)
+
 function FingerTreeEmpty() {}
-FingerTreeEmpty.prototype.init_ = function ( measure ) {
-    this.measure_ = measure;
+FingerTreeEmpty.prototype.init_ = function ( meta ) {
+    this.meta_ = meta;
     return this;
 };
 FingerTreeEmpty.prototype.push = function ( yoke,
@@ -2236,7 +2249,7 @@ FingerTreeEmpty.prototype.push = function ( yoke,
     var self = this;
     return runWaitOne( yoke, function ( yoke ) {
         return then( yoke,
-            new FingerTreeSingle().init_( self.measure_, element ) );
+            new FingerTreeSingle().init_( self.meta_, element ) );
     } );
 };
 FingerTreeEmpty.prototype.pop = function ( yoke, polarity, then ) {
@@ -2248,7 +2261,7 @@ FingerTreeEmpty.prototype.pop = function ( yoke, polarity, then ) {
 FingerTreeEmpty.prototype.getSummaryStack = function ( yoke, then ) {
     var self = this;
     return runWaitOne( yoke, function ( yoke ) {
-    return self.measure_.plus( yoke, [], function ( yoke, zero ) {
+    return self.meta_.plus( yoke, [], function ( yoke, zero ) {
     return runWaitOne( yoke, function ( yoke ) {
     
     return then( yoke, { first: zero, rest: null } );
@@ -2266,8 +2279,8 @@ FingerTreeEmpty.prototype.split = function ( yoke, summarySoFar,
 };
 
 function FingerTreeSingle() {}
-FingerTreeSingle.prototype.init_ = function ( measure, element ) {
-    this.measure_ = measure;
+FingerTreeSingle.prototype.init_ = function ( meta, element ) {
+    this.meta_ = meta;
     this.element_ = element;
     return this;
 };
@@ -2280,30 +2293,31 @@ FingerTreeSingle.prototype.push = function ( yoke,
     digits[ -polarity ] = [ self.element_ ];
     digits[ polarity ] = [ element ];
     
-    var subMeasure = {};
-    subMeasure.measure = function ( yoke, node, then ) {
+    var subMeta = {};
+    subMeta.lazy = self.meta_.lazy;
+    subMeta.measure = function ( yoke, node, then ) {
         return runWaitOne( yoke, function ( yoke ) {
             return then( yoke, node.summary );
         } );
     };
-    subMeasure.plus = self.measure_.plus;
+    subMeta.plus = self.meta_.plus;
     
     return runWaitOne( yoke, function ( yoke ) {
         return then( yoke,
-            new FingerTreeDeep().init_( self.measure_, digits,
+            new FingerTreeDeep().init_( self.meta_, digits,
                 makeImmediateLazy(
-                    new FingerTreeEmpty().init_( subMeasure ) ) ) );
+                    new FingerTreeEmpty().init_( subMeta ) ) ) );
     } );
 };
 FingerTreeSingle.prototype.pop = function ( yoke, polarity, then ) {
     var self = this;
     return runWaitOne( yoke, function ( yoke ) {
         return then( yoke, { val: self.element_ },
-            new FingerTreeEmpty().init_( self.measure_ ) );
+            new FingerTreeEmpty().init_( self.meta_ ) );
     } );
 };
 FingerTreeSingle.prototype.getSummaryStack = function ( yoke, then ) {
-    return this.measure_.measure( yoke, this.element_,
+    return this.meta_.measure( yoke, this.element_,
         function ( yoke, summary ) {
         
         return then( yoke, { first: summary, rest: null } );
@@ -2314,9 +2328,9 @@ FingerTreeSingle.prototype.split = function ( yoke, summarySoFar,
     
     var self = this;
     
-    return self.measure_.measure( yoke, self.element_,
+    return self.meta_.measure( yoke, self.element_,
         function ( yoke, summary ) {
-    return self.measure_.plus( yoke,
+    return self.meta_.plus( yoke,
         arrPlusWithPolarity(
             polarity, [ summary ], [ summarySoFar ] ),
         function ( yoke, summarySoFar ) {
@@ -2327,7 +2341,7 @@ FingerTreeSingle.prototype.split = function ( yoke, summarySoFar,
     if ( isEarly )
         return onFellOff( yoke, summarySoFar );
     
-    var empty = new FingerTreeEmpty().init_( self.measure_ );
+    var empty = new FingerTreeEmpty().init_( self.meta_ );
     return onCompleted( yoke, empty, self );
     
     } );
@@ -2337,21 +2351,20 @@ FingerTreeSingle.prototype.split = function ( yoke, summarySoFar,
 };
 
 function FingerTreeDeep() {}
-FingerTreeDeep.prototype.init_ = function (
-    measure, digits, lazyNext ) {
+FingerTreeDeep.prototype.init_ = function ( meta, digits, lazyNext ) {
     
     // NOTE: The value of `digits` is an object of the form
     // { "-1": _, "1": _ }, where the elements are Arrays of one to
     // four elements. The elements in the -1 branch are the first
     // ones, and the keys in the 1 branch are the last ones.
     
-    // NOTE: The value of `lazyNext` is a `makeQuickLazy()` object
-    // that calculates a finger tree containing "nodes" containing the
-    // type of elements of this finger tree. A node is an object of
-    // the form { summary: _, elements: _ }, where `elements` is an
-    // Array of two or three elements.
+    // NOTE: The value of `lazyNext` is a `makeLazy()` object that
+    // calculates a finger tree containing "nodes" containing the type
+    // of elements of this finger tree. A node is an object of the
+    // form { summary: _, elements: _ }, where `elements` is an Array
+    // of two or three elements.
     
-    this.measure_ = measure;
+    this.meta_ = meta;
     this.digits_ = digits;
     this.lazyNext_ = lazyNext;
     return this;
@@ -2378,11 +2391,11 @@ FingerTreeDeep.prototype.push = function ( yoke,
         var newNodeElement2 = arrCutWithPolarity(
             polarity, newNodeElements, 2, 3 )[ 0 ];
         
-        return self.measure_.measure( yoke, newNodeElement0,
+        return self.meta_.measure( yoke, newNodeElement0,
             function ( yoke, summary0 ) {
-        return self.measure_.measure( yoke, newNodeElement1,
+        return self.meta_.measure( yoke, newNodeElement1,
             function ( yoke, summary1 ) {
-        return self.measure_.measure( yoke, newNodeElement2,
+        return self.meta_.measure( yoke, newNodeElement2,
             function ( yoke, summary2 ) {
         
         var summaries01 = arrCatWithPolarity(
@@ -2390,7 +2403,7 @@ FingerTreeDeep.prototype.push = function ( yoke,
         var summaries012 = arrCatWithPolarity(
             polarity, summaries01, [ summary2 ] );
         
-        return self.measure_.plus( yoke, summaries012,
+        return self.meta_.plus( yoke, summaries012,
             function ( yoke, newNodeSummary ) {
         
         var newNode =
@@ -2398,13 +2411,23 @@ FingerTreeDeep.prototype.push = function ( yoke,
         var oldLazyNext = self.lazyNext_;
         
         return then( yoke,
-            new FingerTreeDeep().init_(
-                self.measure_, digits,
-                makeQuickLazy( function ( yoke, then ) {
-                    // TODO: Oops, this `makeQuickLazy()` isn't
-                    // constant-time....
-                    return oldLazyNext.go().push( yoke,
+            new FingerTreeDeep().init_( self.meta_, digits,
+                makeLazy( self.meta_.lazy, function ( yoke, then ) {
+                    // NOTE: This `makeLazy()` isn't constant-time, so
+                    // it's impure. It does have the same space
+                    // footprint before and after.
+                    
+                    return runWaitOne( yoke, function ( yoke ) {
+                    return oldLazyNext.go( yoke,
+                        function ( yoke, oldNext ) {
+                    return runWaitOne( yoke, function ( yoke ) {
+                    
+                    return oldNext.push( yoke,
                         polarity, newNode, then );
+                    
+                    } );
+                    } );
+                    } );
                 } ) ) );
         
         } );
@@ -2418,7 +2441,7 @@ FingerTreeDeep.prototype.push = function ( yoke,
         return runWaitOne( yoke, function ( yoke ) {
             return then( yoke,
                 new FingerTreeDeep().init_(
-                    self.measure_, digits, self.lazyNext_ ) );
+                    self.meta_, digits, self.lazyNext_ ) );
         } );
     }
 };
@@ -2432,7 +2455,7 @@ FingerTreeDeep.prototype.pop = function ( yoke, polarity, then ) {
     var poppedElement = arrCutWithPolarity(
         polarity, self.digits_[ polarity ], n - 1, n )[ 0 ];
     return makeFingerTreeMaybeDeep( yoke,
-        polarity, self.measure_, digits, self.lazyNext_,
+        polarity, self.meta_, digits, self.lazyNext_,
         function ( yoke, tree ) {
         
         return then( yoke, { val: poppedElement }, tree );
@@ -2440,32 +2463,32 @@ FingerTreeDeep.prototype.pop = function ( yoke, polarity, then ) {
 };
 FingerTreeDeep.prototype.getSummaryStack = function ( yoke, then ) {
     var self = this;
-    return self.lazyNext_.go().getSummaryStack( yoke,
+    return self.lazyNext_.go( yoke, function ( yoke, next ) {
+    return next.getSummaryStack( yoke,
         function ( yoke, nextSummaryStack ) {
     return arrFoldlAsync( yoke, nextSummaryStack.first,
         self.digits_[ -1 ].slice().reverse(),
         function ( yoke, total, elem, then ) {
         
-        return self.measure_.measure( yoke, elem,
+        return self.meta_.measure( yoke, elem,
             function ( yoke, summary ) {
             
-            return self.measure_.plus( yoke, [ summary, total ],
-                then );
+            return self.meta_.plus( yoke, [ summary, total ], then );
         } );
     }, function ( yoke, total ) {
     return arrFoldlAsync( yoke, total, self.digits_[ 1 ],
         function ( yoke, total, elem, then ) {
         
-        return self.measure_.measure( yoke, elem,
+        return self.meta_.measure( yoke, elem,
             function ( yoke, summary ) {
             
-            return self.measure_.plus( yoke, [ total, summary ],
-                then );
+            return self.meta_.plus( yoke, [ total, summary ], then );
         } );
     }, function ( yoke, total ) {
     
     return then( yoke, { first: total, rest: nextSummaryStack } );
     
+    } );
     } );
     } );
     } );
@@ -2485,9 +2508,9 @@ FingerTreeDeep.prototype.split = function ( yoke, summarySoFar,
                 digitElements.slice().reverse() : digitElements ),
             function ( yoke, state, elem, then ) {
             
-            return self.measure_.measure( yoke, elem,
+            return self.meta_.measure( yoke, elem,
                 function ( yoke, summary ) {
-            return self.measure_.plus( yoke,
+            return self.meta_.plus( yoke,
                 arrPlusWithPolarity( polarity,
                     [ summary ], [ state.summarySoFar ] ),
                 function ( yoke, summarySoFar ) {
@@ -2507,7 +2530,7 @@ FingerTreeDeep.prototype.split = function ( yoke, summarySoFar,
         }, then );
     }
     
-    return self.measure_.plus( yoke,
+    return self.meta_.plus( yoke,
         [ summarySoFar, summaryStack.first ],
         function ( yoke, summary ) {
     return testIsEarly( yoke, summary, function ( yoke, isEarly ) {
@@ -2530,13 +2553,13 @@ FingerTreeDeep.prototype.split = function ( yoke, summarySoFar,
             polarity, self.digits_[ polarity ], n - state.i, n );
         
         return fingerTreePushArr( yoke,
-            new FingerTreeEmpty().init_( self.measure_ ),
+            new FingerTreeEmpty().init_( self.meta_ ),
             polarity,
             polarity === 1 ?
                 earlyDigits : earlyDigits.slice().reverse(),
             function ( yoke, earlyTree ) {
         return makeFingerTreeMaybeDeep( yoke, polarity,
-            self.measure_, lateDigits, self.lazyNext_,
+            self.meta_, lateDigits, self.lazyNext_,
             function ( yoke, lateTree ) {
         
         return onCompleted( yoke, earlyTree, lateTree );
@@ -2546,9 +2569,11 @@ FingerTreeDeep.prototype.split = function ( yoke, summarySoFar,
     }
     
     // Try a recursive call on the `lazyNext_`.
-    return self.lazyNext_.go().split( yoke,
+    return self.lazyNext_.go( yoke, function ( yoke, nextTree ) {
+    
+    return nextTree.split( yoke,
         state.summarySoFar, summaryStack.rest, polarity, testIsEarly,
-        next,
+        nextStep,
         function ( yoke, earlyTree, lateTree ) {
             return fingerTreePushArr( yoke, earlyTree,
                 polarity,
@@ -2568,7 +2593,7 @@ FingerTreeDeep.prototype.split = function ( yoke, summarySoFar,
             } );
             } );
         } );
-    function next( yoke, summarySoFar ) {
+    function nextStep( yoke, summarySoFar ) {
     
     
     // Try each of the `-polarity`-side digits.
@@ -2585,10 +2610,10 @@ FingerTreeDeep.prototype.split = function ( yoke, summarySoFar,
             polarity, self.digits_[ -polarity ], 0, n - state.i );
         
         return makeFingerTreeMaybeDeep( yoke, polarity,
-            self.measure_, earlyDigits, self.lazyNext_,
+            self.meta_, earlyDigits, self.lazyNext_,
             function ( yoke, earlyTree ) {
         return fingerTreePushArr( yoke,
-            new FingerTreeEmpty().init_( self.measure_ ),
+            new FingerTreeEmpty().init_( self.meta_ ),
             -polarity,
             -polarity === 1 ?
                 lateDigits : lateDigits.slice().reverse(),
@@ -2605,6 +2630,8 @@ FingerTreeDeep.prototype.split = function ( yoke, summarySoFar,
     
     }
     
+    } );
+    
     
     } );
     
@@ -2615,16 +2642,17 @@ FingerTreeDeep.prototype.split = function ( yoke, summarySoFar,
 
 
 function makeFingerTreeMaybeDeep( yoke,
-    polarity, measure, digits, lazyNext, then ) {
+    polarity, meta, digits, lazyNext, then ) {
     
     if ( digits[ polarity ].length === 0 ) {
-        return lazyNext.go().pop( yoke, polarity,
+        return lazyNext.go( yoke, function ( yoke, next ) {
+        return next.pop( yoke, polarity,
             function ( yoke, maybeNode, rest ) {
         return runWaitOne( yoke, function ( yoke ) {
         
         if ( maybeNode === null ) {
             return fingerTreePushArr( yoke,
-                new FingerTreeEmpty().init_( measure ),
+                new FingerTreeEmpty().init_( meta ),
                 -polarity,
                 polarity === 1 ?
                     digits[ -1 ].slice().reverse() :
@@ -2639,16 +2667,17 @@ function makeFingerTreeMaybeDeep( yoke,
             newDigits[ polarity ] = maybeNode.val.elements;
             return then( yoke,
                 new FingerTreeDeep().init_(
-                    measure, newDigits, makeImmediateLazy( rest ) ) );
+                    meta, newDigits, makeImmediateLazy( rest ) ) );
         }
         
+        } );
         } );
         } );
     } else {
         return runWaitOne( yoke, function ( yoke ) {
             return then( yoke,
-                new FingerTreeDeep().init_(
-                    measure, digits, lazyNext ) );
+                new FingerTreeDeep().init_( meta, digits, lazyNext )
+                );
         } );
     }
 }
@@ -2690,13 +2719,26 @@ function fingerTreeCat( yoke, a, middleElems, b, then ) {
         [].concat( a.digits_[ 1 ], middleElems, b.digits_[ -1 ] );
     return runWaitOne( yoke, function ( yoke ) {
         return then( yoke,
-            new FingerTreeDeep().init_( a.measure_, digits,
-                makeQuickLazy( function ( yoke, then ) {
-                    // TODO: Oops, this `makeQuickLazy()` isn't
-                    // constant-time....
+            new FingerTreeDeep().init_( a.meta_, digits,
+                makeLazy( a.meta_.lazy, function ( yoke, then ) {
+                    // NOTE: This `makeLazy()` isn't constant-time, so
+                    // it's impure. It does have the same space
+                    // footprint before and after.
+                    
+                    return runWaitOne( yoke, function ( yoke ) {
+                    return aNext.go( yoke, function ( yoke, aNext ) {
+                    return runWaitOne( yoke, function ( yoke ) {
+                    return bNext.go( yoke, function ( yoke, bNext ) {
+                    return runWaitOne( yoke, function ( yoke ) {
+                    
                     return fingerTreeCat( yoke,
-                        aNext.go(), nextMiddleElems, bNext.go(),
-                        then );
+                        aNext, nextMiddleElems, bNext, then );
+                    
+                    } );
+                    } );
+                    } );
+                    } );
+                    } );
                 } ) ) );
     } );
 }
@@ -2732,13 +2774,13 @@ function fingerTreeSplit( yoke, tree, polarity, testIsEarly, then ) {
     
     return tree.getSummaryStack( yoke,
         function ( yoke, summaryStack ) {
-    return tree.measure_.plus( yoke, [], function ( yoke, zero ) {
+    return tree.meta_.plus( yoke, [], function ( yoke, zero ) {
     
     return tree.split( yoke,
         zero, summaryStack, polarity, testIsEarly,
         function ( yoke, summarySoFar ) {
             // Apparently everything is early.
-            var empty = new FingerTreeEmpty().init_( tree.measure_ );
+            var empty = new FingerTreeEmpty().init_( tree.meta_ );
             return then( yoke, tree, empty );
         },
         then );
