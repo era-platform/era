@@ -2218,8 +2218,8 @@ function arrCutWithPolarity( polarity, arr, start, stop ) {
 // tree.push( yoke, polarity, element, then( yoke, tree ) )
 // tree.pop( yoke, polarity, then( yoke, maybeElement, tree ) );
 // tree.getSummaryStack( yoke, then( yoke, summaryStack ) )
-// tree.split( yoke,
-//     summarySoFar, summaryStack, polarity, testIsEarly,
+// tree.split( yoke, summarySoFar, summaryStack, polarity,
+//     testIsEarly( yoke, summary, then( yoke, isEarly ) ),
 //     onFellOff( yoke, summarySoFar ),
 //     onCompleted( yoke, earlyTree, LateTree ) )
 //
@@ -2568,6 +2568,7 @@ FingerTreeDeep.prototype.split = function ( yoke, summarySoFar,
         } );
     }
     
+    
     // Try a recursive call on the `lazyNext_`.
     return self.lazyNext_.go( yoke, function ( yoke, nextTree ) {
     
@@ -2626,6 +2627,9 @@ FingerTreeDeep.prototype.split = function ( yoke, summarySoFar,
     }
     
     return onFellOff( yoke, state.summarySoFar );
+    
+    
+    } );
     
     
     }
@@ -2746,10 +2750,10 @@ function fingerTreeCat( yoke, a, middleElems, b, then ) {
 // that corresponds with `polarity` until it can drill down to the one
 // element whose summary doesn't satisfy the asynchronous predicate
 // `testIsEarly( yoke, summary, then( yoke, isEarly ) )`. It calls
-// `then( yoke, earlyElements, rest )` with a tree containing the
+// `then( yoke, earlyTree, lateTree )` with a tree containing the
 // early elements and a tree containing the rest. (Note that if the
-// polarity is 1, the `earlyElements` will be a suffix of the original
-// tree, and `rest` will be a prefix.)
+// polarity is 1, the `earlyTree` will be a suffix of the original
+// tree, and `lateTree` will be a prefix.)
 //
 // The `testIsEarly` function is expected to satisfy certain
 // properties with regard to the measurement monoid:
