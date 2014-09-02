@@ -18,7 +18,7 @@
 (defval qname.err-fn /fn args
 /let-list (msg) args
 /let-list (str)
-    (struct-get-args/if
+    (list/if
         (qualified-name-eq
           qname.string (nl-get-tag-name linear-as-nonlinear.msg))
       msg
@@ -104,6 +104,13 @@
 
 (defval qname.is-a-list /fn-with-args (x)
 /if-struct cons (first rest) x
+  (yep/nil)
+/if-struct nil () x
+  (yep/nil)
+  (nil))
+
+(defval qname.is-a-nat /fn-with-args (x)
+/if-struct succ (pred) x
   (yep/nil)
 /if-struct nil () x
   (yep/nil)
@@ -285,6 +292,132 @@
 /let-list (tree) body
   (expand-qq quote.qq quote.uq quote.uqs (nil) (nil) tree))
 
+; TODO: See if this should just be internal to the definition of
+; `qq2`.
+(defval qname.expand-qq2
+/fix/fn-with-args
+  ( expand-qq2 esc-str escesc-str startesc-str stopesc-str elem-str
+    splice-str return-list level x)
+/let recur
+  (fn-with-args (return-list level x)
+    (expand-qq2 esc-str escesc-str startesc-str stopesc-str elem-str
+      splice-str return-list level x))
+/let as-list
+  (fn-with-args (expr)
+    (if return-list (list qname.list expr) expr))
+/let parse-singleton
+  (fn-with-args (x)
+    (if-struct cons (first rest) x
+      (if-struct nil () rest
+        yep.first
+        (nil))
+      (nil)))
+/let parse-tag-rest
+  (fn-with-args (str x)
+    (if-struct cons (first rest) x
+      (if is-a-string.first
+        (if (string-eq first str)
+          yep.rest
+          (nil))
+        (nil))
+      (nil)))
+/let parse-tag-pair
+  (fn-with-args (str x)
+    (if-struct yep (rest) (parse-tag-rest str x)
+      parse-singleton.rest
+      (nil)))
+/let parse-uplevels
+  (fix/fn-with-args (parse-uplevels level levels-passed x)
+    (if-struct succ (pred-level) level
+      (if-struct yep (contents) parse-singleton.x
+        (parse-uplevels pred-level succ.levels-passed contents)
+      /if-struct yep (contents) (parse-tag-pair stopesc-str x)
+        (nope/list pred-level levels-passed contents)
+        (nil))
+      yep.x))
+/let build-uplevels
+  (fix/fn-with-args (build-uplevels level x)
+    (if-struct succ (pred-level) level
+      (list qname.list (build-uplevels pred-level x))
+      x))
+/if (not is-a-nat.level)
+  err.\[Called expand-qq2 with a non-nat level]
+/if-struct yep (-) (parse-tag-rest esc-str x)
+  (if-struct yep (x) (parse-tag-pair esc-str x)
+    (if-struct yep (x) (parse-tag-pair startesc-str x)
+      (as-list/list qname.list (list qname.quote esc-str)
+      /list qname.list (list qname.quote startesc-str)
+        (recur (nil) succ.level x))
+    /let parsed-uplevels (parse-uplevels level (nil) x)
+    /if-struct yep (x) parsed-uplevels
+      (if-struct yep (rest) (parse-tag-rest escesc-str x)
+        (let x (cons startesc-str rest)
+          (as-list/cons qname.append /map x /fn-with-args (elem)
+            (recur (yep/nil) level elem)))
+      /if-struct yep (x) (parse-tag-pair stopesc-str x)
+        (if-struct yep (x) (parse-tag-pair elem-str x)
+          as-list.x
+        /if-struct yep (x) (parse-tag-pair splice-str x)
+          (if return-list
+            x
+            err.\[Called qq2 with a splice in an incorrect place])
+          err.\[Called qq2 with an unrecognized interpolation type])
+        err.\[Called qq2 with an unrecognized escape sequence])
+    
+    ; Also parse unquotes of depth less than the current depth, and
+    ; subtract their depth during their interior.
+    /as-list/if-struct nope (x) parsed-uplevels
+      (let-list (levels-left levels-passed x) x
+        (list qname.list (list qname.quote esc-str)
+          (build-uplevels levels-passed
+            (list qname.list (list qname.quote stopesc-str)
+              (recur (nil) levels-left x)))))
+      (list qname.cons (list qname.quote esc-str)
+        (recur (yep/nil) level x)))
+    
+    err.\[Called qq22 with an unrecognized escape sequence])
+/as-list/if-struct istring-cons (prefix interpolation rest) x
+  (list qname.istring-cons
+    (list qname.quote prefix)
+    (recur (nil) level interpolation)
+    (recur (nil) level rest))
+/if is-a-list.x
+  (cons qname.append /map x /fn-with-args (elem)
+    (recur (yep/nil) level elem))
+  ; NOTE: On the first level, we resolve atoms as names and insert the
+  ; qualified names. On deeper levels, we insert them as they were
+  ; originally (usually strings).
+  (list (if level qname.quote qname.qname) x))
+
+(defmacro-codegen qq2 body ()
+/let-list (tree) body
+/let parse-singleton
+  (fn-with-args (x)
+    (if-struct cons (first rest) x
+      (if-struct nil () rest
+        yep.first
+        (nil))
+      (nil)))
+/let parse-tag-rest
+  (fn-with-args (str x)
+    (if-struct cons (first rest) x
+      (if is-a-string.first
+        (if (string-eq first str)
+          yep.rest
+          (nil))
+        (nil))
+      (nil)))
+/let parse-tag-pair
+  (fn-with-args (str x)
+    (if-struct yep (rest) (parse-tag-rest str x)
+      parse-singleton.rest
+      (nil)))
+/let startesc-str quote.t
+/if-struct yep (tree) (parse-tag-pair startesc-str tree)
+  (expand-qq2 quote.qq2 quote.- startesc-str quote.x quote.x quote.s
+    (nil) (nil) tree)
+  err.\[Called qq2 without the right opening escape sequence])
+
 (defval qname.call-with-local-linearity /fn-with-args (body)
 /call-with-mbox-env/fn-with-args (mbox-env)
 /let mget (fn-with-args (mbox) (mbox-get mbox-env mbox))
@@ -389,10 +522,18 @@ qq.(foo uq.(succ/succ/nil) (uqs quote.(a b c)))
 qq.(foo (uq.(succ/succ/nil) (uqs quote.(a b c)) bar))
 qq.(foo ((qq uq.(succ/succ/nil)) (qq (uqs quote.(a b c))) bar))
 qq.(foo ((qq (uq uq.(succ/succ/nil))) (qq (uqs quote.(a b c))) bar))
+(qq2/t/foo bar)
+(qq2/t/foo (qq2/x/x/succ/succ/nil))
+(qq2/t/foo (qq2/x/x/succ/succ/nil) (qq2/x/s quote.(a b c)))
+(qq2/t/foo ((qq2/x/x/succ/succ/nil) (qq2/x/s quote.(a b c)) bar))
+(qq2/t/foo ((qq2/t (qq2/x/x/succ/succ/nil)) (qq2/t (qq2/x/s quote.(a b c))) bar))
+(qq2/t/foo ((qq2/t (qq2/x/x (qq2/x/x/succ/succ/nil))) (qq2/t (qq2/x/s quote.(a b c))) bar))
+(qq2/t/foo ((qq2/t (qq2//x/x/succ/succ/nil)) (qq2/t (qq2/x/s quote.(a b c))) bar))
 
 ; Test that we we don't let local names hijack the qualified names
 ; used by macro-generated code.
 (let append list qq.(a b c))
+(let append list (qq2/t/a b c))
 
 (defval qname.call-with-flow-grapher /fn-with-args (body)
 /call-with-mbox-env/fn-with-args (mbox-env)
