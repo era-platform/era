@@ -40,6 +40,10 @@ argParser.addArgument( [ "-b", "--build" ], {
     action: "storeTrue",
     help: "Compile dependencies of demos/penknife-compiled.html."
 } );
+argParser.addArgument( [ "-m", "--minify" ], {
+    action: "storeTrue",
+    help: "Minify any compiled files."
+} );
 var args = argParser.parseArgs();
 
 var tasks = [];
@@ -115,8 +119,7 @@ if ( args.build ) tasks.push( function ( then ) {
             "\n" +
             "];";
         
-        // TODO: Make this a debug option or something.
-        if ( false )
+        if ( args.minify )
             fileCode = uglify.minify( fileCode, {
                 fromString: true,
                 compress: {
@@ -147,6 +150,7 @@ if ( args.build ) tasks.push( function ( then ) {
                         "Pk",
                         "pkCons",
                         "pkList",
+                        "pkInd",
                         "pkStrNameRaw",
                         "pkQualifiedName",
                         "pkYep",

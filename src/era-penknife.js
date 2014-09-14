@@ -159,6 +159,15 @@ Pk.prototype.toString = function () {
         return "#token(" + this.special.jsPayload.stringRep + ")";
     return "(" + this.getTagName() + spaceBefore( this.args_ ) + ")";
 };
+function pkInd( pk, i ) {
+    // NOTE: This is identical to pk.ind( i ), but it's used for
+    // compiled Penknife code because it lets us inform UglifyJS that
+    // it's a pure function. (Okay, it's not exactly pure if there's
+    // an error, but that should be pure enough.)
+    // NOTE: The function listGet() is defined below.
+    return pk.args_ === null ?
+        pk.special.argsArr[ i ] : listGet( pk.args_, i );
+}
 var pkNil =
     new Pk().init_( null, "nil", null, !"isLinear", { argsArr: [] } );
 function pkCons( first, rest ) {
@@ -756,6 +765,16 @@ function listMapTwo( yoke, a, b, func, then ) {
         return func( yoke, listGet( elems, 0 ), listGet( elems, 1 ) );
     }, function ( yoke, result ) {
         return then( yoke, result );
+    } );
+}
+
+function pkAssertLetList( yoke, list, nat, then ) {
+    return listLenIsNat( yoke, list, nat, function ( yoke, valid ) {
+        if ( !valid )
+            return pkErr( yoke,
+                "Got the wrong number of elements when " +
+                "destructuring a list" );
+        return then( yoke, pkNil );
     } );
 }
 
@@ -2131,14 +2150,8 @@ function makePkRuntime() {
             return callMethod( yoke, "essence-interpret",
                 pkList( sourceEssence, outerCaptures ) );
         }, function ( yoke, sourceValue ) {
-        return listLenEq( yoke, sourceValue, numbersOfDups,
-            function ( yoke, valid ) {
-        
-        if ( !valid )
-            return pkErr( yoke,
-                "Got the wrong number of elements when " +
-                "destructuring a list" );
-        
+        return pkAssertLetList( yoke, sourceValue, numbersOfDups,
+            function ( yoke, ignored ) {
         return listMap( yoke, captureEssences,
             function ( yoke, essence ) {
             
@@ -2173,7 +2186,6 @@ function makePkRuntime() {
         } );
         } );
         } );
-        
         } );
         } );
     } );

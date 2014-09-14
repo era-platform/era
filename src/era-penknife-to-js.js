@@ -477,11 +477,11 @@ function compileListToVars( yoke,
             
             revStatements: jsList( {
                 type: "sync",
-                code: state.lastListVar + ".ind( 1 )",
+                code: "pkInd( " + state.lastListVar + ", 1 )",
                 resultVar: restVar
             }, {
                 type: "sync",
-                code: state.lastListVar + ".ind( 0 )",
+                code: "pkInd( " + state.lastListVar + ", 0 )",
                 resultVar: elemVar
             } ),
             resultVar: elemVar
@@ -1137,19 +1137,8 @@ function compileEssence(
                         callbackVar: callbackVar,
                         resultVar: ignoredVar,
                         code:
-"runWaitTry( yoke, function ( yoke ) {\n" +
-"    return listLenIsNat( yoke, " +
-        compiledSource.val.resultVar + ", " +
-        compiledNumberOfElems.val.resultVar + ",\n" +
-"        function ( yoke, valid ) {\n" +
-"        \n" +
-"        if ( !valid )\n" +
-"            return pkErr( yoke,\n" +
-"                \"Got the wrong number of elements when \" +\n" +
-"                \"destructuring a list\" );\n" +
-"        return pkRet( yoke, pkNil );\n" +
-"    } );\n" +
-"}, " + callbackVar + " )"
+"pkAssertLetList( yoke, " + compiledSource.val.resultVar + ", " +
+    compiledNumberOfElems.val.resultVar + ", " + callbackVar + " )"
                     },
                     rest: compiledNumberOfElems.val.revStatements
                 },
@@ -1648,13 +1637,14 @@ function invokeFileTopLevel( yoke, jsFuncs, then ) {
 // pkNil
 // pkCons
 // pkList
+// pkInd
 // pkStrNameRaw
 // pkQualifiedName
 // pkYep
 // pkPairName
 // pkStrUnsafe
 // runWaitTry
-// listLenIsNat
+// pkAssertLetList
 // pkErr
 // pkRet
 // runRet
@@ -1669,13 +1659,14 @@ var compiledCodeHelper = {
     pkNil: pkNil,
     pkCons: pkCons,
     pkList: pkList,
+    pkInd: pkInd,
     pkStrNameRaw: pkStrNameRaw,
     pkQualifiedName: pkQualifiedName,
     pkYep: pkYep,
     pkPairName: pkPairName,
     pkStrUnsafe: pkStrUnsafe,
     runWaitTry: runWaitTry,
-    listLenIsNat: listLenIsNat,
+    pkAssertLetList: pkAssertLetList,
     pkErr: pkErr,
     pkRet: pkRet,
     runRet: runRet,
