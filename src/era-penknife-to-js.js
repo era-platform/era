@@ -793,13 +793,9 @@ function compileEssence(
                 type: "async",
                 callbackVar: callbackVar,
                 resultVar: resultVar,
-                code:
-                    "runWaitTry( yoke, function ( yoke ) {\n" +
-                    "    return runRet( yoke, " +
-                            "yoke.pkRuntime.getVal( " +
-                                compiledName.val.resultVar + " " +
-                            ") );\n" +
-                    "}, " + callbackVar + " )"
+                code: "pkGetVal( yoke, " +
+                    compiledName.val.resultVar + ", " +
+                    callbackVar + " )"
             } ),
             compiledName.val.revStatements
         ), function ( yoke, revStatements ) {
@@ -1625,7 +1621,6 @@ function invokeFileTopLevel( yoke, jsFuncs, then ) {
 // variables:
 //
 // yoke
-// yoke.pkRuntime.getVal
 // then (only used in compiledLinkedListToString)
 // next (only used in compiledLinkedListToString)
 //
@@ -1645,10 +1640,9 @@ function invokeFileTopLevel( yoke, jsFuncs, then ) {
 // pkStrUnsafe
 // runWaitTry
 // pkAssertLetList
-// pkErr
 // pkRet
-// runRet
 // pkDup
+// pkGetVal
 // callMethod
 // pkfnLinear (only used in compiledLinkedListToString)
 // runWaitOne (only used in compiledLinkedListToString)
@@ -1667,10 +1661,9 @@ var compiledCodeHelper = {
     pkStrUnsafe: pkStrUnsafe,
     runWaitTry: runWaitTry,
     pkAssertLetList: pkAssertLetList,
-    pkErr: pkErr,
     pkRet: pkRet,
-    runRet: runRet,
     pkDup: pkDup,
+    pkGetVal: pkGetVal,
     callMethod: callMethod,
     pkfnLinear: pkfnLinear,
     runWaitOne: runWaitOne,
