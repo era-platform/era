@@ -1,0 +1,95 @@
+rules combined from
+https://minerva-access.unimelb.edu.au/bitstream/handle/11343/39480/72729_00002633_01_horsfall-mcs.pdf?sequence=1 ("The Logic of Bunched Implications: A Memoir")
+http://www.lix.polytechnique.fr/~lutz/papers/lls.pdf ("A Local System for Linear Logic")
+
+commutative, associative, unit, dual (@ @) [@ @]  ; bunched multiplicative implication
+C_ (@ @) ---> C_ [@ a, -a @]
+C_ (@ A, [@ B, C @] @) ---> C_ [@ B, (@ A, C @) @]
+commutative, associative, unit, dual (* *) [* *]  ; bunched additive implication, linear multiplicative pair
+C_ (* *) ---> C_ (* a, -a *)
+C_ (* A, [* B, C *] *) ---> C_ [* B, (* A, C *) *]
+commutative, associative, unit, dual (+ +) [+ +]  ; linear additive pair
+C_ (+ [* A, B *], [* C, D *] +) ---> C_ [* (+ A, C +), [+ B, D +] *]
+C_ [+ +] ---> C_ a
+C_ [+ a, a +] ---> C_ a
+C_ [+ +] ---> [* [+ +], [+ +] *]
+C_ [+ [* A, B *], [* C, D *] +] ---> C_ [* [+ A, C +], [+ B, D +] *]
+C_ [+ +] ---> (* [+ +], [+ +] *)
+C_ [+ (* A, B *), (* C, D *) +] ---> C_ (* [+ A, C +], [+ B, D +] *)
+C_ [+ +] ---> (+ [+ +], [+ +] +)
+C_ [+ (+ A, B +), (+ C, D +) +] ---> C_ (+ [+ A, C +], [+ B, D +] +)
+idempotent, dual !.A ?.A
+C_ !.[* A, B *] ---> C_ [* !.A, ?.B *]
+C_ [+ +] ---> C_ ?.[+ +]
+C_ [+ ?.A, ?.B +] ---> C_ ?.[+ A, B +]
+C_ [+ +] ---> C_ !.[+ +]
+C_ [+ !.A, !.B +] ---> C_ !.[+ A, B +]
+C_ [* *] ---> C_ ?.[+ +]
+C_ [* ?.A, B *] ---> C_ ?.[+ A, B +]
+
+Speculative:
+
+; 2 is shorthand for [+ (* *), (* *) +]
+; so -.2 means (+ [* *], [* *] +)
+; the (**) [**] switch rule is somehow an indexed version of the [++] (++) medial rule when the indexes are +- 2
+; The (@@) [@@] switch rule is somehow an indexed version of a [**] (**) medial rule, except that rule is not valid in this substructural system. We may want to derive some kind of FI*[] FI*() rule in its place, or we may want to rethink that switch rule.
+; A corresponds to [* [* *], A *]
+; A corresponds to (* (* *), A *)
+; A corresponds to [@ [@ @], A @]
+; A corresponds to (@ (@ @), A @)
+; (+ A, B +) corresponds to [* (+ [* *], [* *] +), IF+(A, B) *] for some IF+( )
+; [+ A, B +] corresponds to (* [+ (* *), (* *) +], IF+[A, B] *) for some IF+[ ]
+; FI*(A, B) corresponds to [@ FI*([@ @], [@ @]), IF*(A, B) @] for some FI*( ) and IF*( )
+; FI*[A, B] corresponds to (@ FI*[[@ @], [@ @]], IF*[A, B] @) for some FI*( ) and IF*[ ]
+
+Notice these valid (and dual) inferences, suggesting IF+1{ } and If+2{ } are both intermediate between (+ +) and [+ +]:
+
+[* (+ [* *], [* *] +), (+ A, B +) *]
+(+ [* [* *], A *], [* [* *], B *] +)
+(+ A, B +)
+(+ [* [* *], A *], [* [* *], B *] +)
+[* (+ [* *], [* *] +), [+ A, B +] *]
+
+(* [+ (* *), (* *) +], (+ A, B +) *)
+[+ (* (* *), A *), (* (* *), B *) +]
+[+ A, B +]
+[+ (* (* *), A *), (* (* *), B *) +]
+(* [+ (* *), (* *) +], [+ A, B +] *)
+
+This makes sense, because (+ +) lets the forward-chainer pick, [+ +] lets the backward-chainer pick, and IF+( ) and IF+[ ] are particular things to have picked.
+
+Let's try these equivalences:
+
+dual IF+( ) IF+[ ]
+dual IF*( ) IF*[ ]
+C_ [* a$(+ A, B +), a>IF+(C, D) *] <---> C_ (+ [* A, C *], [* B, D *] +)
+C_ [@ a$FI*(A, B), a>IF*(C, D) @] <---> C_ FI*([@ A, C @], [@ B, D @])
+
+It's hard to define what FI*( ) and FI*[ ] are, because the obvious (* !.A !.B *) or !.(+ A B +) and [+ !.A !.B +] aren't duals. We at least want this to hold:
+
+C_ FI*[FI*(A, B), FI*(C, D)] ---> C_ FI*(FI*[A, C], FI*[B, D])
+
+Alternatively, is there a good way to redefine the (@@) [@@] switch rule so that FI*( ) and FI*[ ] can be (* *) and [* *]? Is one of these derivable?
+
+C_ [* (* !.A, !.B *), (* !.C, !.D *) *] ---> C_ (* [* !.A, !.C *], [* !.B, !.D *] *)
+C_ [* (* ?.A, ?.B *), (* ?.C, ?.D *) *] ---> C_ (* [* ?.A, ?.C *], [* ?.B, ?.D *] *)
+
+Okay, a combination of approaches seems to work here:
+
+define FI*(A, B) to be (+ ?.A ?.B +)
+define FI*[A, B] to be [+ !.A !.B +]
+change the (@@) [@@] switch rule like so:
+C_ (@ A, [@ B, !.C @] @) ---> C_ [@ B, (@ A, !.C @) @]
+
+Derivation of the corresponding non-indexed rule:
+[+ !.(+ ?.!.A, ?.!.B +), !.(+ ?.!.C, ?.!.D +) +]
+[+ (+ !.?.!.A, !.?.!.B +), (+ !.?.!.C, !.?.!.D +) +]
+(+ [+ !.?.!.A, !.?.!.C +], [+ !.?.!.B, !.?.!.D +] +)
+(+ [+ ?.!.!.A, ?.!.!.C +], [+ ?.!.!.B, ?.!.!.D +] +)
+(+ ?.[+ !.!.A, !.!.C +], ?.[+ !.!.B, !.!.D +] +)
+
+The rule without using FI*( ) or FI*[ ]:
+C_ [@ a$(+ ?.A, ?.B +), a>IF*(C, D) @] <---> C_ (+ ?.[@ A, C @], ?.[@ B, D @] +)
+
+A derivation for a 2-like index:
+C_ [@ a$(+ ?.[@ @], ?.[@ @] +), a>IF*(C, D) @] <---> C_ (+ ?.C, ?.D +)
