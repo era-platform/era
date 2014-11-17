@@ -1,0 +1,109 @@
+Various parts of the language, including function calls, lambda
+syntaxes, and control flow constructs take an additional argument,
+which is a hint for the debugger. This hint can specify information
+for entries in a log file, for frames in a stack trace, for levels of
+verbosity in a stack trace, and for other purposes:
+
+- Arbitrary information for application-specific debugging support.
+- Handles to state resources that are considered external to the
+  program (i.e. outliving the program).
+- Acceptable criteria for an alternate way to resume the program (e.g.
+  a type and unit test suite for any debugger-inserted function
+  result).
+- Inhibitors for tail call elimination.
+- Hints about whether the program may be experiencing a non-"stuck"
+  error (e.g. using more stack frames or allocations than
+  anticipated).
+
+In "<expr 3 lin1 lin2 L1 L2 ; nl1 nl2 NL1 NL2>", the capitalized
+tokens represent sets of variables. The variables that come before the
+semicolon are linear, while the rest are nonlinear. The number "3"
+represents the number of debugger hints that must be stacked on this
+expression's result.
+
+<expr 0 var ; NL> ::= (get var)
+<expr 0 ; var NL> ::= (get var)
+<expr 0 L1 L2 ; NL> ::=
+  (call <hint NL (error description)>
+    <expr 0 L1 ; NL (function)> <expr 0 L2 ; NL (args)>)
+  -- May result in an error if a non-function is called, or if the
+  -- args are linear and the function's `sealed-args` is used
+  -- nonlinearly.
+<expr N L ; NL> ::= (hints <hint NL> <expr N+1 L ; NL>)
+<expr 0 L1 L2 ; NL> ::=
+  (fn <hint NL (hint for memory inspector)>
+    captured <expr 0 L1 NL> (sealed-vars-to-capture ...) sealed-args
+    <hint sealed-args NL>
+    <expr 1 L2 captured ; sealed-args NL>)
+<expr 0 L ; NL> ::=
+  (fn <hint NL (hint for memory inspector)>
+    captured <expr 0 NL> (sealed-nl-vars-to-capture ...) sealed-args
+    <expr 1 L ; captured sealed-args NL>)
+<expr 0 L1 L2 L3 ; NL> ::=
+  (child-coroutine-and-output
+    <hint NL (hint for memory inspector)>
+    <expr 0 L1 ; NL (child coroutine)>
+    <expr 0 L2 ; NL (last child coroutine input>
+    <expr 0 L3 ; NL (main output>)
+<expr 0 L1 L2 ; NL> ::=
+  (parent-coroutine-and-output
+    <hint NL (hint for memory inspector)>
+    <expr 0 L1 ; NL (parent coroutine)>
+    <expr 0 L2 ; NL (main output>)
+<expr N+1 L ; NL> ::= (hinted <hint NL> <expr N L ; NL>)
+<expr N sealed-x L ; NL> ::=
+  (unseal x sealed-x <hint NL> <expr N+1 x L ; NL>)
+<expr N L ; sealed-x NL> ::=
+  (unseal x sealed-x <hint x NL> <expr N+1 L ; x NL>)
+  -- NOTE: By designing the language so a function's `sealed-args`
+  -- must be passed through (unseal ...) before use, we make it so the
+  -- function's implementation in between can have an arbitrary amount
+  -- of abstraction without hogging the stack trace.
+<expr N L1 L2 L3 ; NL> ::=
+  (yield <hint NL (yield entry hint)>
+    coroutine-after result
+    <expr 0 L1 ; NL (coroutine before)>
+    <expr 1 L2 ; NL (coroutine input)>
+    <hint result NL (yield exit hint)>
+    <expr N coroutine-after L3 ; result NL>)
+  -- May result in an error if the coroutine is complete or if it
+  -- isn't a coroutine. May also result in an error if `result` is
+  -- used nonlinearly and would be bound to a linear value.
+<expr N L1 L2 L3 ; NL> ::=
+  (start-coroutine <hint NL (coroutine entry hint)>
+    child-coroutine parent-coroutine first-child-coroutine-input
+    <expr 1 parent-coroutine L1 ; first-child-coroutine-input NL
+      (child coroutine computation)>
+    child-coroutine-output main-output
+    <expr 1 child-coroutine L2 ; NL (main computation)>
+    <expr N L3 ; child-coroutine-output main-output NL (afterward)>)
+  -- May result in an error if the output of the main computation
+  -- isn't a (child-coroutine-and-output ...), if it was constructed
+  -- from a different coroutine, if giving the last coroutine input to
+  -- the child coroutine causes it to yield again rather than
+  -- completing, if the output of the child coroutine computation
+  -- isn't a (parent-coroutine-and-output ...), or if it was
+  -- constructed from a different coroutine. May also result in an
+  -- error if `first-child-coroutine-input`, `child-coroutine-output`,
+  -- or `main-output` is used nonlinearly and would be bound to a
+  -- linear value.
+  -- NOTE: Notice that this expression can be used in a completely
+  -- nonlinear context, but still introduces linear variables
+  -- internally. This justifies our use of linear variables without
+  -- even requiring any linear variables at the top level of the
+  -- program.
+
+<hint NL> ::= (no-hint)
+<hint NL> ::= (expr <expr 0 ; NL>)
+
+Notice that despite the coroutine feature, the only actual side
+effects are nontermination, getting stuck, and (non-semantic) resource
+starvation. In normal languages, a call trace for a heavily
+tail-recursive computation has far fewer exit logs than entry logs, so
+it's about as flat as an imperative log -- flatter even, because it
+can only nest for pure abstractions. In this language, the nesting of
+CPS-style imperative abstractions can be visualized thanks to
+(unseal ...). Thanks to coroutines, the debugger's imperative metaphor
+will already be amenable to any additional imperative I/O primitives
+needed, including cooperative multithreading and debugger-inserted
+hooks for interfering with the usual semantics.
