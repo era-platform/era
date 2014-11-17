@@ -22,7 +22,7 @@ nonlinear (usable zero, one, or more times).
 
 The brackets "[]" contain a sequence of continuation types, and
 sometimes they contain the capitalized variable "W" representing an
-arbitrary subsequence. The types are `hinted`,
+arbitrary subsequence. The types are `hinted`, `yields`,
 `coroutine-main-output`, and `coroutine-child-output`.
 
 <expr [] var ; NL> ::= (get var)
@@ -30,19 +30,35 @@ arbitrary subsequence. The types are `hinted`,
 <expr [] L1 L2 ; NL> ::=
   (call <hint NL (error description)>
     <expr [] L1 ; NL (function)> <expr [] L2 ; NL (args)>)
-  -- May result in an error if a non-function is called, or if the
+  -- May result in an error if a non-(fn ...) is called, or if the
   -- args are linear and the function's `sealed-args` is used
   -- nonlinearly.
+<expr [yields W] L1 L2 L3 ; NL> ::=
+  (yields-call <hint NL (error description)>
+    result <expr [] L1 ; NL (function)> <expr [] L2 ; NL (args)>
+    <expr [yields W] L3 ; result NL (afterward)>)
+  -- May result in an error if a non-(yields-fn ...) is called, or if
+  -- the args are linear and the function's `sealed-args` is used
+  -- nonlinearly. May also result in an error if `result` is used
+  -- nonlinearly and would be bound to a linear value.
 <expr [W] L ; NL> ::= (hints <hint NL> <expr [hinted W] L ; NL>)
+<expr [yields W] L ; NL> ::=
+  (yields-hints <hint NL> <expr [yields hinted W] L ; NL>)
 <expr [] L1 L2 ; NL> ::=
   (fn <hint NL (hint for memory inspector)>
     captured <expr [] L1 NL> (sealed-vars-to-capture ...) sealed-args
     <hint sealed-args NL>
     <expr [hinted] captured L2 ; sealed-args NL>)
-<expr [] L ; NL> ::=
-  (fn <hint NL (hint for memory inspector)>
-    captured <expr [] NL> (sealed-nl-vars-to-capture ...) sealed-args
-    <expr [hinted] L ; captured sealed-args NL>)
+  -- NOTE: This results in a linear value if `L1` is nonempty or if
+  -- any of the `sealed-vars-to-capture` is linear.
+<expr [] L1 L2 ; NL> ::=
+  (yields-fn <hint NL (hint for memory inspector)>
+    captured <expr [] L1 NL> (sealed-vars-to-capture ...) sealed-args
+    <hint sealed-args NL>
+    <expr [yields hinted] captured L2 ; sealed-args NL>)
+  -- NOTE: This results in a linear value if `L1` is nonempty or if
+  -- any of the `sealed-vars-to-capture` is linear.
+<expr [yields W] L ; NL> ::= (yields <expr [W] L ; NL>)
 <expr [coroutine-main-output] L1 L2 L3 ; NL> ::=
   (coroutine-main-output
     <expr [] L1 ; NL (child coroutine)>
@@ -61,24 +77,25 @@ arbitrary subsequence. The types are `hinted`,
   -- must be passed through (unseal ...) before use, we make it so the
   -- function's implementation in between can have an arbitrary amount
   -- of abstraction without hogging the stack trace.
-<expr [W] L1 L2 L3 ; NL> ::=
+<expr [yields W] L1 L2 L3 ; NL> ::=
   (yield <hint NL (yield entry hint)>
     coroutine-after result
     <expr [] L1 ; NL (coroutine before)>
     <expr [hinted] L2 ; NL (coroutine input)>
     <hint result NL (yield exit hint)>
-    <expr [W] coroutine-after L3 ; result NL>)
+    <expr [yields W] coroutine-after L3 ; result NL>)
   -- May result in an error if the coroutine is complete or if it
   -- isn't a coroutine. May also result in an error if `result` is
   -- used nonlinearly and would be bound to a linear value.
 <expr [W] L1 L2 L3 ; NL> ::=
   (start-coroutine <hint NL (coroutine entry hint)>
     child-coroutine parent-coroutine first-child-coroutine-input
-    <expr [hinted coroutine-child-output]
+    <expr [yields hinted coroutine-child-output]
       parent-coroutine L1 ; first-child-coroutine-input NL
       (child coroutine computation)>
     child-coroutine-output main-output
-    <expr [hinted coroutine-main-output] child-coroutine L2 ; NL
+    <expr [yields hinted coroutine-main-output]
+      child-coroutine L2 ; NL
       (main computation)>
     <expr [W] L3 ; child-coroutine-output main-output NL (afterward)>)
   -- May result in an error if giving the last coroutine input to the
@@ -88,9 +105,10 @@ arbitrary subsequence. The types are `hinted`,
   -- and would be bound to a linear value.
   --
   -- NOTE: Notice that this expression can be used in a completely
-  -- nonlinear context, but still introduces linear variables
-  -- internally. Because of this, the other language features that use
-  -- linear variables still matter even if no linear variables are
+  -- nonlinear context, but still introduces linear variables and the
+  -- `yields` continuation type internally. Because of this, the other
+  -- language features that use linear variables and `yields` still
+  -- matter even if no linear variables or `yields` continuations are
   -- used in the program's top level or I/O.
 
 <hint NL> ::= (no-hint)
