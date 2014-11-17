@@ -15,86 +15,86 @@ verbosity in a stack trace, and for other purposes:
   error (e.g. using more stack frames or allocations than
   anticipated).
 
-In "<expr 3 lin1 lin2 L1 L2 ; nl1 nl2 NL1 NL2>", the capitalized
+In "<expr [] lin1 lin2 L1 L2 ; nl1 nl2 NL1 NL2>", the capitalized
 tokens represent sets of variables. The variables that come before the
-semicolon are linear, while the rest are nonlinear. The number "3"
-represents the number of debugger hints that must be stacked on this
-expression's result.
+semicolon are linear (usable exactly once), while the rest are
+nonlinear (usable zero, one, or more times).
 
-<expr 0 var ; NL> ::= (get var)
-<expr 0 ; var NL> ::= (get var)
-<expr 0 L1 L2 ; NL> ::=
+The brackets "[]" contain a sequence of continuation types, and
+sometimes they contain the capitalized variable "W" representing an
+arbitrary subsequence. The types are `hinted`,
+`coroutine-main-output`, and `coroutine-child-output`.
+
+<expr [] var ; NL> ::= (get var)
+<expr [] ; var NL> ::= (get var)
+<expr [] L1 L2 ; NL> ::=
   (call <hint NL (error description)>
-    <expr 0 L1 ; NL (function)> <expr 0 L2 ; NL (args)>)
+    <expr [] L1 ; NL (function)> <expr [] L2 ; NL (args)>)
   -- May result in an error if a non-function is called, or if the
   -- args are linear and the function's `sealed-args` is used
   -- nonlinearly.
-<expr N L ; NL> ::= (hints <hint NL> <expr N+1 L ; NL>)
-<expr 0 L1 L2 ; NL> ::=
+<expr [W] L ; NL> ::= (hints <hint NL> <expr [hinted W] L ; NL>)
+<expr [] L1 L2 ; NL> ::=
   (fn <hint NL (hint for memory inspector)>
-    captured <expr 0 L1 NL> (sealed-vars-to-capture ...) sealed-args
+    captured <expr [] L1 NL> (sealed-vars-to-capture ...) sealed-args
     <hint sealed-args NL>
-    <expr 1 L2 captured ; sealed-args NL>)
-<expr 0 L ; NL> ::=
+    <expr [hinted] captured L2 ; sealed-args NL>)
+<expr [] L ; NL> ::=
   (fn <hint NL (hint for memory inspector)>
-    captured <expr 0 NL> (sealed-nl-vars-to-capture ...) sealed-args
-    <expr 1 L ; captured sealed-args NL>)
-<expr 0 L1 L2 L3 ; NL> ::=
-  (child-coroutine-and-output
-    <hint NL (hint for memory inspector)>
-    <expr 0 L1 ; NL (child coroutine)>
-    <expr 0 L2 ; NL (last child coroutine input>
-    <expr 0 L3 ; NL (main output>)
-<expr 0 L1 L2 ; NL> ::=
-  (parent-coroutine-and-output
-    <hint NL (hint for memory inspector)>
-    <expr 0 L1 ; NL (parent coroutine)>
-    <expr 0 L2 ; NL (main output>)
-<expr N+1 L ; NL> ::= (hinted <hint NL> <expr N L ; NL>)
-<expr N sealed-x L ; NL> ::=
-  (unseal x sealed-x <hint NL> <expr N+1 x L ; NL>)
-<expr N L ; sealed-x NL> ::=
-  (unseal x sealed-x <hint x NL> <expr N+1 L ; x NL>)
+    captured <expr [] NL> (sealed-nl-vars-to-capture ...) sealed-args
+    <expr [hinted] L ; captured sealed-args NL>)
+<expr [coroutine-main-output] L1 L2 L3 ; NL> ::=
+  (coroutine-main-output
+    <expr [] L1 ; NL (child coroutine)>
+    <expr [] L2 ; NL (last child coroutine input)>
+    <expr [] L3 ; NL (main output)>)
+<expr [coroutine-child-output] L1 L2 ; NL> ::=
+  (coroutine-child-output
+    <expr [] L1 ; NL (parent coroutine)>
+    <expr [] L2 ; NL (main output)>)
+<expr [hinted W] L ; NL> ::= (hinted <hint NL> <expr [W] L ; NL>)
+<expr [W] sealed-x L ; NL> ::=
+  (unseal x sealed-x <hint NL> <expr [hinted W] x L ; NL>)
+<expr [W] L ; sealed-x NL> ::=
+  (unseal x sealed-x <hint x NL> <expr [hinted W] L ; x NL>)
   -- NOTE: By designing the language so a function's `sealed-args`
   -- must be passed through (unseal ...) before use, we make it so the
   -- function's implementation in between can have an arbitrary amount
   -- of abstraction without hogging the stack trace.
-<expr N L1 L2 L3 ; NL> ::=
+<expr [W] L1 L2 L3 ; NL> ::=
   (yield <hint NL (yield entry hint)>
     coroutine-after result
-    <expr 0 L1 ; NL (coroutine before)>
-    <expr 1 L2 ; NL (coroutine input)>
+    <expr [] L1 ; NL (coroutine before)>
+    <expr [hinted] L2 ; NL (coroutine input)>
     <hint result NL (yield exit hint)>
-    <expr N coroutine-after L3 ; result NL>)
+    <expr [W] coroutine-after L3 ; result NL>)
   -- May result in an error if the coroutine is complete or if it
   -- isn't a coroutine. May also result in an error if `result` is
   -- used nonlinearly and would be bound to a linear value.
-<expr N L1 L2 L3 ; NL> ::=
+<expr [W] L1 L2 L3 ; NL> ::=
   (start-coroutine <hint NL (coroutine entry hint)>
     child-coroutine parent-coroutine first-child-coroutine-input
-    <expr 1 parent-coroutine L1 ; first-child-coroutine-input NL
+    <expr [hinted coroutine-child-output]
+      parent-coroutine L1 ; first-child-coroutine-input NL
       (child coroutine computation)>
     child-coroutine-output main-output
-    <expr 1 child-coroutine L2 ; NL (main computation)>
-    <expr N L3 ; child-coroutine-output main-output NL (afterward)>)
-  -- May result in an error if the output of the main computation
-  -- isn't a (child-coroutine-and-output ...), if it was constructed
-  -- from a different coroutine, if giving the last coroutine input to
-  -- the child coroutine causes it to yield again rather than
-  -- completing, if the output of the child coroutine computation
-  -- isn't a (parent-coroutine-and-output ...), or if it was
-  -- constructed from a different coroutine. May also result in an
-  -- error if `first-child-coroutine-input`, `child-coroutine-output`,
-  -- or `main-output` is used nonlinearly and would be bound to a
-  -- linear value.
+    <expr [hinted coroutine-main-output] child-coroutine L2 ; NL
+      (main computation)>
+    <expr [W] L3 ; child-coroutine-output main-output NL (afterward)>)
+  -- May result in an error if giving the last coroutine input to the
+  -- child coroutine causes it to yield again rather than completing.
+  -- May also result in an error if `first-child-coroutine-input`,
+  -- `child-coroutine-output`, or `main-output` is used nonlinearly
+  -- and would be bound to a linear value.
+  --
   -- NOTE: Notice that this expression can be used in a completely
   -- nonlinear context, but still introduces linear variables
-  -- internally. This justifies our use of linear variables without
-  -- even requiring any linear variables at the top level of the
-  -- program.
+  -- internally. Because of this, the other language features that use
+  -- linear variables still matter even if no linear variables are
+  -- used in the program's top level or I/O.
 
 <hint NL> ::= (no-hint)
-<hint NL> ::= (expr <expr 0 ; NL>)
+<hint NL> ::= (expr <expr [] ; NL>)
 
 Notice that despite the coroutine feature, the only actual side
 effects are nontermination, getting stuck, and (non-semantic) resource
