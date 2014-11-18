@@ -103,22 +103,61 @@ arbitrary subsequence. The types are `hinted`, `yields`, and
   -- the coroutine's `first-coroutine-input` is used nonlinearly and
   -- would be bound to a linear value.
 <expr [W] L1 ; NL> ::= (yields-sandbox <expr [yields W] L1 ; NL>)
-<expr [yields W] L ; NL> ::=
+<expr [yields] L ; NL> ::=
   (coroutine <hint NL (hint for memory inspector)>
     (sealed-vars-to-capture ...)
     parent-coroutine first-coroutine-input
     <expr [yields coroutine-output]
       parent-coroutine L ; first-coroutine-input NL>)
-  -- NOTE: Notice that this expression can be used in a completely
-  -- nonlinear context, but still introduces linear variables. Because
-  -- of this, the other language features that use linear variables
-  -- still matter even if no linear variables are used in the
-  -- program's top level or I/O.
+  -- Returns a linear value.
+<expr [yields W] L ; NL> ::=
+  (make-demand-monitor demander monitor
+    <expr [yields W] demander monitor L ; NL>)
+  -- TODO: Figure out what hints we might want for demand monitors.
+<expr [yields W] L1 L2 ; NL> ::=
+  (drop-demander <hint NL (error description)>
+    <expr [yields] L1 ; NL>
+    <expr [yields W] L2 ; NL>)
+  -- May result in an error if the demander isn't a demander, or if
+  -- it's a demander outside the sandbox.
+<expr [yields W] L1 L2 ; NL> ::=
+  (split-demander <hint NL (error description)>
+    demander-prefix demander-suffix <expr [yields] L1 ; NL>
+    <expr [yields W] demander-prefix demander-suffix L2 ; NL>)
+  -- The list of demands for the two split-off demanders are
+  -- concatenated in order to determine the list of demands for the
+  -- original demander.
+  --
+  -- May result in an error if the demander isn't a demander, or if
+  -- it's a demander outside the sandbox.
+<expr [yields W] L1 L2 L3 ; NL> ::=
+  (demand <hint NL (error description)>
+    <expr [yields] L1 ; NL (demander)>
+    <expr [yields] L2 ; NL (demand)>
+    <expr [yields W] L3 ; NL (afterward)>)
+  -- May result in an error if the demander isn't a demander, or if
+  -- it's a demander outside the sandbox.
+<expr [yields] L1 L2 ; NL> ::=
+  (monitor-fold <expr [yields] L1 ; NL (monitor)>
+    <expr [yields] L2 ; NL (fold init)>
+    first rest <expr [yields] ; first rest NL (fold loop)>)
+  -- Waits for the demand monitor to complete, and then returns the
+  -- full list of demands, as folded by the given loop.
+  --
+  -- May result in an error if the monitor isn't a monitor, or if it's
+  -- a monitor outside the sandbox. May also result in an error if
+  -- `first` or `rest` is used nonlinearly and would be bound to a
+  -- linear value.
 
 <hint NL> ::= (no-hint)
 <hint NL> ::= (expr <expr [] ; NL>)
 
 
+Notice that the expressions (coroutine ...) and
+(make-demand-monitor ...) can be used in a completely nonlinear
+context, but still introduce linear variables. Because of this, linear
+variables still make a showing in the language even if no linear
+variables are used in the program's top level or I/O.
 
 Notice that in this language, the nesting of CPS-style abstractions
 can be visualized a lot like non-CPS nested function calls thanks to
