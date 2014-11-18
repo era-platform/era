@@ -22,8 +22,8 @@ nonlinear (usable zero, one, or more times).
 
 The brackets "[]" contain a sequence of continuation types, and
 sometimes they contain the capitalized variable "W" representing an
-arbitrary subsequence. The types are `hinted`, `yields`,
-`coroutine-main-output`, and `coroutine-child-output`.
+arbitrary subsequence. The types are `hinted`, `yields`, and
+`coroutine-output`.
 
 <expr [] var ; NL> ::= (get var)
 <expr [] ; var NL> ::= (get var)
@@ -52,33 +52,21 @@ arbitrary subsequence. The types are `hinted`, `yields`,
 <expr [W] L ; NL> ::= (hints <hint NL> <expr [hinted W] L ; NL>)
 <expr [yields W] L ; NL> ::=
   (yields-hints <hint NL> <expr [yields hinted W] L ; NL>)
-<expr [] L1 L2 ; NL> ::=
+<expr [] L ; NL> ::=
   (fn <hint NL (hint for memory inspector)>
-    captured <expr [] L1 NL> (sealed-vars-to-capture ...) sealed-args
-    <hint sealed-args NL>
-    <expr [hinted] captured L2 ; sealed-args NL>)
-  -- NOTE: This results in a linear value if `L1` is nonempty or if
-  -- any of the `sealed-vars-to-capture` is linear.
-<expr [] L1 L2 ; NL> ::=
+    (sealed-vars-to-capture ...) sealed-args
+    <expr [hinted hinted] L ; sealed-args NL>)
+  -- NOTE: This results in a linear value if `L` is nonempty or if any
+  -- of the `sealed-vars-to-capture` is linear.
+<expr [] L ; NL> ::=
   (yields-fn <hint NL (hint for memory inspector)>
-    captured <expr [] L1 NL> (sealed-vars-to-capture ...) sealed-args
-    <hint sealed-args NL>
-    <expr [yields hinted] captured L2 ; sealed-args NL>)
-  -- NOTE: This results in a linear value if `L1` is nonempty or if
-  -- any of the `sealed-vars-to-capture` is linear.
+    (sealed-vars-to-capture ...) sealed-args
+    <expr [hinted yields hinted] L ; sealed-args NL>)
+  -- NOTE: This results in a linear value if `L` is nonempty or if any
+  -- of the `sealed-vars-to-capture` is linear.
 <expr [yields W] L ; NL> ::= (yieldless <expr [W] L ; NL>)
-<expr [coroutine-main-output W] L1 L2 L3 ; NL> ::=
-  (coroutine-main-output <hint NL (yield entry hint)>
-    child-coroutine-result
-    <expr [] L1 ; NL (child coroutine)>
-    <expr [] L2 ; NL (last child coroutine input)>
-    <expr [hinted W] L3 ; child-coroutine-result NL (main output)>)
-  -- May result in an error if giving the last coroutine input to the
-  -- child coroutine causes it to yield again rather than completing.
-  -- May also result in an error if `child-coroutine-result` is used
-  -- nonlinearly and would be bound to a linear value.
-<expr [coroutine-child-output] L1 L2 ; NL> ::=
-  (coroutine-child-output <hint NL (coroutine exit hint)>
+<expr [coroutine-output] L1 L2 ; NL> ::=
+  (coroutine-output <hint NL (coroutine exit hint)>
     <expr [] L1 ; NL (parent coroutine)>
     <expr [] L2 ; NL (main output)>)
   -- May result in an error if the parent coroutine isn't the right
@@ -98,28 +86,29 @@ arbitrary subsequence. The types are `hinted`, `yields`,
     <expr [] L1 ; NL (coroutine before)>
     <expr [hinted] L2 ; NL (coroutine input)>
     <expr [hinted yields W] coroutine-after L3 ; result NL>)
-  -- May result in an error if the coroutine is complete or if it
-  -- isn't a coroutine. May also result in an error if `result` is
-  -- used nonlinearly and would be bound to a linear value.
-<expr [W] L1 ; NL> ::=
-  (yields-sandbox <hint NL (error description)>
-    <expr [yields W] L1 ; NL>)
-  -- May result in an error if the computation yields to any coroutine
-  -- it didn't create with (start-coroutine ...).
-<expr [yields W] L1 L2 ; NL> ::=
-  (start-coroutine <hint NL (coroutine entry hint)>
-    child-coroutine parent-coroutine first-child-coroutine-input
-    <expr [yields coroutine-child-output]
-      parent-coroutine L1 ; first-child-coroutine-input NL
-      (child coroutine computation)>
-    <expr [yields coroutine-main-output yields W]
-      child-coroutine L2 ; NL
-      (main computation)>)
-  -- May result in an error if giving the last coroutine input to the
-  -- child coroutine causes it to yield again rather than completing.
-  -- May also result in an error if `first-child-coroutine-input` is
-  -- used nonlinearly and would be bound to a linear value.
-  --
+  -- May result in an error if the coroutine is complete, if it isn't
+  -- a coroutine, or if it's a coroutine outside the sandbox. May also
+  -- result in an error if `result` or the coroutine's
+  -- `first-coroutine-input` is used nonlinearly and would be bound to
+  -- a linear value.
+<expr [yields W] L1 L2 L3 ; NL> ::=
+  (yield-last <hint NL (yield entry hint)>
+    result
+    <expr [] L1 ; NL (coroutine)>
+    <expr [hinted] L2 ; NL (coroutine input)>
+    <expr [hinted yields W] L3 ; result NL>)
+  -- May result in an error if the coroutine yields again rather than
+  -- completing, if it isn't a coroutine, or if it's a coroutine
+  -- outside the sandbox. May also result in an error if `result` or
+  -- the coroutine's `first-coroutine-input` is used nonlinearly and
+  -- would be bound to a linear value.
+<expr [W] L1 ; NL> ::= (yields-sandbox <expr [yields W] L1 ; NL>)
+<expr [yields W] L ; NL> ::=
+  (coroutine <hint NL (hint for memory inspector)>
+    (sealed-vars-to-capture ...)
+    parent-coroutine first-coroutine-input
+    <expr [yields coroutine-output]
+      parent-coroutine L ; first-coroutine-input NL>)
   -- NOTE: Notice that this expression can be used in a completely
   -- nonlinear context, but still introduces linear variables. Because
   -- of this, the other language features that use linear variables
