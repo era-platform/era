@@ -110,10 +110,18 @@ arbitrary subsequence. The types are `hinted`, `yields`, and
     <expr [yields coroutine-output]
       parent-coroutine L ; first-coroutine-input NL>)
   -- Returns a linear value.
-<expr [yields W] L ; NL> ::=
-  (make-demand-monitor demander monitor
-    <expr [yields W] demander monitor L ; NL>)
-  -- TODO: Figure out what hints we might want for demand monitors.
+<expr [] L1 L2 ; NL> ::=
+  (demander-sandbox <hint NL (error description)>
+    demander <expr [yields] demander L1 ; NL (effectful code)>
+    state demand <expr [] ; demand state NL (fold loop)>)
+  -- Waits for the given effectful code to complete, and then returns
+  -- the full list of demands, as folded by the given loop. The first
+  -- value of `state` is the result of the effectful code.
+  --
+  -- May result in an error if `demand` or `state` is used nonlinearly
+  -- and would be bound to a linear value.
+  --
+  -- TODO: Figure out what hints we might want for demanders.
 <expr [yields W] L1 L2 ; NL> ::=
   (drop-demander <hint NL (error description)>
     <expr [yields] L1 ; NL>
@@ -137,27 +145,16 @@ arbitrary subsequence. The types are `hinted`, `yields`, and
     <expr [yields W] L3 ; NL (afterward)>)
   -- May result in an error if the demander isn't a demander, or if
   -- it's a demander outside the sandbox.
-<expr [yields] L1 L2 ; NL> ::=
-  (monitor-fold <expr [yields] L1 ; NL (monitor)>
-    <expr [yields] L2 ; NL (fold init)>
-    first rest <expr [yields] ; first rest NL (fold loop)>)
-  -- Waits for the demand monitor to complete, and then returns the
-  -- full list of demands, as folded by the given loop.
-  --
-  -- May result in an error if the monitor isn't a monitor, or if it's
-  -- a monitor outside the sandbox. May also result in an error if
-  -- `first` or `rest` is used nonlinearly and would be bound to a
-  -- linear value.
 
 <hint NL> ::= (no-hint)
 <hint NL> ::= (expr <expr [] ; NL>)
 
 
-Notice that the expressions (coroutine ...) and
-(make-demand-monitor ...) can be used in a completely nonlinear
-context, but still introduce linear variables. Because of this, linear
-variables still make a showing in the language even if no linear
-variables are used in the program's top level or I/O.
+Notice that the expressions (coroutine ...) and (demander-sandbox ...)
+can be used in a completely nonlinear context, but still introduce
+linear variables. Because of this, linear variables still make a
+showing in the language even if no linear variables are used in the
+program's top level or I/O.
 
 Notice that in this language, the nesting of CPS-style abstractions
 can be visualized a lot like non-CPS nested function calls thanks to
