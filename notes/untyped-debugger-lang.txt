@@ -26,6 +26,10 @@ sometimes they contain the capitalized variable "W" representing an
 arbitrary subsequence. The types are `*`, `hint`, and `hinted`.
 
 <expr [*] ; NL> ::= (done)
+<expr [hint] ; NL> ::= (no-hint)
+<expr [hint] L ; NL> ::= (hint <expr [] L ; NL>)
+<expr [hinted W] L ; NL> ::=
+  (hinted <expr [hint] ; NL> <expr [W] L ; NL>)
 <expr [] var ; NL> ::= (get var)
 <expr [] ; var NL> ::= (get var)
 <expr [W] L1 L2 ; NL> ::=
@@ -34,43 +38,47 @@ arbitrary subsequence. The types are `*`, `hint`, and `hinted`.
   -- May result in an error if `x` is used nonlinearly and would be
   -- bound to a linear value.
 <expr [W] L1 L2 ; NL> ::= (do <expr [*] L1 ; NL> <expr [W] L2 ; NL>)
+<expr [W] L ; NL> ::=
+  (enter-contour $contour
+    <expr [hinted hinted W] L ; $contour NL
+      (body with entry and exit hints)>)
+  -- NOTE: Variables named `$contour` in this grammar are only for use
+  -- with (leave-contour ...). The code between the introduction and
+  -- use of `$contour` is considered to be "lexical internals." For
+  -- any given entrance into this boundary at run time, as the program
+  -- dynamically enters and exits the lexical internals, the time it
+  -- spends inside that lexical boundary is considered "dynamic
+  -- internals."
+  --
+  -- Not all function authors will have the discipline to remember to
+  -- put (leave-contour ...) in their higher-order functions, but
+  -- those who do will make it easier for clients to see their
+  -- higher-order client calls over the noise of the internal
+  -- abstraction layers. Fortunately, if a function hogs the stack
+  -- trace, a user can write a function that delegates to it inside
+  -- the appropriate (leave-contour ...) boundary.
+<expr [W] L ; $contour NL> ::=
+  (leave-contour $contour
+    <expr [hinted hinted W] L ; NL (body with entry and exit hints)>)
+<expr [] L ; NL> ::=
+  (fn <expr [hint] ; NL (hint for memory inspector)>
+    $contour args
+    <expr [hinted hinted] L ; $contour args NL
+      (body with entry and exit hints)>)
+  -- Results in a linear value if `L` is nonempty.
 <expr [] L1 L2 ; NL> ::=
   (call <expr [hint] ; NL (error description)>
     <expr [] L1 ; NL (function)> <expr [] L2 ; NL (args)>)
   -- May result in an error if a non-(fn ...) is called. May also
   -- result in an error if the function's `args` is used nonlinearly
   -- and would be bound to a linear value.
-<expr [W] L ; NL> ::=
-  (enter-contour contour
-    <expr [hinted hinted W] L ; NL (body with entry and exit hints)>)
-<expr [] L ; NL> ::=
-  (fn <expr [hint] ; NL (hint for memory inspector)>
-    contour args
-    <expr [hinted hinted] L ; contour args NL
-      (body with entry and exit hints)>)
-  -- Results in a linear value if `L` is nonempty.
-  --
-  -- NOTE: Variables named `contour` are only for use with
-  -- (leave-contour ...). The code in this function that isn't inside
-  -- (leave-contour ...) is considered to be the function's "lexical
-  -- internals." For any given function call at run time, as the
-  -- program dynamically enters and exits the lexical internals (even
-  -- after the function has returned), the time it spends inside that
-  -- lexical boundary is considered the "dynamic internals" of that
-  -- function call.
-  --
-  -- Not all function authors will have the discipline to remember to
-  -- put (leave-contour ...) in their higher-order functions, in which
-  -- case the internal abstraction layers might not be quite as easy
-  -- to distinguish from the higher-order client calls. Fortunately,
-  -- if a function hogs the stack trace, a user can write a function
-  -- that delegates to it inside the appropriate (leave-contour ...)
-  -- boundary.
-<expr [hinted W] L ; NL> ::=
-  (hinted <expr [hint] ; NL> <expr [W] L ; NL>)
-<expr [W] L ; contour NL> ::=
-  (leave-contour contour
-    <expr [hinted hinted W] L ; NL (body with entry and exit hints)>)
+<expr [] L1 L2 ; NL> ::=
+  (coroutine <expr [hint] ; NL (hint for memory inspector)>
+    parent-coroutine first-coroutine-input
+    <expr [*] parent-coroutine L1 ; first-coroutine-input NL>
+    finally-result
+    <expr [*] L2 ; finally-result NL>)
+  -- Returns a linear value.
 <expr [W] L1 L2 L3 ; NL> ::=
   (yield <expr [hint] ; NL (yield emigration hint)>
     <expr [] L1 ; NL (coroutine before)>
@@ -149,15 +157,6 @@ arbitrary subsequence. The types are `*`, `hint`, and `hinted`.
   -- `branch-input-2`, `branch-result-1`, `branch-result-2`, or the
   -- coroutine's own input variable is used nonlinearly and would be
   -- bound to a linear value.
-<expr [] L1 L2 ; NL> ::=
-  (coroutine <expr [hint] ; NL (hint for memory inspector)>
-    parent-coroutine first-coroutine-input
-    <expr [*] parent-coroutine L1 ; first-coroutine-input NL>
-    finally-result
-    <expr [*] L2 ; finally-result NL>)
-  -- Returns a linear value.
-<expr [hint] ; NL> ::= (no-hint)
-<expr [hint] L ; NL> ::= (hint <expr [] L ; NL>)
 
 
 Notice that the expression (coroutine ...) can be used in a completely
