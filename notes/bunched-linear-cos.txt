@@ -42,7 +42,7 @@ Speculative:
 ; FI*(A, B) corresponds to [@ FI*([@ @], [@ @]), IF*(A, B) @] for some FI*( ) and IF*( )
 ; FI*[A, B] corresponds to (@ FI*[[@ @], [@ @]], IF*[A, B] @) for some FI*( ) and IF*[ ]
 
-Notice these valid (and dual) inferences, suggesting IF+1{ } and If+2{ } are both intermediate between (+ +) and [+ +]:
+Notice these valid (and dual) inferences, suggesting IF+( ) and IF+[ ] are both intermediate between (+ +) and [+ +]:
 
 [* (+ [* *], [* *] +), (+ A, B +) *]
 (+ [* [* *], A *], [* [* *], B *] +)
@@ -93,3 +93,100 @@ C_ [@ a$(+ ?.A, ?.B +), a>IF*(C, D) @] <---> C_ (+ ?.[@ A, C @], ?.[@ B, D @] +)
 
 A derivation for a 2-like index:
 C_ [@ a$(+ ?.[@ @], ?.[@ @] +), a>IF*(C, D) @] <---> C_ (+ ?.C, ?.D +)
+
+We should be careful going too far with these definitions. They may conflate bunched (A -> B) with linear (!A -o B), which is known to be problematic:
+
+http://momigliano.di.unimi.it/research/bipapers/BunchedTyping.pdf ("On Bunched Typing")
+
+Let's start over and define a full grammar for structures:
+
+<structure> ::= <atom>
+<structure> ::= -. <atom>
+<structure> ::= <arrow> ()
+<structure> ::= <arrow> (<structure>, <structure>)
+<structure> ::= <arrow> []
+<structure> ::= <arrow> [<structure>, <structure>]
+<structure> ::= ${ <proof-step>,* }. <structure>
+<direction> ::= >
+<direction> ::= <
+<arrow> ::= <cartesian-operator> <cartesian-plane>
+<cartesian-operator> ::= *
+<cartesian-operator> ::= +
+<cartesian-plane> ::= @
+<cartesian-plane> ::= #
+<atom> ::= (any identifier)
+<proof-step> ::= <arrow> ({ <proof-step>,* }, { <proof-step>,* })
+<proof-step> ::= <arrow> [{ <proof-step>,* }, { <proof-step>,* }]
+<proof-step> ::= if <direction> <cartesian-plane>
+<proof-step> ::= init <direction> <cartesian-plane> <atom>
+<proof-step> ::= switch <direction> <cartesian-plane>
+<proof-step> ::= merge <arity> <direction> <atom>
+<proof-step> ::=
+  rot <arity> <direction> <cartesian-operator> <arity-direction>
+<proof-step> ::= c <direction>
+<proof-step> ::=
+  (various commutativity, associativity, and unit rules)
+<arity> ::= 0
+<arity> ::= 2
+<paren-direction> ::= ()
+<paren-direction> ::= []
+
+Equivalences:
+
+-- TODO: Actually, we should be tracking *two* directions for each
+-- proof step: Whether it's deriving from its subexpression to its
+-- continuation or vice versa, and whether it's the "down fragment"
+-- version of the rule or the contrapositive of that. (We don't
+-- necessarily respect the original classification of down fragments
+-- and up fragments, hence the scare quotes.)
+
+commutative, associative, unit, dual *@() *@[]  ; bunched multiplicative implication
+commutative, associative, unit, dual +@() +@[]  ; bunched conjunction, bunched disjunction
+commutative, associative, unit, dual *#() *#[]  ; bunched additive implication, linear multiplicative pair
+commutative, associative, unit, dual +#() +#[]  ; linear additive pair
+self-dual ${}.  ; provenance (takes the dual of each proof step, but keeps the order the same)
+dual ${__({}, {})}. ${__[{}, {}]}.
+dual ${if>_{}{}}. ${if<_{}{}}.  ; wormhole (takes the dual of each proof step, but keeps the order the same)
+dual ${init>_a}. ${init<_a}.
+dual ${switch>_}. ${switch<_}.
+dual ${merge_>a}. ${merge_<a}.
+dual ${rot_>_()}. ${rot_<_[]}.
+dual ${rot_>_[]}. ${rot_<_()}.
+dual ${c>}. ${c<}.  ; unknown computation forward or backward
+${P}.${Q}.S <---> ${P, Q}.S
+${P}.${-.P}.S <---> S  ; where -.P is the dual of P
+${__({P1}, {P2})}.__(A, B} <---> __(${P1}.A, ${P2}.B)
+${if<_}.+_(*_[A, C], *_[B, D]) <---> *_[+_(A, B), +_[C, D]]
+${init<_a}.*@() <---> *_[a, -.a]
+${switch<_}.*_(A, *_[B, C]) <---> *_[B, *_(A, C)]
+${merge0<a}.+#[] <---> +#a
+${merge2<a}.+#[a, a] <---> +#a
+${rot0<*[]}.+#[] <---> *#[+#[], +#[]]
+${rot2<*[]}.+#[*#[A, B], *#[C, D]] <---> *#[+#[A, C], +#[B, D]]
+${rot0<*()}.+#[] <---> *#(+#[], +#[])
+${rot2<*()}.+#[*#(A, B), *#(C, D)] <---> *#(+#[A, C], +#[B, D])
+${rot0<+()}.+#[] <---> +#(+#[], +#[])
+${rot2<+()}.+#[+#(A, B), +#(C, D)] <---> +#(+#[A, C], +#[B, D])
+
+Inequivalences:
+
+${c<}.A ---> A
+${c<}.A ---> ${c<}.${c<}.A
+${c<}.__(A, B) ---> ${c<}.__(${c<}.A, ${c<}.B)
+${c<}.__[A, B] ---> ${c<}.__[${c<}.A, ${c<}.B]
+${c<}.A ---> ${if<_}.A
+${c<}.A ---> ${init<_}.A
+${c<}.A ---> ${switch<_}.A
+${c<}.A ---> ${merge_<a}.A
+${c<}.A ---> ${rot_<___}.A
+
+-- TODO: Incorporate these bunched logic rules we've been neglecting.
+-- Maybe we're even using the wrong bunched `if`!
+*@() <---> +@[*@(), *@()]
++@[] <---> *@(+@[], +@[])
+*@() <---> *@[+@(), *@()]
+*@(*@[A, B], *@[C, D]) ---> *@[+@(A, C), +@[B, D]]
+a ---> *@(a, a)
++@[a, a] ---> a
+a ---> *@()
++@[] --> a
