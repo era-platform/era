@@ -27,135 +27,81 @@ arbitrary subsequence. The types are `result`, `hint`, `hinted`, and
 the end of "[]" brackets unless they end with a capitalized variable
 or a *.
 
-Before the "[]" section, the word `writes` or `yields` may occur,
-representing the following three levels of effects:
-
-- <expr [] ...>: A pure computation.
-- <expr writes [] ...>:
-  A computation that writes to ordered lists. The order of each list
-  is NOT determined by the order of the code, but instead by the
-  aliasing ancestry of the `writer-fn` created during
-  `writer-sandbox`. This allows the ordering to be controlled
-  independently of the code's causality and independently of
-  concurrent writers.
-- <expr yields [] ...>:
-  Shorthand for <expr writes yields [] ...>. Not only is this
-  computation not referentially transparent, but it's also fully
-  sequentialized. There's an evaluation order that allows causality to
-  to take paths other than the usual path from return values to
-  parameters.
-
-A capitalized variable may also occur, standing in for any set of
-`writes` or `yields`:
-
-- <expr E [] ...>
-- <expr writes E [] ...>
-
-<expr E [*] ; NL> ::= (done)
-<expr E [] var ; NL> ::= (get var)
-<expr E [] ; var NL> ::= (get var)
-<expr E [W] L1 L2 ; NL> ::=
-  (let <expr [hint] ; NL (error description)> x <expr E [] L1 ; NL>
-    <expr E [W] L2 ; x NL>)
+<expr [*] ; NL> ::= (done)
+<expr [] var ; NL> ::= (get var)
+<expr [] ; var NL> ::= (get var)
+<expr [W] L1 L2 ; NL> ::=
+  (let <expr [hint] ; NL (error description)> x <expr [] L1 ; NL>
+    <expr [W] L2 ; x NL>)
   -- May result in an error if `x` is used nonlinearly and would be
   -- bound to a linear value.
-<expr E [W] L1 L2 ; NL> ::=
-  (do <expr E [*] L1 ; NL> <expr E [W] L2 ; NL>)
-<expr E [] L1 L2 ; NL> ::=
+<expr [W] L1 L2 ; NL> ::= (do <expr [*] L1 ; NL> <expr [W] L2 ; NL>)
+<expr [] L1 L2 ; NL> ::=
   (call <expr [hint] ; NL (error description)>
-    <expr E [] L1 ; NL (function)> <expr E [] L2 ; NL (args)>)
+    <expr [] L1 ; NL (function)> <expr [] L2 ; NL (args)>)
   -- May result in an error if a non-(fn ...) is called, or if the
   -- args are linear and the function's `sealed-args` is used
   -- nonlinearly.
-<expr writes E [] L1 L2 ; NL> ::=
-  (writes-call <expr [hint] ; NL (error description)>
-    <expr writes E [] L1 ; NL (function)>
-    <expr writes E [] L2 ; NL (args)>)
-  -- May result in an error if a non-(writes-fn ...) is called, or if
-  -- the args are linear and the function's `sealed-args` is used
-  -- nonlinearly.
-<expr yields [] L1 L2 ; NL> ::=
-  (yields-call <expr [hint] ; NL (error description)>
-    <expr yields [] L1 ; NL (function)>
-    <expr yields [] L2 ; NL (args)>)
-  -- May result in an error if a non-(yields-fn ...) is called, or if
-  -- the args are linear and the function's `sealed-args` is used
-  -- nonlinearly.
-<expr E [W] L ; NL> ::=
-  (hints <expr [hint] ; NL> <expr E [hinted W] L ; NL>)
-<expr E [] L ; NL> ::=
+<expr [W] L ; NL> ::=
+  (hints <expr [hint] ; NL> <expr [hinted W] L ; NL>)
+<expr [] L ; NL> ::=
   (fn <expr [hint] ; NL (hint for memory inspector)>
     (sealed-vars-to-capture ...) sealed-args
     <expr [hint] ; sealed-args NL (entry hint)>
     <expr [hinted] L ; sealed-args NL>)
   -- NOTE: This results in a linear value if `L` is nonempty or if any
   -- of the `sealed-vars-to-capture` is linear.
-<expr E [] L ; NL> ::=
-  (writes-fn <expr [hint] ; NL (hint for memory inspector)>
-    (sealed-vars-to-capture ...) sealed-args
-    <expr [hint] ; sealed-args NL (entry hint)>
-    <expr writes [hinted] L ; sealed-args NL>)
-  -- NOTE: This results in a linear value if `L` is nonempty or if any
-  -- of the `sealed-vars-to-capture` is linear.
-<expr E [] L ; NL> ::=
-  (yields-fn <expr [hint] ; NL (hint for memory inspector)>
-    (sealed-vars-to-capture ...) sealed-args
-    <expr [hint] ; sealed-args NL (entry hint)>
-    <expr yields [hinted] L ; sealed-args NL>)
-  -- NOTE: This results in a linear value if `L` is nonempty or if any
-  -- of the `sealed-vars-to-capture` is linear.
-<expr E [coroutine-output W] L1 L2 ; NL> ::=
+<expr [coroutine-output W] L1 L2 ; NL> ::=
   (coroutine-output <expr [hint] ; NL (coroutine exit hint)>
-    <expr E [] L1 ; NL (parent coroutine)>
-    <expr E [W] L2 ; NL (main output)>)
+    <expr [] L1 ; NL (parent coroutine)>
+    <expr [W] L2 ; NL (main output)>)
   -- May result in an error if the parent coroutine isn't the right
   -- coroutine.
-<expr E [hinted W] L ; NL> ::=
-  (hinted <expr [hint] ; NL> <expr E [W] L ; NL>)
-<expr E [W] sealed-x L ; NL> ::=
-  (unseal x sealed-x <expr [hint] ; NL> <expr E [hinted W] x L ; NL>)
-<expr E [W] L ; sealed-x NL> ::=
-  (unseal x sealed-x <expr [hint] ; x NL>
-    <expr E [hinted W] L ; x NL>)
+<expr [hinted W] L ; NL> ::=
+  (hinted <expr [hint] ; NL> <expr [W] L ; NL>)
+<expr [W] sealed-x L ; NL> ::=
+  (unseal x sealed-x <expr [hint] ; NL> <expr [hinted W] x L ; NL>)
+<expr [W] L ; sealed-x NL> ::=
+  (unseal x sealed-x <expr [hint] ; x NL> <expr [hinted W] L ; x NL>)
   -- NOTE: By designing the language so a function's `sealed-args`
   -- must be passed through (unseal ...) before use, we make it so the
   -- function's implementation in between can have an arbitrary amount
   -- of abstraction without hogging the stack trace.
-<expr E [W] L1 L2 L3 ; NL> ::=
+<expr [W] L1 L2 L3 ; NL> ::=
   (yield <expr [hint] ; NL (yield entry hint)>
     coroutine-after result
-    <expr E [] L1 ; NL (coroutine before)>
-    <expr E [hinted] L2 ; NL (coroutine input)>
+    <expr [] L1 ; NL (coroutine before)>
+    <expr [hinted] L2 ; NL (coroutine input)>
     <expr [hint] ; result NL (yield reentry hint)>
-    <expr E [W] coroutine-after L3 ; result NL>)
+    <expr [W] coroutine-after L3 ; result NL>)
   -- May result in an error if the coroutine is complete, if it
   -- completes rather than yielding again, or if it isn't a coroutine.
   -- May also result in an error if `result` or the coroutine's
   -- `first-coroutine-input` is used nonlinearly and would be bound to
   -- to a linear value.
-<expr E [W] L1 L2 L3 ; NL> ::=
+<expr [W] L1 L2 L3 ; NL> ::=
   (yield-last <expr [hint] ; NL (yield entry hint)>
     result
-    <expr E [] L1 ; NL (coroutine)>
-    <expr E [hinted] L2 ; NL (coroutine input)>
+    <expr [] L1 ; NL (coroutine)>
+    <expr [hinted] L2 ; NL (coroutine input)>
     <expr [hint] ; result NL (yield reentry hint)>
-    <expr E [W] L3 ; result NL>)
+    <expr [W] L3 ; result NL>)
   -- May result in an error if the coroutine yields again rather than
   -- completing or if it isn't a coroutine. May also result in an
   -- error if `result` or the coroutine's `first-coroutine-input` is
   -- used nonlinearly and would be bound to a linear value.
-<expr E [] L ; NL> ::=
+<expr [] L ; NL> ::=
   (coroutine <expr [hint] ; NL (hint for memory inspector)>
     (sealed-vars-to-capture ...)
     parent-coroutine first-coroutine-input
-    <expr yields [coroutine-output]
+    <expr [coroutine-output]
       parent-coroutine L ; first-coroutine-input NL>)
   -- Returns a linear value.
-<expr E [] L1 L2 L3 ; NL> ::=
+<expr [] L1 L2 L3 ; NL> ::=
   (writer-sandbox <expr [hint] ; NL (error description)>
-    writer <expr writes E [*] writer L1 ; NL (effectful code)>
-    <expr E [] L2 ; NL (fold initial state)>
-    state writ <expr E [] L3 ; state writ NL (fold loop)>)
+    writer <expr [*] writer L1 ; NL (effectful code)>
+    <expr [] L2 ; NL (fold initial state)>
+    state writ <expr [] L3 ; state writ NL (fold loop)>)
   -- Waits for the given effectful code to complete, and then returns
   -- the full list of writes, as folded by the given loop. The first
   -- value of `state` is the result of the effectful code.
@@ -167,22 +113,22 @@ A capitalized variable may also occur, standing in for any set of
   -- there isn't exactly one writ.
   --
   -- TODO: Figure out what hints we might want for writers.
-<expr E [*] L ; NL> ::=
+<expr [*] L ; NL> ::=
   (drop-writer <expr [hint] ; NL (error description)>
-    <expr E [] L ; NL>)
+    <expr [] L ; NL>)
   -- May result in an error if the writer isn't a writer.
-<expr E [W] L1 L2 ; NL> ::=
+<expr [W] L1 L2 ; NL> ::=
   (split-writer <expr [hint] ; NL (error description)>
-    writer-for-prefix writer-for-suffix <expr E [] L1 ; NL>
-    <expr E [W] writer-for-prefix writer-for-suffix L2 ; NL>)
+    writer-for-prefix writer-for-suffix <expr [] L1 ; NL>
+    <expr [W] writer-for-prefix writer-for-suffix L2 ; NL>)
   -- May result in an error if the writer isn't a writer.
-<expr E [*] L1 L2 ; NL> ::=
+<expr [*] L1 L2 ; NL> ::=
   (write <expr [hint] ; NL (error description)>
-    <expr E [] L1 ; NL (writer)>
-    <expr E [] L2 ; NL (writ)>)
+    <expr [] L1 ; NL (writer)>
+    <expr [] L2 ; NL (writ)>)
   -- May result in an error if the writer isn't a writer.
-<expr E [hint] ; NL> ::= (no-hint)
-<expr E [hint] L ; NL> ::= (hint <expr E [] L ; NL>)
+<expr [hint] ; NL> ::= (no-hint)
+<expr [hint] L ; NL> ::= (hint <expr [] L ; NL>)
 
 
 Notice that the expressions (coroutine ...) and (writer-sandbox ...)
