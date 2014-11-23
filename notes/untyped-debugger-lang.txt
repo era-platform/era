@@ -47,8 +47,8 @@ or a *.
 <expr [] L ; NL> ::=
   (fn <expr [hint] ; NL (hint for memory inspector)>
     (sealed-vars-to-capture ...) sealed-args
-    <expr [hint] ; sealed-args NL (entry hint)>
-    <expr [hinted] L ; sealed-args NL>)
+    <expr [hinted hinted] L ; sealed-args NL
+      (body with entry and exit hints)>)
   -- NOTE: This results in a linear value if `L` is nonempty or if any
   -- of the `sealed-vars-to-capture` is linear.
 <expr [coroutine-output W] L1 L2 ; NL> ::=
@@ -60,32 +60,36 @@ or a *.
 <expr [hinted W] L ; NL> ::=
   (hinted <expr [hint] ; NL> <expr [W] L ; NL>)
 <expr [W] sealed-x L ; NL> ::=
-  (unseal x sealed-x <expr [hint] ; NL> <expr [hinted W] x L ; NL>)
+  (unseal x sealed-x
+    <expr [hinted hinted W] x L ; NL
+      (body with entry and exit hints)>)
 <expr [W] L ; sealed-x NL> ::=
-  (unseal x sealed-x <expr [hint] ; x NL> <expr [hinted W] L ; x NL>)
+  (unseal x sealed-x
+    <expr [hinted hinted W] L ; x NL
+      (body with entry and exit hints)>)
   -- NOTE: By designing the language so a function's `sealed-args`
   -- must be passed through (unseal ...) before use, we make it so the
   -- function's implementation in between can have an arbitrary amount
   -- of abstraction without hogging the stack trace.
 <expr [W] L1 L2 L3 ; NL> ::=
-  (yield <expr [hint] ; NL (yield entry hint)>
+  (yield <expr [hint] ; NL (yield emigration hint)>
     coroutine-after result
     <expr [] L1 ; NL (coroutine before)>
-    <expr [hinted] L2 ; NL (coroutine input)>
-    <expr [hint] ; result NL (yield reentry hint)>
-    <expr [W] coroutine-after L3 ; result NL>)
+    <expr [] L2 ; NL (coroutine input)>
+    <expr [hinted W] coroutine-after L3 ; result NL
+      (afterward with yield immigration hint)>)
   -- May result in an error if the coroutine is complete, if it
   -- completes rather than yielding again, or if it isn't a coroutine.
   -- May also result in an error if `result` or the coroutine's
   -- `first-coroutine-input` is used nonlinearly and would be bound to
   -- to a linear value.
 <expr [W] L1 L2 L3 ; NL> ::=
-  (yield-last <expr [hint] ; NL (yield entry hint)>
+  (yield-last <expr [hint] ; NL (yield emigration hint)>
     result
     <expr [] L1 ; NL (coroutine)>
-    <expr [hinted] L2 ; NL (coroutine input)>
-    <expr [hint] ; result NL (yield reentry hint)>
-    <expr [W] L3 ; result NL>)
+    <expr [] L2 ; NL (coroutine input)>
+    <expr [hinted W] L3 ; result NL
+      (afterward with yield immigration hint)>)
   -- May result in an error if the coroutine yields again rather than
   -- completing or if it isn't a coroutine. May also result in an
   -- error if `result` or the coroutine's `first-coroutine-input` is
