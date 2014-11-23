@@ -5,8 +5,9 @@ for entries in a log file, for frames in a stack trace, for levels of
 verbosity in a stack trace, and for other purposes:
 
 - Arbitrary information for application-specific debugging support.
-- Handles to state resources that are considered external to the
-  program (i.e. outliving the program).
+  - NOTE: It would seem useful but challenging for this information
+    to refer to state resources that are considered external to the
+    program (i.e. outliving the program).
 - Acceptable criteria for an alternate way to resume the program (e.g.
   a type and unit test suite for any debugger-inserted function
   result).
@@ -22,10 +23,7 @@ nonlinear (usable zero, one, or more times).
 
 The brackets "[]" contain a sequence of continuation types, and
 sometimes they contain the capitalized variable "W" representing an
-arbitrary subsequence. The types are `result`, `hint`, `hinted`, and
-`coroutine-output`. The `result` type actually appears implicitly at
-the end of "[]" brackets unless they end with a capitalized variable
-or a *.
+arbitrary subsequence. The types are `*`, `hint`, and `hinted`.
 
 <expr [*] ; NL> ::= (done)
 <expr [] var ; NL> ::= (get var)
@@ -51,12 +49,6 @@ or a *.
       (body with entry and exit hints)>)
   -- NOTE: This results in a linear value if `L` is nonempty or if any
   -- of the `sealed-vars-to-capture` is linear.
-<expr [coroutine-output W] L1 L2 ; NL> ::=
-  (coroutine-output <expr [hint] ; NL (coroutine exit hint)>
-    <expr [] L1 ; NL (parent coroutine)>
-    <expr [W] L2 ; NL (main output)>)
-  -- May result in an error if the parent coroutine isn't the right
-  -- coroutine.
 <expr [hinted W] L ; NL> ::=
   (hinted <expr [hint] ; NL> <expr [W] L ; NL>)
 <expr [W] sealed-x L ; NL> ::=
@@ -73,73 +65,98 @@ or a *.
   -- of abstraction without hogging the stack trace.
 <expr [W] L1 L2 L3 ; NL> ::=
   (yield <expr [hint] ; NL (yield emigration hint)>
-    coroutine-after result
     <expr [] L1 ; NL (coroutine before)>
     <expr [] L2 ; NL (coroutine input)>
+    coroutine-after result
     <expr [hinted W] coroutine-after L3 ; result NL
       (afterward with yield immigration hint)>)
-  -- May result in an error if the coroutine is complete, if it
-  -- completes rather than yielding again, or if it isn't a coroutine.
-  -- May also result in an error if `result` or the coroutine's
-  -- `first-coroutine-input` is used nonlinearly and would be bound to
-  -- to a linear value.
+  -- May result in an error if the coroutine isn't a coroutine, isn't
+  -- waiting for input, or doesn't call (yield ...) in response. May
+  -- also result in an error if `result` or the coroutine's own input
+  -- variable is used nonlinearly and would be bound to a linear
+  -- value.
 <expr [W] L1 L2 L3 ; NL> ::=
-  (yield-last <expr [hint] ; NL (yield emigration hint)>
+  (yield-request-drop <expr [hint] ; NL (yield emigration hint)>
     result
     <expr [] L1 ; NL (coroutine)>
     <expr [] L2 ; NL (coroutine input)>
     <expr [hinted W] L3 ; result NL
       (afterward with yield immigration hint)>)
-  -- May result in an error if the coroutine yields again rather than
-  -- completing or if it isn't a coroutine. May also result in an
-  -- error if `result` or the coroutine's `first-coroutine-input` is
+  -- May result in an error if the coroutine isn't a coroutine, isn't
+  -- waiting for input, or doesn't call (yield-and-drop ...) in
+  -- response. May also result in an error if `result` or the
+  -- coroutine's own input variable is used nonlinearly and would be
+  -- bound to a linear value.
+<expr [*] L1 L2 ; NL> ::=
+  (yield-and-drop <expr [hint] ; NL (coroutine exit hint)>
+    <expr [] L1 ; NL (parent coroutine)>
+    <expr [] L2 ; NL (parent coroutine finally input)>
+    <expr [] L2 ; NL (parent coroutine client input)>)
+  -- Passes one value to the `finally-result-1` or `finally-result-2`
+  -- variable of (yield-and-split ...) or the `finally-result`
+  -- variable of (coroutine ...), and passes another value to the
+  -- `result` variable of (yield-request-drop ...).
+  --
+  -- May result in an error if the parent coroutine isn't the right
+  -- coroutine or if it isn't waiting on a (yield-request-drop ...).
+  -- May also result in an error if either of the input variables is
   -- used nonlinearly and would be bound to a linear value.
-<expr [] L ; NL> ::=
+<expr [W] L1 L2 L3 ; NL> ::=
+  (yield-request-split <expr [hint] ; NL (yield emigration hint)>
+    coroutine-after-1 coroutine-after-2 result
+    <expr [] L1 ; NL (coroutine)>
+    <expr [] L2 ; NL (coroutine input)>
+    <expr [hinted W]
+      coroutine-after-1 coroutine-after-2 L3 ; result NL
+      (afterward with yield immigration hint)>)
+  -- May result in an error if the coroutine isn't a coroutine, isn't
+  -- waiting for input, or doesn't call (yield-and-split ...) in
+  -- response. May also result in an error if `result` or the
+  -- coroutine's own input variable is used nonlinearly and would be
+  -- bound to a linear value.
+<expr [W] L1 L2 L3 L4 L5 ; NL> ::=
+  (yield-and-split <expr [hint] ; NL (coroutine exit hint)>
+    <expr [] L1 ; NL (parent coroutine)>
+    <expr [] L2 ; NL (parent coroutine input)>
+    parent-coroutine-1 branch-input-1
+    <expr [hinted *] parent-coroutine-1 L3 ; branch-input-1 NL
+      (branch with yield immigration hint)>
+    parent-coroutine-2 branch-input-2
+    <expr [hinted *] parent-coroutine-2 L4 ; branch-input-2 NL
+      (branch with yield immigration hint)>
+    parent-coroutine-merged finally-result-1 finally-result-2
+    <expr [hinted W]
+      parent-coroutine-merged L5 ;
+      finally-result-1 finally-result-2 NL
+      (afterward with yield immigration hint)>)
+  -- Sends two new coroutine handles instead of one, and eventually
+  -- synchronizes into a single computation again. The values of
+  -- `finally-result-1` and `finally-result-2` are the finally inputs
+  -- of (yield-and-drop ...) for `parent-coroutine-1` and
+  -- `parent-coroutine-2`.
+  --
+  -- May result in an error if the parent coroutine isn't the right
+  -- coroutine or if it isn't waiting on a (yield-request-split ...).
+  -- May also result in an error if `branch-input-1`,
+  -- `branch-input-2`, `branch-result-1`, `branch-result-2`, or the
+  -- coroutine's own input variable is used nonlinearly and would be
+  -- bound to a linear value.
+<expr [] L1 L2 ; NL> ::=
   (coroutine <expr [hint] ; NL (hint for memory inspector)>
     (sealed-vars-to-capture ...)
     parent-coroutine first-coroutine-input
-    <expr [coroutine-output]
-      parent-coroutine L ; first-coroutine-input NL>)
+    <expr [*] parent-coroutine L1 ; first-coroutine-input NL>
+    finally-result
+    <expr [*] L2 ; finally-result NL>)
   -- Returns a linear value.
-<expr [] L1 L2 L3 ; NL> ::=
-  (writer-sandbox <expr [hint] ; NL (error description)>
-    writer <expr [*] writer L1 ; NL (effectful code)>
-    <expr [] L2 ; NL (fold initial state)>
-    state writ <expr [] L3 ; state writ NL (fold loop)>)
-  -- Waits for the given effectful code to complete, and then returns
-  -- the full list of writes, as folded by the given loop. The first
-  -- value of `state` is the result of the effectful code.
-  --
-  -- May result in an error if not all split-apart fragments of the
-  -- writer are taken care of before the effectful code completes. May
-  -- also result in an error if `writ` or `state` is used nonlinearly
-  -- and would be bound to a linear value, or if `L3` is nonempty and
-  -- there isn't exactly one writ.
-  --
-  -- TODO: Figure out what hints we might want for writers.
-<expr [*] L ; NL> ::=
-  (drop-writer <expr [hint] ; NL (error description)>
-    <expr [] L ; NL>)
-  -- May result in an error if the writer isn't a writer.
-<expr [W] L1 L2 ; NL> ::=
-  (split-writer <expr [hint] ; NL (error description)>
-    writer-for-prefix writer-for-suffix <expr [] L1 ; NL>
-    <expr [W] writer-for-prefix writer-for-suffix L2 ; NL>)
-  -- May result in an error if the writer isn't a writer.
-<expr [*] L1 L2 ; NL> ::=
-  (write <expr [hint] ; NL (error description)>
-    <expr [] L1 ; NL (writer)>
-    <expr [] L2 ; NL (writ)>)
-  -- May result in an error if the writer isn't a writer.
 <expr [hint] ; NL> ::= (no-hint)
 <expr [hint] L ; NL> ::= (hint <expr [] L ; NL>)
 
 
-Notice that the expressions (coroutine ...) and (writer-sandbox ...)
-can be used in a completely nonlinear context, but still introduce
-linear variables. Because of this, linear variables still make a
-showing in the language even if no linear variables are used in the
-program's top level or I/O.
+Notice that the expression (coroutine ...) can be used in a completely
+nonlinear context, but still introduces linear variables. Because of
+this, linear variables still make a showing in the language even if no
+linear variables are used in the program's top level or I/O.
 
 Notice that in this language, the nesting of CPS-style abstractions
 can be visualized a lot like non-CPS nested function calls thanks to
