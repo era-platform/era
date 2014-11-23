@@ -41,7 +41,8 @@ arbitrary subsequence. The types are `*`, `hint`, and `hinted`.
   -- result in an error if the function's `args` is used nonlinearly
   -- and would be bound to a linear value.
 <expr [W] L ; NL> ::=
-  (hints <expr [hint] ; NL> <expr [hinted W] L ; NL>)
+  (enter-contour contour
+    <expr [hinted hinted W] L ; NL (body with entry and exit hints)>)
 <expr [] L ; NL> ::=
   (fn <expr [hint] ; NL (hint for memory inspector)>
     contour args
@@ -49,7 +50,7 @@ arbitrary subsequence. The types are `*`, `hint`, and `hinted`.
       (body with entry and exit hints)>)
   -- Results in a linear value if `L` is nonempty.
   --
-  -- NOTE: The `contour` variable is only for use with
+  -- NOTE: Variables named `contour` are only for use with
   -- (leave-contour ...). The code in this function that isn't inside
   -- (leave-contour ...) is considered to be the function's "lexical
   -- internals." For any given function call at run time, as the
