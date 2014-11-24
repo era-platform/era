@@ -140,10 +140,8 @@ arbitrary subsequence. The types are `*`, `hint`, and `hinted`.
     parent-coroutine-2 branch-input-2
     <expr [hinted *] parent-coroutine-2 L4 ; branch-input-2 NL
       (branch with yield immigration hint)>
-    parent-coroutine-merged finally-result-1 finally-result-2
-    <expr [hinted W]
-      parent-coroutine-merged L5 ;
-      finally-result-1 finally-result-2 NL
+    finally-result-1 finally-result-2
+    <expr [hinted W] L5 ; finally-result-1 finally-result-2 NL
       (afterward with yield immigration hint)>)
   -- Sends two new coroutine handles instead of one, and eventually
   -- synchronizes into a single computation again. The values of
