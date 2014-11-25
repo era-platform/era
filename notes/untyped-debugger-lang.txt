@@ -235,7 +235,12 @@ observe it either.
 <dynamic-type-tag> ::= _{ <stage-set> }
 <dynamic-type-tag> ::= Atom{ <stage-set> }
 <dynamic-type-tag> ::= Stage{ <stage-set> }
-<dynamic-type-tag> ::= Coroutine{ <stage-set> }
+<dynamic-type-tag> ::= ChildCoroutine{ <stage-set> }
+<dynamic-type-tag> ::= PleaseGo{ <stage-set> }
+<dynamic-type-tag> ::= PleaseDrop{ <stage-set> }
+<dynamic-type-tag> ::= PleaseSplit{ <stage-set> }
+<dynamic-type-tag> ::= ParentCoroutine{ <stage-set> }
+  -- shorthand for (PleaseGo{p} + (PleaseYield{p} + PleaseDrop{p}))
 <dynamic-type-tag> ::= (_ -> _){ <stage-set> }
   -- We never dynamically check the input and output types of a
   -- function.
@@ -357,14 +362,23 @@ makeCoroutine :: forall p1 p2 p3 p4.
   ( ( (parentCoroutine{p1} * firstCoroutineInput{p1}) ->
       Atom{p2}){p1} *
     (finallyResult{p3} -> Atom{p4}){p1}) ->
-  (BadInput +{?}{p1} coroutine{p1})
+  (BadInput +{?}{p1} PleaseYield{p1})
   -- The BadInput case occurs when the input isn't of dynamic type
   -- ((_ -> _){p1} * (_ -> _){p1}), and it replicates the actual
   -- input.
-yield :: forall p1 p2. (coroutineBefore{p1} * coroutineInput{p1}) ->
-  (BadInput +{?}{p1, p2} (coroutineAfter{p1} * result{p2}))
+yieldRequestGo ::
+  forall p1 p2. (ChildCoroutine{p1} * coroutineInput{p1}) ->
+    (BadInput +{?}{p1, p2} (ChildCoroutine{p1} * result{p2}))
   -- The BadInput case occurs when the input isn't of dynamic type
-  -- (Coroutine{p1} * _{p1}), and it replicates the actual input.
+  -- (ChildCoroutine{p1} * _{p1}), and it replicates the actual input.
+  --
+  -- Note that this actually scours the dynamic type tag for
+  -- (coroutineInput{p1}) even though it imposes no requirement on the
+  -- dynamic type constructor itself.
+yieldAndGo :: forall p1 p2. (PleaseGo{p1} * coroutineInput{p1}) ->
+  (BadInput +{?}{p1, p2} (ParentCoroutine{p1} * result{p2}))
+  -- The BadInput case occurs when the input isn't of dynamic type
+  -- (PleaseGo{p1} * _{p1}), and it replicates the actual input.
   --
   -- Note that this actually scours the dynamic type tag for
   -- (coroutineInput{p1}) even though it imposes no requirement on the
