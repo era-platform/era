@@ -235,6 +235,7 @@ observe it either.
 <dynamic-type-tag> ::= _{ <stage-set> }
 <dynamic-type-tag> ::= Atom{ <stage-set> }
 <dynamic-type-tag> ::= Stage{ <stage-set> }
+<dynamic-type-tag> ::= Coroutine{ <stage-set> }
 <dynamic-type-tag> ::= (_ -> _){ <stage-set> }
   -- We never dynamically check the input and output types of a
   -- function.
@@ -294,17 +295,21 @@ copyFn :: forall p.
   -- (_ -> _){p}, and it replicates the actual input.
 
 apply :: forall p1 p2.
-  ((A -> B){p} * (A * c{p2})) -> (BadInput +{?}{?} (B * c{p2}))
--- The BadInput case occurs when the input isn't of the dynamic type
--- ((_ -> _){p} * (_ * _)), and it replicates the actual input.
+  ((A -> B){p1} * (a{p1} * c{p2})) -> (BadInput +{?}{?} (B * c{p2}))
+  -- The BadInput case replicates inputs not of dynamic type
+  -- ((_ -> _){p1} * (_{p1} * _)).
+  --
+  -- Note that this actually scours the dynamic type tag for (a{p1})
+  -- even though it imposes no requirement on the dynamic type
+  -- constructor itself.
 compose :: forall p.
   ((A -> B){p} * (B -> C){p}) -> (BadInput +{?}{p} (A -> C){p})
--- The BadInput case occurs when the input isn't of the dynamic type
--- ((_ -> _){p} * (_ -> _){p}), and it replicates the actual input.
-quoteFn ::
-  forall p. (A -> B){p} -> (BadInput +{?}{p} (Atom{p} -> (A -> B){p}))
--- The BadInput case occurs when the input isn't of the dynamic type
--- (_ -> _){p}, and it replicates the actual input.
+  -- The BadInput case occurs when the input isn't of the dynamic type
+  -- ((_ -> _){p} * (_ -> _){p}), and it replicates the actual input.
+quoteFn :: forall p.
+  (A -> B){p} -> (BadInput +{?}{p} (Atom{p} -> (A -> B){p}){p})
+  -- The BadInput case occurs when the input isn't of the dynamic type
+  -- (_ -> _){p}, and it replicates the actual input.
 
 L :: forall p1 p2 p3.
   (a{p1} +{p1}{p2, p3} (b{p2} +{p2}{p3} c{p3})) ->
@@ -322,11 +327,11 @@ C :: forall p. (a{p} +{p}{} Atom{}) -> (BadInput +{?}{p} a{p})
   -- The BadInput case occurs when the input isn't of dynamic type
   -- (_ +{p}{} Atom{}), and it replicates the actual input.
 
-applyOrDrop :: forall p1 p2 p3 p4.
-  ((A -> B){p1} * ((a{p2} +{p2}{p3} c{p3}) * d{p4})) ->
-  (BadInput +{?}{?} ((B +{?}{p3} c{p3}) * d{p4}))
+applyOrDrop :: forall p1 p2 p3.
+  ((A -> B){p1} * ((a{p1} +{p1}{p2} c{p2}) * d{p3})) ->
+  (BadInput +{?}{?} ((B +{?}{p2} c{p2}) * d{p3}))
   -- The BadInput case occurs when the input isn't of dynamic type
-  -- ((_ -> _){p1} * ((_ +{p2}{p3} _) * _)), and it replicates the
+  -- ((_ -> _){p1} * ((_ +{p1}{p2} _) * _)), and it replicates the
   -- actual input.
 distribute :: forall p1 p2 p3. (a{p1} * (b{p2} +{p2}{p3} c{p3})) ->
   (BadInput +{?}{p1, p2, p3}
@@ -347,3 +352,22 @@ merge :: forall p1 p2.
 assert :: forall p1 p2. (a{p1} +{p1}{b2} b{p2}) -> b{p2}
 -- Causes a fatal error with the error message (a{p1}) in every stage
 -- where the message is observed.
+
+makeCoroutine :: forall p1 p2 p3 p4.
+  ( ( (parentCoroutine{p1} * firstCoroutineInput{p1}) ->
+      Atom{p2}){p1} *
+    (finallyResult{p3} -> Atom{p4}){p1}) ->
+  (BadInput +{?}{p1} coroutine{p1})
+  -- The BadInput case occurs when the input isn't of dynamic type
+  -- ((_ -> _){p1} * (_ -> _){p1}), and it replicates the actual
+  -- input.
+yield :: forall p1 p2. (coroutineBefore{p1} * coroutineInput{p1}) ->
+  (BadInput +{?}{p1, p2} (coroutineAfter{p1} * result{p2}))
+  -- The BadInput case occurs when the input isn't of dynamic type
+  -- (Coroutine{p1} * _{p1}), and it replicates the actual input.
+  --
+  -- Note that this actually scours the dynamic type tag for
+  -- (coroutineInput{p1}) even though it imposes no requirement on the
+  -- dynamic type constructor itself.
+-- TODO: Add `yield-request-drop`, `yield-and-drop`,
+-- `yield-request-split`, and `yield-and-split`.
