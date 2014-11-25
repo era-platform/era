@@ -167,3 +167,183 @@ can be visualized a lot like non-CPS nested function calls thanks to
 (leave-contour ...). And thanks to coroutines, certain implementations
 of language interpreters written in this language can inherit this
 language's debugger support without hogging the main stack!
+
+---
+
+Let's do this again in a concatenative style, ripping off big parts of
+the Awelon instruction set ABC.
+
+https://github.com/dmbarbour/awelon/blob/master/ABC.md
+
+(The operators listed here are remixed in ways that probably aren't
+pragmatic for a bytecode, but they should still be a sufficient
+basis.)
+
+While we're at it, let's generalize to multiple stages (like Awelon
+will generalize to multiple partitions), and let's keep being explicit
+about what happens in an error case.
+
+(TODO: Actually add linear coroutines to this, based on the above
+lisp-style system.)
+
+(TODO: Add a way to get values of type Stage, for use with splitAtom.
+Namely, add something that allows stages to be defined in the language
+in an expressive way, much like the above coroutines allow imperative
+and concurrent effects to be defined in the language.)
+
+(TODO: Add debugger hints to this. Not only would that be informed by
+the above lisp-style system; it might also be relevant as a feature of
+user-defined stages! When adding debugger hints, think of it like
+this: Sequential code is code that carries a single linear value
+throughout. Roughly, causally commutative code is code that carries
+branching linear values and eventually spends them all. Either way,
+stack frames are like splitting linear values into two, hiding one of
+each pair (representing the stack up to this point), and recombining
+them later. Unfortunately, implementing it that way would require a
+search of the heap upon exit, in order to find the linear values to
+rejoin the "stack" with.)
+
+A stage is a part of the code that is supposed to execute at a certain
+time and place. The code is always running in a certain stage, and it
+may also be recording things to do in later stages. The variables `p`,
+`p1`, `p2`, etc. refer to sets of stages. The values processed by the
+below operators are tagged according to which stages they actually
+exist as values in. Except for the main stage, all these stage-tagged
+values actually record what operators they go through, so that these
+operators can be transported or stored for that stage's actual
+execution.
+
+Every operator can be recorded this way, even the operators for
+creating new stages (which haven't been invented yet; TODO). Hence,
+the stage variable `p1` can represent many qualitatively different
+things at once: It can sometimes refer to the current stage being
+executed, it can refer to a later stage being recorded, and whatever
+stage it refers to, it actually transitively includes all descendant
+stages that might be created by that one and passed through the same
+code.
+
+Just because a stage can observe a value doesn't mean all its
+descendant stages can, and of course its ancestors can't necessarily
+observe it either.
+
+<word> ::= <function-name>
+<word> ::= ' <function-name>
+  -- Transforms the function from signature (A -> B) to
+  -- (forall p1 p2. c{p1} -> (A -> B){p2} * c{p1}).
+
+<dynamic-type-tag> ::= _  -- don't care
+<dynamic-type-tag> ::= _{ <stage-set> }
+<dynamic-type-tag> ::= Atom{ <stage-set> }
+<dynamic-type-tag> ::= Stage{ <stage-set> }
+<dynamic-type-tag> ::= (_ -> _){ <stage-set> }
+  -- We never dynamically check the input and output types of a
+  -- function.
+<dynamic-type-tag> ::= <dynamic-type-tag> * <dynamic-type-tag>
+<dynamic-type-tag> ::= (<var> : <dynamic-type-tag>)
+  -- This just accomplishes the ability to refer to this value
+  -- elsewhere in the tag.
+<dynamic-type-tag> ::=
+  <dynamic-type-tag> +{ <stage-set> }{ <stage-set> }
+    <dynamic-type-tag>
+<stage-set> ::= (nothing)  -- empty set
+<stage-set> ::= <stage-set> , <stage-set>  -- set union
+<stage-set> ::= <var>
+<var> ::= (any identifier)
+
+-- In the following, any positive occurrence of type (a -> b) is a
+-- function that may cause an error if `a` isn't the expected type.
+-- This dynamic check checks (a * b) types recursively, and it checks
+-- (a -> b) types shallowly.
+
+splitAtom :: forall p1 p2.
+  ((p3 : Stage{p1}) * ((p4 : Stage{p2}) * Atom{p3, p4})) ->
+  (BadInput +{?}{p3, p4} (Atom{p3} * Atom{p4}))
+  -- The BadInput case occurs when the input isn't of dynamic type
+  -- ((p3 : Stage{p1}) * ((p4 : Stage{p2}) * Atom{p3, p4})), and it
+  -- replicates the actual input.
+reifySumTags :: forall p1 p2. (a{p1} +{p1}{p2} b{p2}) ->
+  (BadInput +{?}{p1, p2}
+    ((Atom{p1} * a{p1}) +{p1}{p2} (Atom{p2} * a{p2})))
+  -- The BadInput case occurs when the input isn't of dynamic type
+  -- (_ +{p1}{p2} _), and it replicates the actual input.
+
+l :: forall p1 p2 p3. (a{p1} * (b{p2} * c{p3})) ->
+  (BadInput +{?}{p1, p2, p3} ((a{p1} * b{p2}) * c{p3}))
+  -- The BadInput case occurs when the input isn't of dynamic type
+  -- (_ * (_ * _)), and it replicates the actual input.
+r :: ... (obvious ((a * b) * c) -> (a * (b * c)) with BadInput)
+w :: ... (obvious (a * (b * c)) -> (b * (a * c)) with BadInput)
+z :: ...
+  (obvious (a * (b * (c * d))) -> (a * (c * (b * d))) with BadInput)
+v :: a{p} -> (a{p} * Atom{p})
+  -- Note that this actually scours the dynamic type tag for (a{p}) to
+  -- figure out what {p} is, even though it imposes no requirement on
+  -- the dynamic type constructor itself.
+c :: forall p1 p2. (a{p1} * Atom{p2}) -> (BadInput +{?}{p} a{p1})
+  -- The BadInput case occurs when the input isn't of dynamic type
+  -- (_ * Atom{p2}), and it replicates the actual input.
+copyAtom :: forall p. Atom{p} -> (BadInput +{?}{p} (Atom{p} * Atom{p})
+  -- The BadInput case occurs when the input isn't of dynamic type
+  -- Atom{p}, and it replicates the actual input.
+dropFn :: forall p. (A -> B){p} -> (BadInput +{?}{p} Atom{p})
+  -- The BadInput case occurs when the input isn't of dynamic type
+  -- (_ -> _){p}, and it replicates the actual input.
+copyFn :: forall p.
+  (A -> B){p} -> (BadInput +{?}{p} ((A -> B){p} * (A -> B){p}))
+  -- The BadInput case occurs when the input isn't of dynamic type
+  -- (_ -> _){p}, and it replicates the actual input.
+
+apply :: forall p1 p2.
+  ((A -> B){p} * (A * c{p2})) -> (BadInput +{?}{?} (B * c{p2}))
+-- The BadInput case occurs when the input isn't of the dynamic type
+-- ((_ -> _){p} * (_ * _)), and it replicates the actual input.
+compose :: forall p.
+  ((A -> B){p} * (B -> C){p}) -> (BadInput +{?}{p} (A -> C){p})
+-- The BadInput case occurs when the input isn't of the dynamic type
+-- ((_ -> _){p} * (_ -> _){p}), and it replicates the actual input.
+quoteFn ::
+  forall p. (A -> B){p} -> (BadInput +{?}{p} (Atom{p} -> (A -> B){p}))
+-- The BadInput case occurs when the input isn't of the dynamic type
+-- (_ -> _){p}, and it replicates the actual input.
+
+L :: forall p1 p2 p3.
+  (a{p1} +{p1}{p2, p3} (b{p2} +{p2}{p3} c{p3})) ->
+  (BadInput +{?}{p1, p2, p3}
+    ((a{p1} +{p1}{p2} b{p2}) +{p1, p2}{p3} c{p3}))
+  -- The BadInput case replicates inputs not of dynamic type
+  -- (_ +{p1}{p2, p3} (_ +{p2}{p3} _)), but it will not observe an
+  -- error in the (a{p1}) case.
+R :: ... (obvious ((a + b) + c) -> (a + (b + c)) with BadInput)
+W :: ... (obvious (a + (b + c)) -> (b + (a + c)) with BadInput)
+Z :: ...
+  (obvious (a + (b + (c + d))) -> (a + (c + (b + d))) with BadInput)
+V :: forall p. a{p} -> (a{p} +{p}{} Atom{})
+C :: forall p. (a{p} +{p}{} Atom{}) -> (BadInput +{?}{p} a{p})
+  -- The BadInput case occurs when the input isn't of dynamic type
+  -- (_ +{p}{} Atom{}), and it replicates the actual input.
+
+applyOrDrop :: forall p1 p2 p3 p4.
+  ((A -> B){p1} * ((a{p2} +{p2}{p3} c{p3}) * d{p4})) ->
+  (BadInput +{?}{?} ((B +{?}{p3} c{p3}) * d{p4}))
+  -- The BadInput case occurs when the input isn't of dynamic type
+  -- ((_ -> _){p1} * ((_ +{p2}{p3} _) * _)), and it replicates the
+  -- actual input.
+distribute :: forall p1 p2 p3. (a{p1} * (b{p2} +{p2}{p3} c{p3})) ->
+  (BadInput +{?}{p1, p2, p3}
+    ((a{p1} * b{p2}) +{p1, p2}{p1, p3} (a{p1} * c{p3})))
+  -- The BadInput case occurs when the input isn't of dynamic type
+  -- (_ * (_ +{p2}{p3} _)), and it replicates the actual input.
+partialFactor :: forall p1 p2 p3 p4.
+  ((a{p1} * b{p2}) +{p1, p2}{p3, p4} (c{p3} * d{p4})) ->
+  (BadInput +{?}{p1, p2, p3, p4}
+    ((a{p1} +{p1}{p3} c{p3}) * (b{p2} +{p2}{p4} d{p4})))
+  -- The BadInput case occurs when the input isn't of dynamic type
+  -- ((_ * _) +{p1, p2}{p3, p4} (_ * _)), and it replicates the actual
+  -- input.
+merge :: forall p1 p2.
+  (a{p1} +{p1}{p2} a{p2}) -> (BadInput +{?}{p1, p2} a{p1, p2})
+  -- The BadInput case occurs when the input isn't of dynamic type
+  -- (_ +{p1}{p2} _), and it replicates the actual input.
+assert :: forall p1 p2. (a{p1} +{p1}{b2} b{p2}) -> b{p2}
+-- Causes a fatal error with the error message (a{p1}) in every stage
+-- where the message is observed.
