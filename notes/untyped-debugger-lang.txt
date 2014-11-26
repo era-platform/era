@@ -271,11 +271,6 @@ splitAtom :: forall p1 p2.
   -- The BadInput case occurs when the input isn't of dynamic type
   -- ((p3 : Stage{p1}) * ((p4 : Stage{p2}) * Atom{p3, p4})), and it
   -- replicates the actual input.
-reifySumTags :: forall p1 p2. (a{p1} +{p1}{p2} b{p2}) ->
-  (BadInput +{?}{p1, p2}
-    ((Atom{p1} * a{p1}) +{p1}{p2} (Atom{p2} * a{p2})))
-  -- The BadInput case occurs when the input isn't of dynamic type
-  -- (_ +{p1}{p2} _), and it replicates the actual input.
 
 l :: forall p1 p2 p3. (a{p1} * (b{p2} * c{p3})) ->
   (BadInput +{?}{p1, p2, p3} ((a{p1} * b{p2}) * c{p3}))
@@ -338,11 +333,13 @@ applyOrDrop :: forall p1 p2 p3.
   -- The BadInput case occurs when the input isn't of dynamic type
   -- ((_ -> _){p1} * ((_ +{p1}{p2} _) * _)), and it replicates the
   -- actual input.
-distribute :: forall p1 p2 p3. (a{p1} * (b{p2} +{p2}{p3} c{p3})) ->
-  (BadInput +{?}{p1, p2, p3}
-    ((a{p1} * b{p2}) +{p1, p2}{p1, p3} (a{p1} * c{p3})))
+distribute :: forall p1 p2.
+  (a{p1, p2} * (b{p1} +{p1}{p2} c{p2})) ->
+  (BadInput +{?}{p1, p2}
+    ((a{p1, p2} * b{p1}) +{p1, p2}{p1, p2} (a{p1, p2} * c{p2})))
   -- The BadInput case occurs when the input isn't of dynamic type
-  -- (_ * (_ +{p2}{p3} _)), and it replicates the actual input.
+  -- (_{p1, p2} * (_ +{p1}{p2} _)), and it replicates the actual
+  -- input.
 partialFactor :: forall p1 p2 p3 p4.
   ((a{p1} * b{p2}) +{p1, p2}{p3, p4} (c{p3} * d{p4})) ->
   (BadInput +{?}{p1, p2, p3, p4}
