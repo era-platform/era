@@ -235,7 +235,7 @@ observe it either.
 <word> ::= <function-name>
 <word> ::= ' <function-name>
   -- Transforms the function from signature (A -> B) to
-  -- (forall p1 p2. c{p1} -> (A -> B){p2} * c{p1}).
+  -- (forall p1 p2. c{p1} -> ((A -> B){p2} * c{p1})).
 
 <dynamic-type-tag> ::= _  -- don't care
 <dynamic-type-tag> ::= _{ <stage-set> }
@@ -366,6 +366,9 @@ makeCoroutine :: forall p1 p2 p3 p4.
   -- The BadInput case occurs when the input isn't of dynamic type
   -- ((_ -> _){p1} * (_ -> _){p1}), and it replicates the actual
   -- input.
+  --
+  -- If the ultimate outcome of either function is not an Atom{?},
+  -- this causes a fatal error.
 yieldRequestGo ::
   forall p1 p2. (ChildCoroutine{p1} * coroutineInput{p1}) ->
     (BadInput +{?}{p1, p2} (ChildCoroutine{p1} * result{p2}))
@@ -392,18 +395,21 @@ yieldRequestSplit ::
       ((ChildCoroutine{p1} * ChildCoroutine{p1}) * result{p2}))
   -- The BadInput case occurs when the input isn't of dynamic type
   -- (ChildCoroutine{p1} * _{p1}), and it replicates the actual input.
-yieldAndSplit :: forall p1 p2 p3 p4 p5.
+yieldAndSplit :: forall p1 p2 p3 p4 p5 p6 p7.
   (PleaseSplit{p1} *
     (coroutineInput{p1} *
-      ( ( (ParentCoroutine{p1} * branchInput1{p2}) ->
-          Atom{p1, p2}){p1} *
-        ( ( (ParentCoroutine{p1} * branchInput2{p3}) ->
-            Atom{p1, p3}){p1} *
-          ( (finallyResult1{p4} * finallyResult2{p5}) ->
-            mainFinallyResult{p6}){p1})))
+      ( ((ParentCoroutine{p1} * branchInput1{p2}) -> Atom{p3}){p1} *
+        ( ((ParentCoroutine{p1} * branchInput2{p4}) -> Atom{p5}){p1} *
+          ( (finallyResult1{p4} * finallyResult2{p6}) ->
+            mainFinallyResult{p7}){p1})))
   ) ->
     (BadInput +{?}{p1} Atom{p1})
   -- The BadInput case occurs when the input isn't of dynamic type
+  --
   -- (PleaseSplit{p1} *
-  --   (_{p1} * ((_ -> _){p1} * ((_ -> _){p1} * (_ -> _){p1})))), and
-  -- it replicates the actual input.
+  --   (_{p1} * ((_ -> _){p1} * ((_ -> _){p1} * (_ -> _){p1}))))
+  --
+  -- and it replicates the actual input.
+  --
+  -- If the ultimate outcome of either branch function is not an
+  -- Atom{?}, this causes a fatal error.
