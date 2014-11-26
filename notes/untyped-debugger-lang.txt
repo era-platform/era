@@ -140,14 +140,17 @@ arbitrary subsequence. The types are `*`, `hint`, and `hinted`.
     parent-coroutine-2 branch-input-2
     <expr [hinted *] parent-coroutine-2 L4 ; branch-input-2 NL
       (branch with yield immigration hint)>
-    finally-result-1 finally-result-2
-    <expr [hinted W] L5 ; finally-result-1 finally-result-2 NL
+    needs-finally finally-result-1 finally-result-2
+    <expr [hinted W]
+      L5 ; needs-finally finally-result-1 finally-result-2 NL
       (afterward with yield immigration hint)>)
   -- Sends two new coroutine handles instead of one, and eventually
   -- synchronizes into a single computation again. The values of
   -- `finally-result-1` and `finally-result-2` are the finally inputs
-  -- of (yield-and-drop ...) for `parent-coroutine-1` and
-  -- `parent-coroutine-2`.
+  -- that came from (yield-and-drop ...) for `parent-coroutine-1` and
+  -- `parent-coroutine-2`. The value of `needs-finally` must be
+  -- satisfied by (satisfy-finally ...), and when it is, that value
+  -- will be the finally input of the original parent coroutine.
   --
   -- May result in an error if the parent coroutine isn't the right
   -- coroutine or if it isn't waiting on a (yield-request-split ...).
@@ -155,6 +158,12 @@ arbitrary subsequence. The types are `*`, `hint`, and `hinted`.
   -- `branch-input-2`, `branch-result-1`, `branch-result-2`, or the
   -- coroutine's own input variable is used nonlinearly and would be
   -- bound to a linear value.
+<expr [*] L1 L2 ; NL> ::=
+  (satisfy-finally
+    <expr [] L1 ; NL (a `needs-finally` value)>
+    <expr [] L2 ; NL (finally input)>)
+  -- May result in an error if the `needs-finally` value isn't a
+  -- `needs-finally` value.
 
 
 Notice that the expression (coroutine ...) can be used in a completely
@@ -182,9 +191,6 @@ basis.)
 While we're at it, let's generalize to multiple stages (like Awelon
 will generalize to multiple partitions), and let's keep being explicit
 about what happens in an error case.
-
-(TODO: Actually add linear coroutines to this, based on the above
-lisp-style system.)
 
 (TODO: Add a way to get values of type Stage, for use with splitAtom.
 Namely, add something that allows stages to be defined in the language
@@ -233,6 +239,9 @@ observe it either.
 
 <dynamic-type-tag> ::= _  -- don't care
 <dynamic-type-tag> ::= _{ <stage-set> }
+  -- Note that this imposes no requirement on the dynamic type
+  -- constructor itself, but still scours the dynamic type tag to
+  -- impose a requirement on the stage information.
 <dynamic-type-tag> ::= Atom{ <stage-set> }
 <dynamic-type-tag> ::= Stage{ <stage-set> }
 <dynamic-type-tag> ::= ChildCoroutine{ <stage-set> }
@@ -255,11 +264,6 @@ observe it either.
 <stage-set> ::= <stage-set> , <stage-set>  -- set union
 <stage-set> ::= <var>
 <var> ::= (any identifier)
-
--- In the following, any positive occurrence of type (a -> b) is a
--- function that may cause an error if `a` isn't the expected type.
--- This dynamic check checks (a * b) types recursively, and it checks
--- (a -> b) types shallowly.
 
 splitAtom :: forall p1 p2.
   ((p3 : Stage{p1}) * ((p4 : Stage{p2}) * Atom{p3, p4})) ->
@@ -303,10 +307,6 @@ apply :: forall p1 p2.
   ((A -> B){p1} * (a{p1} * c{p2})) -> (BadInput +{?}{?} (B * c{p2}))
   -- The BadInput case replicates inputs not of dynamic type
   -- ((_ -> _){p1} * (_{p1} * _)).
-  --
-  -- Note that this actually scours the dynamic type tag for (a{p1})
-  -- even though it imposes no requirement on the dynamic type
-  -- constructor itself.
 compose :: forall p.
   ((A -> B){p} * (B -> C){p}) -> (BadInput +{?}{p} (A -> C){p})
   -- The BadInput case occurs when the input isn't of the dynamic type
@@ -371,17 +371,39 @@ yieldRequestGo ::
     (BadInput +{?}{p1, p2} (ChildCoroutine{p1} * result{p2}))
   -- The BadInput case occurs when the input isn't of dynamic type
   -- (ChildCoroutine{p1} * _{p1}), and it replicates the actual input.
-  --
-  -- Note that this actually scours the dynamic type tag for
-  -- (coroutineInput{p1}) even though it imposes no requirement on the
-  -- dynamic type constructor itself.
 yieldAndGo :: forall p1 p2. (PleaseGo{p1} * coroutineInput{p1}) ->
   (BadInput +{?}{p1, p2} (ParentCoroutine{p1} * result{p2}))
   -- The BadInput case occurs when the input isn't of dynamic type
   -- (PleaseGo{p1} * _{p1}), and it replicates the actual input.
-  --
-  -- Note that this actually scours the dynamic type tag for
-  -- (coroutineInput{p1}) even though it imposes no requirement on the
-  -- dynamic type constructor itself.
--- TODO: Add `yield-request-drop`, `yield-and-drop`,
--- `yield-request-split`, and `yield-and-split`.
+yieldRequestDrop ::
+  forall p1 p2. (ChildCoroutine{p1} * coroutineInput{p1}) ->
+    (BadInput +{?}{p2} result{p2})
+  -- The BadInput case occurs when the input isn't of dynamic type
+  -- (ChildCoroutine{p1} * _{p1}), and it replicates the actual input.
+yieldAndDrop :: forall p1.
+  (PleaseDrop{p1} * (coroutineInput{p1} * finallyInput{p1})) ->
+  (BadInput +{?}{p1} Atom{p1})
+  -- The BadInput case occurs when the input isn't of dynamic type
+  -- (PleaseGo{p1} * (_{p1} * _{p1})), and it replicates the actual
+  -- input.
+yieldRequestSplit ::
+  forall p1 p2. (ChildCoroutine{p1} * coroutineInput{p1}) ->
+    (BadInput +{?}{p1, p2}
+      ((ChildCoroutine{p1} * ChildCoroutine{p1}) * result{p2}))
+  -- The BadInput case occurs when the input isn't of dynamic type
+  -- (ChildCoroutine{p1} * _{p1}), and it replicates the actual input.
+yieldAndSplit :: forall p1 p2 p3 p4 p5.
+  (PleaseSplit{p1} *
+    (coroutineInput{p1} *
+      ( ( (ParentCoroutine{p1} * branchInput1{p2}) ->
+          Atom{p1, p2}){p1} *
+        ( ( (ParentCoroutine{p1} * branchInput2{p3}) ->
+            Atom{p1, p3}){p1} *
+          ( (finallyResult1{p4} * finallyResult2{p5}) ->
+            mainFinallyResult{p6}){p1})))
+  ) ->
+    (BadInput +{?}{p1} Atom{p1})
+  -- The BadInput case occurs when the input isn't of dynamic type
+  -- (PleaseSplit{p1} *
+  --   (_{p1} * ((_ -> _){p1} * ((_ -> _){p1} * (_ -> _){p1})))), and
+  -- it replicates the actual input.
