@@ -242,6 +242,24 @@ observe it either.
   -- Note that this imposes no requirement on the dynamic type
   -- constructor itself, but still scours the dynamic type tag to
   -- impose a requirement on the stage information.
+<dynamic-type-tag> ::= Placeholder{ <stage-set> }
+  -- Although this case never appears in a type signature below, this
+  -- will successfully pass most type tag checks as long as it has the
+  -- right stage set. For instance, if `l` gets an input of type
+  -- Placeholder{p}, it will return a value of type
+  --
+  -- (BadInput +{?}{p}
+  --   ((Placeholder{p} * Placeholder{p}) * Placeholder{p}))
+  --
+  -- If it gets an input of type (a{p1} * Placeholder{p2}), it will
+  -- return a value of type
+  --
+  -- (BadInput +{?}{p1, p2}
+  --   ((a{p} * Placeholder{p2}) * Placeholder{p2}))
+  --
+  -- TODO: Figure out what happens to each specific operator when it
+  -- gets a Placeholder{?}.
+<dynamic-type-tag> ::= Zero
 <dynamic-type-tag> ::= Atom{ <stage-set> }
 <dynamic-type-tag> ::= Stage{ <stage-set> }
 <dynamic-type-tag> ::= ChildCoroutine{ <stage-set> }
@@ -262,6 +280,7 @@ observe it either.
     <dynamic-type-tag>
 <stage-set> ::= (nothing)  -- empty set
 <stage-set> ::= <stage-set> , <stage-set>  -- set union
+<stage-set> ::= Zero  -- universe
 <stage-set> ::= <var>
 <var> ::= (any identifier)
 
@@ -271,6 +290,10 @@ splitAtom :: forall p1 p2.
   -- The BadInput case occurs when the input isn't of dynamic type
   -- ((p3 : Stage{p1}) * ((p4 : Stage{p2}) * Atom{p3, p4})), and it
   -- replicates the actual input.
+getTag :: forall p. a{p} -> (a{p} * Atom{p})
+  -- Note that this actually scours the dynamic type tag for (a{p}) to
+  -- figure out what {p} is, even though it imposes no requirement on
+  -- the dynamic type constructor itself.
 
 l :: forall p1 p2 p3. (a{p1} * (b{p2} * c{p3})) ->
   (BadInput +{?}{p1, p2, p3} ((a{p1} * b{p2}) * c{p3}))
@@ -280,17 +303,31 @@ r :: ... (obvious ((a * b) * c) -> (a * (b * c)) with BadInput)
 w :: ... (obvious (a * (b * c)) -> (b * (a * c)) with BadInput)
 z :: ...
   (obvious (a * (b * (c * d))) -> (a * (c * (b * d))) with BadInput)
-v :: a{p} -> (a{p} * Atom{p})
-  -- Note that this actually scours the dynamic type tag for (a{p}) to
-  -- figure out what {p} is, even though it imposes no requirement on
-  -- the dynamic type constructor itself.
-c :: forall p1 p2. (a{p1} * Atom{p2}) -> (BadInput +{?}{p} a{p1})
+v :: forall p. a{p} -> (a{p} * Atom{})
+c :: forall p. (a{p} * Atom{}) -> (BadInput +{?}{p} a{p})
   -- The BadInput case occurs when the input isn't of dynamic type
-  -- (_ * Atom{p2}), and it replicates the actual input.
-copyAtom :: forall p. Atom{p} -> (BadInput +{?}{p} (Atom{p} * Atom{p})
+  -- (_ * Atom{}), and it replicates the actual input.
+dropZero :: forall p. Zero -> (BadInput +{?}{} Atom{})
+  -- The BadInput case occurs when the input isn't of dynamic type
+  -- Zero, and it replicates the actual input.
+copyZero :: forall p. Zero -> (BadInput +{?}{Zero} (Zero * Zero))
+  -- The BadInput case occurs when the input isn't of dynamic type
+  -- Zero, and it replicates the actual input.
+dropAtom :: forall p. Atom{p} -> (BadInput +{?}{} Atom{})
   -- The BadInput case occurs when the input isn't of dynamic type
   -- Atom{p}, and it replicates the actual input.
-dropFn :: forall p. (A -> B){p} -> (BadInput +{?}{p} Atom{p})
+copyAtom ::
+  forall p. Atom{p} -> (BadInput +{?}{p} (Atom{p} * Atom{p}))
+  -- The BadInput case occurs when the input isn't of dynamic type
+  -- Atom{p}, and it replicates the actual input.
+dropStage :: forall p. Stage{p} -> (BadInput +{?}{} Atom{})
+  -- The BadInput case occurs when the input isn't of dynamic type
+  -- Stage{p}, and it replicates the actual input.
+copyStage ::
+  forall p. Stage{p} -> (BadInput +{?}{p} (Stage{p} * Stage{p}))
+  -- The BadInput case occurs when the input isn't of dynamic type
+  -- Stage{p}, and it replicates the actual input.
+dropFn :: forall p. (A -> B){p} -> (BadInput +{?}{} Atom{})
   -- The BadInput case occurs when the input isn't of dynamic type
   -- (_ -> _){p}, and it replicates the actual input.
 copyFn :: forall p.
@@ -307,7 +344,7 @@ compose :: forall p.
   -- The BadInput case occurs when the input isn't of the dynamic type
   -- ((_ -> _){p} * (_ -> _){p}), and it replicates the actual input.
 quoteFn :: forall p.
-  (A -> B){p} -> (BadInput +{?}{p} (Atom{p} -> (A -> B){p}){p})
+  (A -> B){p} -> (BadInput +{?}{p} (Atom{} -> (A -> B){p}){p})
   -- The BadInput case occurs when the input isn't of the dynamic type
   -- (_ -> _){p}, and it replicates the actual input.
 
@@ -322,10 +359,10 @@ R :: ... (obvious ((a + b) + c) -> (a + (b + c)) with BadInput)
 W :: ... (obvious (a + (b + c)) -> (b + (a + c)) with BadInput)
 Z :: ...
   (obvious (a + (b + (c + d))) -> (a + (c + (b + d))) with BadInput)
-V :: forall p. a{p} -> (a{p} +{p}{} Atom{})
-C :: forall p. (a{p} +{p}{} Atom{}) -> (BadInput +{?}{p} a{p})
+V :: forall p. a{p} -> (a{p} +{p}{Zero} Zero)
+C :: forall p. (a{p} +{p}{Zero} Zero) -> (BadInput +{?}{p} a{p})
   -- The BadInput case occurs when the input isn't of dynamic type
-  -- (_ +{p}{} Atom{}), and it replicates the actual input.
+  -- (_ +{p}{} Zero), and it replicates the actual input.
 
 applyOrDrop :: forall p1 p2 p3.
   ((A -> B){p1} * ((a{p1} +{p1}{p2} c{p2}) * d{p3})) ->
@@ -355,17 +392,16 @@ assert :: forall p1 p2. (a{p1} +{p1}{b2} b{p2}) -> b{p2}
 -- Causes a fatal error with the error message (a{p1}) in every stage
 -- where the message is observed.
 
-makeCoroutine :: forall p1 p2 p3 p4.
-  ( ( (parentCoroutine{p1} * firstCoroutineInput{p1}) ->
-      Atom{p2}){p1} *
-    (finallyResult{p3} -> Atom{p4}){p1}) ->
+makeCoroutine :: forall p1 p2.
+  ( ( (parentCoroutine{p1} * firstCoroutineInput{p1}) -> Atom{}){p1} *
+    (finallyResult{p2} -> Atom{}){p1}) ->
   (BadInput +{?}{p1} PleaseYield{p1})
   -- The BadInput case occurs when the input isn't of dynamic type
   -- ((_ -> _){p1} * (_ -> _){p1}), and it replicates the actual
   -- input.
   --
-  -- If the ultimate outcome of either function is not an Atom{?},
-  -- this causes a fatal error.
+  -- If the ultimate outcome of either function is not an Atom{}, this
+  -- causes a fatal error.
 yieldRequestGo ::
   forall p1 p2. (ChildCoroutine{p1} * coroutineInput{p1}) ->
     (BadInput +{?}{p1, p2} (ChildCoroutine{p1} * result{p2}))
@@ -382,7 +418,7 @@ yieldRequestDrop ::
   -- (ChildCoroutine{p1} * _{p1}), and it replicates the actual input.
 yieldAndDrop :: forall p1.
   (PleaseDrop{p1} * (coroutineInput{p1} * finallyInput{p1})) ->
-  (BadInput +{?}{p1} Atom{p1})
+  (BadInput +{?}{} Atom{})
   -- The BadInput case occurs when the input isn't of dynamic type
   -- (PleaseGo{p1} * (_{p1} * _{p1})), and it replicates the actual
   -- input.
@@ -392,15 +428,15 @@ yieldRequestSplit ::
       ((ChildCoroutine{p1} * ChildCoroutine{p1}) * result{p2}))
   -- The BadInput case occurs when the input isn't of dynamic type
   -- (ChildCoroutine{p1} * _{p1}), and it replicates the actual input.
-yieldAndSplit :: forall p1 p2 p3 p4 p5 p6 p7.
+yieldAndSplit :: forall p1 p2 p3 p4 p5 p6.
   (PleaseSplit{p1} *
     (coroutineInput{p1} *
-      ( ((ParentCoroutine{p1} * branchInput1{p2}) -> Atom{p3}){p1} *
-        ( ((ParentCoroutine{p1} * branchInput2{p4}) -> Atom{p5}){p1} *
-          ( (finallyResult1{p4} * finallyResult2{p6}) ->
-            mainFinallyResult{p7}){p1})))
+      ( ((ParentCoroutine{p1} * branchInput1{p2}) -> Atom{}){p1} *
+        ( ((ParentCoroutine{p1} * branchInput2{p3}) -> Atom{}){p1} *
+          ( (finallyResult1{p4} * finallyResult2{p5}) ->
+            mainFinallyResult{p6}){p1})))
   ) ->
-    (BadInput +{?}{p1} Atom{p1})
+    (BadInput +{?}{} Atom{})
   -- The BadInput case occurs when the input isn't of dynamic type
   --
   -- (PleaseSplit{p1} *
@@ -409,4 +445,4 @@ yieldAndSplit :: forall p1 p2 p3 p4 p5 p6 p7.
   -- and it replicates the actual input.
   --
   -- If the ultimate outcome of either branch function is not an
-  -- Atom{?}, this causes a fatal error.
+  -- Atom{}, this causes a fatal error.
