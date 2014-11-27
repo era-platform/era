@@ -226,6 +226,17 @@ Just because a stage can observe a value doesn't mean all its
 descendant stages can, and of course its ancestors can't necessarily
 observe it either.
 
+When we measure a condition in a future stage, we get two branches. In
+that stage, only one branch exists at a time -- but in the current
+stage, we have to deal with two code-recording cursors at the same
+time! In order to be able to pull this structure apart and manipulate
+it in general, we actually represent all conditions as two values,
+only one of which is actually active and useful. These two values are
+tagged with corresponding positive and negative versions of a
+condition tag, and a value's condition tags act as a sort of stack of
+shields that keeps the value from being used with any value outside
+its share of parallel universes.
+
 <word> ::= <function-name>
 <word> ::= ' <function-name>
   -- Transforms the function from signature (A -> B) to
@@ -392,7 +403,7 @@ yieldAndGo ::
   (PleaseGo{s} * coroutineInput{s}) ->! (ParentCoroutine{s} * result)
 yieldRequestDrop :: (ChildCoroutine{s} * coroutineInput{s}) ->! result
 yieldAndDrop ::
-  (PleaseDrop{s} * (coroutineInput{s} * finallyInput{s})) -> Atom{}
+  (PleaseDrop{s} * (coroutineInput{s} * finallyInput{s})) ->! Atom{}
 yieldRequestSplit :: (ChildCoroutine{s} * coroutineInput{s}) ->!
   ((ChildCoroutine{s} * ChildCoroutine{s}) * result)
 yieldAndSplit ::
