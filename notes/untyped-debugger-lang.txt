@@ -311,8 +311,10 @@ its share of parallel universes.
   -- The type ParentCoroutine+c1+c2{s} is shorthand for
   -- (PleaseGo{s} +c1 (PleaseDrop{s} +c2 PleaseSplit{s})).
 <dynamic-constructor> ::= (_ -> _)
-  -- We never dynamically check the input and output types of a
-  -- function.
+<dynamic-constructor> ::= (_ -> Atom{})
+  -- Whenever this function is called, if the output is not an Atom{},
+  -- a fatal error occurs in every stage and condition where that
+  -- output value is observed.
 <var> ::= (any identifier)
 
 -- The following function signatures use an extended version of these
@@ -403,8 +405,6 @@ makeCoroutine ::
   ( ((ParentCoroutine{s} * firstCoroutineInput{s}) -> Atom{}){s} *
     (finallyResult -> Atom{}){s}) ->!
   PleaseYield{s}
-  -- If the ultimate outcome of either function is not an Atom{}, this
-  -- causes a fatal error.
 yieldRequestGo :: (ChildCoroutine{s} * coroutineInput{s}) ->!
   (ChildCoroutine{s} * result)
 yieldAndGo ::
@@ -422,8 +422,6 @@ yieldAndSplit ::
           ( (finallyResult1 * finallyResult2) ->
             mainFinallyResult){s})))
   ) ->! Atom{}
-  -- If the ultimate outcome of either branch function is not an
-  -- Atom{}, this causes a fatal error.
 
 dropUniqueness :: Uniqueness{s} ->! Atom{}
 splitUniqueness :: Uniqueness{s} ->! (Uniqueness{s} * Uniqueness{s})
@@ -441,7 +439,4 @@ startRecording ::
   (Uniqueness{s2} * (Continuation{s2} * Placeholder{s2}))
   -- where `s2` is a fresh descendant of stage `s1` on each call,
   -- thanks to the Uniqueness source
-  --
-  -- If the ultimate outcome of the function is not an Atom{}, this
-  -- causes a fatal error.
 satisfyContinuation :: (Continuation{s} * a{s}) ->! Atom{}
