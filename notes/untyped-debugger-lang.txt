@@ -192,14 +192,9 @@ While we're at it, let's generalize to multiple stages (like Awelon
 will generalize to multiple partitions), and let's keep being explicit
 about what happens in an error case.
 
-(TODO: Add a way to get values of type Stage, for use with splitAtom.
-Namely, add something that allows stages to be defined in the language
-in an expressive way, much like the above coroutines allow imperative
-and concurrent effects to be defined in the language.)
-
 (TODO: Add debugger hints to this. Not only would that be informed by
 the above lisp-style system; it might also be relevant as a feature of
-user-defined stages! When adding debugger hints, think of it like
+user-defined stages. When adding debugger hints, think of it like
 this: Sequential code is code that carries a single linear value
 throughout. Roughly, causally commutative code is code that carries
 branching linear values and eventually spends them all. Either way,
@@ -211,8 +206,8 @@ rejoin the "stack" with.)
 
 A stage is a part of the code that is supposed to execute at a certain
 time and place. The code is always running in a certain stage, and it
-may also be recording things to do in later stages. The variables `p`,
-`p1`, `p2`, etc. refer to sets of stages. The values processed by the
+may also be recording things to do in later stages. The variables `s`,
+`s1`, `s2`, etc. refer to sets of stages. The values processed by the
 below operators are tagged according to which stages they actually
 exist as values in. Except for the main stage, all these stage-tagged
 values actually record what operators they go through, so that these
@@ -220,13 +215,12 @@ operators can be transported or stored for that stage's actual
 execution.
 
 Every operator can be recorded this way, even the operators for
-creating new stages (which haven't been invented yet; TODO). Hence,
-the stage variable `p1` can represent many qualitatively different
-things at once: It can sometimes refer to the current stage being
-executed, it can refer to a later stage being recorded, and whatever
-stage it refers to, it actually transitively includes all descendant
-stages that might be created by that one and passed through the same
-code.
+creating new stages. Hence, the stage variable `s` can represent a
+whole tree of stages at once: It can explicitly refer to the current
+stage being executed, it can explicitly refer to any direct descendant
+of that stage (i.e. a stage currently being recorded), and whatever it
+explicitly refers to, it implicitly spans all the indirect descendants
+of that stage.
 
 Just because a stage can observe a value doesn't mean all its
 descendant stages can, and of course its ancestors can't necessarily
@@ -235,214 +229,197 @@ observe it either.
 <word> ::= <function-name>
 <word> ::= ' <function-name>
   -- Transforms the function from signature (A -> B) to
-  -- (forall p1 p2. c{p1} -> ((A -> B){p2} * c{p1})).
+  -- (c -> ((A -> B){s} * c)), where `s` is the current stage.
 
-<dynamic-type-tag> ::= _  -- don't care
-<dynamic-type-tag> ::= _{ <stage-set> }
-  -- Note that this imposes no requirement on the dynamic type
-  -- constructor itself, but still scours the dynamic type tag to
-  -- impose a requirement on the stage information.
-<dynamic-type-tag> ::= Placeholder{ <stage-set> }
-  -- Although this case never appears in a type signature below, this
-  -- will successfully pass most type tag checks as long as it has the
-  -- right stage set. For instance, if `l` gets an input of type
-  -- Placeholder{p}, it will return a value of type
-  --
-  -- (BadInput +{?}{p}
-  --   ((Placeholder{p} * Placeholder{p}) * Placeholder{p}))
-  --
-  -- If it gets an input of type (a{p1} * Placeholder{p2}), it will
-  -- return a value of type
-  --
-  -- (BadInput +{?}{p1, p2}
-  --   ((a{p} * Placeholder{p2}) * Placeholder{p2}))
-  --
-  -- TODO: Figure out what happens to each specific operator when it
-  -- gets a Placeholder{?}.
-<dynamic-type-tag> ::= Zero
-<dynamic-type-tag> ::= Atom{ <stage-set> }
-<dynamic-type-tag> ::= Stage{ <stage-set> }
-<dynamic-type-tag> ::= ChildCoroutine{ <stage-set> }
-<dynamic-type-tag> ::= PleaseGo{ <stage-set> }
-<dynamic-type-tag> ::= PleaseDrop{ <stage-set> }
-<dynamic-type-tag> ::= PleaseSplit{ <stage-set> }
-<dynamic-type-tag> ::= ParentCoroutine{ <stage-set> }
-  -- shorthand for (PleaseGo{p} + (PleaseYield{p} + PleaseDrop{p}))
-<dynamic-type-tag> ::= (_ -> _){ <stage-set> }
+<dynamic-type-pattern> ::= _  -- don't care
+<dynamic-type-pattern> ::= <var>
+<dynamic-type-pattern> ::= (<var> : <dynamic-type-pattern>)
+  -- This just accomplishes the ability to refer to this value
+  -- elsewhere in the pattern.
+<dynamic-type-pattern> ::= Zero  -- shorthand for Placeholder{Zero}
+<dynamic-type-pattern> ::=
+  <dynamic-type-pattern> * <dynamic-type-pattern>
+<dynamic-type-pattern> ::=
+  <dynamic-type-pattern> + <condition-name> <dynamic-type-pattern>
+  -- The type (Atom{s1, s2} +c (Atom{s3} * Atom{s4}) is shorthand for
+  -- (Atom{s1-c, s2-c} * (Atom{s3+c} * Atom{s4+c})).
+<dynamic-type-pattern> ::=
+  <dynamic-constructor> { <stage-conditions> }
+  -- This represents a value that is observable in *exactly* the given
+  -- stages and conditions.
+<stage-conditions> ::= (nothing)
+<stage-conditions> ::= <stage-conditions> *
+  -- This indicates that the value is available in *at least* the
+  -- given stages and conditions.
+<stage-conditions> ::= <stage-conditions> , <stage-conditions>
+  -- Note that this repetition is set-like.
+<stage-conditions> ::= <stage-condition>
+<stage-conditions> ::= <var>
+  -- This syntax is ambiguous with the syntax for a single
+  -- <stage-condition>, but this one takes precedence.
+<stage-condition> ::= Zero
+  -- This indicates that the value is available in *all* stages and
+  -- conditions.
+<stage-condition> ::= <stage-condition> <condition>
+  -- Note that this repetition is list-like. The sum ((a +c2 b) +c1 c)
+  -- is represented as ((a{s-c1-c2} * b{s-c1+c2}) * c{s+c1}).
+<stage-condition> ::= <var>
+<condition> ::= + <condition-name>
+<condition> ::= - <condition-name>
+<condition> ::= +- <condition-name>
+  -- This represents an single condition in an unknown polarity.
+<condition-name> ::= <var>
+<dynamic-constructor> ::= _  -- don't care
+  -- This imposes no requirement on the dynamic type constructor
+  -- itself, but the stages and conditions can still be checked.
+<dynamic-constructor> ::= Placeholder
+  -- This represents a value that's mostly featureless in the current
+  -- stage and condition, but which might have a more detailed type in
+  -- some other stage or condition.
+<dynamic-constructor> ::= Atom
+<dynamic-constructor> ::= StageConditions
+<dynamic-constructor> ::= ConditionName
+<dynamic-constructor> ::= Continuation
+<dynamic-constructor> ::= ChildCoroutine
+<dynamic-constructor> ::= PleaseGo
+<dynamic-constructor> ::= PleaseDrop
+<dynamic-constructor> ::= PleaseSplit
+<dynamic-constructor> ::=
+  ParentCoroutine+ <condition-name> + <condition-name>
+  -- The type ParentCoroutine+c1+c2{s} is shorthand for
+  -- (PleaseGo{s} +c1 (PleaseDrop{s} +c2 PleaseSplit{s})).
+<dynamic-constructor> ::= (_ -> _)
   -- We never dynamically check the input and output types of a
   -- function.
-<dynamic-type-tag> ::= <dynamic-type-tag> * <dynamic-type-tag>
-<dynamic-type-tag> ::= (<var> : <dynamic-type-tag>)
-  -- This just accomplishes the ability to refer to this value
-  -- elsewhere in the tag.
-<dynamic-type-tag> ::=
-  <dynamic-type-tag> +{ <stage-set> }{ <stage-set> }
-    <dynamic-type-tag>
-<stage-set> ::= (nothing)  -- empty set
-<stage-set> ::= <stage-set> , <stage-set>  -- set union
-<stage-set> ::= Zero  -- universe
-<stage-set> ::= <var>
 <var> ::= (any identifier)
 
-splitAtom :: forall p1 p2.
-  ((p3 : Stage{p1}) * ((p4 : Stage{p2}) * Atom{p3, p4})) ->
-  (BadInput +{?}{p3, p4} (Atom{p3} * Atom{p4}))
-  -- The BadInput case occurs when the input isn't of dynamic type
-  -- ((p3 : Stage{p1}) * ((p4 : Stage{p2}) * Atom{p3, p4})), and it
-  -- replicates the actual input.
-getTag :: forall p. a{p} -> (a{p} * Atom{p})
-  -- Note that this actually scours the dynamic type tag for (a{p}) to
-  -- figure out what {p} is, even though it imposes no requirement on
+-- The following function signatures use an extended version of these
+-- dynamic patterns to sketch out some inexact static types.
+--
+-- The (a ->! b) arrow means that the function is actually of the form
+-- (a ->! (err +c b)) for a condition name `c` that's fresh on each
+-- call. The `err` case carries the actual input when the input
+-- doesn't match the dynamic type pattern corresponding to `a`. This
+-- matching policy is fuzzy enough to allow Placeholder values to
+-- match.
+
+-- TODO: Figure out if we need to pass around uniqueness sources to
+-- justify all the fresh condition names we generate.
+
+-- TODO: Add more tools like these for introspection on types. They'll
+-- be needed in order to take full advantage of operators like
+-- `distribute` in their current formulation.
+splitAtom ::
+  ( (s3 : StageConditions{s1}) *
+    ((s4 : StageConditions{s2}) * Atom{s3, s4})) ->!
+  (Atom{s3} * Atom{s4})
+getTag :: a{s} -> (a{s} * Atom{s})
+  -- Note that this actually scours the dynamic type tag for (a{s}) to
+  -- figure out what {s} is, even though it imposes no requirement on
   -- the dynamic type constructor itself.
 
-l :: forall p1 p2 p3. (a{p1} * (b{p2} * c{p3})) ->
-  (BadInput +{?}{p1, p2, p3} ((a{p1} * b{p2}) * c{p3}))
-  -- The BadInput case occurs when the input isn't of dynamic type
-  -- (_ * (_ * _)), and it replicates the actual input.
-r :: ... (obvious ((a * b) * c) -> (a * (b * c)) with BadInput)
-w :: ... (obvious (a * (b * c)) -> (b * (a * c)) with BadInput)
-z :: ...
-  (obvious (a * (b * (c * d))) -> (a * (c * (b * d))) with BadInput)
-v :: forall p. a{p} -> (a{p} * Atom{})
-c :: forall p. (a{p} * Atom{}) -> (BadInput +{?}{p} a{p})
-  -- The BadInput case occurs when the input isn't of dynamic type
-  -- (_ * Atom{}), and it replicates the actual input.
-dropZero :: forall p. Zero -> (BadInput +{?}{} Atom{})
-  -- The BadInput case occurs when the input isn't of dynamic type
-  -- Zero, and it replicates the actual input.
-copyZero :: forall p. Zero -> (BadInput +{?}{Zero} (Zero * Zero))
-  -- The BadInput case occurs when the input isn't of dynamic type
-  -- Zero, and it replicates the actual input.
-dropAtom :: forall p. Atom{p} -> (BadInput +{?}{} Atom{})
-  -- The BadInput case occurs when the input isn't of dynamic type
-  -- Atom{p}, and it replicates the actual input.
-copyAtom ::
-  forall p. Atom{p} -> (BadInput +{?}{p} (Atom{p} * Atom{p}))
-  -- The BadInput case occurs when the input isn't of dynamic type
-  -- Atom{p}, and it replicates the actual input.
-dropStage :: forall p. Stage{p} -> (BadInput +{?}{} Atom{})
-  -- The BadInput case occurs when the input isn't of dynamic type
-  -- Stage{p}, and it replicates the actual input.
-copyStage ::
-  forall p. Stage{p} -> (BadInput +{?}{p} (Stage{p} * Stage{p}))
-  -- The BadInput case occurs when the input isn't of dynamic type
-  -- Stage{p}, and it replicates the actual input.
-dropFn :: forall p. (A -> B){p} -> (BadInput +{?}{} Atom{})
-  -- The BadInput case occurs when the input isn't of dynamic type
-  -- (_ -> _){p}, and it replicates the actual input.
-copyFn :: forall p.
-  (A -> B){p} -> (BadInput +{?}{p} ((A -> B){p} * (A -> B){p}))
-  -- The BadInput case occurs when the input isn't of dynamic type
-  -- (_ -> _){p}, and it replicates the actual input.
+l :: (a * (b * c)) ->! ((a * b) * c)
+r :: ((a * b) * c) ->! (a * (b * c))
+w :: (a * (b * c)) ->! (b * (a * c))
+z :: (a * (b * (c * d))) ->! (a * (c * (b * d)))
+v :: a -> (a * Atom{})
+c :: (a * Atom{}) ->! a
+dropZero :: Zero ->! Atom{}
+copyZero :: Zero ->! (Zero * Zero)
+dropAtom :: Atom{s} ->! Atom{}
+copyAtom :: Atom{s} ->! (Atom{s} * Atom{s})
+dropStageConditions :: StageConditions{s} ->! Atom{}
+copyStageConditions ::
+  StageConditions{s} ->! (StageConditions{s} * StageConditions{s})
+dropConditionName :: ConditionName{s} ->! Atom{}
+copyConditionName ::
+  ConditionName{s} ->! (ConditionName{s} * ConditionName{s})
+dropFn :: (A -> B){s} ->! Atom{}
+copyFn :: (A -> B){s} ->! ((A -> B){s} * (A -> B){s})
 
-apply :: forall p1 p2.
-  ((A -> B){p1} * (a{p1} * c{p2})) -> (BadInput +{?}{?} (B * c{p2}))
-  -- The BadInput case replicates inputs not of dynamic type
-  -- ((_ -> _){p1} * (_{p1} * _)).
-compose :: forall p.
-  ((A -> B){p} * (B -> C){p}) -> (BadInput +{?}{p} (A -> C){p})
-  -- The BadInput case occurs when the input isn't of the dynamic type
-  -- ((_ -> _){p} * (_ -> _){p}), and it replicates the actual input.
-quoteFn :: forall p.
-  (A -> B){p} -> (BadInput +{?}{p} (Atom{} -> (A -> B){p}){p})
-  -- The BadInput case occurs when the input isn't of the dynamic type
-  -- (_ -> _){p}, and it replicates the actual input.
+apply :: ((A -> B){s} * (a{s} * c)) ->! (B * c)
+  -- The dynamic type pattern match fails if {s} includes the current
+  -- stage and (A -> B){s} or a{s} is hidden behind a Placeholder.
+compose :: ((A -> B){s} * (B -> C){s}) ->! (A -> C){s}
+  -- The dynamic type pattern match fails if {s} includes the current
+  -- stage and (A -> B){s} or (B -> C){s} is hidden behind a
+  -- Placeholder.
+quoteFn :: (A -> B){s} ->! (Atom{} -> (A -> B){s}){s}
 
-L :: forall p1 p2 p3.
-  (a{p1} +{p1}{p2, p3} (b{p2} +{p2}{p3} c{p3})) ->
-  (BadInput +{?}{p1, p2, p3}
-    ((a{p1} +{p1}{p2} b{p2}) +{p1, p2}{p3} c{p3}))
-  -- The BadInput case replicates inputs not of dynamic type
-  -- (_ +{p1}{p2, p3} (_ +{p2}{p3} _)), but it will not observe an
-  -- error in the (a{p1}) case.
-R :: ... (obvious ((a + b) + c) -> (a + (b + c)) with BadInput)
-W :: ... (obvious (a + (b + c)) -> (b + (a + c)) with BadInput)
-Z :: ...
-  (obvious (a + (b + (c + d))) -> (a + (c + (b + d))) with BadInput)
-V :: forall p. a{p} -> (a{p} +{p}{Zero} Zero)
-C :: forall p. (a{p} +{p}{Zero} Zero) -> (BadInput +{?}{p} a{p})
-  -- The BadInput case occurs when the input isn't of dynamic type
-  -- (_ +{p}{} Zero), and it replicates the actual input.
+L :: (a +c1 (b +c2 c)) ->! ((a +c3 b) +c4 c)
+  -- where `c3` and `c4` are fresh on each call
+R :: ((a +c1 b) +c2 c) ->! (a +c3 (b +c4 c))
+  -- where `c3` and `c4` are fresh on each call
+W :: (a +c1 (b +c2 c)) ->! (b +c3 (a +c4 c))
+  -- where `c3` and `c4` are fresh on each call
+Z :: (a +c1 (b +c2 (c +c3 d))) ->! (a +c1 (c +c4 (b +c5 d)))
+  -- where `c4` and `c5` are fresh on each call
+V :: a -> (a +c Zero)
+  -- where `c` is fresh on each call
+C :: (a +c Zero) ->! a
 
-applyOrDrop :: forall p1 p2 p3.
-  ((A -> B){p1} * ((a{p1} +{p1}{p2} c{p2}) * d{p3})) ->
-  (BadInput +{?}{?} ((B +{?}{p2} c{p2}) * d{p3}))
-  -- The BadInput case occurs when the input isn't of dynamic type
-  -- ((_ -> _){p1} * ((_ +{p1}{p2} _) * _)), and it replicates the
-  -- actual input.
-distribute :: forall p1 p2.
-  (a{p1, p2} * (b{p1} +{p1}{p2} c{p2})) ->
-  (BadInput +{?}{p1, p2}
-    ((a{p1, p2} * b{p1}) +{p1, p2}{p1, p2} (a{p1, p2} * c{p2})))
-  -- The BadInput case occurs when the input isn't of dynamic type
-  -- (_{p1, p2} * (_ +{p1}{p2} _)), and it replicates the actual
-  -- input.
-partialFactor :: forall p1 p2 p3 p4.
-  ((a{p1} * b{p2}) +{p1, p2}{p3, p4} (c{p3} * d{p4})) ->
-  (BadInput +{?}{p1, p2, p3, p4}
-    ((a{p1} +{p1}{p3} c{p3}) * (b{p2} +{p2}{p4} d{p4})))
-  -- The BadInput case occurs when the input isn't of dynamic type
-  -- ((_ * _) +{p1, p2}{p3, p4} (_ * _)), and it replicates the actual
-  -- input.
-merge :: forall p1 p2.
-  (a{p1} +{p1}{p2} a{p2}) -> (BadInput +{?}{p1, p2} a{p1, p2})
-  -- The BadInput case occurs when the input isn't of dynamic type
-  -- (_ +{p1}{p2} _), and it replicates the actual input.
-assert :: forall p1 p2. (a{p1} +{p1}{b2} b{p2}) -> b{p2}
--- Causes a fatal error with the error message (a{p1}) in every stage
--- where the message is observed.
+applyOrDrop :: ((a{s1} -> b{s2}){s1} * a{s1+-c}) ->! b{s2+-c}
+  -- The dynamic type pattern match fails if {s1} includes the current
+  -- stage and either input is hidden behind a Placeholder.
+distribute :: (a * b{s+-c}) ->! ((a +c a) * b{s+-c})
+  -- where `c` is fresh on each call where b{s+-c} is hidden behind a
+  -- Placeholder
+merge :: (a{s1} +c a{s2}) ->! a{s1, s2}
+  -- This doesn't actually check that the two input cases have the
+  -- same type.
+assert :: (a +c b) -> b
+  -- Causes a fatal error with the error message `a` in every stage
+  -- and condition where the message is observed.
 
-makeCoroutine :: forall p1 p2.
-  ( ( (parentCoroutine{p1} * firstCoroutineInput{p1}) -> Atom{}){p1} *
-    (finallyResult{p2} -> Atom{}){p1}) ->
-  (BadInput +{?}{p1} PleaseYield{p1})
-  -- The BadInput case occurs when the input isn't of dynamic type
-  -- ((_ -> _){p1} * (_ -> _){p1}), and it replicates the actual
-  -- input.
-  --
+-- In all of this group of signatures, bare pattern variables like
+-- `finallyResult` are considered to be constrained to have the same
+-- condition as {s}, even though their condition would usually be
+-- polymorphic.
+--
+-- In all of this group of signatures, the dynamic pattern match fails
+-- if {s} includes the current stage and any of the inputs is hidden
+-- behind a Placeholder.
+--
+makeCoroutine ::
+  ( ((ParentCoroutine{s} * firstCoroutineInput{s}) -> Atom{}){s} *
+    (finallyResult -> Atom{}){s}) ->!
+  PleaseYield{s}
   -- If the ultimate outcome of either function is not an Atom{}, this
   -- causes a fatal error.
-yieldRequestGo ::
-  forall p1 p2. (ChildCoroutine{p1} * coroutineInput{p1}) ->
-    (BadInput +{?}{p1, p2} (ChildCoroutine{p1} * result{p2}))
-  -- The BadInput case occurs when the input isn't of dynamic type
-  -- (ChildCoroutine{p1} * _{p1}), and it replicates the actual input.
-yieldAndGo :: forall p1 p2. (PleaseGo{p1} * coroutineInput{p1}) ->
-  (BadInput +{?}{p1, p2} (ParentCoroutine{p1} * result{p2}))
-  -- The BadInput case occurs when the input isn't of dynamic type
-  -- (PleaseGo{p1} * _{p1}), and it replicates the actual input.
-yieldRequestDrop ::
-  forall p1 p2. (ChildCoroutine{p1} * coroutineInput{p1}) ->
-    (BadInput +{?}{p2} result{p2})
-  -- The BadInput case occurs when the input isn't of dynamic type
-  -- (ChildCoroutine{p1} * _{p1}), and it replicates the actual input.
-yieldAndDrop :: forall p1.
-  (PleaseDrop{p1} * (coroutineInput{p1} * finallyInput{p1})) ->
-  (BadInput +{?}{} Atom{})
-  -- The BadInput case occurs when the input isn't of dynamic type
-  -- (PleaseGo{p1} * (_{p1} * _{p1})), and it replicates the actual
-  -- input.
-yieldRequestSplit ::
-  forall p1 p2. (ChildCoroutine{p1} * coroutineInput{p1}) ->
-    (BadInput +{?}{p1, p2}
-      ((ChildCoroutine{p1} * ChildCoroutine{p1}) * result{p2}))
-  -- The BadInput case occurs when the input isn't of dynamic type
-  -- (ChildCoroutine{p1} * _{p1}), and it replicates the actual input.
-yieldAndSplit :: forall p1 p2 p3 p4 p5 p6.
-  (PleaseSplit{p1} *
-    (coroutineInput{p1} *
-      ( ((ParentCoroutine{p1} * branchInput1{p2}) -> Atom{}){p1} *
-        ( ((ParentCoroutine{p1} * branchInput2{p3}) -> Atom{}){p1} *
-          ( (finallyResult1{p4} * finallyResult2{p5}) ->
-            mainFinallyResult{p6}){p1})))
-  ) ->
-    (BadInput +{?}{} Atom{})
-  -- The BadInput case occurs when the input isn't of dynamic type
-  --
-  -- (PleaseSplit{p1} *
-  --   (_{p1} * ((_ -> _){p1} * ((_ -> _){p1} * (_ -> _){p1}))))
-  --
-  -- and it replicates the actual input.
-  --
+yieldRequestGo :: (ChildCoroutine{s} * coroutineInput{s}) ->!
+  (ChildCoroutine{s} * result)
+yieldAndGo ::
+  (PleaseGo{s} * coroutineInput{s}) ->! (ParentCoroutine{s} * result)
+yieldRequestDrop :: (ChildCoroutine{s} * coroutineInput{s}) ->! result
+yieldAndDrop ::
+  (PleaseDrop{s} * (coroutineInput{s} * finallyInput{s})) -> Atom{}
+yieldRequestSplit :: (ChildCoroutine{s} * coroutineInput{s}) ->!
+  ((ChildCoroutine{s} * ChildCoroutine{s}) * result)
+yieldAndSplit ::
+  (PleaseSplit{s} *
+    (coroutineInput{s} *
+      ( ((ParentCoroutine{s} * branchInput1) -> Atom{}){s} *
+        ( ((ParentCoroutine{s} * branchInput2) -> Atom{}){s} *
+          ( (finallyResult1 * finallyResult2) ->
+            mainFinallyResult){s})))
+  ) ->! Atom{}
   -- If the ultimate outcome of either branch function is not an
   -- Atom{}, this causes a fatal error.
+
+-- TODO: Add more ways to get values of type Stage until they're
+-- sufficient for the purposes of:
+--
+--   * Concurrency and distribution (RDP's partitions)
+--   * Reactive programming (RDP's static delay)
+--   * Consuming debugger hints
+--   * And many more? (TODO)
+--
+startRecording :: (Atom{s1} * ((A -> B){s1} -> Atom{}){s1}) ->!
+  (Continuation{s2} * Placeholder{s2})
+  -- where `s2` is a fresh descendant of stage `s1` on each call
+  --
+  -- If the ultimate outcome of the function is not an Atom{}, this
+  -- causes a fatal error.
+satisfyContinuation :: (Continuation{s} * a{s}) ->! Atom{}
+  -- The dynamic pattern match fails if {s} includes the current stage
+  -- and either of the inputs is hidden behind a Placeholder.
