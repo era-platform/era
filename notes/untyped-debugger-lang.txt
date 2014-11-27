@@ -239,8 +239,8 @@ its share of parallel universes.
 
 <word> ::= <function-name>
 <word> ::= ' <function-name>
-  -- Transforms the function from signature (A -> B) to
-  -- (c -> ((A -> B){s} * c)), where `s` is the current stage.
+  -- Transforms the function from signature (A ->? B) to
+  -- (c ->? ((A -> B){s} * c)), where `s` is the current stage.
 
 <dynamic-type-pattern> ::= _  -- don't care
 <dynamic-type-pattern> ::= <var>
@@ -320,8 +320,11 @@ its share of parallel universes.
 -- The following function signatures use an extended version of these
 -- dynamic patterns to sketch out some inexact static types.
 --
+-- The (a ->? b) arrow is for operators that don't use the (a ->! b)
+-- arrow, described next.
+--
 -- The (a ->! b) arrow means that the function is actually of the form
--- (a -> (err +c b)) for a condition name `c` that's fresh on each
+-- (a ->? (err +c b)) for a condition name `c` that's fresh on each
 -- call. The `err` case carries the actual input when the input
 -- doesn't match the dynamic type pattern corresponding to `a`.
 --
@@ -340,7 +343,7 @@ splitAtom ::
   ( (s1 : StageConditions) *
     ((s2 : StageConditions) * Atom{s1, s2})) ->!
   (Atom{s1} * Atom{s2})
-getTag :: a{s} -> (a{s} * Atom{s})
+getTag :: a{s} ->? (a{s} * Atom{s})
   -- Note that this actually scours the dynamic type tag for (a{s}) to
   -- figure out what {s} is, even though it imposes no requirement on
   -- the dynamic type constructor itself.
@@ -349,7 +352,7 @@ l :: (a * (b * c)) ->! ((a * b) * c)
 r :: ((a * b) * c) ->! (a * (b * c))
 w :: (a * (b * c)) ->! (b * (a * c))
 z :: (a * (b * (c * d))) ->! (a * (c * (b * d)))
-v :: a -> (a * Atom{})
+v :: a ->? (a * Atom{})
 c :: (a * Atom{}) ->! a
 dropZero :: Zero ->! Atom{}
 copyZero :: Zero ->! (Zero * Zero)
@@ -386,7 +389,7 @@ W :: (a +c1 (b +c2 c)) ->! (b +(And+c1-c2) (a +c1 c))
   -- a{s-c2+c1} ->! a{s+(And+c1-c2)}
   -- a{s+c2+c1} ->! a{s+c1-(And+c1-c2)}
 Z :: (a +c1 (b +c2 (c +c3 d))) ->! (a +c1 (c +(And+c2-c3) (b +c2 d)))
-V :: a -> (a +False Zero)
+V :: a ->? (a +False Zero)
 C :: (a +c Zero) ->! a
 
 applyOrDrop :: ((a{s1} -> b{s2}){s1} * a{s1+-c}) ->! b{s2+-c}
@@ -394,7 +397,7 @@ distribute :: (a * (b +c d)) ->! ((a * b) +c (a * d))
 merge :: (a{s1} +c a{s2}) ->! a{s1, s2}
   -- This doesn't actually check that the two input cases have the
   -- same type.
-assert :: (a +c b) -> b
+assert :: (a +c b) ->? b
   -- Causes a fatal error with the error message `a` in every stage
   -- and condition where the message is observed.
 
