@@ -226,17 +226,6 @@ Just because a stage can observe a value doesn't mean all its
 descendant stages can, and of course its ancestors can't necessarily
 observe it either.
 
-When we measure a condition in a future stage, we get two branches. In
-that stage, only one branch exists at a time -- but in the current
-stage, we have to deal with two code-recording cursors at the same
-time! In order to be able to pull this structure apart and manipulate
-it in general, we actually represent all conditions as two values,
-only one of which is actually active and useful. These two values are
-tagged with corresponding positive and negative versions of a
-condition tag, and a value's condition tags act as a sort of stack of
-shields that keeps the value from being used with any value outside
-its share of parallel universes.
-
 <word> ::= <function-name>
 <word> ::= ' <function-name>
   -- Transforms the function from signature (A ->? B) to
@@ -248,68 +237,41 @@ its share of parallel universes.
   -- This just accomplishes the ability to refer to this value
   -- elsewhere in the pattern.
 <dynamic-type-pattern> ::= Zero  -- shorthand for Placeholder{Zero}
-<dynamic-type-pattern> ::= StageConditions
-  -- shorthand for StageConditions{Current}
-<dynamic-type-pattern> ::= ConditionName
-  -- shorthand for ConditionName{Current}
 <dynamic-type-pattern> ::=
   <dynamic-type-pattern> * <dynamic-type-pattern>
 <dynamic-type-pattern> ::=
-  <dynamic-type-pattern> + <condition-name> <dynamic-type-pattern>
-  -- The type (Atom{s1, s2} +c (Atom{s3} * Atom{s4}) is shorthand for
-  -- (Atom{s1-c, s2-c} * (Atom{s3+c} * Atom{s4+c})).
-<dynamic-type-pattern> ::=
-  <dynamic-constructor> { <stage-conditions> }
+  <dynamic-type-pattern> + <dynamic-type-pattern>
+<dynamic-type-pattern> ::= <dynamic-constructor> { <stages> }
   -- This represents a value that is observable in *exactly* the given
-  -- stages and conditions.
-<stage-conditions> ::= <var>
+  -- stages.
+<stages> ::= <var>
   -- This syntax is ambiguous with the syntax for a single <stage>,
   -- but this one takes precedence.
-<stage-conditions> ::= <stage>,*
+<stages> ::= <stage>,*
   -- Note that this repetition is set-like.
-<stage-conditions> ::= Zero
-  -- This indicates that the value is available in *all* stages and
-  -- conditions.
-<stage-conditions> ::= <stage-conditions> <condition>
-  -- This indicates that the value is available in the given stage
-  -- and conditions, but only when another condition is met.
-  --
-  -- Note that this repetition is list-like. The sum ((a +c2 b) +c1 c)
-  -- is represented as ((a{s-c1-c2} * b{s-c1+c2}) * c{s+c1}). While it
-  -- would make sense to treat conditions like a set, this ordering is
-  -- currently being used to decide which conditions to cancel out
-  -- during a `merge` operation.
+<stages> ::= Zero
+  -- This indicates that the value is available in *all* stages.
 <stage> ::= <var>
 <stage> ::= Current
   -- This is the stage executing right now.
-<condition> ::= + <condition-name>
-<condition> ::= - <condition-name>
-<condition> ::= +- <condition-name>
-  -- This represents a single condition in an unknown polarity.
-<condition> ::= False
-<condition> ::= And <condition> <condition>
-<condition> ::= Or <condition> <condition>
-<condition-name> ::= <var>
 <dynamic-constructor> ::= _  -- don't care
   -- This imposes no requirement on the dynamic type constructor
-  -- itself, but the stages and conditions can still be checked.
+  -- itself, but the stages can still be checked.
 <dynamic-constructor> ::= Placeholder
   -- This represents a value that's mostly featureless in the current
   -- stage and condition, but which might have a more detailed type in
   -- some other stage or condition.
 <dynamic-constructor> ::= Atom
-<dynamic-constructor> ::= StageConditions
-<dynamic-constructor> ::= ConditionName
+<dynamic-constructor> ::= Stage
 <dynamic-constructor> ::= Continuation
 <dynamic-constructor> ::= Uniqueness
 <dynamic-constructor> ::= ChildCoroutine
 <dynamic-constructor> ::= PleaseGo
 <dynamic-constructor> ::= PleaseDrop
 <dynamic-constructor> ::= PleaseSplit
-<dynamic-constructor> ::=
-  ParentCoroutine+ <condition-name> + <condition-name>
-  -- The type ParentCoroutine+c1+c2{s} is shorthand for
-  -- (PleaseGo{s} +c1 (PleaseDrop{s} +c2 PleaseSplit{s})).
+<dynamic-constructor> ::= ParentCoroutine
+  -- The type ParentCoroutine{s} is shorthand for
+  -- (PleaseGo{s} + (PleaseDrop{s} + PleaseSplit{s})).
 <dynamic-constructor> ::= (_ -> _)
 <dynamic-constructor> ::= (_ -> Atom{})
   -- Whenever this function is called, if the output is not an Atom{},
@@ -324,24 +286,18 @@ its share of parallel universes.
 -- arrow, described next.
 --
 -- The (a ->! b) arrow means that the function is actually of the form
--- (a ->? (err +c b)) for a condition name `c` that's fresh on each
--- call. The `err` case carries the actual input when the input
--- doesn't match the dynamic type pattern corresponding to `a`.
---
--- (TODO: We're passing around Uniqueness sources, but figure out
--- how to pass one into each ->! arrow so it can generate its fresh
--- condition name properly.)
+-- (a ->? (err + b)). The `err` case carries the actual input when the
+-- input doesn't match the dynamic type pattern corresponding to `a`.
 --
 -- As a special case, a Placeholder{s} value can be matched not only
 -- to explicit Placeholder patterns, but also to any non-Placeholder
--- pattern as long as `s` does not include the current stage and
--- condition. Nevertheless, if the pattern specifies requirements on
--- the stages and conditions, `s` must meet those requirements.
+-- pattern as long as `s` does not include the current stage.
+-- Nevertheless, if the pattern specifies requirements on the stages,
+-- `s` must meet those requirements.
 
 -- TODO: Add more tools like these for introspection on types.
 splitAtom ::
-  ( (s1 : StageConditions) *
-    ((s2 : StageConditions) * Atom{s1, s2})) ->!
+  ((s1 : Stage{Current}) * ((s2 : Stage{Current}) * Atom{s1, s2})) ->!
   (Atom{s1} * Atom{s2})
 getTag :: a{s} ->? (a{s} * Atom{s})
   -- Note that this actually scours the dynamic type tag for (a{s}) to
@@ -358,12 +314,8 @@ dropZero :: Zero ->! Atom{}
 copyZero :: Zero ->! (Zero * Zero)
 dropAtom :: Atom{s} ->! Atom{}
 copyAtom :: Atom{s} ->! (Atom{s} * Atom{s})
-dropStageConditions :: StageConditions{s} ->! Atom{}
-copyStageConditions ::
-  StageConditions{s} ->! (StageConditions{s} * StageConditions{s})
-dropConditionName :: ConditionName{s} ->! Atom{}
-copyConditionName ::
-  ConditionName{s} ->! (ConditionName{s} * ConditionName{s})
+dropStage :: Stage{s} ->! Atom{}
+copyStage :: Stage{s} ->! (Stage{s} * Stage{s})
 dropFn :: (A -> B){s} ->! Atom{}
 copyFn :: (A -> B){s} ->! ((A -> B){s} * (A -> B){s})
 
@@ -371,39 +323,24 @@ apply :: ((A -> B){s} * (a{s} * c)) ->! (B * c)
 compose :: ((A -> B){s} * (B -> C){s}) ->! (A -> C){s}
 quoteFn :: (A -> B){s} ->! (Atom{} -> (A -> B){s}){s}
 
--- TODO: We can't just apply `W` twice and get back where we started.
--- See if we need to fix that with rules to simplify (And...) and
--- (Or...), or if we can somehow use `merge` to annihilate these
--- compounds without ever having to take them apart.
---
--- TODO: See if we should reformulate the below rules in terms of the
--- single-value rules shown in comments below them.
---
-L :: (a +c1 (b +c2 c)) ->! ((a +c1 b) +(And+c1+c2) c)
-  -- a{s-c1} ->! a{s-c1-(And+c1+c2)}
-  -- a{s-c2+c1} ->! a{s+c1-(And+c1+c2)}
-  -- a{s+c2+c1} ->! a{s+(And+c1+c2)}
-R :: ((a +c1 b) +c2 c) ->! (a +(Or+c1+c2) (b +c2 c))
-W :: (a +c1 (b +c2 c)) ->! (b +(And+c1-c2) (a +c1 c))
-  -- a{s-c1} ->! a{s-c1-(And+c1-c2)}
-  -- a{s-c2+c1} ->! a{s+(And+c1-c2)}
-  -- a{s+c2+c1} ->! a{s+c1-(And+c1-c2)}
-Z :: (a +c1 (b +c2 (c +c3 d))) ->! (a +c1 (c +(And+c2-c3) (b +c2 d)))
-V :: a ->? (a +False Zero)
-C :: (a +c Zero) ->! a
+L :: (a + (b + c)) ->! ((a + b) + c)
+R :: ((a + b) + c) ->! (a + (b + c))
+W :: (a + (b + c)) ->! (b + (a + c))
+Z :: (a + (b + (c + d))) ->! (a + (c + (b + d)))
+V :: a ->? (a + Zero)
+C :: (a + Zero) ->! a
 
-applyOrDrop :: ((a{s1} -> b{s2}){s1} * a{s1+-c}) ->! b{s2+-c}
-distribute :: (a * (b +c d)) ->! ((a * b) +c (a * d))
-merge :: (a{s1} +c a{s2}) ->! a{s1, s2}
+applyOrDrop :: ((A -> B){s} * (a{s} + c)) ->! (B + c)
+distribute :: (a * (b + d)) ->! ((a * b) + (a * d))
+merge :: (a{s1} + a{s2}) ->! a{s1, s2}
   -- This doesn't actually check that the two input cases have the
   -- same type.
-assert :: (a +c b) ->? b
+assert :: (a + b) ->? b
   -- Causes a fatal error with the error message `a` in every stage
   -- and condition where the message is observed.
 
--- In all of this group of signatures, bare pattern variables like
--- `finallyResult` are generally going to have the same condition as
--- {s}.
+-- In all of this group of signatures, the functions given as input
+-- are guaranteed to be called exactly once.
 makeCoroutine ::
   ( ((ParentCoroutine{s} * firstCoroutineInput{s}) -> Atom{}){s} *
     (finallyResult -> Atom{}){s}) ->!
