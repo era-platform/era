@@ -332,12 +332,16 @@ C :: (a + Zero) ->! a
 
 applyOrDrop :: ((A -> B){s} * (a{s} + c)) ->! (B + c)
 distribute :: (a * (b + d)) ->! ((a * b) + (a * d))
-merge :: (a{s1} + a{s2}) ->! a{s1, s2}
-  -- This doesn't actually check that the two input cases have the
-  -- same type.
+merge :: (a{s} + a{s}) ->! a{s}
+  -- This type pattern behaves rather uniquely. It always matches if
+  -- `s` includes the current stage, but it otherwise fails to match
+  -- if the two branches don't have exactly the same dynamic type.
 assert :: (a + b) ->? b
   -- Causes a fatal error with the error message `a` in every stage
   -- and condition where the message is observed.
+  --
+  -- If the input isn't of dynamic type (_ + _), this causes a fatal
+  -- error in every stage where the input is observed.
 
 -- In all of this group of signatures, the functions given as input
 -- are guaranteed to be called exactly once.
