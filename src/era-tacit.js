@@ -23,7 +23,16 @@ function runBytecodes( bytecodeList, inputVal ) {
         val: inputVal
     };
     arrEach( bytecodeList, function ( bytecode ) {
-        result = bytecodes[ bytecode ].call( {}, result );
+        var outcome = bytecodes[ bytecode ].call( {}, result );
+        if ( outcome.type === "result" ) {
+            result = outcome.result;
+        } else if ( outcome.type === "error" ) {
+            throw new Error(
+                "Assertion error: " +
+                JSON.stringify( outcome.stack ) );
+        } else {
+            throw new Error();
+        }
     } );
     return result.val;
 }
@@ -267,6 +276,17 @@ function commuteTimes( stack ) {
     };
 }
 
+function assertRight( stack ) {
+    if ( !(stack.val === null || stack.val.type === "right") )
+        throw new Error();
+    return {
+        path: stack.path,
+        historyStack:
+            historyStackPlus( "assertRight", stack.historyStack ),
+        val: stack.val === null ? null : stack.val.right
+    };
+}
+
 bytecodes[ "l" ] = function ( stack ) {
     var coercedOuter = assertDispersePlus( coerceTimes( stack ) );
     var coercedOuterDisperse =
@@ -280,8 +300,9 @@ bytecodes[ "l" ] = function ( stack ) {
                         coercedOuterDisperse.first,
                         coerceTimes(
                             coercedOuterDisperse.second ) ) ) ) ) );
-    return assertCollectPlus(
-        merge( sum.left ), productAssocLeft( sum.right ) );
+    return { type: "result", result:
+        assertCollectPlus(
+            merge( sum.left ), productAssocLeft( sum.right ) ) };
 };
 
 bytecodes[ "r" ] = function ( stack ) {
@@ -301,8 +322,15 @@ bytecodes[ "r" ] = function ( stack ) {
                 assertCollectPlus(
                     commuteTimes( distributed.left ),
                     commuteTimes( distributed.right ) ) ) ) );
-    return assertCollectPlus(
-        merge( sum.left ), productAssocRight( sum.right ) );
+    return { type: "result", result:
+        assertCollectPlus(
+            merge( sum.left ), productAssocRight( sum.right ) ) };
+};
+
+bytecodes[ "assert" ] = function ( stack ) {
+    if ( stack.val !== null && stack.val.type !== "right" )
+        return { type: "error", stack: stack };
+    return { type: "result", result: assertRight( stack ) };
 };
 
 // Expressions for testing
@@ -326,4 +354,22 @@ JSON.stringify(
                 first: { type: "a" },
                 second: { type: "b" } },
             second: { type: "c" } } ) )
+
+JSON.stringify(
+    runBytecodes( "l assert r assert".split( " " ),
+        { type: "times",
+            first: { type: "a" },
+            second: { type: "times",
+                first: { type: "b" },
+                second: { type: "c" } } } ) )
+
+// This one fails.
+JSON.stringify(
+    runBytecodes( "r assert r assert".split( " " ),
+        { type: "times",
+            first: { type: "a" },
+            second: { type: "times",
+                first: { type: "b" },
+                second: { type: "c" } } } ) )
+
 */
