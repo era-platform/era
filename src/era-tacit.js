@@ -8,7 +8,7 @@
 
 // TODO: Track individual histories for each stage.
 
-var bytecodes = {};
+var bytecodeWords = {};
 
 // TODO: Make this file depend on era-misc.
 function arrEach( arr, func ) {
@@ -16,14 +16,15 @@ function arrEach( arr, func ) {
         func( arr[ i ], i );
 }
 
-function runBytecodes( bytecodeList, inputVal ) {
+function runBytecode( bytecode, inputVal ) {
     var result = {
         path: null,
         historyStack: { first: null, rest: null },
         val: inputVal
     };
-    arrEach( bytecodeList, function ( bytecode ) {
-        var outcome = bytecodes[ bytecode ].call( {}, result );
+    arrEach( bytecode, function ( bytecodeWord ) {
+        var outcome =
+            bytecodeWords[ bytecodeWord ].call( {}, result );
         if ( outcome.type === "result" ) {
             result = outcome.result;
         } else if ( outcome.type === "error" ) {
@@ -287,7 +288,7 @@ function assertRight( stack ) {
     };
 }
 
-bytecodes[ "l" ] = function ( stack ) {
+bytecodeWords[ "l" ] = function ( stack ) {
     var coercedOuter = assertDispersePlus( coerceTimes( stack ) );
     var coercedOuterDisperse =
         assertDisperseTimes( coercedOuter.right );
@@ -305,7 +306,7 @@ bytecodes[ "l" ] = function ( stack ) {
             merge( sum.left ), productAssocLeft( sum.right ) ) };
 };
 
-bytecodes[ "r" ] = function ( stack ) {
+bytecodeWords[ "r" ] = function ( stack ) {
     var coercedOuter = assertDispersePlus( coerceTimes( stack ) );
     var coercedOuterDisperse =
         assertDisperseTimes( coercedOuter.right );
@@ -327,7 +328,7 @@ bytecodes[ "r" ] = function ( stack ) {
             merge( sum.left ), productAssocRight( sum.right ) ) };
 };
 
-bytecodes[ "assert" ] = function ( stack ) {
+bytecodeWords[ "assert" ] = function ( stack ) {
     if ( stack.val !== null && stack.val.type !== "right" )
         return { type: "error", stack: stack };
     return { type: "result", result: assertRight( stack ) };
@@ -340,7 +341,7 @@ bytecodes[ "assert" ] = function ( stack ) {
 //
 /*
 JSON.stringify(
-    runBytecodes( [ "l" ],
+    runBytecode( [ "l" ],
         { type: "times",
             first: { type: "a" },
             second: { type: "times",
@@ -348,7 +349,7 @@ JSON.stringify(
                 second: { type: "c" } } } ) )
 
 JSON.stringify(
-    runBytecodes( [ "r" ],
+    runBytecode( [ "r" ],
         { type: "times",
             first: { type: "times",
                 first: { type: "a" },
@@ -356,7 +357,7 @@ JSON.stringify(
             second: { type: "c" } } ) )
 
 JSON.stringify(
-    runBytecodes( "l assert r assert".split( " " ),
+    runBytecode( "l assert r assert".split( " " ),
         { type: "times",
             first: { type: "a" },
             second: { type: "times",
@@ -364,12 +365,11 @@ JSON.stringify(
                 second: { type: "c" } } } ) )
 
 // This one fails.
-JSON.stringify(
-    runBytecodes( "r assert r assert".split( " " ),
-        { type: "times",
-            first: { type: "a" },
-            second: { type: "times",
-                first: { type: "b" },
-                second: { type: "c" } } } ) )
+runBytecode( "r assert".split( " " ),
+    { type: "times",
+        first: { type: "a" },
+        second: { type: "times",
+            first: { type: "b" },
+            second: { type: "c" } } } )
 
 */
