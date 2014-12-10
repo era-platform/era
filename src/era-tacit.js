@@ -15,78 +15,161 @@ function arrEach( arr, func ) {
     for ( var i = 0, n = arr.length; i < n; i++ )
         func( arr[ i ], i );
 }
+function isString( x ) {
+    return typeof x === "string";
+}
 
-function runBytecode( bytecode, inputVal ) {
-    var result = {
-        path: null,
-        historyStack: { first: null, rest: null },
-        val: inputVal
+function revListToArr( revList ) {
+    var result = [];
+    for ( ; revList !== null; revList = revList.rest )
+        result.unshift( revList.first );
+    return result;
+}
+
+function stateWithCursor( state, cursor ) {
+    return {
+        cursor: cursor,
+        outputs: state.outputs,
+        inputConsumer: state.inputConsumer
     };
+}
+
+// NOTE: In a top-level computation, the inputVal will be
+// { type: "one" }. The cursor's final value must be that as well, and
+// the final inputConsumer must be empty; if either of these
+// conditions isn't met, it's a fatal error. All inputs and outputs
+// are done by way of the `inputConsumer` object and `outputs` Array.
+function runBytecode( bytecode, initialState ) {
+    var currentState = initialState;
     arrEach( bytecode, function ( bytecodeWord ) {
-        var outcome =
-            bytecodeWords[ bytecodeWord ].call( {}, result );
-        if ( outcome.type === "result" ) {
-            result = outcome.result;
-        } else if ( outcome.type === "error" ) {
-            throw new Error(
-                "Assertion error: " +
-                JSON.stringify( outcome.stack ) );
+        if ( isString( bytecodeWord ) ) {
+            var outcome = bytecodeWords[ bytecodeWord ].call( {},
+                currentState );
+            if ( outcome.type === "result" ) {
+                currentState = outcome.state;
+            } else if ( outcome.type === "error" ) {
+                throw new Error(
+                    "Assertion error: " +
+                    JSON.stringify( outcome.cursor ) );
+            } else {
+                throw new Error();
+            }
+        } else if ( bytecodeWord.type === "onLeft" ) {
+            var val = currentState.cursor.val;
+            var subState = runBytecode( bytecodeWord.bytecode,
+                stateWithCursor( currentState, {
+                    historyStack: null,
+                    val: val === null ? null :
+                        val.type === "left" ? val.left : null
+                } ) );
+            var subVal = subState.cursor.val;
+            currentState = stateWithCursor( subState, {
+                historyStack: historyStackPlus( {
+                    type: "onLeft",
+                    bytecode:
+                        revListToArr( subState.cursor.historyStack )
+                }, currentState.cursor.historyStack ),
+                val: subVal === null ? null :
+                    { type: "left", left: subVal }
+            } );
+        } else if ( bytecodeWord.type === "onFirst" ) {
+            var val = currentState.cursor.val;
+            var isTimes = val !== null && val.type === "times";
+            var subState = runBytecode( bytecodeWord.bytecode,
+                stateWithCursor( currentState, {
+                    historyStack: null,
+                    val: isTimes ? val.first : null
+                } ) );
+            var subVal = subState.cursor.val;
+            currentState = runBytecode( subState, {
+                historyStack: historyStackPlus( {
+                    type: "onFirst",
+                    bytecode:
+                        revListToArr( subState.cursor.historyStack )
+                }, currentState.cursor.historyStack ),
+                val: !isTimes || subVal === null ?
+                    null :
+                    { type: "times",
+                        first: subVal,
+                        second: val.val.second }
+            } );
         } else {
             throw new Error();
         }
     } );
-    return result.val;
+    return currentState;
 }
 
 function historyStackPlus( entry, historyStack ) {
-    return { first: { first: entry, rest: historyStack.first },
-        rest: historyStack.rest };
+    return { first: entry, rest: historyStack };
 }
 
-bytecodeWords[ "l" ] = function ( stack ) {
-    return { type: "result", result: {
-        path: stack.path,
-        historyStack: historyStackPlus( "l", stack.historyStack ),
-        val: stack.val === null ? null :
-            stack.val.type === "times"
-                && stack.val.second.type === "times" ?
+bytecodeWords[ "l" ] = function ( state ) {
+    var val = state.cursor.val;
+    return { type: "result", state: stateWithCursor( state, {
+        historyStack:
+            historyStackPlus( "l", state.cursor.historyStack ),
+        val: val === null ? null :
+            val.type === "times" && val.second.type === "times" ?
                 { type: "right", right:
                     { type: "times",
                         first: { type: "times",
-                            first: stack.val.first,
-                            second: stack.val.second.first },
-                        second: stack.val.second.second } } :
-                { type: "left", left: stack.val }
-    } };
+                            first: val.first,
+                            second: val.second.first },
+                        second: val.second.second } } :
+                { type: "left", left: val }
+    } ) };
 };
 
-bytecodeWords[ "r" ] = function ( stack ) {
-    return { type: "result", result: {
-        path: stack.path,
-        historyStack: historyStackPlus( "r", stack.historyStack ),
-        val: stack.val === null ? null :
-            stack.val.type === "times"
-                && stack.val.first.type === "times" ?
+bytecodeWords[ "r" ] = function ( state ) {
+    var val = state.cursor.val;
+    return { type: "result", state: stateWithCursor( state, {
+        historyStack:
+            historyStackPlus( "r", state.cursor.historyStack ),
+        val: val === null ? null :
+            val.type === "times" && val.first.type === "times" ?
                 { type: "right", right:
                     { type: "times",
-                        first: stack.val.first.first,
+                        first: val.first.first,
                         second: { type: "times",
-                            first: stack.val.first.second,
-                            second: stack.val.second } } } :
-                { type: "left", left: stack.val }
-    } };
+                            first: val.first.second,
+                            second: val.second } } } :
+                { type: "left", left: val }
+    } ) };
 };
 
-bytecodeWords[ "assert" ] = function ( stack ) {
-    if ( stack.val !== null && stack.val.type !== "right" )
-        return { type: "error", stack: stack };
-    return { type: "result", result: {
-        path: stack.path,
+bytecodeWords[ "assert" ] = function ( state ) {
+    var val = state.cursor.val;
+    if ( val !== null && val.type !== "right" )
+        return { type: "error", cursor: state.cursor };
+    return { type: "result", state: stateWithCursor( state, {
         historyStack:
-            historyStackPlus( "assert", stack.historyStack ),
-        val: stack.val === null ? null : stack.val.right
-    } };
+            historyStackPlus( "assert", state.cursor.historyStack ),
+        val: val === null ? null : val.right
+    } ) };
 };
+
+function testBytecode( bytecode, inputVal ) {
+    var inputConsumer = {};
+    inputConsumer.consume = function ( key ) {
+        return null;
+    };
+    inputConsumer.isEmpty = function () {
+        return true;
+    };
+    
+    var finalState = runBytecode( bytecode, {
+        cursor: {
+            historyStack: null,
+            val: inputVal
+        },
+        outputs: [],
+        inputConsumer: inputConsumer
+    } );
+    if ( !finalState.inputConsumer.isEmpty() )
+        throw new Error();
+    return JSON.stringify( finalState.cursor.val );
+}
 
 // Expressions for testing
 //
@@ -94,32 +177,29 @@ bytecodeWords[ "assert" ] = function ( stack ) {
 // supported types, but so far they work for testing.
 //
 /*
-JSON.stringify(
-    runBytecode( [ "l" ],
-        { type: "times",
-            first: { type: "a" },
-            second: { type: "times",
-                first: { type: "b" },
-                second: { type: "c" } } } ) )
+testBytecode( [ "l" ],
+    { type: "times",
+        first: { type: "a" },
+        second: { type: "times",
+            first: { type: "b" },
+            second: { type: "c" } } } )
 
-JSON.stringify(
-    runBytecode( [ "r" ],
-        { type: "times",
-            first: { type: "times",
-                first: { type: "a" },
-                second: { type: "b" } },
-            second: { type: "c" } } ) )
-
-JSON.stringify(
-    runBytecode( "l assert r assert".split( " " ),
-        { type: "times",
+testBytecode( [ "r" ],
+    { type: "times",
+        first: { type: "times",
             first: { type: "a" },
-            second: { type: "times",
-                first: { type: "b" },
-                second: { type: "c" } } } ) )
+            second: { type: "b" } },
+        second: { type: "c" } } )
+
+testBytecode( "l assert r assert".split( " " ),
+    { type: "times",
+        first: { type: "a" },
+        second: { type: "times",
+            first: { type: "b" },
+            second: { type: "c" } } } )
 
 // This one fails.
-runBytecode( "r assert".split( " " ),
+testBytecode( "r assert".split( " " ),
     { type: "times",
         first: { type: "a" },
         second: { type: "times",
