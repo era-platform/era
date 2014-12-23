@@ -260,20 +260,22 @@ testBytecode( "r assert".split( " " ),
 // positiveConditionAtom <atomName>
 // negativeConditionAtom <atomName>
 //
-// NOTE: Conditions only support information-preserving deduction so
-// we can use them to mask values. What would be represented in
-// classical linear logic as (a plus b) will be represented instead as
-// ((k resourceWhenever a) times (-k resourceWhenever b)). For now,
-// some rules may do deep comparisons of the the condition k.
+// NOTE: Conditions only support information-preserving deduction,
+// which lets us use them to mask non-droppable resources. For now,
+// some rules may do deep comparisons of conditions.
 //
 // TODO: Add these, along with their rules listed below.
 //
 // resourceWhenever <condition> <value>
 // resourceUnless <condition> <value>
+// withUnit
+// plusUnit
+// positiveLambdaCond <atomName> <value>
+// negativeLambdaCond <atomName> <value>
+// letCond <atomName> <condition> <value>
 //
-// TODO: To fully support MALL, we need some way to quantify over the
-// truth values of a condition. That way we can represent MALL's
-// additive disjunction [A plus B] as (existsCondition k: (k.A k,B)).
+// NOTE: Using these operators, we can represent MALL's additive
+// disjunction [A plus B] as {$negLambdaCond k (k.A k,B)}.
 
 
 var setlikes = [ {
@@ -707,15 +709,18 @@ function runCommand( state, reversed, command ) {
         // TODO: Add these rules. (The notation k.a means
         // resourceWhenever with a condition of `k` and a resource of
         // `a`. Likewise, k,a means resourceUnless. On the left side
-        // of a k.a or k,a, every () and [] means and and or
-        // respectively; otherwise they mean times and par. The
-        // notations [+] and (+) represent the additive units.)
+        // of a k.a, k,a, or {$letCond ...}, every () and [] means and
+        // and or respectively; otherwise they mean times and par. The
+        // notations [+] and (+) represent the additive units, so
+        // k,[+] can be thought of as a proof of k.)
         //
+        // // TODO: This one is redundant thanks to the [+] rules
+        // // below. See if it should be removed.
         // A
         // <--->  additive unit
         // ().A
         //
-        // J.K.A  -- binding to the right: J.(K.(A))
+        // J.K.A  // binding to the right: J.(K.(A))
         // <--->  additive associativity
         // (J K).A
         //
@@ -746,6 +751,67 @@ function runCommand( state, reversed, command ) {
         // (k.[A B] k,[C D])
         // --->
         // [(k.A k,C) (k.B k,D)]
+        //
+        // (A B),[+]
+        // <--->
+        // (A,[+] B,[+])
+        //
+        // ()
+        // <--->
+        // (),[+]
+        //
+        // (k,[+] A)
+        // <--->
+        // (k,[+] k.A)
+        //
+        // {$posLambdaCond j A}
+        // --->
+        // {$letCond j k A}
+        //
+        // {$posLambdaCond j [A B]}
+        // --->
+        // [{$posLambdaCond j A} {$negLambdaCond j B}]
+        //
+        // {$letCond j K j}
+        // <--->
+        // K
+        //
+        // {$letCond j k m}
+        // <--->  for non-condition atom m or condition atom m != j
+        // m
+        //
+        // {$letCond j k (A B)}
+        // <--->  for condition or multiplicative join ()
+        // ({$letCond j k A} {$letCond j k B})
+        //
+        // {$letCond j k M.A}
+        // <--->
+        // {$letCond j k M}.{$letCond j k A}
+        //
+        // {$letCond j k {$posLambdaCond j A})}
+        // <--->
+        // {$posLambdaCond j A}
+        //
+        // {$letCond j {$letCond m () K} {$posLambdaCond m A})}
+        // <--->  for j != m
+        // {$posLambdaCond m {$letCond j {$letCond m () K} A}}
+        //
+        // {$letCond j K {$letCond j N A}}
+        // <--->
+        // {$letCond j {$letCond j K N} A}
+        //
+        // {$letCond j {$letCond m () k} {$letCond m N A}}
+        // <--->  for m != j
+        // {$letCond m {$letCond j {$letCond m () k} N}
+        //   {$letCond j {$letCond m () k} A}}
+        //
+        // {$letCond j K {$letCond m j A}}
+        // <--->
+        // {$letCond m K {$letCond j m A}}
+        //
+        // A
+        // <--->
+        // {$letCond j j A}
     } else {
         throw new Error();
     }
