@@ -816,13 +816,3 @@ function runCommand( state, reversed, command ) {
         throw new Error();
     }
 }
-/*
-
-[() ()]
-([() ()] [[] ()])
-[([() ()] []) ()]
-[[(() ()) []] ()]
-[(() ()) ()]
-[() ()]
-
-*/
