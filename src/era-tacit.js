@@ -275,6 +275,8 @@ testBytecode( "r assert".split( " " ),
 // letUnused <atomName> <value>
 // letCond <atomName> <condition> <value>
 // isolated <value>
+// positiveActions
+// negativeActions
 //
 // NOTE: Using these operators, we can represent MALL's additive
 // disjunction [A plus B] as {$negLambdaCond k (k.A k,B)}.
@@ -766,6 +768,10 @@ function runCommand( state, reversed, command ) {
         // <--->
         // (k,[+] k.A)
         //
+        // {$letUnused j A}
+        // <--->
+        // {$posLambdaCond j {$letUnused j A}}
+        //
         // {$posLambdaCond j A}
         // --->
         // {$letCond j k A}
@@ -773,6 +779,10 @@ function runCommand( state, reversed, command ) {
         // {$posLambdaCond j [A B]}
         // --->
         // [{$posLambdaCond j A} {$negLambdaCond j B}]
+        //
+        // {$letUnused j A}
+        // --->
+        // A
         //
         // {$letUnused j a}
         // <--->  for unnamed atoms a
@@ -855,6 +865,10 @@ function runCommand( state, reversed, command ) {
         // <--->
         // {$letCond m K {$letCond j m A}}
         //
+        // {$isolated A}
+        // --->
+        // A
+        //
         // {$isolated a}
         // <--->  for unnamed atoms a
         // a
@@ -883,11 +897,66 @@ function runCommand( state, reversed, command ) {
         // <--->
         // {$isolated A}
         //
-        // TODO: Add primitives for willing interaction with a
-        // debugger.
         //
-        // TODO: Add primitives for static definitions and queries in
-        // the spirit of the Era module system.
+        // These are primitives for static definitions and queries in
+        // the spirit of the Era module system. During the execution
+        // of a module itself, the overall program input will be of
+        // type {$negLambdaCond static static.{$posActions}}, and the
+        // output must be of type {$posActions}.
+        //
+        // ()
+        // --->  empty
+        // {$posActions}
+        //
+        // ({$posActions} {$posActions})
+        // --->  join (with possibly contradictory definitions)
+        // {$posActions}
+        //
+        // {$posActions}
+        // --->  drop (NOTE: All actions must be droppable.)
+        // ()
+        //
+        // {$posActions}
+        // --->  copy (TODO: Will all actions be copiable?)
+        // ({$posActions} {$posActions})
+        //
+        // ()
+        // --->
+        // [{$posActions} {$negActions}]
+        //
+        // (publicKey auth {$isolated a})
+        // --->  TODO: What type is publicKey? auth?
+        // {$posActions}
+        //
+        // ({$posActions} publicKey)
+        // --->  TODO: What type is publicKey? k?
+        // k.{$isolated a}
+        //
+        // ({$posActions} publicKey auth)
+        // --->  TODO: What type is publicKey? auth? k? code?
+        // k.code
+        //
+        //
+        // This is a primitive for willingly interacting with the
+        // language implementation's internals. While technically
+        // anything can happen, there are various levels of
+        // recommended strictness depending on the needs of the
+        // interaction:
+        //
+        // - The language implementation ignores all actions and
+        //   produces no actions of its own (i.e. an empty
+        //   {$posActions} output).
+        // - The language implementation may observe these actions and
+        //   produce actions of its own, which may vary according to
+        //   its internal state.
+        // - The language implementation may observe and produce
+        //   actions, and it may also do special things with the
+        //   internal details of `A`.
+        // - The language implementation may do anything at all.
+        //
+        // ({$posActions} A)
+        // --->
+        // ({$posActions} A)
     } else {
         throw new Error();
     }
