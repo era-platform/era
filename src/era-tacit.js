@@ -272,7 +272,9 @@ testBytecode( "r assert".split( " " ),
 // plusUnit
 // positiveLambdaCond <atomName> <value>
 // negativeLambdaCond <atomName> <value>
+// letUnused <atomName> <value>
 // letCond <atomName> <condition> <value>
+// isolated <value>
 //
 // NOTE: Using these operators, we can represent MALL's additive
 // disjunction [A plus B] as {$negLambdaCond k (k.A k,B)}.
@@ -772,6 +774,42 @@ function runCommand( state, reversed, command ) {
         // --->
         // [{$posLambdaCond j A} {$negLambdaCond j B}]
         //
+        // {$letUnused j a}
+        // <--->  for unnamed atoms a
+        // a
+        //
+        // {$letUnused j (A B)}
+        // <--->
+        // ({$letUnused j A} {$letUnused j B})
+        //
+        // {$letUnused j M.A}
+        // <--->
+        // {$letUnused j M}.{$letUnused j A}
+        //
+        // {$letUnused j M.A}
+        // <--->
+        // {$letUnused j M}.{$letUnused j A}
+        //
+        // {$letUnused j {$posLambdaCond j A}}
+        // <--->
+        // {$posLambdaCond j A}
+        //
+        // {$letUnused j {$posLambdaCond m A}}
+        // <--->  for j != m
+        // {$posLambdaCond m {$letUnused j A}}
+        //
+        // {$letUnused j {$letUnused j A}}
+        // <--->
+        // {$letUnused j A}
+        //
+        // {$letUnused j {$letUnused m A}}
+        // <--->
+        // {$letUnused m {$letUnused j A}}
+        //
+        // A
+        // <--->
+        // {$letCond j j A}
+        //
         // {$letCond j K j}
         // <--->
         // K
@@ -788,30 +826,68 @@ function runCommand( state, reversed, command ) {
         // <--->
         // {$letCond j k M}.{$letCond j k A}
         //
-        // {$letCond j k {$posLambdaCond j A})}
+        // {$letCond j k {$posLambdaCond j A}}
         // <--->
         // {$posLambdaCond j A}
         //
-        // {$letCond j {$letCond m () K} {$posLambdaCond m A})}
+        // {$letCond j {$letUnused m K} {$posLambdaCond m A}}
         // <--->  for j != m
-        // {$posLambdaCond m {$letCond j {$letCond m () K} A}}
+        // {$posLambdaCond m {$letCond j {$letUnused m K} A}}
+        //
+        // {$letUnused j {$letCond m N A}}
+        // <--->
+        // {$letCond m {$letUnused j N} {$letUnused j A}}
+        //
+        // {$letUnused j A}
+        // <--->
+        // {$letCond j k {$letUnused j A}}
         //
         // {$letCond j K {$letCond j N A}}
         // <--->
         // {$letCond j {$letCond j K N} A}
         //
-        // {$letCond j {$letCond m () k} {$letCond m N A}}
+        // {$letCond j {$letUnused m k} {$letCond m N A}}
         // <--->  for m != j
-        // {$letCond m {$letCond j {$letCond m () k} N}
-        //   {$letCond j {$letCond m () k} A}}
+        // {$letCond m {$letCond j {$letUnused m k} N}
+        //   {$letCond j {$letUnused m k} A}}
         //
         // {$letCond j K {$letCond m j A}}
         // <--->
         // {$letCond m K {$letCond j m A}}
         //
-        // A
+        // {$isolated a}
+        // <--->  for unnamed atoms a
+        // a
+        //
+        // {$isolated (A B)}
         // <--->
-        // {$letCond j j A}
+        // ({$isolated A} {$isolated B})
+        //
+        // {$isolated M.A}
+        // <--->
+        // {$isolated M}.{$isolated A}
+        //
+        // {$isolated M.A}
+        // <--->
+        // {$isolated M}.{$isolated A}
+        //
+        // {$isolated {$posLambdaCond j {$letUnused j A}}}
+        // <--->
+        // {$posLambdaCond j {$letUnused j {$isolated A}}}
+        //
+        // {$isolated {$isolated A}}
+        // <--->
+        // {$isolated A}
+        //
+        // {$isolated {$letUnused j A}}
+        // <--->
+        // {$isolated A}
+        //
+        // TODO: Add primitives for willing interaction with a
+        // debugger.
+        //
+        // TODO: Add primitives for static definitions and queries in
+        // the spirit of the Era module system.
     } else {
         throw new Error();
     }
