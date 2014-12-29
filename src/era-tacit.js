@@ -265,21 +265,41 @@ testBytecode( "r assert".split( " " ),
 // some rules may do deep comparisons of conditions.
 //
 // TODO: Add these, along with their rules listed below.
+// (TODO: Actually, bring this list up to date with the connectives
+// used in the list below.)
 //
 // resourceWhenever <condition> <value>
 // resourceUnless <condition> <value>
 // withUnit
 // plusUnit
-// positiveLambdaCond <atomName> <value>
-// negativeLambdaCond <atomName> <value>
 // letUnused <atomName> <value>
-// letCond <atomName> <condition> <value>
+// letFresh <atomName> <value>
 // isolated <value>
-// positiveActions
-// negativeActions
+// positiveComplementEquals <value> <value>
+// negativeComplementEquals <value> <value>
 //
-// NOTE: Using these operators, we can represent MALL's additive
-// disjunction [A plus B] as {$negLambdaCond k (k.A k,B)}.
+// NOTE: Using these operators, we can almost represent MALL's
+// additive disjunction, but in a strictly information-preserving way.
+// The connective [A plus B] becomes (m.A m,B) for conditions m. This
+// can also be written {$let k m (k.A k,B} or
+// {$letFresh k (=[-k m],[+] (k.A k,B)}. (The condition =[-k m] states
+// that (positive) k is equal to m. It's written using square brackets
+// because it allows a sort of conversion from k to m.)
+//
+// TODO: Allow these {$letFresh ...} boundaries and equality
+// propositions to bubble up to the top level and combine with each
+// other to form a single {$let ...}, whose binding can be hidden to
+// achieve module encapsulation. This will amount to defining compound
+// "types"; currently all variables are conditions, and that will need
+// to change. This might be an easy matter of defining additional
+// algebraic equivalences for data pairs, etc., as an extension to the
+// Boolean equivalences we currently use for conditions. Pairs in
+// particular don't have many equivalences, but they will at least
+// have enough to allow commutation of {$letUnused ...}, etc.
+//
+// TODO: Figure out if the positiveComplementEquals and
+// negativeComplementEquals connectives, aka =[A B] and =(A B), should
+// permit deep inference to reach A or B.
 
 
 var setlikes = [ {
@@ -718,6 +738,13 @@ function runCommand( state, reversed, command ) {
         // notations [+] and (+) represent the additive units, so
         // k,[+] can be thought of as a proof of k.)
         //
+        // Shorthand: {$let a B C} means {$letFresh a (=[-a B],[+] C)}
+        // // NOTE: We use this shorthand so that we can *transport*
+        // // explicit equality assertions into syntactic structure
+        // // and back. No {$let ...} rule ever really introduces or
+        // // eliminates equality *information*, even if it introduces
+        // // or eliminates equality propositions.
+        //
         // // TODO: This one is redundant thanks to the [+] rules
         // // below. See if it should be removed.
         // A
@@ -748,13 +775,9 @@ function runCommand( state, reversed, command ) {
         // <--->
         // ()
         //
-        // [k.[A B] k,[C D]]
+        // [k.B k,D]
         // --->
-        // [[k.A k,C] (k.B k,D)]
-        //
-        // (k.[A B] k,[C D])
-        // --->
-        // [(k.A k,C) (k.B k,D)]
+        // (k.B k,D)
         //
         // (A B),[+]
         // <--->
@@ -768,24 +791,16 @@ function runCommand( state, reversed, command ) {
         // <--->
         // (k,[+] k.A)
         //
-        // {$letUnused j A}
+        // {$letUnused j {$letUnused j A}}
         // <--->
-        // {$posLambdaCond j {$letUnused j A}}
-        //
-        // {$posLambdaCond j A}
-        // --->
-        // {$letCond j k A}
-        //
-        // {$posLambdaCond j [A B]}
-        // --->
-        // [{$posLambdaCond j A} {$negLambdaCond j B}]
-        //
         // {$letUnused j A}
-        // --->
-        // A
+        //
+        // {$letUnused j {$letUnused m A}}
+        // <--->
+        // {$letUnused m {$letUnused j A}}
         //
         // {$letUnused j a}
-        // <--->  for unnamed atoms a
+        // <--->  for unnamed atom a or named atom a != j
         // a
         //
         // {$letUnused j (A B)}
@@ -796,78 +811,94 @@ function runCommand( state, reversed, command ) {
         // <--->
         // {$letUnused j M}.{$letUnused j A}
         //
-        // {$letUnused j M.A}
+        // {$letFresh j {$letFresh j A}}
         // <--->
-        // {$letUnused j M}.{$letUnused j A}
+        // {$letFresh j A}
         //
-        // {$letUnused j {$posLambdaCond j A}}
+        // {$letFresh j {$letFresh m A}}
         // <--->
-        // {$posLambdaCond j A}
+        // {$letFresh m {$letFresh j A}}
         //
-        // {$letUnused j {$posLambdaCond m A}}
-        // <--->  for j != m
-        // {$posLambdaCond m {$letUnused j A}}
+        // {$letFresh j a}
+        // <--->  for unnamed atoms a or named atoms a != j
+        // a
         //
-        // {$letUnused j {$letUnused j A}}
+        // {$letFresh j ({$letUnused j A} B)}
+        // <--->
+        // ({$letUnused j A} {$letFresh j B})
+        //
+        // {$letFresh j {$letUnused j M}.A}
+        // <--->
+        // {$letUnused j M}.{$letFresh j A}
+        //
+        // {$letFresh j M.{$letUnused j A}}
+        // <--->
+        // {$letFresh j M}.{$letUnused j A}
+        //
+        // {$letFresh j {$letUnused j A}}
         // <--->
         // {$letUnused j A}
         //
-        // {$letUnused j {$letUnused m A}}
+        // {$letUnused j {$letFresh j A}}
         // <--->
-        // {$letUnused m {$letUnused j A}}
+        // {$letFresh j A}
         //
-        // A
-        // <--->
-        // {$letCond j j A}
+        // {$letUnused j {$letFresh m A}}
+        // <--->  for j != m
+        // {$letFresh m {$letUnused j A}}
         //
-        // {$letCond j K j}
-        // <--->
-        // K
-        //
-        // {$letCond j k m}
-        // <--->  for non-condition atom m or condition atom m != j
+        // {$let j k m}
+        // <--->  for unnamed atom m or named atom m != j
         // m
         //
-        // {$letCond j k (A B)}
+        // {$let j k (A B)}
         // <--->  for condition or multiplicative join ()
-        // ({$letCond j k A} {$letCond j k B})
+        // ({$let j k A} {$let j k B})
         //
-        // {$letCond j k M.A}
+        // {$let j k M.A}
         // <--->
-        // {$letCond j k M}.{$letCond j k A}
+        // {$let j k M}.{$let j k A}
         //
-        // {$letCond j k {$posLambdaCond j A}}
+        // {$let j k {$letUnused j A}}
         // <--->
-        // {$posLambdaCond j A}
-        //
-        // {$letCond j {$letUnused m K} {$posLambdaCond m A}}
-        // <--->  for j != m
-        // {$posLambdaCond m {$letCond j {$letUnused m K} A}}
-        //
-        // {$letUnused j {$letCond m N A}}
-        // <--->
-        // {$letCond m {$letUnused j N} {$letUnused j A}}
-        //
         // {$letUnused j A}
-        // <--->
-        // {$letCond j k {$letUnused j A}}
         //
-        // {$letCond j K {$letCond j N A}}
+        // {$letUnused j {$let m N A}}
         // <--->
-        // {$letCond j {$letCond j K N} A}
+        // {$let m {$letUnused j N} {$letUnused j A}}
         //
-        // {$letCond j {$letUnused m k} {$letCond m N A}}
+        // {$let j k {$letFresh j A}}
+        // <--->
+        // {$letFresh j A}
+        //
+        // {$let j {$letUnused m K} {$letFresh m A}}
+        // <--->  for j != m
+        // {$letFresh m {$let j {$letUnused m K} A}}
+        //
+        // {$letUnused k A}
+        // <--->
+        // {$let k j {$let j k {$letUnused k A}}}
+        //
+        // {$let j {$letUnused j K} j}
+        // <--->  for conditions K and condition atoms j
+        // {$letUnused j K}
+        //
+        // {$let j K {$let j N A}}
+        // <--->
+        // {$let j {$let j K N} A}
+        //
+        // {$let j {$letUnused m k} {$let m N A}}
         // <--->  for m != j
-        // {$letCond m {$letCond j {$letUnused m k} N}
-        //   {$letCond j {$letUnused m k} A}}
+        // {$let m {$let j {$letUnused m k} N}
+        //   {$let j {$letUnused m k} A}}
         //
-        // {$letCond j K {$letCond m j A}}
+        // {$let j K {$let m {$letUnused m j} A}}
         // <--->
-        // {$letCond m K {$letCond j m A}}
+        // {$let m K {$let j {$letUnused j m} A}}
         //
+        // {$isolated {$isolated A}}
+        // <--->
         // {$isolated A}
-        // --->
-        // A
         //
         // {$isolated a}
         // <--->  for unnamed atoms a
@@ -885,14 +916,6 @@ function runCommand( state, reversed, command ) {
         // <--->
         // {$isolated M}.{$isolated A}
         //
-        // {$isolated {$posLambdaCond j {$letUnused j A}}}
-        // <--->
-        // {$posLambdaCond j {$isolated A}}
-        //
-        // {$isolated {$isolated A}}
-        // <--->
-        // {$isolated A}
-        //
         // {$isolated {$letUnused j A}}
         // <--->
         // {$isolated A}
@@ -908,37 +931,39 @@ function runCommand( state, reversed, command ) {
         // type {$posModuleEffects}, and the output must be of type
         // ().
         //
+        // // TODO: Once this has settled down, add the new
+        // // connectives used here to the list above.
+        //
         // {$posModuleEffects}
         // --->  requires readerPublicKey auth
-        // {$consistentlyDefines
-        //   authorPublicKey readerPublicKey {$isolated a}
-        // }.({$posModuleEffects} {$isolated a})
+        // {$consistentlyDefinesPublic
+        //   {$let j {$posImpl authorPublicKey readerPublicKey} a}
+        // }.{$isolated (
+        //   {$posModuleEffects}
+        //   {$let j {$posImpl authorPublicKey readerPublicKey} a}
+        // )}
         //
         // {$posModuleEffects}
         // --->  requires authorPublicKey auth
-        // {$consistentlyDefines
-        //   authorPublicKey readerPublicKey {$isolated a}
-        // }.(
+        // {$consistentlyDefinesPrivate
+        //   {$let j k a}
+        // }.{$isolated (
         //   {$posModuleEffects}
-        //   {$posSignedDefinition
-        //     authorPublicKey readerPublicKey {$isolated a}}
-        // )
+        //   {$let j {$posImpl authorPublicKey readerPublicKey} a}
+        //   =[{$negImpl readerPublicKey readerPublicKey} k]
+        // )}
         //
-        // {$posSignedDefinition
-        //   authorPublicKey readerPublicKey {$isolated A}}
-        // --->
-        // {$isolated A}
-        //
-        // ({$posModuleEffects} {$isolated A})
+        // ({$posModuleEffects} {$isolated {$let j K A}})
         // --->  requires authorPublicKey auth
-        // ( {$posModuleEffects}
-        //   {$posSignedDefinition
-        //     authorPublicKey readerPublicKey {$isolated A}})
+        // ()
         //
         // {$posModuleEffects}
         // --->
         // ()
         //
+        // // TODO: Figure out whether this allows a definition to
+        // // contain its own {$posModuleEffects} object, and if so,
+        // // figure out how to stop that.
         // {$posModuleEffects}
         // <--->
         // ({$posModuleEffects} {$posModuleEffects})
@@ -950,6 +975,12 @@ function runCommand( state, reversed, command ) {
         // ()
         // <--->
         // [].{$posModuleEffects}
+        //
+        // // TODO: Figure out if it's sufficient that we don't define
+        // // a rule corresponding to a = {$posModuleEffects} for rule
+        // // ((k.a k,a) <---> a). The point is to keep from allowing
+        // // conditionals that test
+        // // k = {$consistentlyDefines___ ...}.
         //
         //
         // This is a primitive for willingly interacting with the
@@ -968,6 +999,9 @@ function runCommand( state, reversed, command ) {
         //   actions, and it may also do special things with the
         //   internal details of `A`.
         // - The language implementation may do anything at all.
+        //
+        // // TODO: Once this has settled down, add the new
+        // // connectives used here to the list above.
         //
         // ({$posActions} A)
         // --->
