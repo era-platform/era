@@ -281,10 +281,10 @@ testBytecode( "r assert".split( " " ),
 // NOTE: Using these operators, we can almost represent MALL's
 // additive disjunction, but in a strictly information-preserving way.
 // The connective [A plus B] becomes (m.A m,B) for conditions m. This
-// can also be written {$let k m (k.A k,B} or
-// {$letFresh k (=[-k m],[+] (k.A k,B)}. (The condition =[-k m] states
-// that (positive) k is equal to m. It's written using square brackets
-// because it allows a sort of conversion from k to m.)
+// can also be written {$let k m (k.A k,B)} or
+// {$letFresh k (=[-k m],[+] (k.A k,B))}. (The condition =[-k m]
+// states that (positive) k is equal to m. It's written using square
+// brackets because it allows a sort of conversion from k to m.)
 //
 // TODO: Allow these {$letFresh ...} boundaries and equality
 // propositions to bubble up to the top level and combine with each
