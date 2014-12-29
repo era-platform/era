@@ -887,7 +887,7 @@ function runCommand( state, reversed, command ) {
         //
         // {$isolated {$posLambdaCond j {$letUnused j A}}}
         // <--->
-        // {$posLambdaCond j {$letUnused j {$isolated A}}}
+        // {$posLambdaCond j {$isolated A}}
         //
         // {$isolated {$isolated A}}
         // <--->
@@ -897,44 +897,59 @@ function runCommand( state, reversed, command ) {
         // <--->
         // {$isolated A}
         //
+        // {$letUnused j {$isolated A}}
+        // <--->
+        // {$isolated A}
+        //
         //
         // These are primitives for static definitions and queries in
         // the spirit of the Era module system. During the execution
         // of a module itself, the overall program input will be of
-        // type {$negLambdaCond static static.{$posActions}}, and the
-        // output must be of type {$posActions}.
+        // type {$posModuleEffects}, and the output must be of type
+        // ().
         //
+        // {$posModuleEffects}
+        // --->  requires readerPublicKey auth
+        // {$consistentlyDefines
+        //   authorPublicKey readerPublicKey {$isolated a}
+        // }.({$posModuleEffects} {$isolated a})
+        //
+        // {$posModuleEffects}
+        // --->  requires authorPublicKey auth
+        // {$consistentlyDefines
+        //   authorPublicKey readerPublicKey {$isolated a}
+        // }.(
+        //   {$posModuleEffects}
+        //   {$posSignedDefinition
+        //     authorPublicKey readerPublicKey {$isolated a}}
+        // )
+        //
+        // {$posSignedDefinition
+        //   authorPublicKey readerPublicKey {$isolated A}}
+        // --->
+        // {$isolated A}
+        //
+        // ({$posModuleEffects} {$isolated A})
+        // --->  requires authorPublicKey auth
+        // ( {$posModuleEffects}
+        //   {$posSignedDefinition
+        //     authorPublicKey readerPublicKey {$isolated A}})
+        //
+        // {$posModuleEffects}
+        // --->
         // ()
-        // --->  empty
-        // {$posActions}
         //
-        // ({$posActions} {$posActions})
-        // --->  join (with possibly contradictory definitions)
-        // {$posActions}
-        //
-        // {$posActions}
-        // --->  drop (NOTE: All actions must be droppable.)
-        // ()
-        //
-        // {$posActions}
-        // --->  copy (TODO: Will all actions be copiable?)
-        // ({$posActions} {$posActions})
+        // {$posModuleEffects}
+        // <--->
+        // ({$posModuleEffects} {$posModuleEffects})
         //
         // ()
         // --->
-        // [{$posActions} {$negActions}]
+        // [{$posModuleEffects} {$negModuleEffects}]
         //
-        // (publicKey auth {$isolated a})
-        // --->  TODO: What type is publicKey? auth?
-        // {$posActions}
-        //
-        // ({$posActions} publicKey)
-        // --->  TODO: What type is publicKey? k?
-        // k.{$isolated a}
-        //
-        // ({$posActions} publicKey auth)
-        // --->  TODO: What type is publicKey? auth? k? code?
-        // k.code
+        // ()
+        // <--->
+        // [].{$posModuleEffects}
         //
         //
         // This is a primitive for willingly interacting with the
