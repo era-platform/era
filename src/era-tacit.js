@@ -247,16 +247,16 @@ testBytecode( "r assert".split( " " ),
 //
 // values:
 //
-// timesUnit
-// times <value> <value>
-// parUnit
-// par <value> <value>
+// timesUnit  -- ()
+// times <value> <value>  -- (A B)
+// parUnit  -- []
+// par <value> <value>  -- [A B]
 // positiveResourceAtom <atomName>
 // negativeResourceAtom <atomName>
-// andUnit
-// and <value> <value>
-// orUnit
-// or <value> <value>
+// andUnit  -- ()
+// and <value> <value>  -- (A B)
+// orUnit  -- []
+// or <value> <value>  -- [A B]
 // positiveConditionAtom <atomName>
 // negativeConditionAtom <atomName>
 //
@@ -268,15 +268,20 @@ testBytecode( "r assert".split( " " ),
 // (TODO: Actually, bring this list up to date with the connectives
 // used in the list below.)
 //
-// resourceWhenever <condition> <value>
-// resourceUnless <condition> <value>
-// withUnit
-// plusUnit
-// letUnused <atomName> <value>
-// letFresh <atomName> <value>
-// isolated <value>
-// positiveComplementEquals <value> <value>
-// negativeComplementEquals <value> <value>
+// resourceWhenever <condition> <value>  -- A.B
+// resourceUnless <condition> <value>  -- A.B
+// withUnit  -- (+)
+// plusUnit  -- [+]
+// letUnused <atomName> <value>  -- {$letUnused a B}
+// letFresh <atomName> <value>  -- {$letFresh a B}
+// isolated <value>  -- {$isolated A}
+// positiveComplementInequal <value> <value>  -- =(A B)
+// negativeComplementInequal <value> <value>  -- =[A B]
+// // TODO: See if we need to have positiveData and negativeData.
+// data <value> <value>  -- {$data A B}
+// dataUnit
+// dataFirst <value>  -- {$fst A}
+// dataSecond <value>  -- {$snd A}
 //
 // NOTE: Using these operators, we can almost represent MALL's
 // additive disjunction, but in a strictly information-preserving way.
@@ -296,10 +301,6 @@ testBytecode( "r assert".split( " " ),
 // Boolean equivalences we currently use for conditions. Pairs in
 // particular don't have many equivalences, but they will at least
 // have enough to allow commutation of {$letUnused ...}, etc.
-//
-// TODO: Figure out if the positiveComplementEquals and
-// negativeComplementEquals connectives, aka =[A B] and =(A B), should
-// permit deep inference to reach A or B.
 
 
 var setlikes = [ {
@@ -820,20 +821,25 @@ function runCommand( state, reversed, command ) {
         // {$letFresh m {$letFresh j A}}
         //
         // {$letFresh j a}
-        // <--->  for unnamed atoms a or named atoms a != j
+        // <--->  for unnamed atom a or named atom a != j
         // a
         //
         // {$letFresh j ({$letUnused j A} B)}
-        // <--->
+        // <--->  for condition (), multiplicative (), {$data}, or A.B
         // ({$letUnused j A} {$letFresh j B})
         //
-        // {$letFresh j {$letUnused j M}.A}
-        // <--->
-        // {$letUnused j M}.{$letFresh j A}
+        // {$letFresh j (A {$letUnused j B})}
+        // <--->  for condition (), multiplicative (), {$data}, or A.B
+        // ({$letFresh j A} {$letUnused j B})
         //
-        // {$letFresh j M.{$letUnused j A}}
-        // <--->
-        // {$letFresh j M}.{$letUnused j A}
+        // // TODO: See if =(), =[], both, or neither should be added
+        // // to this list.
+        // ( {$let j1 J2 {$letUnused m A}}
+        //   {$let k1 K2 {$letUnused m B}})
+        // <--->  for condition (), multiplicative (), {$data}, or A.B
+        // {$let m {$data J2 K2}
+        //   ( {$let j1 {$fst m} {$letUnused m A}}
+        //     {$let k1 {$snd m} {$letUnused m B}})}
         //
         // {$letFresh j {$letUnused j A}}
         // <--->
@@ -852,12 +858,8 @@ function runCommand( state, reversed, command ) {
         // m
         //
         // {$let j k (A B)}
-        // <--->  for condition or multiplicative join ()
+        // <--->  for condition (), multiplicative (), {$data}, or A.B
         // ({$let j k A} {$let j k B})
-        //
-        // {$let j k M.A}
-        // <--->
-        // {$let j k M}.{$let j k A}
         //
         // {$let j k {$letUnused j A}}
         // <--->
