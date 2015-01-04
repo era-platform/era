@@ -971,66 +971,121 @@ function runCommand( state, reversed, command ) {
         // a
         //
         //
+        // We might want to introduce a special connective
+        // {$byProof pf A} which records inferences so we're extra
+        // sure we never lose information. Maybe we should force all
+        // the irreversible deductions to occur under at least one
+        // {$byProof ...} so that we have a completely reversible
+        // system from a shallow inference perspective.
+        //
+        // // TODO: Once this has settled down, add the new
+        // // connectives used here to the list above. This may be
+        // // difficult because we need at least one new connective
+        // // for every inference rule that could appear in a proof.
+        //
+        // // TODO: See if we should add any particular rules for
+        // // taking advantage of the recorded proof data.
+        //
+        // // TODO: See if the idea of {$byProof ...} actually
+        // // obsoletes all the care we've taken to design
+        // // information-preserving inferences.
+        //
+        // ()
+        // <--->
+        // {$byProof {$emptyPf} ()}
+        //
+        // {$byProof pf A}
+        // --->
+        // A
+        //
+        // {$byProof pf A}
+        // <--->  whenever we do deep inference taking A to B
+        // {$byProof {$thenPf pf ___} B}
+        //
+        // {$byProof {$let j k pf} A}
+        // <--->
+        // {$let j k {$byProof pf A}}
+        //
+        //
         // These are primitives for static definitions and queries in
         // the spirit of the Era module system. During the execution
         // of a module itself, the overall program input will be of
-        // type {$posModuleEffects}, and the output must be of type
-        // ().
+        // type (), and the output must be of type
+        // {$byProof pf {$posActions a}}.
         //
         // // TODO: Once this has settled down, add the new
         // // connectives used here to the list above.
         //
-        // {$posModuleEffects}
-        // --->  requires readerPublicKey auth
-        // {$consistentlyDefinesPublic
-        //   {$let j {$posImpl authorPublicKey readerPublicKey} a}
-        // }.{$isolated (
-        //   {$posModuleEffects}
-        //   {$let j {$posImpl authorPublicKey readerPublicKey} a}
-        // )}
-        //
-        // {$posModuleEffects}
-        // --->  requires authorPublicKey auth
-        // {$consistentlyDefinesPrivate
-        //   {$let j k a}
-        // }.{$isolated (
-        //   {$posModuleEffects}
-        //   {$let j {$posImpl authorPublicKey readerPublicKey} a}
-        //   ==[{$negImpl readerPublicKey readerPublicKey} k]
-        // )}
-        //
-        // ({$posModuleEffects} {$isolated {$let j K A}})
-        // --->  requires authorPublicKey auth
         // ()
-        //
-        // {$posModuleEffects}
-        // --->
-        // ()
-        //
-        // // TODO: Figure out whether this allows a definition to
-        // // contain its own {$posModuleEffects} object, and if so,
-        // // figure out how to stop that.
-        // {$posModuleEffects}
         // <--->
-        // ({$posModuleEffects} {$posModuleEffects})
+        // {$posActions {$emptyActions}}
         //
-        // ()
-        // --->
-        // [{$posModuleEffects} {$negModuleEffects}]
+        // ({$posActions a} {$posActions b})
+        // <--->
+        // {$posActions {$combinedActions a b}}
+        //
+        // ({$posActions a} {$posCryptographyHandler b})
+        // <--->
+        // {$posKnowledgeRetriever
+        //   ({$posActions a} {$posCryptographyHandler b})}
         //
         // ()
         // <--->
-        // [].{$posModuleEffects}
+        // {$posKnowledgeRetriever {$imports}}
         //
-        // // TODO: Figure out if it's sufficient that we don't define
-        // // a rule corresponding to a = {$posModuleEffects} for rule
-        // // ((k.a k,a) <---> a). The point is to keep from allowing
-        // // conditionals that test
-        // // k = {$consistentlyDefines___ ...}.
+        // {$posKnowledgeRetriever r}
+        // <--->  alias
+        // ({$posKnowledgeRetriever r} {$posKnowledgeRetriever r})
+        //
+        // {$posKnowledgeRetriever r}
+        // <--->  alias
+        // ()
+        //
+        // {$posKnowledgeRetriever r}
+        // <--->  retrieves; requires readerPublicKey auth
+        // {$isolated
+        //   {$let j {$posImpl authorPublicKey readerPublicKey} a}}
+        //
+        // {$posKnowledgeRetriever r}
+        // <--->  retrieves; requires authorPublicKey auth
+        // {$signedDefinition r
+        //   authorPublicKey readerPublicKey signature
+        //   {$isolated {$let j k a}}}
+        //
+        // {$posKnowledgeRetriever r}
+        // <--->  retrieves; requires correct signature
+        // {$signedDefinition r
+        //   authorPublicKey readerPublicKey signature
+        //   {$isolated {$let j k a}}}
+        //
+        // ({$posKnowledgeRetriever r} {$isolated {$let j k a}})
+        // <--->  signs; requires authorPublicKey auth
+        // {$signedDefinition r
+        //   authorPublicKey readerPublicKey signature
+        //   {$isolated {$let j k a}}}
+        //
+        // {$signedDefinition {$moduleImports}
+        //   authorPublicKey readerPublicKey signature
+        //   {$isolated {$let j k a}}}
+        // <--->
+        // {$posActions
+        //   {$definitionAction
+        //     {$signedDefinition {$moduleImports}
+        //       authorPublicKey readerPublicKey signature
+        //       {$isolated {$let j k a}}}}}
+        //
+        // {$signedDefinition r
+        //   authorPublicKey readerPublicKey signature
+        //   {$isolated {$let j k a}}}
+        // <--->
+        // {$isolated (
+        //   {$let j {$posImpl authorPublicKey readerPublicKey} a}
+        //   ==[{$negImpl authorPublicKey readerPublicKey} k],[+]
+        // )}
         //
         //
         // This is a primitive for willingly interacting with the
-        // language implementation's internals. While technically
+        // language implementation's internals. Although technically
         // anything can happen, there are various levels of
         // recommended strictness depending on the needs of the
         // interaction:
@@ -1049,9 +1104,9 @@ function runCommand( state, reversed, command ) {
         // // TODO: Once this has settled down, add the new
         // // connectives used here to the list above.
         //
-        // ({$posActions} A)
+        // ({$posActions a} A)
         // --->
-        // ({$posActions} A)
+        // ({$posActions {$letFresh b b}} A)
     } else {
         throw new Error();
     }
