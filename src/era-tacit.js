@@ -274,33 +274,25 @@ testBytecode( "r assert".split( " " ),
 // plusUnit  -- [+]
 // letUnused <atomName> <value>  -- {$letUnused a B}
 // letFresh <atomName> <value>  -- {$letFresh a B}
+// mu <atomName> <value>  -- {$mu a B}
 // isolated <value>  -- {$isolated A}
-// positiveComplementInequal <value> <value>  -- =(A B)
-// negativeComplementInequal <value> <value>  -- =[A B]
+// positiveComplementNotSubvalue <value> <value>  -- <=(A B)
+// negativeComplementNotSubvalue <value> <value>  -- <=[A B]
 // // TODO: See if we need to have positiveData and negativeData.
 // data <value> <value>  -- {$data A B}
 // dataUnit
 // dataFirst <value>  -- {$fst A}
 // dataSecond <value>  -- {$snd A}
 //
-// NOTE: Using these operators, we can almost represent MALL's
-// additive disjunction, but in a strictly information-preserving way.
-// The connective [A plus B] becomes (m.A m,B) for conditions m. This
-// can also be written {$let k m (k.A k,B)} or
-// {$letFresh k (=[-k m],[+] (k.A k,B))}. (The condition =[-k m]
-// states that (positive) k is equal to m. It's written using square
-// brackets because it allows a sort of conversion from k to m.)
+// NOTE: The condition <=[x y] states that -x is a subvalue of y. This
+// means that every observation on -x is observable on y. The <=[x y]
+// notation is written using square brackets because it conveys a sort
+// of conversion from -x to y much like multiplicative [x y] does.
 //
-// TODO: Allow these {$letFresh ...} boundaries and equality
-// propositions to bubble up to the top level and combine with each
-// other to form a single {$let ...}, whose binding can be hidden to
-// achieve module encapsulation. This will amount to defining compound
-// "types"; currently all variables are conditions, and that will need
-// to change. This might be an easy matter of defining additional
-// algebraic equivalences for data pairs, etc., as an extension to the
-// Boolean equivalences we currently use for conditions. Pairs in
-// particular don't have many equivalences, but they will at least
-// have enough to allow commutation of {$letUnused ...}, etc.
+// NOTE: Using these operators, we can almost represent MALL's
+// additive connectives, but in a strictly information-preserving way.
+// Both additive conjunction and additive disjunction become (m.A m,B)
+// for various conditions m.
 
 
 var setlikes = [ {
@@ -739,12 +731,19 @@ function runCommand( state, reversed, command ) {
         // notations [+] and (+) represent the additive units, so
         // k,[+] can be thought of as a proof of k.)
         //
-        // Shorthand: {$let a B C} means {$letFresh a (=[-a B],[+] C)}
-        // // NOTE: We use this shorthand so that we can *transport*
+        // Shorthand: ==[a b],[+] means (<=[-a b] <=[-b a]),[+]
+        // // TODO: Figure out if expanding a shorthand to a negation
+        // // like that is really a good idea.
+        // Shorthand:
+        //   {$let a B C} means {$letFresh a (==[-a B],[+] C)}
+        // Shorthand:
+        //   {$negLet a B C} means {$letFresh a [==[-a B],(+) C]}
+        // // NOTE: We use these shorthands so that we can *transport*
         // // explicit equality assertions into syntactic structure
-        // // and back. No {$let ...} rule ever really introduces or
-        // // eliminates equality *information*, even if it introduces
-        // // or eliminates equality propositions.
+        // // and back. No {$let ...} or {$negLet ...} rule ever
+        // // really introduces or eliminates equality *information*,
+        // // even if it introduces or eliminates equality
+        // // propositions.
         //
         // // TODO: This one is redundant thanks to the [+] rules
         // // below. See if it should be removed.
@@ -755,10 +754,6 @@ function runCommand( state, reversed, command ) {
         // J.K.A  // binding to the right: J.(K.(A))
         // <--->  additive associativity
         // (J K).A
-        //
-        // ()
-        // <--->
-        // [].a
         //
         // (k.a k,a)
         // <--->
@@ -792,6 +787,10 @@ function runCommand( state, reversed, command ) {
         // <--->
         // (k,[+] k.A)
         //
+        // [+]
+        // <--->
+        // ([+] a)
+        //
         // {$letUnused j {$letUnused j A}}
         // <--->
         // {$letUnused j A}
@@ -820,26 +819,36 @@ function runCommand( state, reversed, command ) {
         // <--->
         // {$letFresh m {$letFresh j A}}
         //
+        // // TODO: See if this is really justified.
+        // {$let j k A}
+        // <--->
+        // {$negLet j k A}
+        //
         // {$letFresh j a}
         // <--->  for unnamed atom a or named atom a != j
         // a
         //
         // {$letFresh j ({$letUnused j A} B)}
-        // <--->  for condition (), multiplicative (), {$data}, or A.B
+        // <--->  for <=(), {$data}, A.B, or condition or multip. ()
         // ({$letUnused j A} {$letFresh j B})
         //
         // {$letFresh j (A {$letUnused j B})}
-        // <--->  for condition (), multiplicative (), {$data}, or A.B
+        // <--->  for <=(), {$data}, A.B, or condition or multip. ()
         // ({$letFresh j A} {$letUnused j B})
         //
-        // // TODO: See if =(), =[], both, or neither should be added
-        // // to this list.
         // ( {$let j1 J2 {$letUnused m A}}
         //   {$let k1 K2 {$letUnused m B}})
-        // <--->  for condition (), multiplicative (), {$data}, or A.B
+        // <--->  for <=(), {$data}, A.B, or condition or multip. ()
         // {$let m {$data J2 K2}
         //   ( {$let j1 {$fst m} {$letUnused m A}}
         //     {$let k1 {$snd m} {$letUnused m B}})}
+        //
+        // ( {$let j1 J2 {$letUnused m A}}
+        //   {$let k1 K2 {$letUnused m B}})
+        // <--->  for <=(), {$data}, A.B, or condition or multip. ()
+        // {$let m {$data K2 J2}
+        //   ( {$let j1 {$snd m} {$letUnused m A}}
+        //     {$let k1 {$fst m} {$letUnused m B}})}
         //
         // {$letFresh j {$letUnused j A}}
         // <--->
@@ -858,7 +867,7 @@ function runCommand( state, reversed, command ) {
         // m
         //
         // {$let j k (A B)}
-        // <--->  for condition (), multiplicative (), {$data}, or A.B
+        // <--->  for <=(), {$data}, A.B, or condition or multip. ()
         // ({$let j k A} {$let j k B})
         //
         // {$let j k {$letUnused j A}}
@@ -898,6 +907,10 @@ function runCommand( state, reversed, command ) {
         // <--->
         // {$let m K {$let j {$letUnused j m} A}}
         //
+        // {$mu j k}
+        // <--->
+        // {$let j {$mu j k} k}
+        //
         // {$isolated {$isolated A}}
         // <--->
         // {$isolated A}
@@ -907,16 +920,8 @@ function runCommand( state, reversed, command ) {
         // a
         //
         // {$isolated (A B)}
-        // <--->
+        // <--->  for <=(), {$data}, A.B, or condition or multip. ()
         // ({$isolated A} {$isolated B})
-        //
-        // {$isolated M.A}
-        // <--->
-        // {$isolated M}.{$isolated A}
-        //
-        // {$isolated M.A}
-        // <--->
-        // {$isolated M}.{$isolated A}
         //
         // {$isolated {$letUnused j A}}
         // <--->
@@ -925,6 +930,45 @@ function runCommand( state, reversed, command ) {
         // {$letUnused j {$isolated A}}
         // <--->
         // {$isolated A}
+        //
+        // // TODO: These subvalue rules are a bit of a mess. See if
+        // // any are redundant with the {$let ...} rules.
+        //
+        // (<=[-a b],[+] a)
+        // --->
+        // (<=[-a b],[+] b)
+        //
+        // (),[+]
+        // <--->
+        // <=[-a a],[+]
+        //
+        // (<=[A b] <=[-b C]),[+]
+        // <--->
+        // (<=[A b] <=[-b C] <=[A C]),[+]
+        //
+        // <=[a b],[+]
+        // <--->
+        // <=[-a -b],[+]
+        //
+        // (<=[A B] <=[C D]),[+]
+        // <--->
+        // <=[{$data A C} {$data B D}],[+]
+        //
+        // [],[+]
+        // <--->
+        // <=[{nil} {$data a b}],[+]
+        //
+        // {$fst {$data A b}}
+        // <--->
+        // A
+        //
+        // {$snd {$data a B}}
+        // <--->
+        // B
+        //
+        // {$data {$fst a} {$snd a}}
+        // <--->
+        // a
         //
         //
         // These are primitives for static definitions and queries in
@@ -952,7 +996,7 @@ function runCommand( state, reversed, command ) {
         // }.{$isolated (
         //   {$posModuleEffects}
         //   {$let j {$posImpl authorPublicKey readerPublicKey} a}
-        //   =[{$negImpl readerPublicKey readerPublicKey} k]
+        //   ==[{$negImpl readerPublicKey readerPublicKey} k]
         // )}
         //
         // ({$posModuleEffects} {$isolated {$let j K A}})
