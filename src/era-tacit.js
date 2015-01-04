@@ -1011,66 +1011,50 @@ function runCommand( state, reversed, command ) {
         // the spirit of the Era module system. During the execution
         // of a module itself, the overall program input will be of
         // type (), and the output must be of type
-        // {$byProof pf {$posActions a}}.
+        // {$byProof pf
+        //   {$posConsistent {$imports}}.{$posActions {$imports} a}}.
         //
         // // TODO: Once this has settled down, add the new
         // // connectives used here to the list above.
         //
         // ()
         // <--->
-        // {$posActions {$emptyActions}}
+        // {$posActions r {$emptyActions}}
         //
-        // ({$posActions a} {$posActions b})
+        // ({$posActions r a} {$posActions r b})
         // <--->
-        // {$posActions {$combinedActions a b}}
-        //
-        // ({$posActions a} {$posCryptographyHandler b})
-        // <--->
-        // {$posKnowledgeRetriever
-        //   ({$posActions a} {$posCryptographyHandler b})}
+        // {$posActions r {$combinedActions a b}}
         //
         // ()
-        // <--->
-        // {$posKnowledgeRetriever {$imports}}
-        //
-        // {$posKnowledgeRetriever r}
-        // <--->  alias
-        // ({$posKnowledgeRetriever r} {$posKnowledgeRetriever r})
-        //
-        // {$posKnowledgeRetriever r}
-        // <--->  alias
-        // ()
-        //
-        // {$posKnowledgeRetriever r}
         // <--->  retrieves; requires readerPublicKey auth
         // {$isolated
         //   {$let j {$posImpl authorPublicKey readerPublicKey} a}}
         //
-        // {$posKnowledgeRetriever r}
+        // ()
         // <--->  retrieves; requires authorPublicKey auth
-        // {$signedDefinition r
+        // {$signedDefinition {$imports}
         //   authorPublicKey readerPublicKey signature
         //   {$isolated {$let j k a}}}
         //
-        // {$posKnowledgeRetriever r}
+        // ()
         // <--->  retrieves; requires correct signature
-        // {$signedDefinition r
+        // {$signedDefinition {$imports}
         //   authorPublicKey readerPublicKey signature
         //   {$isolated {$let j k a}}}
         //
-        // ({$posKnowledgeRetriever r} {$isolated {$let j k a}})
+        // {$isolated {$let j k a}}
         // <--->  signs; requires authorPublicKey auth
-        // {$signedDefinition r
+        // {$signedDefinition {$imports}
         //   authorPublicKey readerPublicKey signature
         //   {$isolated {$let j k a}}}
         //
-        // {$signedDefinition {$moduleImports}
+        // {$signedDefinition r
         //   authorPublicKey readerPublicKey signature
         //   {$isolated {$let j k a}}}
         // <--->
-        // {$posActions
+        // {$posActions r
         //   {$definitionAction
-        //     {$signedDefinition {$moduleImports}
+        //     {$signedDefinition r
         //       authorPublicKey readerPublicKey signature
         //       {$isolated {$let j k a}}}}}
         //
@@ -1080,7 +1064,8 @@ function runCommand( state, reversed, command ) {
         // <--->
         // {$isolated (
         //   {$let j {$posImpl authorPublicKey readerPublicKey} a}
-        //   ==[{$negImpl authorPublicKey readerPublicKey} k],[+]
+        //   [ {$negConsistent r}
+        //     ==[{$negImpl authorPublicKey readerPublicKey} k]],[+]
         // )}
         //
         //
@@ -1098,15 +1083,27 @@ function runCommand( state, reversed, command ) {
         //   its internal state.
         // - The language implementation may observe and produce
         //   actions, and it may also do special things with the
-        //   internal details of `A`.
+        //   internal details of `B`.
         // - The language implementation may do anything at all.
         //
         // // TODO: Once this has settled down, add the new
         // // connectives used here to the list above.
         //
-        // ({$posActions a} A)
+        // ({$uniqueness u} {$posActions {$runtime} a} B)
+        // <--->
+        // ( {$uniqueness {$uniquenessFst u}}
+        //   {$posActions {$runtime}
+        //     {$uniqueActions {$uniquenessSnd u}}}
+        //   B)
+        //
+        // {$uniqueness u}
+        // <--->
+        // ( {$uniqueness {$uniquenessFst u}}
+        //   {$uniqueness {$uniquenessSnd u}})
+        //
+        // {$uniqueness u}
         // --->
-        // ({$posActions {$letFresh b b}} A)
+        // ()
     } else {
         throw new Error();
     }
