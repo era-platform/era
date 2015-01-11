@@ -995,7 +995,7 @@ function runCommand( state, reversed, command ) {
         // {$byProof {$emptyPf} ()}
         //
         // {$byProof pf A}
-        // --->
+        // --->  requires all the crypto requirements of the proof
         // A
         //
         // {$byProof pf A}
@@ -1007,66 +1007,144 @@ function runCommand( state, reversed, command ) {
         // {$let j k {$byProof pf A}}
         //
         //
-        // These are primitives for static definitions and queries in
-        // the spirit of the Era module system. During the execution
-        // of a module itself, the overall program input will be of
-        // type (), and the output must be of type
+        // These are primitives for static definitions, queries, and
+        // open-world-assumption extensions in the spirit of the Era
+        // module system. During the execution of a module itself, the
+        // overall program input will be of type (), and the output
+        // must be of type
         // {$byProof pf
-        //   {$posConsistent {$imports}}.{$posActions {$imports} a}}.
+        //   {$posCurrentCryptoConsistent}.{$posActions a}},
+        // as internalized in the {$knowledgeActions ...} rule below.
         //
         // // TODO: Once this has settled down, add the new
         // // connectives used here to the list above.
         //
         // ()
         // <--->
-        // {$posActions r {$emptyActions}}
+        // {$posActions {$emptyActions}}
         //
-        // ({$posActions r a} {$posActions r b})
+        // ({$posActions a} {$posActions b})
         // <--->
-        // {$posActions r {$combinedActions a b}}
+        // {$posActions {$combinedActions a b}}
         //
-        // ()
-        // <--->  retrieves; requires readerPublicKey auth
+        // // NOTE: The meaning of {$posCurrentCryptoConsistent} under
+        // // {$byProof ...} has to do with the cryptography system
+        // // used for analyzing that proof in particular. There may
+        // // have been a different cryptography system used for
+        // // analyzing the parts outside {$byProof ...}. In fact,
+        // // either of these systems may be a trivial cryptography
+        // // system that distrusts all cryptographic evidence and
+        // // therefore enforces mathematical rigor instead.
         // {$isolated
-        //   {$let j {$posImpl authorPublicKey readerPublicKey} a}}
-        //
-        // ()
-        // <--->  retrieves; requires authorPublicKey auth
-        // {$signedDefinition {$imports}
-        //   authorPublicKey readerPublicKey signature
-        //   {$isolated {$let j k a}}}
-        //
-        // ()
-        // <--->  retrieves; requires correct signature
-        // {$signedDefinition {$imports}
-        //   authorPublicKey readerPublicKey signature
-        //   {$isolated {$let j k a}}}
-        //
-        // {$isolated {$let j k a}}
-        // <--->  signs; requires authorPublicKey auth
-        // {$signedDefinition {$imports}
-        //   authorPublicKey readerPublicKey signature
-        //   {$isolated {$let j k a}}}
-        //
-        // {$signedDefinition r
-        //   authorPublicKey readerPublicKey signature
-        //   {$isolated {$let j k a}}}
+        //   {$byProof pf
+        //     {$posCurrentCryptoConsistent}.{$posActions a}}}
         // <--->
-        // {$posActions r
-        //   {$definitionAction
-        //     {$signedDefinition r
-        //       authorPublicKey readerPublicKey signature
-        //       {$isolated {$let j k a}}}}}
+        // {$posActions {$knowledgeActions pf a}}
         //
-        // {$signedDefinition r
-        //   authorPublicKey readerPublicKey signature
-        //   {$isolated {$let j k a}}}
-        // <--->
+        // // NOTE: Throughout the following rules in this section, ()
+        // // is only used to refer to the condition join and not the
+        // // multiplicative join.
+        //
+        // {$approvedDefinition authorPublicKey readerPublicKey j k a}
+        // <--->  shorthand
         // {$isolated (
-        //   {$let j {$posImpl authorPublicKey readerPublicKey} a}
-        //   [ {$negConsistent r}
-        //     ==[{$negImpl authorPublicKey readerPublicKey} k]],[+]
+        //   ==[{$negImpl authorPublicKey readerPublicKey} k]
+        //   ==[ {$negImport authorPublicKey readerPublicKey}
+        //       {$let j {$posImpl authorPublicKey readerPublicKey}
+        //         a}]
         // )}
+        //
+        // {$posCurrentCryptoConsistent}
+        // <--->  retrieves; requires readerPublicKey auth
+        // ( {$posCurrentCryptoConsistent}
+        //   {$approvedDefinition authorPublicKey readerPublicKey
+        //     j {$posImpl authorPublicKey readerPublicKey} a})
+        //
+        // {$posCurrentCryptoConsistent}
+        // <--->  retrieves; reqs. authorPublicKey auth or signature
+        // ( {$posCurrentCryptoConsistent}
+        //   {$approvedDefinition authorPublicKey readerPublicKey
+        //     j k a})
+        //
+        // {$isolated (
+        //   {$posCurrentCryptoConsistent}
+        //   {$let j k a}
+        // )}
+        // <--->  signs; requires authorPublicKey auth
+        // ( {$posCurrentCryptoConsistent}
+        //   {$approvedDefinition
+        //     authorPublicKey readerPublicKey j k a})
+        //
+        // {$approvedExtensionHubDefinition
+        //   hubPublicKey g aggregatorImpl e a}
+        // <--->  shorthand
+        // {$isolated (
+        //   ==[{$negAggregatorImpl hubPublicKey} aggregatorImpl]
+        //   ==[ {$negOutcome hubPublicKey}
+        //       {$let g {$posAggregatorImpl hubPublicKey}
+        //         {$let e {$posExtensions hubPublicKey} a}}]
+        // )}
+        //
+        // {$posCurrentCryptoConsistent}
+        // <--->  retrieves outcome; requires hubPublicKey auth
+        // ( {$posCurrentCryptoConsistent}
+        //   {$approvedExtensionHubDefinition
+        //     hubPublicKey g {$posAggregatorImpl hubPublicKey} e a})
+        //
+        // {$posCurrentCryptoConsistent}
+        // <--->  retrieves seed; reqs. hubPublicKey auth or signature
+        // ( {$posCurrentCryptoConsistent}
+        //   {$approvedExtensionHubDefinition
+        //     hubPublicKey g aggregatorImpl e a})
+        //
+        // {$isolated (
+        //   {$posCurrentCryptoConsistent}
+        //   {$let g aggregatorImpl
+        //     {$let e {$posExtensions hubPublicKey} a}}
+        // )}
+        // <--->  signs; requires hubPublicKey auth
+        // ( {$posCurrentCryptoConsistent}
+        //   {$approvedExtensionHubDefinition
+        //     hubPublicKey g aggregatorImpl e a})
+        //
+        // {$approvedExtensionDefinition
+        //   extensionPublicKey hubPublicKey g e extensionImpl a}
+        // <--->  shorthand
+        // {$isolated (
+        //   ==[ {$negExtensionImpl extensionPublicKey hubPublicKey}
+        //       extensionImpl]
+        // )}
+        //
+        // {$posCurrentCryptoConsistent}
+        // <--->  retrieves;
+        //        requires extensionPublicKey auth or signature
+        // ( {$posCurrentCryptoConsistent}
+        //   {$approvedExtensionDefinition
+        //     extensionPublicKey hubPublicKey g e extensionImpl a})
+        //
+        // {$isolated (
+        //   {$posCurrentCryptoConsistent}
+        //   {$let g {$posAggregatorImpl hubPublicKey}
+        //     <=[ -{$let e {$posExtensions hubPublicKey} a}
+        //         {$let e
+        //           {$posUnion extensionImpl
+        //             {$posExtensions hubPublicKey}}
+        //           a}]}
+        // )}
+        // <--->  signs; requires extensionPublicKey auth
+        // ( {$posCurrentCryptoConsistent}
+        //   {$approvedExtensionDefinition
+        //     extensionPublicKey hubPublicKey g e extensionImpl a})
+        //
+        // {$posExtensions hubPublicKey}
+        // <--->
+        // {$posUnion
+        //   {$posExtensionImpl extensionPublicKey hubPublicKey}
+        //   {$posExtensions hubPublicKey}}
+        //
+        // ()
+        // <--->
+        // <=[-a {$posUnion a b}]
         //
         //
         // This is a primitive for willingly interacting with the
