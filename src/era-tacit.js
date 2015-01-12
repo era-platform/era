@@ -247,16 +247,16 @@ testBytecode( "r assert".split( " " ),
 //
 // values:
 //
-// timesUnit  -- ()
-// times <value> <value>  -- (A B)
-// parUnit  -- []
-// par <value> <value>  -- [A B]
+// timesUnit  -- *()
+// times <value> <value>  -- *(A B)
+// parUnit  -- *[]
+// par <value> <value>  -- *[A B]
 // positiveResourceAtom <atomName>
 // negativeResourceAtom <atomName>
-// andUnit  -- ()
-// and <value> <value>  -- (A B)
-// orUnit  -- []
-// or <value> <value>  -- [A B]
+// andUnit  -- &()
+// and <value> <value>  -- &(A B)
+// orUnit  -- &[]
+// or <value> <value>  -- &[A B]
 // positiveConditionAtom <atomName>
 // negativeConditionAtom <atomName>
 //
@@ -287,12 +287,12 @@ testBytecode( "r assert".split( " " ),
 // NOTE: The condition <=[x y] states that -x is a subvalue of y. This
 // means that every observation on -x is observable on y. The <=[x y]
 // notation is written using square brackets because it conveys a sort
-// of conversion from -x to y much like multiplicative [x y] does.
+// of conversion from -x to y much like &[x y] does.
 //
 // NOTE: Using these operators, we can almost represent MALL's
 // additive connectives, but in a strictly information-preserving way.
-// Both additive conjunction and additive disjunction become (m.A m,B)
-// for various conditions m.
+// Both additive conjunction and additive disjunction become
+// *(m.A m,B) for various conditions m.
 
 
 var setlikes = [ {
@@ -595,7 +595,7 @@ function runCommand( state, reversed, command ) {
             return state.first;
         }
     } else if ( command.type === "absorbAndOr" ) {
-        // (a [a b])
+        // &(a &[a b])
         // ---
         // a
         
@@ -620,7 +620,7 @@ function runCommand( state, reversed, command ) {
                     second: command.value } };
         }
     } else if ( command.type === "absorbOrAnd" ) {
-        // [a (a b)]
+        // &[a &(a b)]
         // ---
         // a
         
@@ -647,7 +647,7 @@ function runCommand( state, reversed, command ) {
     } else if ( command.type === "copy" ) {
         // a
         // ---
-        // (a a)
+        // &(a a)
         
         if ( !reversed ) {
             if ( !isSameConditionTerm( state, state ) )
@@ -661,7 +661,7 @@ function runCommand( state, reversed, command ) {
         }
     } else if ( command.type === "distributeTwo" ) {
         // (a [B C])
-        // --- works for () over [] and [] over ()
+        // --- works for &() over &[] and &[] over &()
         // [(a B) (a C)]
         
         var m2;
@@ -698,7 +698,7 @@ function runCommand( state, reversed, command ) {
         }
     } else if ( command.type === "distributeZero" ) {
         // (a [])
-        // --- works for () over [] and [] over ()
+        // --- works for &() over &[] and &[] over &()
         // []
         
         if ( !reversed ) {
@@ -725,19 +725,17 @@ function runCommand( state, reversed, command ) {
         
         // TODO: Add these rules. (The notation k.a means
         // resourceWhenever with a condition of `k` and a resource of
-        // `a`. Likewise, k,a means resourceUnless. On the left side
-        // of a k.a, k,a, or {$letCond ...}, every () and [] means and
-        // and or respectively; otherwise they mean times and par. The
-        // notations [+] and (+) represent the additive units, so
-        // k,[+] can be thought of as a proof of k.)
+        // `a`. Likewise, k,a means resourceUnless. The notations [+]
+        // and (+) represent the additive units, so k,[+] can be
+        // thought of as a proof of k.)
         //
-        // Shorthand: ==[a b],[+] means (<=[-a b] <=[-b a]),[+]
+        // Shorthand: ==[a b],[+] means &(<=[-a b] <=[-b a]),[+]
         // // TODO: Figure out if expanding a shorthand to a negation
         // // like that is really a good idea.
         // Shorthand:
-        //   {$let a B C} means {$letFresh a (==[-a B],[+] C)}
+        //   {$let a B C} means {$letFresh a *(==[-a B],[+] C)}
         // Shorthand:
-        //   {$negLet a B C} means {$letFresh a [==[-a B],(+) C]}
+        //   {$negLet a B C} means {$letFresh a *[==[-a B],(+) C]}
         // // NOTE: We use these shorthands so that we can *transport*
         // // explicit equality assertions into syntactic structure
         // // and back. No {$let ...} or {$negLet ...} rule ever
@@ -749,13 +747,13 @@ function runCommand( state, reversed, command ) {
         // // below. See if it should be removed.
         // A
         // <--->  additive unit
-        // ().A
+        // &().A
         //
         // J.K.A  // binding to the right: J.(K.(A))
         // <--->  additive associativity
-        // (J K).A
+        // &(J K).A
         //
-        // (k.a k,a)
+        // *(k.a k,a)
         // <--->
         // a
         //
@@ -763,33 +761,33 @@ function runCommand( state, reversed, command ) {
         // <--->
         // -K,A
         //
-        // k.(A B)
+        // k.*(A B)
         // <--->
-        // (k.A k.B)
+        // *(k.A k.B)
         //
-        // k.()
+        // k.*()
         // <--->
-        // ()
+        // *()
         //
-        // [k.B k,D]
+        // *[k.B k,D]
         // --->
-        // (k.B k,D)
+        // *(k.B k,D)
         //
-        // (A B),[+]
+        // &(A B),[+]
         // <--->
-        // (A,[+] B,[+])
+        // *(A,[+] B,[+])
         //
-        // ()
+        // *()
         // <--->
-        // (),[+]
+        // &(),[+]
         //
-        // (k,[+] A)
+        // *(k,[+] A)
         // <--->
-        // (k,[+] k.A)
+        // *(k,[+] k.A)
         //
         // [+]
         // <--->
-        // ([+] a)
+        // *([+] a)
         //
         // {$letUnused j {$letUnused j A}}
         // <--->
@@ -804,7 +802,7 @@ function runCommand( state, reversed, command ) {
         // a
         //
         // {$letUnused j (A B)}
-        // <--->
+        // <--->  for &(), *(), <=(), {$data}, or A.B
         // ({$letUnused j A} {$letUnused j B})
         //
         // {$letUnused j M.A}
@@ -829,23 +827,23 @@ function runCommand( state, reversed, command ) {
         // a
         //
         // {$letFresh j ({$letUnused j A} B)}
-        // <--->  for <=(), {$data}, A.B, or condition or multip. ()
+        // <--->  for &(), *(), <=(), {$data}, or A.B
         // ({$letUnused j A} {$letFresh j B})
         //
         // {$letFresh j (A {$letUnused j B})}
-        // <--->  for <=(), {$data}, A.B, or condition or multip. ()
+        // <--->  for &(), *(), <=(), {$data}, or A.B
         // ({$letFresh j A} {$letUnused j B})
         //
         // ( {$let j1 J2 {$letUnused m A}}
         //   {$let k1 K2 {$letUnused m B}})
-        // <--->  for <=(), {$data}, A.B, or condition or multip. ()
+        // <--->  for &(), *(), <=(), {$data}, or A.B
         // {$let m {$data J2 K2}
         //   ( {$let j1 {$fst m} {$letUnused m A}}
         //     {$let k1 {$snd m} {$letUnused m B}})}
         //
         // ( {$let j1 J2 {$letUnused m A}}
         //   {$let k1 K2 {$letUnused m B}})
-        // <--->  for <=(), {$data}, A.B, or condition or multip. ()
+        // <--->  for &(), *(), <=(), {$data}, or A.B
         // {$let m {$data K2 J2}
         //   ( {$let j1 {$snd m} {$letUnused m A}}
         //     {$let k1 {$fst m} {$letUnused m B}})}
@@ -867,7 +865,7 @@ function runCommand( state, reversed, command ) {
         // m
         //
         // {$let j k (A B)}
-        // <--->  for <=(), {$data}, A.B, or condition or multip. ()
+        // <--->  for &(), *(), <=(), {$data}, or A.B
         // ({$let j k A} {$let j k B})
         //
         // {$let j k {$letUnused j A}}
@@ -920,7 +918,7 @@ function runCommand( state, reversed, command ) {
         // a
         //
         // {$isolated (A B)}
-        // <--->  for <=(), {$data}, A.B, or condition or multip. ()
+        // <--->  for &(), *(), <=(), {$data}, or A.B
         // ({$isolated A} {$isolated B})
         //
         // {$isolated {$letUnused j A}}
@@ -934,29 +932,29 @@ function runCommand( state, reversed, command ) {
         // // TODO: These subvalue rules are a bit of a mess. See if
         // // any are redundant with the {$let ...} rules.
         //
-        // (<=[-a b],[+] a)
+        // *(<=[-a b],[+] a)
         // --->
-        // (<=[-a b],[+] b)
+        // *(<=[-a b],[+] b)
         //
-        // (),[+]
+        // &()
         // <--->
-        // <=[-a a],[+]
+        // <=[-a a]
         //
-        // (<=[A b] <=[-b C]),[+]
+        // &(<=[A b] <=[-b C])
         // <--->
-        // (<=[A b] <=[-b C] <=[A C]),[+]
+        // &(<=[A b] <=[-b C] <=[A C])
         //
-        // <=[a b],[+]
+        // <=[a b]
         // <--->
-        // <=[-a -b],[+]
+        // <=[-a -b]
         //
-        // (<=[A B] <=[C D]),[+]
+        // &(<=[A B] <=[C D])
         // <--->
-        // <=[{$data A C} {$data B D}],[+]
+        // <=[{$data A C} {$data B D}]
         //
-        // [],[+]
+        // &[]
         // <--->
-        // <=[{nil} {$data a b}],[+]
+        // <=[{nil} {$data a b}]
         //
         // {$fst {$data A b}}
         // <--->
@@ -990,9 +988,9 @@ function runCommand( state, reversed, command ) {
         // // obsoletes all the care we've taken to design
         // // information-preserving inferences.
         //
-        // ()
+        // *()
         // <--->
-        // {$byProof {$emptyPf} ()}
+        // {$byProof {$emptyPf} *()}
         //
         // {$byProof pf A}
         // --->  requires all the crypto requirements of the proof
@@ -1010,7 +1008,7 @@ function runCommand( state, reversed, command ) {
         // These are primitives for static definitions, queries, and
         // open-world-assumption extensions in the spirit of the Era
         // module system. During the execution of a module itself, the
-        // overall program input will be of type (), and the output
+        // overall program input will be of type *(), and the output
         // must be of type
         // {$byProof pf
         //   {$posCurrentCryptoConsistent}.{$posActions a}},
@@ -1019,7 +1017,7 @@ function runCommand( state, reversed, command ) {
         // // TODO: Once this has settled down, add the new
         // // connectives used here to the list above.
         //
-        // ()
+        // *()
         // <--->
         // {$posActions {$emptyActions}}
         //
@@ -1041,13 +1039,9 @@ function runCommand( state, reversed, command ) {
         // <--->
         // {$posActions {$knowledgeActions pf a}}
         //
-        // // NOTE: Throughout the following rules in this section, ()
-        // // is only used to refer to the condition join and not the
-        // // multiplicative join.
-        //
         // {$approvedDefinition authorPublicKey readerPublicKey j k a}
         // <--->  shorthand
-        // {$isolated (
+        // {$isolated &(
         //   ==[{$negImpl authorPublicKey readerPublicKey} k]
         //   ==[ {$negImport authorPublicKey readerPublicKey}
         //       {$let j {$posImpl authorPublicKey readerPublicKey}
@@ -1056,29 +1050,29 @@ function runCommand( state, reversed, command ) {
         //
         // {$posCurrentCryptoConsistent}
         // <--->  retrieves; requires readerPublicKey auth
-        // ( {$posCurrentCryptoConsistent}
+        // &({$posCurrentCryptoConsistent}
         //   {$approvedDefinition authorPublicKey readerPublicKey
         //     j {$posImpl authorPublicKey readerPublicKey} a})
         //
         // {$posCurrentCryptoConsistent}
         // <--->  retrieves; reqs. authorPublicKey auth or signature
-        // ( {$posCurrentCryptoConsistent}
+        // &({$posCurrentCryptoConsistent}
         //   {$approvedDefinition authorPublicKey readerPublicKey
         //     j k a})
         //
-        // {$isolated (
+        // {$isolated &(
         //   {$posCurrentCryptoConsistent}
         //   {$let j k a}
         // )}
         // <--->  signs; requires authorPublicKey auth
-        // ( {$posCurrentCryptoConsistent}
+        // &({$posCurrentCryptoConsistent}
         //   {$approvedDefinition
         //     authorPublicKey readerPublicKey j k a})
         //
         // {$approvedExtensionHubDefinition
         //   hubPublicKey g aggregatorImpl e a}
         // <--->  shorthand
-        // {$isolated (
+        // {$isolated &(
         //   ==[{$negAggregatorImpl hubPublicKey} aggregatorImpl]
         //   ==[ {$negOutcome hubPublicKey}
         //       {$let g {$posAggregatorImpl hubPublicKey}
@@ -1087,42 +1081,40 @@ function runCommand( state, reversed, command ) {
         //
         // {$posCurrentCryptoConsistent}
         // <--->  retrieves outcome; requires hubPublicKey auth
-        // ( {$posCurrentCryptoConsistent}
+        // &({$posCurrentCryptoConsistent}
         //   {$approvedExtensionHubDefinition
         //     hubPublicKey g {$posAggregatorImpl hubPublicKey} e a})
         //
         // {$posCurrentCryptoConsistent}
         // <--->  retrieves seed; reqs. hubPublicKey auth or signature
-        // ( {$posCurrentCryptoConsistent}
+        // &({$posCurrentCryptoConsistent}
         //   {$approvedExtensionHubDefinition
         //     hubPublicKey g aggregatorImpl e a})
         //
-        // {$isolated (
+        // {$isolated &(
         //   {$posCurrentCryptoConsistent}
         //   {$let g aggregatorImpl
         //     {$let e {$posExtensions hubPublicKey} a}}
         // )}
         // <--->  signs; requires hubPublicKey auth
-        // ( {$posCurrentCryptoConsistent}
+        // &({$posCurrentCryptoConsistent}
         //   {$approvedExtensionHubDefinition
         //     hubPublicKey g aggregatorImpl e a})
         //
         // {$approvedExtensionDefinition
         //   extensionPublicKey hubPublicKey g e extensionImpl a}
         // <--->  shorthand
-        // {$isolated (
-        //   ==[ {$negExtensionImpl extensionPublicKey hubPublicKey}
-        //       extensionImpl]
-        // )}
+        // ==[ {$negExtensionImpl extensionPublicKey hubPublicKey}
+        //     {$isolated extensionImpl}]
         //
         // {$posCurrentCryptoConsistent}
         // <--->  retrieves;
         //        requires extensionPublicKey auth or signature
-        // ( {$posCurrentCryptoConsistent}
+        // &({$posCurrentCryptoConsistent}
         //   {$approvedExtensionDefinition
         //     extensionPublicKey hubPublicKey g e extensionImpl a})
         //
-        // {$isolated (
+        // {$isolated &(
         //   {$posCurrentCryptoConsistent}
         //   {$let g {$posAggregatorImpl hubPublicKey}
         //     <=[ -{$let e {$posExtensions hubPublicKey} a}
@@ -1132,7 +1124,7 @@ function runCommand( state, reversed, command ) {
         //           a}]}
         // )}
         // <--->  signs; requires extensionPublicKey auth
-        // ( {$posCurrentCryptoConsistent}
+        // &({$posCurrentCryptoConsistent}
         //   {$approvedExtensionDefinition
         //     extensionPublicKey hubPublicKey g e extensionImpl a})
         //
@@ -1142,7 +1134,7 @@ function runCommand( state, reversed, command ) {
         //   {$posExtensionImpl extensionPublicKey hubPublicKey}
         //   {$posExtensions hubPublicKey}}
         //
-        // ()
+        // &()
         // <--->
         // <=[-a {$posUnion a b}]
         //
@@ -1167,20 +1159,20 @@ function runCommand( state, reversed, command ) {
         // // TODO: Once this has settled down, add the new
         // // connectives used here to the list above.
         //
-        // ({$uniqueness u} {$posActions a} B)
+        // *({$uniqueness u} {$posActions a} B)
         // <--->
-        // ( {$uniqueness {$uniquenessFst u}}
+        // *({$uniqueness {$uniquenessFst u}}
         //   {$posActions {$uniqueActions {$uniquenessSnd u}}}
         //   B)
         //
         // {$uniqueness u}
         // <--->
-        // ( {$uniqueness {$uniquenessFst u}}
+        // *({$uniqueness {$uniquenessFst u}}
         //   {$uniqueness {$uniquenessSnd u}})
         //
         // {$uniqueness u}
         // --->
-        // ()
+        // *()
     } else {
         throw new Error();
     }
