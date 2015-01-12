@@ -1167,11 +1167,10 @@ function runCommand( state, reversed, command ) {
         // // TODO: Once this has settled down, add the new
         // // connectives used here to the list above.
         //
-        // ({$uniqueness u} {$posActions {$runtime} a} B)
+        // ({$uniqueness u} {$posActions a} B)
         // <--->
         // ( {$uniqueness {$uniquenessFst u}}
-        //   {$posActions {$runtime}
-        //     {$uniqueActions {$uniquenessSnd u}}}
+        //   {$posActions {$uniqueActions {$uniquenessSnd u}}}
         //   B)
         //
         // {$uniqueness u}
