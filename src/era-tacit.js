@@ -954,7 +954,7 @@ function runCommand( state, reversed, command ) {
         //
         // &[]
         // <--->
-        // <=[{nil} {$data a b}]
+        // <=[{$nil} {$data a b}]
         //
         // {$fst {$data A b}}
         // <--->
@@ -1050,24 +1050,24 @@ function runCommand( state, reversed, command ) {
         //
         // {$posCurrentCryptoConsistent}
         // <--->  retrieves; requires readerPublicKey auth
-        // &({$posCurrentCryptoConsistent}
-        //   {$approvedDefinition authorPublicKey readerPublicKey
-        //     j {$posImpl authorPublicKey readerPublicKey} a})
+        // &( {$posCurrentCryptoConsistent}
+        //    {$approvedDefinition authorPublicKey readerPublicKey
+        //      j {$posImpl authorPublicKey readerPublicKey} a})
         //
         // {$posCurrentCryptoConsistent}
         // <--->  retrieves; reqs. authorPublicKey auth or signature
-        // &({$posCurrentCryptoConsistent}
-        //   {$approvedDefinition authorPublicKey readerPublicKey
-        //     j k a})
+        // &( {$posCurrentCryptoConsistent}
+        //    {$approvedDefinition authorPublicKey readerPublicKey
+        //      j k a})
         //
         // {$isolated &(
         //   {$posCurrentCryptoConsistent}
         //   {$let j k a}
         // )}
         // <--->  signs; requires authorPublicKey auth
-        // &({$posCurrentCryptoConsistent}
-        //   {$approvedDefinition
-        //     authorPublicKey readerPublicKey j k a})
+        // &( {$posCurrentCryptoConsistent}
+        //    {$approvedDefinition
+        //      authorPublicKey readerPublicKey j k a})
         //
         // {$approvedExtensionHubDefinition
         //   hubPublicKey g aggregatorImpl e a}
@@ -1081,15 +1081,15 @@ function runCommand( state, reversed, command ) {
         //
         // {$posCurrentCryptoConsistent}
         // <--->  retrieves outcome; requires hubPublicKey auth
-        // &({$posCurrentCryptoConsistent}
-        //   {$approvedExtensionHubDefinition
-        //     hubPublicKey g {$posAggregatorImpl hubPublicKey} e a})
+        // &( {$posCurrentCryptoConsistent}
+        //    {$approvedExtensionHubDefinition
+        //      hubPublicKey g {$posAggregatorImpl hubPublicKey} e a})
         //
         // {$posCurrentCryptoConsistent}
         // <--->  retrieves seed; reqs. hubPublicKey auth or signature
-        // &({$posCurrentCryptoConsistent}
-        //   {$approvedExtensionHubDefinition
-        //     hubPublicKey g aggregatorImpl e a})
+        // &( {$posCurrentCryptoConsistent}
+        //    {$approvedExtensionHubDefinition
+        //      hubPublicKey g aggregatorImpl e a})
         //
         // {$isolated &(
         //   {$posCurrentCryptoConsistent}
@@ -1097,9 +1097,9 @@ function runCommand( state, reversed, command ) {
         //     {$let e {$posExtensions hubPublicKey} a}}
         // )}
         // <--->  signs; requires hubPublicKey auth
-        // &({$posCurrentCryptoConsistent}
-        //   {$approvedExtensionHubDefinition
-        //     hubPublicKey g aggregatorImpl e a})
+        // &( {$posCurrentCryptoConsistent}
+        //    {$approvedExtensionHubDefinition
+        //      hubPublicKey g aggregatorImpl e a})
         //
         // {$approvedExtensionDefinition
         //   extensionPublicKey hubPublicKey g e extensionImpl a}
@@ -1110,9 +1110,9 @@ function runCommand( state, reversed, command ) {
         // {$posCurrentCryptoConsistent}
         // <--->  retrieves;
         //        requires extensionPublicKey auth or signature
-        // &({$posCurrentCryptoConsistent}
-        //   {$approvedExtensionDefinition
-        //     extensionPublicKey hubPublicKey g e extensionImpl a})
+        // &( {$posCurrentCryptoConsistent}
+        //    {$approvedExtensionDefinition
+        //      extensionPublicKey hubPublicKey g e extensionImpl a})
         //
         // {$isolated &(
         //   {$posCurrentCryptoConsistent}
@@ -1124,9 +1124,9 @@ function runCommand( state, reversed, command ) {
         //           a}]}
         // )}
         // <--->  signs; requires extensionPublicKey auth
-        // &({$posCurrentCryptoConsistent}
-        //   {$approvedExtensionDefinition
-        //     extensionPublicKey hubPublicKey g e extensionImpl a})
+        // &( {$posCurrentCryptoConsistent}
+        //    {$approvedExtensionDefinition
+        //      extensionPublicKey hubPublicKey g e extensionImpl a})
         //
         // {$posExtensions hubPublicKey}
         // <--->
@@ -1161,18 +1161,68 @@ function runCommand( state, reversed, command ) {
         //
         // *({$uniqueness u} {$posActions a} B)
         // <--->
-        // *({$uniqueness {$uniquenessFst u}}
-        //   {$posActions {$uniqueActions {$uniquenessSnd u}}}
-        //   B)
+        // *( {$uniqueness {$uniquenessFst u}}
+        //    {$posActions {$uniqueActions {$uniquenessSnd u}}}
+        //    B)
         //
         // {$uniqueness u}
         // <--->
-        // *({$uniqueness {$uniquenessFst u}}
-        //   {$uniqueness {$uniquenessSnd u}})
+        // *( {$uniqueness {$uniquenessFst u}}
+        //    {$uniqueness {$uniquenessSnd u}})
         //
         // {$uniqueness u}
         // --->
         // *()
+        //
+        //
+        // Representing a simple lisp:
+        //
+        // {$posSink data}
+        // <--->
+        // *(
+        //    -- nil
+        //    &( {$fst {$fst data}}
+        //       -{$fst {$snd {$fst data}}}
+        //       -{$snd {$snd {$fst data}}}
+        //    ).*({$awareness} ==[-{$snd data} {$nil}],[+])
+        //
+        //    -- cons
+        //    &( -{$fst {$fst data}}
+        //       {$fst {$snd {$fst data}}}
+        //       -{$snd {$snd {$fst data}}}
+        //    ).*(
+        //      {$awareness}
+        //      {$posSink {$fst {$snd data}}}
+        //      {$posSink {$snd {$snd data}}}
+        //    )
+        //
+        //    -- lambda
+        //    &( -{$fst {$fst data}}
+        //       -{$fst {$snd {$fst data}}}
+        //       {$snd {$snd {$fst data}}}
+        //    ).*(
+        //      {$awareness}
+        //
+        //      -- This use of {$byProof ...} lets us hide the
+        //      -- lambda's implementation. That is to say, there is
+        //      -- no {$awareness} of the implementation, so if `data`
+        //      -- is hidden then there's no way to see it.
+        //      --
+        //      -- The use of {$byProof ...} also lets us use the
+        //      -- lambda any number of times. The uses of
+        //      -- {$letFresh ...} enforce that every call site must
+        //      -- take on the burden of providing a hiding place for
+        //      -- the implementation details of the output data.
+        //      --
+        //      -- TODO: Make the input data work. Maybe we need a
+        //      -- {$negLetFresh ...} or something so that we're
+        //      -- allowed to determine its value from the outside.
+        //      --
+        //      {$byProof {$snd data}
+        //        *[ {$letFresh inputData {$negSink inputData}}
+        //           {$letFresh outputData {$posSink outputData}}]}
+        //    )
+        // )
     } else {
         throw new Error();
     }
