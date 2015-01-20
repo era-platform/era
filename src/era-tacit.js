@@ -1190,15 +1190,13 @@ function runCommand( state, reversed, command ) {
         // <--->
         // *(
         //    // nil
-        //    &( {$fst {$fst data}}
-        //       -{$fst {$snd {$fst data}}}
-        //       -{$snd {$snd {$fst data}}}
-        //    ).*==[-{$snd data} {$nil}],[+]
+        //    &( -{$fst {$fst data}}
+        //       -{$snd {$fst data}}
+        //    ).==[-{$snd data} {$nil}],[+]
         //
         //    // cons
-        //    &( -{$fst {$fst data}}
-        //       {$fst {$snd {$fst data}}}
-        //       -{$snd {$snd {$fst data}}}
+        //    &( {$fst {$fst data}}
+        //       -{$snd {$fst data}}
         //    ).*(
         //      {$posSink {$fst {$snd data}}}
         //      {$posSink {$snd {$snd data}}}
@@ -1218,11 +1216,15 @@ function runCommand( state, reversed, command ) {
         //    // TODO: Allow nontermination.
         //    //
         //    &( -{$fst {$fst data}}
-        //       -{$fst {$snd {$fst data}}}
-        //       {$snd {$snd {$fst data}}}
-        //    ).*{$byProof {$snd data}
-        //         *[ -({$posForgetter} {$letFresh k {$posSink k}})
-        //            ({$posForgetter} {$letFresh k {$posSink k}})]}
+        //       {$snd {$fst data}}
+        //    ).{$byProof {$snd data}
+        //        *[ -({$posForgetter} {$letFresh k {$posSink k}})
+        //           ({$posForgetter} {$letFresh k {$posSink k}})]}
+        //
+        //    // unused
+        //    &( {$fst {$fst data}}
+        //       {$snd {$fst data}}
+        //    ).[+]
         // )
     } else {
         throw new Error();
