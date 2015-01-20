@@ -1175,8 +1175,17 @@ function runCommand( state, reversed, command ) {
         // *()
         //
         //
-        // Representing a simple lisp:
+        // Representing a simple, Scheme-like unityped language:
         //
+        // {$posForgetter}
+        // <--->
+        // ({$posForgetter} {$posForgetter})
+        //
+        // ({$posForgetter} k,[+])
+        // --->
+        // {$posForgetter}
+        //
+        // // This is the language's kitchen sink type.
         // {$posSink data}
         // <--->
         // *(
@@ -1203,24 +1212,23 @@ function runCommand( state, reversed, command ) {
         //    ).*(
         //      {$awareness}
         //
-        //      -- This use of {$byProof ...} lets us hide the
-        //      -- lambda's implementation. That is to say, there is
-        //      -- no {$awareness} of the implementation, so if `data`
-        //      -- is hidden then there's no way to see it.
-        //      --
-        //      -- The use of {$byProof ...} also lets us use the
-        //      -- lambda any number of times. The uses of
-        //      -- {$letFresh ...} enforce that every call site must
-        //      -- take on the burden of providing a hiding place for
-        //      -- the implementation details of the output data.
-        //      --
-        //      -- TODO: Make the input data work. Maybe we need a
-        //      -- {$negLetFresh ...} or something so that we're
-        //      -- allowed to determine its value from the outside.
-        //      --
+        //      // NOTE: There is no {$awareness} of {$snd data}, so
+        //      // the implementation of this lambda is encapsulated.
+        //      // The use of {$byProof ...} also lets us use the
+        //      // lambda any number of times. The uses of
+        //      // {$posForgetter} enforce that every call site must
+        //      // take on the burden of providing a hiding place for
+        //      // the implementation details `k` of the output data.
+        //      //
+        //      // TODO: Allow nontermination.
+        //      //
+        //      // TODO: Figure out whether we need {$awareness}
+        //      // anyway, and if so, what other operations it should
+        //      // support.
+        //      //
         //      {$byProof {$snd data}
-        //        *[ {$letFresh inputData {$negSink inputData}}
-        //           {$letFresh outputData {$posSink outputData}}]}
+        //        *[ -({$posForgetter} {$letFresh k {$posSink k}})
+        //           ({$posForgetter} {$letFresh k {$posSink k}})]}
         //    )
         // )
     } else {
