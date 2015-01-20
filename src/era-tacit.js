@@ -1189,47 +1189,40 @@ function runCommand( state, reversed, command ) {
         // {$posSink data}
         // <--->
         // *(
-        //    -- nil
+        //    // nil
         //    &( {$fst {$fst data}}
         //       -{$fst {$snd {$fst data}}}
         //       -{$snd {$snd {$fst data}}}
-        //    ).*({$awareness} ==[-{$snd data} {$nil}],[+])
+        //    ).*==[-{$snd data} {$nil}],[+]
         //
-        //    -- cons
+        //    // cons
         //    &( -{$fst {$fst data}}
         //       {$fst {$snd {$fst data}}}
         //       -{$snd {$snd {$fst data}}}
         //    ).*(
-        //      {$awareness}
         //      {$posSink {$fst {$snd data}}}
         //      {$posSink {$snd {$snd data}}}
         //    )
         //
-        //    -- lambda
+        //    // lambda
+        //    //
+        //    // NOTE: There is no ==[-{$snd data} ...],[+]
+        //    // proposition of any sort, so the implementation of
+        //    // this lambda is encapsulated. The use of
+        //    // {$byProof ...} also lets us use the lambda any number
+        //    // of times. The uses of {$posForgetter} enforce that
+        //    // every call site must take on the burden of providing
+        //    // a hiding place for the implementation details `k` of
+        //    // the output data.
+        //    //
+        //    // TODO: Allow nontermination.
+        //    //
         //    &( -{$fst {$fst data}}
         //       -{$fst {$snd {$fst data}}}
         //       {$snd {$snd {$fst data}}}
-        //    ).*(
-        //      {$awareness}
-        //
-        //      // NOTE: There is no {$awareness} of {$snd data}, so
-        //      // the implementation of this lambda is encapsulated.
-        //      // The use of {$byProof ...} also lets us use the
-        //      // lambda any number of times. The uses of
-        //      // {$posForgetter} enforce that every call site must
-        //      // take on the burden of providing a hiding place for
-        //      // the implementation details `k` of the output data.
-        //      //
-        //      // TODO: Allow nontermination.
-        //      //
-        //      // TODO: Figure out whether we need {$awareness}
-        //      // anyway, and if so, what other operations it should
-        //      // support.
-        //      //
-        //      {$byProof {$snd data}
-        //        *[ -({$posForgetter} {$letFresh k {$posSink k}})
-        //           ({$posForgetter} {$letFresh k {$posSink k}})]}
-        //    )
+        //    ).*{$byProof {$snd data}
+        //         *[ -({$posForgetter} {$letFresh k {$posSink k}})
+        //            ({$posForgetter} {$letFresh k {$posSink k}})]}
         // )
     } else {
         throw new Error();
