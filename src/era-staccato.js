@@ -110,9 +110,11 @@ function run( stack, rules ) {
 //   // variables needed in the tail-expr minus the given one, and
 //   // takes any incoming return value. It proceeds by executing the
 //   // tail-expr with that scope augmented by an entry binding the
-//   // given variable to the incoming return value. The tail-expr
-//   // counts as a new root parent expression and scope boundary for
-//   // the purposes of (tail-to-temp ...).
+//   // given variable to the incoming return value.
+//   //
+//   // The tail-expr counts as a new root parent expression and scope
+//   // boundary for the purposes of (tail-to-temp ...).
+//   //
 //   (def frame-name opt-var-list var tail-expr)
 //
 // // When an opt-var-list is not omitted, it overrides the usual
@@ -132,6 +134,13 @@ function run( stack, rules ) {
 // env-expr ::=
 //   (env-nil)
 //   (env-cons var temp-expr env-expr)
+//
+// env-pattern ::=
+//   (env-pattern-nil)
+//
+//   // NOTE: The first var is the key in the environment, and the
+//   // second var is the local variable to bind it to.
+//   (env-pattern-cons var var env-expr)
 //
 // tail-expr ::=
 //   // Sugar.
@@ -154,9 +163,14 @@ function run( stack, rules ) {
 //   // fits the given frame name and environment pattern, this
 //   // proceeds as the first tail-expr with the pattern's variables
 //   // in scope. Otherwise, it proceeds as the second tail-expr.
+//   //
+//   // Each tail-expr counts as a new root parent expression and
+//   // scope boundary for the purposes of (tail-to-temp ...).
+//   //
 //   // Notice that even though the scope and control flow behave in
 //   // special ways here, there's no need to define independent stack
 //   // frames for the branches because this is a cheap operation.
+//   //
 //   (if-fn-frame frame-name env-pattern temp-expr
 //     tail-expr
 //     tail-expr)
@@ -185,6 +199,9 @@ function run( stack, rules ) {
 //   // remainder of the parent expression in that scope, augmented by
 //   // a binding of the variable to that incoming return value.
 //   //
+//   // The tail-expr counts as a new root parent expression and scope
+//   // boundary for the purposes of (tail-to-temp ...).
+//   //
 //   (tail-to-temp frame-name opt-var-list var tail-expr)
 //
 //   // Sugar.
@@ -195,33 +212,113 @@ function run( stack, rules ) {
 //   // captured from the surrounding lexical scope. The frame
 //   // proceeds by executing the tail-expr with that scope augmented
 //   // by an entry binding the given variable to the frame's incoming
-//   // return value. The tail-expr counts as a new root parent
-//   // expression and scope boundary for the purposes of
-//   // (tail-to-temp ...).
+//   // return value.
+//   //
+//   // The tail-expr counts as a new root parent expression and scope
+//   // boundary for the purposes of (tail-to-temp ...).
 //   //
 //   (fn frame-name opt-var-list var tail-expr)
-//
 
 // TODO: Implement these methods on every corresponding syntax:
 // optVarList/varList set()
 // optVarList or( varSet )
 // optVarList/varList isProvidedProperly()
 // optVarList/varList capture()
+// envPattern vals()
+// envPattern isProper()
 // tempExpr/tailExpr/envExpr/def getFreeVars( freeVarsAfter )
 // tempExpr/tailExpr/envExpr/def desugarVarLists( freeVarsAfter )
 // tempExpr/tailExpr/envExpr/def hasProperScope( freeVarsAfter )
 // tempExpr/tailExpr/envExpr/def desugarFn()
+// tempExpr/tailExpr/envExpr/def desugarTailToTemp( freeVarsAfter )
 // tempExpr/tailExpr/envExpr desugarDef()
 // def desugarDefIncludingSelf()
-// tempExpr/tailExpr/envExpr/def desugarTailToTemp( freeVarsAfter )
 // tempExpr/tailExpr/envExpr/def desugarLet()
 //
-// TODO: Implement list(), desugarDefWriter, idWriter, strMap (should
-// be around here somewhere), strMap#subset, args.self, and addSyntax
-// (with its special DSL-like injection of an args parameter and an
-// expr property).
+// TODO: Implement list(), desugarDefWriterMaker, idWriterMaker,
+// strMap (should be around here somewhere), strMap#subset, args.self,
+// parseSyntax, and addSyntax (with its special DSL-like injection of
+// an args parameter and an expr property).
 
-addSyntax( "tempExpr", "tail-to-temp",
+function processTailToTempRoot( exprObj ) {
+    var desugared = exprObj.desugarTailToTemp( strMap() );
+    if ( desugared.type === "expr" ) {
+        return desugared.expr;
+    } else if ( desugared.type === "tailToTemp" ) {
+        return processTailToTempRoot( parseSyntax(
+            list( "tail-def",
+                list( "def",
+                    desugared.frameName.expr,
+                    desugared.varList.expr,
+                    desugared.va.expr,
+                    desugared.frameBodyExpr ),
+                list( "call"
+                    list( "fn-frame", desugared.frameName.expr,
+                        desugared.varList.capture() ),
+                    desugared.arg.expr ) ) ) ) );
+    } else {
+        throw new Error();
+    }
+}
+
+addSyntax( "if-fn-frame", "tailExpr",
+    "frameName envPattern tailExpr tailExpr", {
+    
+    _map: function ( args, writerMaker, recur ) {
+        var writer = writerMaker.make();
+        return writer.go( list( "if-fn-frame",
+            args.frameName.expr,
+            args.envPattern.expr,
+            writer.consume( recur( args[ 2 ].expr ) ),
+            writer.consume( recur( args[ 3 ].expr ) ) ) );
+    },
+    
+    getFreeVars: function ( args, freeVarsAfter ) {
+        return args[ 2 ].getFreeVars( strMap() ).
+            minus( args.envPattern.vals() ).
+            plus( args[ 3 ].getFreeVars( strMap() ) ).
+            plus( freeVarsAfter );
+    },
+    
+    desugarVarLists: function ( args, freeVarsAfter ) {
+        return args.self._map( idWriterMaker, function ( arg ) {
+            return arg.desugarVarLists( strMap() );
+        } );
+    },
+    hasProperScope: function ( args, freeVarsAfter ) {
+        return args.envPattern.isProper() &&
+            args[ 2 ].hasProperScope( strMap() ) &&
+            args[ 3 ].hasProperScope( strMap() );
+    },
+    desugarFn: function ( args ) {
+        return args.self._map( idWriterMaker, function ( arg ) {
+            return arg.desugarFn();
+        } );
+    },
+    desugarTailToTemp: function ( args, freeVarsAfter ) {
+        return {
+            type: "expr"
+            expr: list( "if-fn-frame",
+                args.frameName.expr,
+                args.envPattern.expr,
+                processTailToTempRoot( args[ 2 ] ),
+                processTailToTempRoot( args[ 3 ] ) );
+        };
+    },
+    desugarDef: function ( args ) {
+        return args.self._map( desugarDefWriterMaker,
+            function ( arg ) {
+            
+            return arg.desugarDef();
+        } );
+    },
+    desugarLet: function ( args ) {
+        return args.self._map( idWriterMaker, function ( arg ) {
+            return arg.desugarLet();
+        } );
+    }
+} );
+addSyntax( "tail-to-temp", "tempExpr",
     "frameName optVarList va tailExpr", {
     
     _map: function ( args, writerMaker, recur ) {
@@ -237,20 +334,18 @@ addSyntax( "tempExpr", "tail-to-temp",
         var innerFreeVarsAfter =
             freeVarsAfter.minusKey( args.va.expr );
         var declaredInnerFreeVarsAfter = args.optVarList.set();
-        return args.tailExpr.getFreeVars(
-            declaredInnerFreeVarsAfter || innerFreeVarsAfter );
+        return args.tailExpr.getFreeVars( strSet() ).
+            plus( declaredInnerFreeVarsAfter || innerFreeVarsAfter );
     },
     
     desugarVarLists: function ( args, freeVarsAfter ) {
         var innerFreeVarsAfter =
             freeVarsAfter.minusKey( args.va.expr );
-        var declaredInnerFreeVarsAfter = args.optVarList.set();
         return list( "tail-to-temp",
             args.frameName.expr,
             args.optVarList.or( innerFreeVarsAfter ),
             args.va.expr,
-            args.tailExpr.desugarVarLists(
-                declaredInnerFreeVarsAfter || innerFreeVarsAfter ) );
+            args.tailExpr.desugarVarLists( strSet() ) );
     },
     hasProperScope: function ( args, freeVarsAfter ) {
         var innerFreeVarsAfter =
@@ -258,31 +353,31 @@ addSyntax( "tempExpr", "tail-to-temp",
         var declaredInnerFreeVarsAfter = args.optVarList.set();
         return args.optVarList.isProvidedProperly() &&
             innerFreeVarsAfter.subset( declaredInnerFreeVarsAfter ) &&
-            args.tailExpr.hasProperScope(
-                declaredInnerFreeVarsAfter );
+            args.tailExpr.hasProperScope( strSet() );
     },
     desugarFn: function ( args ) {
-        return args.self._map( idWriter, function ( arg ) {
+        return args.self._map( idWriterMaker, function ( arg ) {
             return arg.desugarFn();
-        } );
-    },
-    desugarDef: function ( args ) {
-        return args.self._map( desugarDefWriter, function ( arg ) {
-            return arg.desugarDef();
         } );
     },
     desugarTailToTemp: function ( args, freeVarsAfter ) {
         return {
-            tailToTemp: { frameName: args.frameName,
-                varList: args.optVarList, va: args.va },
-            frameBody: args.va
+            type: "tailToTemp",
+            frameName: args.frameName,
+            varList: args.optVarList,
+            va: args.va,
+            arg: args.tailExpr,
+            frameBodyExpr: args.va.expr
         };
+    },
+    desugarDef: function ( args ) {
+        throw new Error();
     },
     desugarLet: function ( args ) {
         throw new Error();
     }
 } );
-addSyntax( "tempExpr", "fn", "frameName optVarList va tailExpr", {
+addSyntax( "fn", "tempExpr", "frameName optVarList va tailExpr", {
     getFreeVars: function ( args, freeVarsAfter ) {
         var innerFreeVarsAfter = strSet();
         var innerFreeVars = args.tailExpr.
@@ -320,10 +415,10 @@ addSyntax( "tempExpr", "fn", "frameName optVarList va tailExpr", {
             list( "fn-frame", args.frameName.expr,
                 args.optVarList.capture() ) );
     },
-    desugarDef: function ( args ) {
+    desugarTailToTemp: function ( args, freeVarsAfter ) {
         throw new Error();
     },
-    desugarTailToTemp: function ( args, freeVarsAfter ) {
+    desugarDef: function ( args ) {
         throw new Error();
     },
     desugarLet: function ( args ) {
