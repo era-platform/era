@@ -501,7 +501,7 @@ addSyntax( "tail-to-temp", "tempExpr",
             varList: args.optVarList,
             va: args.va,
             arg: args.tailExpr,
-            frameBodyExpr: args.va.expr
+            frameBodyExpr: list( "local", args.va.expr )
         };
     },
     desugarDef: function ( args ) {
