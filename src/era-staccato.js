@@ -230,7 +230,7 @@ function run( stack, rules ) {
 // tempExpr/tailExpr/envExpr/def desugarVarLists( freeVarsAfter )
 // tempExpr/tailExpr/envExpr/def hasProperScope( freeVarsAfter )
 // tempExpr/tailExpr/envExpr/def desugarFn()
-// tempExpr/tailExpr/envExpr/def desugarTailToTemp( freeVarsAfter )
+// tempExpr/tailExpr/envExpr/def desugarTailToTemp()
 // tempExpr/tailExpr/envExpr desugarDef()
 // def desugarDefIncludingSelf()
 // tempExpr/tailExpr/envExpr/def desugarLet()
@@ -248,7 +248,7 @@ function run( stack, rules ) {
 function processTailToTempRoot( exprObj ) {
     // INTERESTING
     
-    var desugared = exprObj.desugarTailToTemp( strMap() );
+    var desugared = exprObj.desugarTailToTemp();
     if ( desugared.type === "expr" ) {
         return desugared.expr;
     } else if ( desugared.type === "tailToTemp" ) {
@@ -301,10 +301,10 @@ function desugarTailToTempWriter() {
     var state = { type: "exprState" };
     
     var writer = {};
-    writer.consume = function ( part, freeVarsAfter ) {
+    writer.consume = function ( part ) {
         // NOTE: We only desugar `part` some of the time!
         if ( state.type === "exprState" ) {
-            var desugared = part.desugarTailToTemp( freeVarsAfter );
+            var desugared = part.desugarTailToTemp();
             if ( desugared.type === "expr" ) {
                 return desugared.expr;
             } else if ( desugared.type === "tailToTemp" ) {
@@ -378,7 +378,7 @@ addSyntax( "if-fn-frame", "tailExpr",
             return arg.desugarFn();
         } ) );
     },
-    desugarTailToTemp: function ( args, freeVarsAfter ) {
+    desugarTailToTemp: function ( args ) {
         return {
             type: "expr"
             expr: list( "if-fn-frame",
@@ -441,9 +441,8 @@ addSyntax( "temp-let", "tempExpr", "tempExpr tempExpr", {
             return arg.desugarFn();
         } ) );
     },
-    desugarTailToTemp: function ( args, freeVarsAfter ) {
-        return args.self._mapWithFreeVarsAfter(
-            freeVarsAfter, desugarTailToTempWriter() );
+    desugarTailToTemp: function ( args, ) {
+        return args.self._map( desugarTailToTempWriter() );
     },
     desugarDef: function ( args ) {
         return args.self._map( desugarDefWriter() );
@@ -494,7 +493,7 @@ addSyntax( "tail-to-temp", "tempExpr",
             return arg.desugarFn();
         } ) );
     },
-    desugarTailToTemp: function ( args, freeVarsAfter ) {
+    desugarTailToTemp: function ( args ) {
         return {
             type: "tailToTemp",
             frameName: args.frameName,
