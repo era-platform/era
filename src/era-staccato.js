@@ -235,12 +235,19 @@ function run( stack, rules ) {
 // def desugarDefIncludingSelf()
 // tempExpr/tailExpr/envExpr/def desugarLet()
 //
-// TODO: Implement list(), desugarDefWriterMaker, idWriterMaker,
-// strMap (should be around here somewhere), strMap#subset, args.self,
-// parseSyntax, and addSyntax (with its special DSL-like injection of
-// an args parameter and an expr property).
+// TODO: Implement list(), strMap() (should be around here somewhere),
+// strMap#subset(), args.self, parseSyntax(), and addSyntax() (with
+// its special DSL-like injection of an args parameter and an expr
+// property).
+
+// Certain parts of the implementation are marked "INTERESTING". These
+// parts are tricky enough to be the motivators for the way the
+// implementation has been built, and the other parts are more
+// run-of-the-mill.
 
 function processTailToTempRoot( exprObj ) {
+    // INTERESTING
+    
     var desugared = exprObj.desugarTailToTemp( strMap() );
     if ( desugared.type === "expr" ) {
         return desugared.expr;
@@ -261,16 +268,92 @@ function processTailToTempRoot( exprObj ) {
     }
 }
 
+function idWriter( recur ) {
+    var writer = {};
+    writer.consume = function ( var_args ) {
+        return recur.apply( {}, arguments );
+    };
+    writer.redecorate = function ( whole ) {
+        return whole;
+    };
+    return writer;
+}
+
+function desugarDefWriter() {
+    var defs = [];
+    
+    var writer = {};
+    writer.consume = function ( part ) {
+        var desugared = part.desugarDef();
+        defs = defs.concat( desugared.defs );
+        return desugared.expr;
+    };
+    writer.redecorate = function ( whole ) {
+        return { defs: defs, expr: whole };
+    };
+    return writer;
+}
+
+function desugarTailToTempWriter() {
+    // INTERESTING
+    
+    // NOTE: This variable is mutated a maximum of one time.
+    var state = { type: "exprState" };
+    
+    var writer = {};
+    writer.consume = function ( part, freeVarsAfter ) {
+        // NOTE: We only desugar `part` some of the time!
+        if ( state.type === "exprState" ) {
+            var desugared = part.desugarTailToTemp( freeVarsAfter );
+            if ( desugared.type === "expr" ) {
+                return desugared.expr;
+            } else if ( desugared.type === "tailToTemp" ) {
+                state = {
+                    type: "tailToTempState",
+                    frameName: desugared.frameName,
+                    varList: desugared.optVarList,
+                    va: desugared.va,
+                    arg: desugared.tailExpr
+                };
+                return desugared.frameBodyExpr;
+            } else {
+                throw new Error();
+            }
+        } else if ( state.type === "tailToTempState" ) {
+            return part.expr;
+        } else {
+            throw new Error();
+        }
+    };
+    writer.redecorate = function ( whole ) {
+        if ( state.type === "exprState" ) {
+            return { type: "expr", expr: whole };
+        } else if ( state.type === "tailToTempState" ) {
+            return {
+                type: "tailToTempState",
+                frameName: state.frameName,
+                varList: state.optVarList,
+                va: state.va,
+                arg: state.tailExpr,
+                frameBodyExpr: whole
+            };
+        } else {
+            throw new Error();
+        }
+    };
+    return writer;
+}
+
 addSyntax( "if-fn-frame", "tailExpr",
     "frameName envPattern tailExpr tailExpr", {
+    // INTERESTING
     
-    _map: function ( args, writerMaker, recur ) {
-        var writer = writerMaker.make();
-        return writer.go( list( "if-fn-frame",
+    _map: function ( args, writer ) {
+        return writer.redecorate( list( "if-fn-frame",
             args.frameName.expr,
             args.envPattern.expr,
-            writer.consume( recur( args[ 2 ].expr ) ),
-            writer.consume( recur( args[ 3 ].expr ) ) ) );
+            writer.consume( args[ 2 ] ),
+            writer.consume( args[ 3 ] ) ) );
     },
     
     getFreeVars: function ( args, freeVarsAfter ) {
@@ -281,9 +364,9 @@ addSyntax( "if-fn-frame", "tailExpr",
     },
     
     desugarVarLists: function ( args, freeVarsAfter ) {
-        return args.self._map( idWriterMaker, function ( arg ) {
+        return args.self._map( idWriter( function ( arg ) {
             return arg.desugarVarLists( strMap() );
-        } );
+        } ) );
     },
     hasProperScope: function ( args, freeVarsAfter ) {
         return args.envPattern.isProper() &&
@@ -291,9 +374,9 @@ addSyntax( "if-fn-frame", "tailExpr",
             args[ 3 ].hasProperScope( strMap() );
     },
     desugarFn: function ( args ) {
-        return args.self._map( idWriterMaker, function ( arg ) {
+        return args.self._map( idWriter( function ( arg ) {
             return arg.desugarFn();
-        } );
+        } ) );
     },
     desugarTailToTemp: function ( args, freeVarsAfter ) {
         return {
@@ -306,28 +389,79 @@ addSyntax( "if-fn-frame", "tailExpr",
         };
     },
     desugarDef: function ( args ) {
-        return args.self._map( desugarDefWriterMaker,
-            function ( arg ) {
-            
-            return arg.desugarDef();
-        } );
+        return args.self._map( desugarDefWriter() );
     },
     desugarLet: function ( args ) {
-        return args.self._map( idWriterMaker, function ( arg ) {
+        return args.self._map( idWriter( function ( arg ) {
             return arg.desugarLet();
-        } );
+        } ) );
+    }
+} );
+addSyntax( "temp-let", "tempExpr", "tempExpr tempExpr", {
+    // TODO: Factor out several of these methods so that we don't have
+    // to repeat this code for most of the syntaxes.
+    
+    _map: function ( args, writer ) {
+        return writer.redecorate( list( "temp-let",
+            writer.consume( args[ 0 ] ),
+            writer.consume( args[ 1 ] ) ) );
+    },
+    _mapWithFreeVarsAfter: function ( args, freeVarsAfter, writer ) {
+        // TODO: Implement this in terms of two calls to _map(). The
+        // first call can build a list of variable sets, and the
+        // second call can use the given writer to consume zipped-up
+        // pairs of expression object and variable set.
+        var freeVarsMid = args[ 1 ].getFreeVars( freeVarsAfter );
+        return writer.redecorate( list( "temp-let",
+            writer.consume( args[ 0 ], freeVarsMid ),
+            writer.consume( args[ 1 ], freeVarsAfter ) ) );
+    },
+    
+    getFreeVars: function ( args, freeVarsAfter ) {
+        // TODO: Implement this in terms of _map().
+        return args[ 0 ].getFreeVars(
+            args[ 1 ].getFreeVars( freeVarsAfter ) );
+    },
+    
+    desugarVarLists: function ( args, freeVarsAfter ) {
+        return args.self._mapWithFreeVarsAfter( freeVarsAfter,
+            idWriter( function ( arg, freeVarsAfter ) {
+            
+            return arg.desugarVarLists( freeVarsAfter );
+        } ) );
+    },
+    hasProperScope: function ( args, freeVarsAfter ) {
+        // TODO: Implement this in terms of _mapWithFreeVarsAfter().
+        var freeVarsMid = args[ 1 ].getFreeVars( freeVarsAfter );
+        return args[ 0 ].hasProperScope( freeVarsMid ) &&
+            args[ 1 ].hasProperScope( freeVarsAfter );
+    },
+    desugarFn: function ( args ) {
+        return args.self._map( idWriter( function ( arg ) {
+            return arg.desugarFn();
+        } ) );
+    },
+    desugarTailToTemp: function ( args, freeVarsAfter ) {
+        return args.self._mapWithFreeVarsAfter(
+            freeVarsAfter, desugarTailToTempWriter() );
+    },
+    desugarDef: function ( args ) {
+        return args.self._map( desugarDefWriter() );
+    },
+    desugarLet: function ( args ) {
+        return args[ 1 ].expr;
     }
 } );
 addSyntax( "tail-to-temp", "tempExpr",
     "frameName optVarList va tailExpr", {
+    // INTERESTING
     
-    _map: function ( args, writerMaker, recur ) {
-        var writer = writerMaker.make();
-        return writer.go( list( "tail-to-temp",
+    _map: function ( args, writer ) {
+        return writer.redecorate( list( "tail-to-temp",
             args.frameName.expr,
             args.optVarList.expr,
             args.va.expr,
-            writer.consume( recur( args.tailExpr ) ) ) );
+            writer.consume( args.tailExpr ) ) );
     },
     
     getFreeVars: function ( args, freeVarsAfter ) {
@@ -356,9 +490,9 @@ addSyntax( "tail-to-temp", "tempExpr",
             args.tailExpr.hasProperScope( strSet() );
     },
     desugarFn: function ( args ) {
-        return args.self._map( idWriterMaker, function ( arg ) {
+        return args.self._map( idWriter( function ( arg ) {
             return arg.desugarFn();
-        } );
+        } ) );
     },
     desugarTailToTemp: function ( args, freeVarsAfter ) {
         return {
@@ -378,6 +512,8 @@ addSyntax( "tail-to-temp", "tempExpr",
     }
 } );
 addSyntax( "fn", "tempExpr", "frameName optVarList va tailExpr", {
+    // INTERESTING
+    
     getFreeVars: function ( args, freeVarsAfter ) {
         var innerFreeVarsAfter = strSet();
         var innerFreeVars = args.tailExpr.
