@@ -117,30 +117,9 @@ function run( stack, rules ) {
 //   //
 //   (def frame-name opt-var-list var tail-expr)
 //
-// // When an opt-var-list is not omitted, it overrides the usual
-// // behavior for inferring the variables required by a frame
-// // definition. This way, frames can be defined that receive more
-// // variables than they actually use.
-// opt-var-list ::=
-//   // Sugar.
-//   (var-list-omitted)
-//
-//   (var-list var-list)
-//
-// var-list ::=
-//   (var-list-nil)
-//   (var-list-cons var var-list)
-//
 // env-expr ::=
 //   (env-nil)
 //   (env-cons var temp-expr env-expr)
-//
-// env-pattern ::=
-//   (env-pattern-nil)
-//
-//   // NOTE: The first var is the key in the environment, and the
-//   // second var is the local variable to bind it to.
-//   (env-pattern-cons var var env-expr)
 //
 // tail-expr ::=
 //   // Sugar.
@@ -218,14 +197,29 @@ function run( stack, rules ) {
 //   // boundary for the purposes of (tail-to-temp ...).
 //   //
 //   (fn frame-name opt-var-list var tail-expr)
+//
+// // When an opt-var-list is not omitted, it overrides the usual
+// // behavior for inferring the variables required by a frame
+// // definition. This way, frames can be defined that receive more
+// // variables than they actually use.
+// opt-var-list ::=
+//   // Sugar.
+//   (var-list-omitted)
+//
+//   (var-list var-list)
+//
+// var-list ::=
+//   (var-list-nil)
+//   (var-list-cons var var-list)
+//
+// env-pattern ::=
+//   (env-pattern-nil)
+//
+//   // NOTE: The first var is the key in the environment, and the
+//   // second var is the local variable to bind it to.
+//   (env-pattern-cons var var env-expr)
 
 // TODO: Implement these methods on every corresponding syntax:
-// optVarList/varList set()
-// optVarList or( varSet )
-// optVarList/varList isProvidedProperly()
-// optVarList/varList capture()
-// envPattern vals()
-// envPattern isProper()
 // tempExpr/tailExpr/envExpr/def getFreeVars( freeVarsAfter )
 // tempExpr/tailExpr/envExpr/def desugarVarLists( freeVarsAfter )
 // tempExpr/tailExpr/envExpr/def hasProperScope( freeVarsAfter )
@@ -234,6 +228,12 @@ function run( stack, rules ) {
 // tempExpr/tailExpr/envExpr desugarDef()
 // def desugarDefIncludingSelf()
 // tempExpr/tailExpr/envExpr/def desugarLet()
+// optVarList/varList set()
+// optVarList or( varSet )
+// optVarList/varList isProvidedProperly()
+// optVarList/varList capture()
+// envPattern vals()
+// envPattern isProper()
 //
 // TODO: Implement list(), strMap() (should be around here somewhere),
 // strMap#subset(), args.self, parseSyntax(), and addSyntax() (with
