@@ -345,6 +345,9 @@ function desugarTailToTempWriter() {
 }
 
 var defaults = {
+    map: function ( args, writer ) {
+        return writer.redecorate( args.self.expr );
+    },
     mapWithFreeVarsAfter: function ( args, freeVarsAfter, writer ) {
         var parts = [];
         args.self._map( idWriter( function ( part ) {
@@ -476,9 +479,37 @@ addSyntax( "def", "def", "frameName optVarList va tailExpr", {
         throw new Error();
     }
 } );
-// TODO:
-//   (env-nil)
-//   (env-cons var temp-expr env-expr)
+addSyntax( "env-nil", "envExpr", "", {
+    _map: defaults.map,
+    _mapWithFreeVarsAfter: defaults.mapWithFreeVarsAfter,
+    
+    getFreeVars: defaults.getFreeVars,
+    
+    desugarVarLists: defaults.desugarVarLists,
+    hasProperScope: defaults.hasProperScope,
+    desugarFn: defaults.desugarFn,
+    desugarTailToTemp: defaults.desugarTailToTemp,
+    desugarDef: defaults.desugarDef,
+    desugarLet: defaults.desugarLet
+} );
+addSyntax( "env-cons", "envExpr", "va tempExpr envExpr", {
+    _map: function ( args, writer ) {
+        return writer.redecorate( list( "env-cons",
+            args.va.expr,
+            writer.consume( args.tempExpr ),
+            writer.consume( args.envExpr ) ) );
+    },
+    _mapWithFreeVarsAfter: defaults.mapWithFreeVarsAfter,
+    
+    getFreeVars: defaults.getFreeVars,
+    
+    desugarVarLists: defaults.desugarVarLists,
+    hasProperScope: defaults.hasProperScope,
+    desugarFn: defaults.desugarFn,
+    desugarTailToTemp: defaults.desugarTailToTemp,
+    desugarDef: defaults.desugarDef,
+    desugarLet: defaults.desugarLet
+} );
 addSyntax( "tail-def", "tailExpr", "def tailExpr", {
     _map: function ( args, writer ) {
         return writer.redecorate( list( "tail-def",
@@ -524,9 +555,39 @@ addSyntax( "tail-let", "tailExpr", "tempExpr tailExpr", {
         return args.tailExpr.expr;
     }
 } );
-// TODO:
-//   (temp-to-tail temp-expr)
-//   (call temp-expr tail-expr)
+addSyntax( "temp-to-tail", "tailExpr", "tempExpr", {
+    _map: function ( args, writer ) {
+        return writer.redecorate( list( "temp-to-tail",
+            writer.consume( args.tempExpr ) ) );
+    },
+    _mapWithFreeVarsAfter: defaults.mapWithFreeVarsAfter,
+    
+    getFreeVars: defaults.getFreeVars,
+    
+    desugarVarLists: defaults.desugarVarLists,
+    hasProperScope: defaults.hasProperScope,
+    desugarFn: defaults.desugarFn,
+    desugarTailToTemp: defaults.desugarTailToTemp,
+    desugarDef: defaults.desugarDef,
+    desugarLet: defaults.desugarLet
+} );
+addSyntax( "call", "tailExpr", "tempExpr tailExpr", {
+    _map: function ( args, writer ) {
+        return writer.redecorate( list( "call",
+            writer.consume( args.tempExpr ),
+            writer.consume( args.tailExpr ) ) );
+    },
+    _mapWithFreeVarsAfter: defaults.mapWithFreeVarsAfter,
+    
+    getFreeVars: defaults.getFreeVars,
+    
+    desugarVarLists: defaults.desugarVarLists,
+    hasProperScope: defaults.hasProperScope,
+    desugarFn: defaults.desugarFn,
+    desugarTailToTemp: defaults.desugarTailToTemp,
+    desugarDef: defaults.desugarDef,
+    desugarLet: defaults.desugarLet
+} );
 addSyntax( "if-fn-frame", "tailExpr",
     "frameName envPattern tailExpr tailExpr", {
     // INTERESTING
@@ -615,9 +676,38 @@ addSyntax( "temp-let", "tempExpr", "tempExpr tempExpr", {
         return args[ 1 ].expr;
     }
 } );
-// TODO:
-//   (local var)
-//   (fn-frame frame-name env-expr)
+addSyntax( "local", "tailExpr", "va", {
+    _map: defaults.map,
+    _mapWithFreeVarsAfter: defaults.mapWithFreeVarsAfter,
+    
+    getFreeVars: function ( args, freeVarsAfter ) {
+        return freeVarsAfter.plus( args.va.expr );
+    },
+    
+    desugarVarLists: defaults.desugarVarLists,
+    hasProperScope: defaults.hasProperScope,
+    desugarFn: defaults.desugarFn,
+    desugarTailToTemp: defaults.desugarTailToTemp,
+    desugarDef: defaults.desugarDef,
+    desugarLet: defaults.desugarLet
+} );
+addSyntax( "fn-frame", "tailExpr", "frameName envExpr", {
+    _map: function ( args, writer ) {
+        return writer.redecorate( list( "fn-frame",
+            args.frameName.expr,
+            writer.consume( args.envExpr ) ) );
+    },
+    _mapWithFreeVarsAfter: defaults.mapWithFreeVarsAfter,
+    
+    getFreeVars: defaults.getFreeVars,
+    
+    desugarVarLists: defaults.desugarVarLists,
+    hasProperScope: defaults.hasProperScope,
+    desugarFn: defaults.desugarFn,
+    desugarTailToTemp: defaults.desugarTailToTemp,
+    desugarDef: defaults.desugarDef,
+    desugarLet: defaults.desugarLet
+} );
 addSyntax( "tail-to-temp", "tempExpr",
     "frameName optVarList va tailExpr", {
     // INTERESTING
