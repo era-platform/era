@@ -418,6 +418,47 @@ var defaults = {
     }
 };
 
+addSyntax( "def", "def", "frameName optVarList va tailExpr", {
+    // INTERESTING
+    
+    getFreeVars: function ( args, freeVarsAfter ) {
+        return freeVarsAfter;
+    },
+    
+    desugarVarLists: function ( args, freeVarsAfter ) {
+        var innerFreeVarsAfter = strSet();
+        var innerFreeVars = args.tailExpr.
+            getFreeVars( innerFreeVarsAfter ).minus( args.va.expr );
+        return list( "def",
+            args.frameName.expr,
+            args.optVarList.or( innerFreeVars ),
+            args.va.expr,
+            args.tailExpr.desugarVarLists( innerFreeVarsAfter ) );
+    },
+    hasProperScope: function ( args, freeVarsAfter ) {
+        var innerFreeVarsAfter = strSet();
+        var innerFreeVars = args.tailExpr.
+            getFreeVars( innerFreeVarsAfter ).minus( args.va.expr );
+        var declaredInnerFreeVars = args.optVarList.set();
+        return args.optVarList.isProvidedProperly() &&
+            innerFreeVars.subset( declaredInnerFreeVars ) &&
+            args.tailExpr.hasProperScope( innerFreeVarsAfter );
+    },
+    desugarFn: defaults.desugarFn,
+    desugarTailToTemp: defaults.desugarTailToTemp,
+    desugarDefIncludingSelf: function ( args ) {
+        var desugared = args.tailExpr.desugarDef();
+        return desugared.defs.concat( [ list( "def",
+            args.frameName.expr,
+            args.optVarList.expr,
+            args.va.expr,
+            desugared.expr
+        ) ] );
+    },
+    desugarLet: function ( args ) {
+        throw new Error();
+    }
+} );
 addSyntax( "if-fn-frame", "tailExpr",
     "frameName envPattern tailExpr tailExpr", {
     // INTERESTING
