@@ -217,9 +217,9 @@ function run( stack, rules ) {
 //
 //   // NOTE: The first var is the key in the environment, and the
 //   // second var is the local variable to bind it to.
-//   (env-pattern-cons var var env-expr)
+//   (env-pattern-cons var var env-pattern)
 
-// TODO: Implement these methods on every corresponding syntax:
+// NOTE: We implement these methods on every corresponding syntax:
 // tempExpr/tailExpr/envExpr/def getFreeVars( freeVarsAfter )
 // tempExpr/tailExpr/envExpr/def desugarVarLists( freeVarsAfter )
 // tempExpr/tailExpr/envExpr/def hasProperScope( freeVarsAfter )
@@ -230,15 +230,16 @@ function run( stack, rules ) {
 // tempExpr/tailExpr/envExpr/def desugarLet()
 // optVarList/varList set()
 // optVarList or( varSet )
-// optVarList/varList isProvidedProperly()
+// optVarList/varList isProvidedProperlyForSet( varSet )
 // optVarList/varList capture()
 // envPattern vals()
-// envPattern isProper()
-//
-// TODO: Implement list(), strMap() (should be around here somewhere),
-// strMap#subset(), args.self, parseSyntax(), and addSyntax() (with
-// its special DSL-like injection of an args parameter and an expr
-// property).
+// envPattern isProperForSets( keySet, varSet )
+
+// TODO: Implement list(), strSet() (should be around here somewhere),
+// strSet#subset(), strSet#each(), strSet#minusEl(), strSet#plusEl(),
+// strSet#plus(), strSet#minus(), args.self, parseSyntax(), and
+// addSyntax() (with its special DSL-like injection of an args
+// parameter and an expr property).
 
 // Certain parts of the implementation are marked "INTERESTING". These
 // parts are tricky enough to be the motivators for the way the
@@ -439,7 +440,7 @@ addSyntax( "def", "def", "frameName optVarList va tailExpr", {
     desugarVarLists: function ( args, freeVarsAfter ) {
         var innerFreeVarsAfter = strSet();
         var innerFreeVars = args.tailExpr.
-            getFreeVars( innerFreeVarsAfter ).minus( args.va.expr );
+            getFreeVars( innerFreeVarsAfter ).minusEl( args.va.expr );
         return list( "def",
             args.frameName.expr,
             args.optVarList.or( innerFreeVars ),
@@ -449,9 +450,9 @@ addSyntax( "def", "def", "frameName optVarList va tailExpr", {
     hasProperScope: function ( args, freeVarsAfter ) {
         var innerFreeVarsAfter = strSet();
         var innerFreeVars = args.tailExpr.
-            getFreeVars( innerFreeVarsAfter ).minus( args.va.expr );
+            getFreeVars( innerFreeVarsAfter ).minusEl( args.va.expr );
         var declaredInnerFreeVars = args.optVarList.set();
-        return args.optVarList.isProvidedProperly() &&
+        return args.optVarList.isProvidedProperlyForSet( strSet() ) &&
             innerFreeVars.subset( declaredInnerFreeVars ) &&
             args.tailExpr.hasProperScope( innerFreeVarsAfter );
     },
@@ -601,21 +602,22 @@ addSyntax( "if-fn-frame", "tailExpr",
     },
     
     getFreeVars: function ( args, freeVarsAfter ) {
-        return args[ 2 ].getFreeVars( strMap() ).
+        return args[ 2 ].getFreeVars( strSet() ).
             minus( args.envPattern.vals() ).
-            plus( args[ 3 ].getFreeVars( strMap() ) ).
+            plus( args[ 3 ].getFreeVars( strSet() ) ).
             plus( freeVarsAfter );
     },
     
     desugarVarLists: function ( args, freeVarsAfter ) {
         return args.self._map( idWriter( function ( arg ) {
-            return arg.desugarVarLists( strMap() );
+            return arg.desugarVarLists( strSet() );
         } ) );
     },
     hasProperScope: function ( args, freeVarsAfter ) {
-        return args.envPattern.isProper() &&
-            args[ 2 ].hasProperScope( strMap() ) &&
-            args[ 3 ].hasProperScope( strMap() );
+        return args.envPattern.isProperForSets(
+                strSet(), strSet() ) &&
+            args[ 2 ].hasProperScope( strSet() ) &&
+            args[ 3 ].hasProperScope( strSet() );
     },
     desugarFn: defaults.desugarFn,
     desugarTailToTemp: function ( args ) {
@@ -681,7 +683,7 @@ addSyntax( "local", "tailExpr", "va", {
     _mapWithFreeVarsAfter: defaults.mapWithFreeVarsAfter,
     
     getFreeVars: function ( args, freeVarsAfter ) {
-        return freeVarsAfter.plus( args.va.expr );
+        return freeVarsAfter.plusEl( args.va.expr );
     },
     
     desugarVarLists: defaults.desugarVarLists,
@@ -722,7 +724,7 @@ addSyntax( "tail-to-temp", "tempExpr",
     
     getFreeVars: function ( args, freeVarsAfter ) {
         var innerFreeVarsAfter =
-            freeVarsAfter.minusKey( args.va.expr );
+            freeVarsAfter.minusEl( args.va.expr );
         var declaredInnerFreeVarsAfter = args.optVarList.set();
         return args.tailExpr.getFreeVars( strSet() ).
             plus( declaredInnerFreeVarsAfter || innerFreeVarsAfter );
@@ -730,7 +732,7 @@ addSyntax( "tail-to-temp", "tempExpr",
     
     desugarVarLists: function ( args, freeVarsAfter ) {
         var innerFreeVarsAfter =
-            freeVarsAfter.minusKey( args.va.expr );
+            freeVarsAfter.minusEl( args.va.expr );
         return list( "tail-to-temp",
             args.frameName.expr,
             args.optVarList.or( innerFreeVarsAfter ),
@@ -739,9 +741,9 @@ addSyntax( "tail-to-temp", "tempExpr",
     },
     hasProperScope: function ( args, freeVarsAfter ) {
         var innerFreeVarsAfter =
-            freeVarsAfter.minusKey( args.va.expr );
+            freeVarsAfter.minusEl( args.va.expr );
         var declaredInnerFreeVarsAfter = args.optVarList.set();
-        return args.optVarList.isProvidedProperly() &&
+        return args.optVarList.isProvidedProperlyForSet( strSet() ) &&
             innerFreeVarsAfter.subset( declaredInnerFreeVarsAfter ) &&
             args.tailExpr.hasProperScope( strSet() );
     },
@@ -769,7 +771,7 @@ addSyntax( "fn", "tempExpr", "frameName optVarList va tailExpr", {
     getFreeVars: function ( args, freeVarsAfter ) {
         var innerFreeVarsAfter = strSet();
         var innerFreeVars = args.tailExpr.
-            getFreeVars( innerFreeVarsAfter ).minus( args.va.expr );
+            getFreeVars( innerFreeVarsAfter ).minusEl( args.va.expr );
         var declaredInnerFreeVars = args.optVarList.set();
         return (declaredInnerFreeVars || innerFreeVars).plus(
             freeVarsAfter );
@@ -778,7 +780,7 @@ addSyntax( "fn", "tempExpr", "frameName optVarList va tailExpr", {
     desugarVarLists: function ( args, freeVarsAfter ) {
         var innerFreeVarsAfter = strSet();
         var innerFreeVars = args.tailExpr.
-            getFreeVars( innerFreeVarsAfter ).minus( args.va.expr );
+            getFreeVars( innerFreeVarsAfter ).minusEl( args.va.expr );
         return list( "fn",
             args.frameName.expr,
             args.optVarList.or( innerFreeVars ),
@@ -788,9 +790,9 @@ addSyntax( "fn", "tempExpr", "frameName optVarList va tailExpr", {
     hasProperScope: function ( args, freeVarsAfter ) {
         var innerFreeVarsAfter = strSet();
         var innerFreeVars = args.tailExpr.
-            getFreeVars( innerFreeVarsAfter ).minus( args.va.expr );
+            getFreeVars( innerFreeVarsAfter ).minusEl( args.va.expr );
         var declaredInnerFreeVars = args.optVarList.set();
-        return args.optVarList.isProvidedProperly() &&
+        return args.optVarList.isProvidedProperlyForSet( strSet() ) &&
             innerFreeVars.subset( declaredInnerFreeVars ) &&
             args.tailExpr.hasProperScope( innerFreeVarsAfter );
     },
@@ -813,10 +815,82 @@ addSyntax( "fn", "tempExpr", "frameName optVarList va tailExpr", {
         throw new Error();
     }
 } );
-// TODO:
-//   (var-list-omitted)
-//   (var-list var-list)
-//   (var-list-nil)
-//   (var-list-cons var var-list)
-//   (env-pattern-nil)
-//   (env-pattern-cons var var env-expr)
+addSyntax( "var-list-omitted", "optVarList", "", {
+    set: function ( args ) {
+        return strSet();
+    },
+    or: function ( args, varSet ) {
+        var varSetExpr = list( "var-list-nil" );
+        varSet.each( function ( va ) {
+            varSetExpr = list( "var-list-cons", va, varSetExpr );
+        } );
+        return list( "var-list", varSetExpr ) ;
+    },
+    isProvidedProperlyForSet: function ( args, varSet ) {
+        return false;
+    },
+    capture: function ( args ) {
+        throw new Error();
+    }
+} );
+addSyntax( "var-list", "optVarList", "varList", {
+    set: function ( args ) {
+        return args.varList.set();
+    },
+    or: function ( args, varSet ) {
+        return args.self.expr;
+    },
+    isProvidedProperlyForSet: function ( args, varSet ) {
+        return args.varList.isProvidedProperlyForSet( varSet );
+    },
+    capture: function ( args ) {
+        return args.varList.capture();
+    }
+} );
+addSyntax( "var-list-nil", "varList", "", {
+    set: function ( args ) {
+        return strSet();
+    },
+    isProvidedProperlyForSet: function ( args, varSet ) {
+        return true;
+    },
+    capture: function ( args ) {
+        return list( "env-nil" );
+    }
+} );
+addSyntax( "var-list-cons", "varList", "va varList", {
+    set: function ( args ) {
+        return args.varList.strSet().plusEl( args.va.expr );
+    },
+    isProvidedProperlyForSet: function ( args, varSet ) {
+        return !varSet.has( args.va.expr ) &&
+            args.varList.isProvidedProperlyForSet(
+                varSet.plusEl( args.va.expr ) );
+    },
+    capture: function ( args ) {
+        return list( "env-cons",
+            args.va.expr,
+            list( "local", args.va.expr ),
+            args.varList.capture() );
+    }
+} );
+addSyntax( "env-pattern-nil", "envPattern", "", {
+    vals: function ( args ) {
+        return strSet();
+    },
+    isProperForSets: function ( args, keySet, varSet ) {
+        return true;
+    }
+} );
+addSyntax( "env-pattern-cons", "envPattern", "va va envPattern", {
+    vals: function ( args ) {
+        return args.envPattern.vals().plusEl( args[ 1 ].expr );
+    },
+    isProperForSets: function ( args, keySet, varSet ) {
+        var k = args[ 0 ].expr;
+        var v = args[ 1 ].expr;
+        return !keySet.has( k ) && !varSet.has( v ) &&
+            args.envPattern.isProperForSets(
+                keySet.plusEl( k ), varSet.plusEl( v ) );
+    }
+} );
