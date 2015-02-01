@@ -240,6 +240,18 @@ StrMap.prototype.setAll = function ( other ) {
     } );
     return this;
 };
+StrMap.prototype.delAll = function ( other ) {
+    if ( !(other instanceof StrMap) )
+        throw new Error();
+    // TODO: Merge the trees more efficiently than this. We're using
+    // AVL trees, which can supposedly merge in O( log (m + n) ) time,
+    // but this operation is probably O( n * log (m + n) ).
+    var self = this;
+    other.each( function ( k, v ) {
+        self.del( k );
+    } );
+    return this;
+};
 StrMap.prototype.copy = function () {
     return new StrMap().init_( this.contents_ );
 };
@@ -270,6 +282,9 @@ StrMap.prototype.plusArrTruth = function ( arr ) {
 StrMap.prototype.minusEntry = function ( k ) {
     return new StrMap().init_( this.contents_.minusEntry( k ) );
 };
+StrMap.prototype.minus = function ( other ) {
+    return this.copy().delAll( other );
+};
 // NOTE: This body takes its args as ( v, k ).
 StrMap.prototype.any = function ( body ) {
     return this.contents_.any( body );
@@ -278,6 +293,9 @@ StrMap.prototype.hasAny = function () {
     return this.any( function ( v, k ) {
         return true;
     } );
+};
+StrMap.prototype.subset = function ( other ) {
+    return !this.minus( other ).hasAny();
 };
 // NOTE: This body takes its args as ( k, v ).
 StrMap.prototype.each = function ( body ) {

@@ -53,6 +53,15 @@ StrMap.prototype.setAll = function ( other ) {
     } );
     return this;
 };
+StrMap.prototype.delAll = function ( other ) {
+    if ( !(other instanceof StrMap) )
+        throw new Error();
+    var self = this;
+    other.each( function ( k, v ) {
+        self.del( k );
+    } );
+    return this;
+};
 StrMap.prototype.copy = function () {
     return strMap().setAll( this );
 };
@@ -79,6 +88,9 @@ StrMap.prototype.plusArrTruth = function ( arr ) {
 StrMap.prototype.minusEntry = function ( k ) {
     return this.copy().del( k );
 };
+StrMap.prototype.minus = function ( other ) {
+    return this.copy().delAll( other );
+};
 // NOTE: This body takes its args as ( v, k ).
 StrMap.prototype.any = function ( body ) {
     var self = this;
@@ -90,6 +102,9 @@ StrMap.prototype.hasAny = function () {
     return this.any( function ( v, k ) {
         return true;
     } );
+};
+StrMap.prototype.subset = function ( other ) {
+    return !this.minus( other ).hasAny();
 };
 // NOTE: This body takes its args as ( k, v ).
 StrMap.prototype.each = function ( body ) {

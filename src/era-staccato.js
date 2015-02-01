@@ -53,6 +53,9 @@
 // access to a document describing your intentions.
 
 
+// TODO: Use localStorageStack() and run() in a runtime implementation
+// of Staccato.
+
 function localStorageStack() {
     function get( k ) {
         var text = localStorage.get( JSON.stringify( k ) ) || "null";
@@ -104,6 +107,7 @@ function run( stack, rules ) {
         stack.setReturnValue( newFrames.returnValue );
     }
 }
+
 
 // def ::=
 //   // This defines a frame that takes an environment with the
@@ -235,16 +239,133 @@ function run( stack, rules ) {
 // envPattern vals()
 // envPattern isProperForSets( keySet, varSet )
 
-// TODO: Implement list(), strSet() (should be around here somewhere),
-// strSet#subset(), strSet#each(), strSet#minusEl(), strSet#plusEl(),
-// strSet#plus(), strSet#minus(), args.self, parseSyntax(), and
-// addSyntax() (with its special DSL-like injection of an args
-// parameter and an expr property).
+// TODO: Test all this code. Try calling parseSyntax( "def", x ), for
+// some value of x, and then running all the desugaring phases. Note
+// that this file depends on era-misc.js and either
+// era-misc-strmap-avl.js or era-misc-strmap-obj.js.
 
-// Certain parts of the implementation are marked "INTERESTING". These
-// parts are tricky enough to be the motivators for the way the
+// NOTE: Certain parts of the implementation are marked "INTERESTING".
+// These parts are tricky enough to be the motivators for the way the
 // implementation has been built, and the other parts are more
 // run-of-the-mill.
+
+function likeJsCons( x ) {
+    return (true
+        && likeObjectLiteral( expr )
+        && hasOwn( expr, "first" )
+        && hasOwn( expr, "rest" )
+    );
+}
+function jsListToArrBounded( x, maxLen ) {
+    var result = [];
+    for ( var n = 0; n <= maxLen; n++ ) {
+        if ( !likeJsCons( x ) )
+            return result;
+        result.push( x.first );
+        x = x.rest;
+    }
+    return null;
+}
+
+var syntaxes = strMap();
+var nonterminals = strMap();
+function isValidNontermName( x ) {
+    return isPrimString( x )
+        && /^[a-z]+$/i.test( x )
+        && !(x === "self" || x in {});
+}
+function addStringSyntax( nontermName ) {
+    if ( !isValidNontermName( nontermName ) )
+        throw new Error();
+    if ( !nonterminals.has( nontermName ) )
+        nonterminals.set( nontermName, { type: "string" } );
+    var nonterminal = nonterminals.get( nontermName );
+    if ( nonterminal.type !== "string" )
+        throw new Error();
+}
+function addSyntax( name, nontermName, argNontermNamesStr, methods ) {
+    if ( !(isPrimString( name )
+        && isValidNontermName( nontermName )
+        && isPrimString( argNontermNamesStr )) )
+        throw new Error();
+    if ( syntaxes.has( name ) )
+        throw new Error();
+    var argNontermNames = argNontermNamesStr.split( /\s+/g );
+    var argNontermNameIsDuplicated = strMap();
+    arrEach( argNontermNames, function ( name, i ) {
+        if ( !isValidNontermName( name ) )
+            throw new Error();
+        argNontermNameIsDuplicated.set( name,
+            argNontermNameIsDuplicated.has( name ) );
+    } );
+    if ( !nonterminals.has( nontermName ) )
+        nonterminals.set( nontermName,
+            { type: "sumType", cases: strMap() } );
+    var nonterminal = nonterminals.get( nontermName );
+    if ( nonterminal.type !== "sumType" )
+        throw new Error();
+    nonterminal.cases.add( name );
+    var methodsMap = strMap().plusObj( methods );
+    methodsMap.each( function ( name, method ) {
+        if ( name === "expr" || name in {} )
+            throw new Error();
+    } );
+    syntaxes.set( name, {
+        type: "sumTag",
+        nontermName: nontermName,
+        args: arrMap( argNontermNames, function ( nontermName, i ) {
+            return {
+                nontermName: nontermName,
+                dslName:
+                    argNontermNameIsDuplicated.get( nontermName ) ?
+                        name : i
+            };
+        } ),
+        methods: strMap().plusObj( methods )
+    } );
+}
+function parseSyntax( nonterminalName, expr ) {
+    var nonterminal = nonterminals.get( nonterminalName );
+    if ( nonterminal === void 0 )
+        throw new Error();
+    
+    var result = {};
+    result.expr = expr;
+    
+    if ( nonterminal.type === "string" ) {
+        if ( !isPrimString( expr ) )
+            throw new Error();
+        return result;
+    } else if ( nonterminal.type === "sumType" ) {
+        if ( !(likeJsCons( expr )
+            && isPrimString( expr.first )
+            && nonterminal.cases.has( expr.first )) )
+            throw new Error();
+        var syntax = syntaxes.get( expr.first );
+        var n = syntax.args.length;
+        var argExprs = jsListToArrBounded( expr.rest, n );
+        if ( argExprs === null || argExprs.length !== n )
+            throw new Error();
+        
+        var args = {};
+        args.self = result;
+        arrEach( syntax.args, function ( argSyntax, i ) {
+            var argExpr = argExprs[ i ];
+            args[ argSyntax.dslName ] =
+                parseSyntax( argSyntax.nonterminalName, argExpr );
+        } );
+        
+        syntax.methods.each( function ( name, method ) {
+            result[ name ] = function ( var_args ) {
+                return method.apply( {},
+                    [ args ].concat( arguments ) );
+            };
+        } );
+        return result;
+    } else {
+        throw new Error();
+    }
+}
 
 function processTailToTempRoot( exprObj ) {
     // INTERESTING
@@ -253,15 +374,15 @@ function processTailToTempRoot( exprObj ) {
     if ( desugared.type === "expr" ) {
         return desugared.expr;
     } else if ( desugared.type === "tailToTemp" ) {
-        return processTailToTempRoot( parseSyntax(
-            list( "tail-def",
-                list( "def",
+        return processTailToTempRoot( parseSyntax( "tailExpr",
+            jsList( "tail-def",
+                jsList( "def",
                     desugared.frameName.expr,
                     desugared.varList.expr,
                     desugared.va.expr,
                     desugared.frameBodyExpr ),
-                list( "call"
-                    list( "fn-frame", desugared.frameName.expr,
+                jsList( "call"
+                    jsList( "fn-frame", desugared.frameName.expr,
                         desugared.varList.capture() ),
                     desugared.arg.expr ) ) ) ) );
     } else {
@@ -422,11 +543,12 @@ var defaults = {
     }
 };
 
+addStringSyntax( "va" );
 addSyntax( "def", "def", "frameName optVarList va tailExpr", {
     // INTERESTING
     
     _map: function ( args, writer ) {
-        return writer.redecorate( list( "def",
+        return writer.redecorate( jsList( "def",
             args.frameName.expr,
             args.optVarList.expr,
             args.va.expr,
@@ -438,21 +560,23 @@ addSyntax( "def", "def", "frameName optVarList va tailExpr", {
     },
     
     desugarVarLists: function ( args, freeVarsAfter ) {
-        var innerFreeVarsAfter = strSet();
+        var innerFreeVarsAfter = strMap();
         var innerFreeVars = args.tailExpr.
-            getFreeVars( innerFreeVarsAfter ).minusEl( args.va.expr );
-        return list( "def",
+            getFreeVars( innerFreeVarsAfter ).
+            minusEntry( args.va.expr );
+        return jsList( "def",
             args.frameName.expr,
             args.optVarList.or( innerFreeVars ),
             args.va.expr,
             args.tailExpr.desugarVarLists( innerFreeVarsAfter ) );
     },
     hasProperScope: function ( args, freeVarsAfter ) {
-        var innerFreeVarsAfter = strSet();
+        var innerFreeVarsAfter = strMap();
         var innerFreeVars = args.tailExpr.
-            getFreeVars( innerFreeVarsAfter ).minusEl( args.va.expr );
+            getFreeVars( innerFreeVarsAfter ).
+            minusEntry( args.va.expr );
         var declaredInnerFreeVars = args.optVarList.set();
-        return args.optVarList.isProvidedProperlyForSet( strSet() ) &&
+        return args.optVarList.isProvidedProperlyForSet( strMap() ) &&
             innerFreeVars.subset( declaredInnerFreeVars ) &&
             args.tailExpr.hasProperScope( innerFreeVarsAfter );
     },
@@ -460,7 +584,7 @@ addSyntax( "def", "def", "frameName optVarList va tailExpr", {
     desugarTailToTemp: function ( args ) {
         return {
             type: "expr"
-            expr: list( "def",
+            expr: jsList( "def",
                 args.frameName.expr,
                 args.optVarList.expr,
                 args.va.expr,
@@ -469,7 +593,7 @@ addSyntax( "def", "def", "frameName optVarList va tailExpr", {
     },
     desugarDefIncludingSelf: function ( args ) {
         var desugared = args.tailExpr.desugarDef();
-        return desugared.defs.concat( [ list( "def",
+        return desugared.defs.concat( [ jsList( "def",
             args.frameName.expr,
             args.optVarList.expr,
             args.va.expr,
@@ -495,7 +619,7 @@ addSyntax( "env-nil", "envExpr", "", {
 } );
 addSyntax( "env-cons", "envExpr", "va tempExpr envExpr", {
     _map: function ( args, writer ) {
-        return writer.redecorate( list( "env-cons",
+        return writer.redecorate( jsList( "env-cons",
             args.va.expr,
             writer.consume( args.tempExpr ),
             writer.consume( args.envExpr ) ) );
@@ -513,7 +637,7 @@ addSyntax( "env-cons", "envExpr", "va tempExpr envExpr", {
 } );
 addSyntax( "tail-def", "tailExpr", "def tailExpr", {
     _map: function ( args, writer ) {
-        return writer.redecorate( list( "tail-def",
+        return writer.redecorate( jsList( "tail-def",
             writer.consume( args.def ),
             writer.consume( args.tailExpr ) ) );
     },
@@ -539,7 +663,7 @@ addSyntax( "tail-def", "tailExpr", "def tailExpr", {
 } );
 addSyntax( "tail-let", "tailExpr", "tempExpr tailExpr", {
     _map: function ( args, writer ) {
-        return writer.redecorate( list( "tail-let",
+        return writer.redecorate( jsList( "tail-let",
             writer.consume( args.tempExpr ),
             writer.consume( args.tailExpr ) ) );
     },
@@ -558,7 +682,7 @@ addSyntax( "tail-let", "tailExpr", "tempExpr tailExpr", {
 } );
 addSyntax( "temp-to-tail", "tailExpr", "tempExpr", {
     _map: function ( args, writer ) {
-        return writer.redecorate( list( "temp-to-tail",
+        return writer.redecorate( jsList( "temp-to-tail",
             writer.consume( args.tempExpr ) ) );
     },
     _mapWithFreeVarsAfter: defaults.mapWithFreeVarsAfter,
@@ -574,7 +698,7 @@ addSyntax( "temp-to-tail", "tailExpr", "tempExpr", {
 } );
 addSyntax( "call", "tailExpr", "tempExpr tailExpr", {
     _map: function ( args, writer ) {
-        return writer.redecorate( list( "call",
+        return writer.redecorate( jsList( "call",
             writer.consume( args.tempExpr ),
             writer.consume( args.tailExpr ) ) );
     },
@@ -594,7 +718,7 @@ addSyntax( "if-fn-frame", "tailExpr",
     // INTERESTING
     
     _map: function ( args, writer ) {
-        return writer.redecorate( list( "if-fn-frame",
+        return writer.redecorate( jsList( "if-fn-frame",
             args.frameName.expr,
             args.envPattern.expr,
             writer.consume( args[ 2 ] ),
@@ -602,28 +726,28 @@ addSyntax( "if-fn-frame", "tailExpr",
     },
     
     getFreeVars: function ( args, freeVarsAfter ) {
-        return args[ 2 ].getFreeVars( strSet() ).
+        return args[ 2 ].getFreeVars( strMap() ).
             minus( args.envPattern.vals() ).
-            plus( args[ 3 ].getFreeVars( strSet() ) ).
+            plus( args[ 3 ].getFreeVars( strMap() ) ).
             plus( freeVarsAfter );
     },
     
     desugarVarLists: function ( args, freeVarsAfter ) {
         return args.self._map( idWriter( function ( arg ) {
-            return arg.desugarVarLists( strSet() );
+            return arg.desugarVarLists( strMap() );
         } ) );
     },
     hasProperScope: function ( args, freeVarsAfter ) {
         return args.envPattern.isProperForSets(
-                strSet(), strSet() ) &&
-            args[ 2 ].hasProperScope( strSet() ) &&
-            args[ 3 ].hasProperScope( strSet() );
+                strMap(), strMap() ) &&
+            args[ 2 ].hasProperScope( strMap() ) &&
+            args[ 3 ].hasProperScope( strMap() );
     },
     desugarFn: defaults.desugarFn,
     desugarTailToTemp: function ( args ) {
         return {
             type: "expr"
-            expr: list( "if-fn-frame",
+            expr: jsList( "if-fn-frame",
                 args.frameName.expr,
                 args.envPattern.expr,
                 processTailToTempRoot( args[ 2 ] ),
@@ -635,7 +759,7 @@ addSyntax( "if-fn-frame", "tailExpr",
 } );
 addSyntax( "temp-def", "tempExpr", "def tempExpr", {
     _map: function ( args, writer ) {
-        return writer.redecorate( list( "temp-def",
+        return writer.redecorate( jsList( "temp-def",
             writer.consume( args.def ),
             writer.consume( args.tempExpr ) ) );
     },
@@ -661,7 +785,7 @@ addSyntax( "temp-def", "tempExpr", "def tempExpr", {
 } );
 addSyntax( "temp-let", "tempExpr", "tempExpr tempExpr", {
     _map: function ( args, writer ) {
-        return writer.redecorate( list( "temp-let",
+        return writer.redecorate( jsList( "temp-let",
             writer.consume( args[ 0 ] ),
             writer.consume( args[ 1 ] ) ) );
     },
@@ -683,7 +807,7 @@ addSyntax( "local", "tailExpr", "va", {
     _mapWithFreeVarsAfter: defaults.mapWithFreeVarsAfter,
     
     getFreeVars: function ( args, freeVarsAfter ) {
-        return freeVarsAfter.plusEl( args.va.expr );
+        return freeVarsAfter.plusTruth( args.va.expr );
     },
     
     desugarVarLists: defaults.desugarVarLists,
@@ -695,7 +819,7 @@ addSyntax( "local", "tailExpr", "va", {
 } );
 addSyntax( "fn-frame", "tailExpr", "frameName envExpr", {
     _map: function ( args, writer ) {
-        return writer.redecorate( list( "fn-frame",
+        return writer.redecorate( jsList( "fn-frame",
             args.frameName.expr,
             writer.consume( args.envExpr ) ) );
     },
@@ -715,7 +839,7 @@ addSyntax( "tail-to-temp", "tempExpr",
     // INTERESTING
     
     _map: function ( args, writer ) {
-        return writer.redecorate( list( "tail-to-temp",
+        return writer.redecorate( jsList( "tail-to-temp",
             args.frameName.expr,
             args.optVarList.expr,
             args.va.expr,
@@ -724,28 +848,28 @@ addSyntax( "tail-to-temp", "tempExpr",
     
     getFreeVars: function ( args, freeVarsAfter ) {
         var innerFreeVarsAfter =
-            freeVarsAfter.minusEl( args.va.expr );
+            freeVarsAfter.minusEntry( args.va.expr );
         var declaredInnerFreeVarsAfter = args.optVarList.set();
-        return args.tailExpr.getFreeVars( strSet() ).
+        return args.tailExpr.getFreeVars( strMap() ).
             plus( declaredInnerFreeVarsAfter || innerFreeVarsAfter );
     },
     
     desugarVarLists: function ( args, freeVarsAfter ) {
         var innerFreeVarsAfter =
-            freeVarsAfter.minusEl( args.va.expr );
-        return list( "tail-to-temp",
+            freeVarsAfter.minusEntry( args.va.expr );
+        return jsList( "tail-to-temp",
             args.frameName.expr,
             args.optVarList.or( innerFreeVarsAfter ),
             args.va.expr,
-            args.tailExpr.desugarVarLists( strSet() ) );
+            args.tailExpr.desugarVarLists( strMap() ) );
     },
     hasProperScope: function ( args, freeVarsAfter ) {
         var innerFreeVarsAfter =
-            freeVarsAfter.minusEl( args.va.expr );
+            freeVarsAfter.minusEntry( args.va.expr );
         var declaredInnerFreeVarsAfter = args.optVarList.set();
-        return args.optVarList.isProvidedProperlyForSet( strSet() ) &&
+        return args.optVarList.isProvidedProperlyForSet( strMap() ) &&
             innerFreeVarsAfter.subset( declaredInnerFreeVarsAfter ) &&
-            args.tailExpr.hasProperScope( strSet() );
+            args.tailExpr.hasProperScope( strMap() );
     },
     desugarFn: defaults.desugarFn,
     desugarTailToTemp: function ( args ) {
@@ -755,7 +879,7 @@ addSyntax( "tail-to-temp", "tempExpr",
             varList: args.optVarList,
             va: args.va,
             arg: args.tailExpr,
-            frameBodyExpr: list( "local", args.va.expr )
+            frameBodyExpr: jsList( "local", args.va.expr )
         };
     },
     desugarDef: function ( args ) {
@@ -769,40 +893,43 @@ addSyntax( "fn", "tempExpr", "frameName optVarList va tailExpr", {
     // INTERESTING
     
     getFreeVars: function ( args, freeVarsAfter ) {
-        var innerFreeVarsAfter = strSet();
+        var innerFreeVarsAfter = strMap();
         var innerFreeVars = args.tailExpr.
-            getFreeVars( innerFreeVarsAfter ).minusEl( args.va.expr );
+            getFreeVars( innerFreeVarsAfter ).
+            minusEntry( args.va.expr );
         var declaredInnerFreeVars = args.optVarList.set();
         return (declaredInnerFreeVars || innerFreeVars).plus(
             freeVarsAfter );
     },
     
     desugarVarLists: function ( args, freeVarsAfter ) {
-        var innerFreeVarsAfter = strSet();
+        var innerFreeVarsAfter = strMap();
         var innerFreeVars = args.tailExpr.
-            getFreeVars( innerFreeVarsAfter ).minusEl( args.va.expr );
-        return list( "fn",
+            getFreeVars( innerFreeVarsAfter ).
+            minusEntry( args.va.expr );
+        return jsList( "fn",
             args.frameName.expr,
             args.optVarList.or( innerFreeVars ),
             args.va.expr,
             args.tailExpr.desugarVarLists( innerFreeVarsAfter ) );
     },
     hasProperScope: function ( args, freeVarsAfter ) {
-        var innerFreeVarsAfter = strSet();
+        var innerFreeVarsAfter = strMap();
         var innerFreeVars = args.tailExpr.
-            getFreeVars( innerFreeVarsAfter ).minusEl( args.va.expr );
+            getFreeVars( innerFreeVarsAfter ).
+            minusEntry( args.va.expr );
         var declaredInnerFreeVars = args.optVarList.set();
-        return args.optVarList.isProvidedProperlyForSet( strSet() ) &&
+        return args.optVarList.isProvidedProperlyForSet( strMap() ) &&
             innerFreeVars.subset( declaredInnerFreeVars ) &&
             args.tailExpr.hasProperScope( innerFreeVarsAfter );
     },
     desugarFn: function ( args ) {
-        return list( "temp-def",
-            list( "def", args.frameName.expr,
+        return jsList( "temp-def",
+            jsList( "def", args.frameName.expr,
                 args.optVarList.expr,
                 args.va.expr,
                 args.tailExpr.desugarFn() ),
-            list( "fn-frame", args.frameName.expr,
+            jsList( "fn-frame", args.frameName.expr,
                 args.optVarList.capture() ) );
     },
     desugarTailToTemp: function ( args, freeVarsAfter ) {
@@ -817,14 +944,14 @@ addSyntax( "fn", "tempExpr", "frameName optVarList va tailExpr", {
 } );
 addSyntax( "var-list-omitted", "optVarList", "", {
     set: function ( args ) {
-        return strSet();
+        return strMap();
     },
     or: function ( args, varSet ) {
-        var varSetExpr = list( "var-list-nil" );
-        varSet.each( function ( va ) {
-            varSetExpr = list( "var-list-cons", va, varSetExpr );
+        var varSetExpr = jsList( "var-list-nil" );
+        varSet.each( function ( va, truth ) {
+            varSetExpr = jsList( "var-list-cons", va, varSetExpr );
         } );
-        return list( "var-list", varSetExpr ) ;
+        return jsList( "var-list", varSetExpr ) ;
     },
     isProvidedProperlyForSet: function ( args, varSet ) {
         return false;
@@ -849,34 +976,34 @@ addSyntax( "var-list", "optVarList", "varList", {
 } );
 addSyntax( "var-list-nil", "varList", "", {
     set: function ( args ) {
-        return strSet();
+        return strMap();
     },
     isProvidedProperlyForSet: function ( args, varSet ) {
         return true;
     },
     capture: function ( args ) {
-        return list( "env-nil" );
+        return jsList( "env-nil" );
     }
 } );
 addSyntax( "var-list-cons", "varList", "va varList", {
     set: function ( args ) {
-        return args.varList.strSet().plusEl( args.va.expr );
+        return args.varList.strMap().plusTruth( args.va.expr );
     },
     isProvidedProperlyForSet: function ( args, varSet ) {
         return !varSet.has( args.va.expr ) &&
             args.varList.isProvidedProperlyForSet(
-                varSet.plusEl( args.va.expr ) );
+                varSet.plusTruth( args.va.expr ) );
     },
     capture: function ( args ) {
-        return list( "env-cons",
+        return jsList( "env-cons",
             args.va.expr,
-            list( "local", args.va.expr ),
+            jsList( "local", args.va.expr ),
             args.varList.capture() );
     }
 } );
 addSyntax( "env-pattern-nil", "envPattern", "", {
     vals: function ( args ) {
-        return strSet();
+        return strMap();
     },
     isProperForSets: function ( args, keySet, varSet ) {
         return true;
@@ -884,13 +1011,13 @@ addSyntax( "env-pattern-nil", "envPattern", "", {
 } );
 addSyntax( "env-pattern-cons", "envPattern", "va va envPattern", {
     vals: function ( args ) {
-        return args.envPattern.vals().plusEl( args[ 1 ].expr );
+        return args.envPattern.vals().plusTruth( args[ 1 ].expr );
     },
     isProperForSets: function ( args, keySet, varSet ) {
         var k = args[ 0 ].expr;
         var v = args[ 1 ].expr;
         return !keySet.has( k ) && !varSet.has( v ) &&
             args.envPattern.isProperForSets(
-                keySet.plusEl( k ), varSet.plusEl( v ) );
+                keySet.plusTruth( k ), varSet.plusTruth( v ) );
     }
 } );
