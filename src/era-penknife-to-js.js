@@ -1,5 +1,5 @@
 // era-penknife-to-js.js
-// Copyright 2014 Ross Angle. Released under the MIT License.
+// Copyright 2014, 2015 Ross Angle. Released under the MIT License.
 "use strict";
 
 
@@ -15,16 +15,6 @@ function testStrToSource( str ) {
 testStrToSource( "foo" );
 testStrToSource( "\u2028" );
 testStrToSource( "\u2029" );
-
-function jsListFromArr( arr ) {
-    var result = null;
-    for ( var i = arr.length - 1; 0 <= i; i-- )
-        result = { first: arr[ i ], rest: result };
-    return result;
-}
-function jsList( var_args ) {
-    return jsListFromArr( arguments );
-}
 
 function jsListGetNat( yoke, list, nat, then ) {
     return runWaitOne( yoke, function ( yoke ) {

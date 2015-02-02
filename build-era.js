@@ -1,6 +1,6 @@
 #!/bin/env node
 // build-era.js
-// Copyright 2013, 2014 Ross Angle. Released under the MIT License.
+// Copyright 2013-2015 Ross Angle. Released under the MIT License.
 "use strict";
 
 var fs = require( "fs" );
@@ -44,6 +44,10 @@ argParser.addArgument( [ "-m", "--minify" ], {
     action: "storeTrue",
     help: "Minify any compiled files."
 } );
+argParser.addArgument( [ "-s", "--staccato" ], {
+    action: "storeTrue",
+    help: "Test Staccato, an IR lisp."
+} );
 var args = argParser.parseArgs();
 
 var tasks = [];
@@ -60,6 +64,14 @@ if ( args.test ) tasks.push( function ( then ) {
         "src/era-modules.js",
         "test/test-modules.js",
         "test/harness-last.js"
+    ] ) )();
+} );
+
+if ( args.staccato ) tasks.push( function ( then ) {
+    Function( readFiles( [
+        "src/era-misc-strmap-avl.js",
+        "src/era-misc.js",
+        "src/era-staccato.js"
     ] ) )();
 } );
 

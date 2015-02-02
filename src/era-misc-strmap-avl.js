@@ -1,5 +1,5 @@
 // era-misc-strmap-avl.js
-// Copyright 2013, 2014 Ross Angle. Released under the MIT License.
+// Copyright 2013-2015 Ross Angle. Released under the MIT License.
 "use strict";
 
 
@@ -10,8 +10,8 @@ StrAvlLeaf_.prototype.has = function ( k ) {
 StrAvlLeaf_.prototype.get = function ( k ) {
     return void 0;
 };
-StrAvlLeaf_.prototype.minusEntry = function ( k ) {
-    return this;
+StrAvlLeaf_.prototype.minusEntry_ = function ( k ) {
+    return { depthDecreased: false, after: this };
 };
 StrAvlLeaf_.prototype.minusLeast_ = function () {
     return null;
@@ -46,22 +46,18 @@ StrAvlBranch_.prototype.get = function ( k ) {
     return this.key_ === k ? this.val_ :
         k < this.key_ ? this.lesser_.get( k ) : this.bigger_.get( k );
 };
-StrAvlBranch_.prototype.minusLeast_ = function () {
-    var lml = this.lesser_.minusLeast_();
-    if ( lml === null )
-        return { key: this.key_, val: this.val_, depthDecresed: true,
-            after: this.bigger_ };
-    if ( !lml.depthDecreased )
-        return { key: lml.key, val: lml.val, depthDecreased: false,
-            after: new StrAvlBranch_( lml.after, this.bigger_,
+StrAvlBranch_.prototype.shrinkLesser_ = function ( lm ) {
+    if ( !lm.depthDecreased )
+        return { depthDecreased: false,
+            after: new StrAvlBranch_( lm.after, this.bigger_,
                 this.key_, this.val_, this.balance_ ) };
     if ( this.balance_ === "lesser" ) {
-        return { key: lml.key, val: lml.val, depthDecreased: false,
-            after: new StrAvlBranch_( lml.after, this.bigger_,
+        return { depthDecreased: false,
+            after: new StrAvlBranch_( lm.after, this.bigger_,
                 this.key_, this.val_, "balanced" ) };
     } else if ( this.balance_ === "balanced" ) {
-        return { key: lml.key, val: lml.val, depthDecreased: false,
-            after: new StrAvlBranch_( lml.after, this.bigger_,
+        return { depthDecreased: false,
+            after: new StrAvlBranch_( lm.after, this.bigger_,
                 this.key_, this.val_, "bigger" ) };
     } else if ( this.balance_ === "bigger" ) {
         var bml = this.bigger_.minusLeast_();
@@ -70,26 +66,21 @@ StrAvlBranch_.prototype.minusLeast_ = function () {
         // TODO: This might do unnecessary comparisons, since we
         // already know the key is the biggest value in this subtree.
         // Stop that.
-        var lmlp = lml.after.plusEntry_( this.key_, this.val_ );
-        if ( !lmlp.depthIncreased )
+        var lmp = lm.after.plusEntry_( this.key_, this.val_ );
+        if ( !lmp.depthIncreased )
             throw new Error();
-        return { key: lml.key, val: lml.val,
-            depthDecreased: bml.depthDecreased,
-            after: new StrAvlBranch_( lmlp.after, bml.after,
+        return { depthDecreased: bml.shrunk.depthDecreased,
+            after: new StrAvlBranch_( lmp.after, bml.shrunk.after,
                 bml.key, bml.val,
-                bml.depthDecreased ? "balanced" : "bigger" ) };
+                bml.shrunk.depthDecreased ? "balanced" : "bigger" ) };
     } else {
         throw new Error();
     }
 };
-StrAvlBranch_.prototype.minusBiggest_ = function () {
-    var bmb = this.bigger_.minusBiggest_();
-    if ( bmb === null )
-        return { key: this.key_, val: this.val_, depthDecresed: true,
-            after: this.lesser_ };
-    if ( !bmb.depthDecreased )
-        return { key: bmb.key, val: bmb.val, depthDecreased: false,
-            after: new StrAvlBranch_( this.lesser_, bmb.after,
+StrAvlBranch_.prototype.shrinkBigger_ = function ( bm ) {
+    if ( !bm.depthDecreased )
+        return { depthDecreased: false,
+            after: new StrAvlBranch_( this.lesser_, bm.after,
                 this.key_, this.val_, this.balance_ ) };
     if ( this.balance_ === "lesser" ) {
         var lmb = this.lesser_.minusBiggest_();
@@ -98,25 +89,81 @@ StrAvlBranch_.prototype.minusBiggest_ = function () {
         // TODO: This might do unnecessary comparisons, since we
         // already know the key is the least value in this subtree.
         // Stop that.
-        var bmbp = bmb.after.plusEntry_( this.key_, this.val_ );
-        if ( !bmbp.depthIncreased )
+        var bmp = bm.after.plusEntry_( this.key_, this.val_ );
+        if ( !bmp.depthIncreased )
             throw new Error();
-        return { key: bmb.key, val: bmb.val,
-            depthDecreased: lmb.depthDecreased,
-            after: new StrAvlBranch_( lmb.after, bmbp.after,
+        return { depthDecreased: lmb.shrunk.depthDecreased,
+            after: new StrAvlBranch_( lmb.shrunk.after, bmp.after,
                 lmb.key, lmb.val,
-                lmb.depthDecreased ? "balanced" : "lesser" ) };
+                lmb.shrunk.depthDecreased ? "balanced" : "lesser" ) };
     } else if ( this.balance_ === "balanced" ) {
-        return { key: bmb.key, val: bmb.val, depthDecreased: false,
-            after: new StrAvlBranch_( this.lesser_, bmb.after,
+        return { depthDecreased: false,
+            after: new StrAvlBranch_( this.lesser_, bm.after,
                 this.key_, this.val_, "lesser" ) };
     } else if ( this.balance_ === "bigger" ) {
-        return { key: bmb.key, val: bmb.val, depthDecreased: false,
-            after: new StrAvlBranch_( this.lesser_, bmb.after,
+        return { depthDecreased: false,
+            after: new StrAvlBranch_( this.lesser_, bm.after,
                 this.key_, this.val_, "balanced" ) };
     } else {
         throw new Error();
     }
+};
+StrAvlBranch_.prototype.minusEntry_ = function ( k ) {
+    if ( this.key_ === k ) {
+        if ( this.balance_ === "lesser" ) {
+            var lmb = this.lesser_.minusBiggest_();
+            if ( lmb === null )
+                throw new Error();
+            return { depthDecreased: lmb.shrunk.depthDecreased,
+                after: new StrAvlBranch_(
+                    lmb.shrunk.after, this.bigger_, lmb.key, lmb.val,
+                    lmb.shrunk.depthDecreased ?
+                        "balanced" : "lesser" ) };
+        } else if ( this.balance_ === "balanced" ) {
+            // When removing the root of a balanced tree, we err
+            // toward having more elements on the lesser side.
+            var bml = this.bigger_.minusLeast_();
+            if ( bml === null )
+                return { depthDecreased: true, after: this.lesser_ };
+            return { depthDecreased: false,
+                after: new StrAvlBranch_(
+                    this.lesser_, bml.shrunk.after, bml.key, bml.val,
+                    bml.shrunk.depthDecreased ?
+                        "lesser" : "balanced" ) };
+        } else if ( this.balance_ === "bigger" ) {
+            var bml = this.bigger_.minusLeast_();
+            if ( bml === null )
+                throw new Error();
+            return { depthDecreased: bml.shrunk.depthDecreased,
+                after: new StrAvlBranch_(
+                    this.lesser_, bml.shrunk.after, bml.key, bml.val,
+                    bml.shrunk.depthDecreased ?
+                        "balanced" : "bigger" ) };
+        } else {
+            throw new Error();
+        }
+    } else if ( k < this.key_ ) {
+        return this.shrinkLesser_( this.lesser_.minusEntry_( k ) );
+    } else {
+        return this.shrinkBigger_( this.bigger_.minusEntry_( k ) );
+    }
+    return this;
+};
+StrAvlBranch_.prototype.minusLeast_ = function () {
+    var lml = this.lesser_.minusLeast_();
+    if ( lml === null )
+        return { key: this.key_, val: this.val_,
+            shrunk: { depthDecreased: true, after: this.bigger_ } };
+    return { key: lml.key, val: lml.val,
+        shrunk: this.shrinkLesser_( lml.shrunk ) };
+};
+StrAvlBranch_.prototype.minusBiggest_ = function () {
+    var bmb = this.bigger_.minusBiggest_();
+    if ( bmb === null )
+        return { key: this.key_, val: this.val_,
+            shrunk: { depthDecreased: true, after: this.lesser_ } };
+    return { key: bmb.key, val: bmb.val,
+        shrunk: this.shrinkBigger_( bmb.shrunk ) };
 };
 StrAvlBranch_.prototype.plusEntry_ = function ( k, v ) {
     if ( this.key_ === k )
@@ -139,10 +186,11 @@ StrAvlBranch_.prototype.plusEntry_ = function ( k, v ) {
             var bp = this.bigger_.plusEntry_( this.key_, this.val_ );
             if ( !bp.depthIncreased )
                 throw new Error();
-            return { depthIncreased: !spmb.depthDecreased,
-                after: new StrAvlBranch_( spmb.after, bp.after,
+            return { depthIncreased: !spmb.shrunk.depthDecreased,
+                after: new StrAvlBranch_( spmb.shrunk.after, bp.after,
                     spmb.key, spmb.val,
-                    spmb.depthDecreased ? "balanced" : "lesser" ) };
+                    spmb.shrunk.depthDecreased ?
+                        "balanced" : "lesser" ) };
         } else if ( this.balance_ === "balanced" ) {
             return { depthIncreased: false,
                 after: new StrAvlBranch_( subPlus.after, this.bigger_,
@@ -178,10 +226,11 @@ StrAvlBranch_.prototype.plusEntry_ = function ( k, v ) {
             var lp = this.lesser_.plusEntry_( this.key_, this.val_ );
             if ( !lp.depthIncreased )
                 throw new Error();
-            return { depthIncreased: !spml.depthDecreased,
-                after: new StrAvlBranch_( lp.after, spml.after,
+            return { depthIncreased: !spml.shrunk.depthDecreased,
+                after: new StrAvlBranch_( lp.after, spml.shrunk.after,
                     spml.key, spml.val,
-                    spml.depthDecreased ? "balanced" : "bigger" ) };
+                    spml.shrunk.depthDecreased ?
+                        "balanced" : "bigger" ) };
         } else {
             throw new Error();
         }
@@ -214,7 +263,7 @@ StrMap.prototype.get = function ( k ) {
     return this.contents_.get( k );
 };
 StrMap.prototype.del = function ( k ) {
-    this.contents_ = this.contents_.minusEntry( k );
+    this.contents_ = this.contents_.minusEntry_( k ).after;
     return this;
 };
 StrMap.prototype.set = function ( k, v ) {
@@ -262,6 +311,9 @@ StrMap.prototype.plusEntry = function ( k, v ) {
     return new StrMap().init_(
         this.contents_.plusEntry_( k, v ).after );
 };
+StrMap.prototype.plusObj = function ( other ) {
+    return this.copy().setObj( other );
+};
 StrMap.prototype.plus = function ( other ) {
     return this.copy().setAll( other );
 };
@@ -280,7 +332,8 @@ StrMap.prototype.plusArrTruth = function ( arr ) {
     return result;
 };
 StrMap.prototype.minusEntry = function ( k ) {
-    return new StrMap().init_( this.contents_.minusEntry( k ) );
+    return new StrMap().init_(
+        this.contents_.minusEntry_( k ).after );
 };
 StrMap.prototype.minus = function ( other ) {
     return this.copy().delAll( other );

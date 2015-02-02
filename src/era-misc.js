@@ -1,5 +1,5 @@
 // era-misc.js
-// Copyright 2013, 2014 Ross Angle. Released under the MIT License.
+// Copyright 2013-2015 Ross Angle. Released under the MIT License.
 "use strict";
 
 
@@ -31,6 +31,12 @@ function arrMappend( arr, func ) {
             result.push( entries[ j ] );
     }
     return result;
+}
+// NOTE: This body takes its args as ( v, k ).
+function arrKeep( arr, func ) {
+    return arrMappend( arr, function ( v, k ) {
+        return func( v, k ) ? [ v ] : [];
+    } );
 }
 function hasOwn( obj, k ) {
     return {}.hasOwnProperty.call( obj, k );
@@ -661,4 +667,14 @@ function bigIntFromStringInRadix( base, string ) {
     if ( sign === -1 )
         result.zapNeg();
     return result;
+}
+
+function jsListFromArr( arr ) {
+    var result = null;
+    for ( var i = arr.length - 1; 0 <= i; i-- )
+        result = { first: arr[ i ], rest: result };
+    return result;
+}
+function jsList( var_args ) {
+    return jsListFromArr( arguments );
 }

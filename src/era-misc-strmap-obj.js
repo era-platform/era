@@ -1,5 +1,5 @@
 // era-misc-strmap-obj.js
-// Copyright 2013, 2014 Ross Angle. Released under the MIT License.
+// Copyright 2013-2015 Ross Angle. Released under the MIT License.
 "use strict";
 
 // NOTE: Right now this file is completely unused, and
@@ -70,6 +70,9 @@ StrMap.prototype.add = function ( k ) {
 };
 StrMap.prototype.plusEntry = function ( k, v ) {
     return this.copy().set( k, v );
+};
+StrMap.prototype.plusObj = function ( other ) {
+    return this.copy().setObj( other );
 };
 StrMap.prototype.plus = function ( other ) {
     return this.copy().setAll( other );
