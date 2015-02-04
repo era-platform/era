@@ -1,11 +1,11 @@
 // test-reader.js (part of Era)
-// Copyright 2013 Ross Angle. Released under the MIT License.
+// Copyright 2013-2015 Ross Angle. Released under the MIT License.
 "use strict";
 
 
 addNaiveIsoUnitTest( function ( then ) {
     reader( {
-        stream: stringStream(
+        stream: stringStream( defer,
             " (woo;comment\n b (c( woo( ) string) / x//)/())" ),
         readerMacros: readerMacros,
         heedsCommandEnds: true,
@@ -24,7 +24,7 @@ addNaiveIsoUnitTest( function ( then ) {
         then: function ( result ) {
             then( result, { ok: true, val:
                 [ "woo", "b",
-                    [ "c( woo( ) string)" , [ "x", [ [] ] ] ],
+                    [ "c( woo( ) string)", [ "x", [ [] ] ] ],
                     [ [] ] ]
             } );
         }

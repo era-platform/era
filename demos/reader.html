@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <!--
 reader.html (part of Era)
-Copyright 2013 Ross Angle. Released under the MIT License.
+Copyright 2013-2015 Ross Angle. Released under the MIT License.
 -->
 <title>Era reader demo</title>
 <style type="text/css">
@@ -67,69 +67,20 @@ matched.
 <script type="text/javascript" src="../src/era-reader.js"></script>
 <script type="text/javascript">"use strict";
 
-// Turns out the reader is very slow right now because it makes
-// frequent use of setTimeout() for control flow. This redefinition of
-// `defer` is hackish, but it definitely fixes the speed issue.
-var deferTrampolineEvents = [];
-defer = function ( func ) {
-    deferTrampolineEvents.push( func );
-};
-function runDeferTrampoline() {
-    while ( deferTrampolineEvents.length !== 0 )
-        deferTrampolineEvents.pop()();
-};
-
 window.onload = function () {
-    function read( stream, onEnd, onFailure, onSuccess ) {
-        reader( {
-            stream: stream,
-            readerMacros: readerMacros,
-            heedsCommandEnds: true,
-            infixLevel: 0,
-            infixState: { type: "empty" },
-            end: function ( $ ) {
-                if ( $.infixState.type === "ready" )
-                    $.then( { ok: true, val: $.infixState.val } );
-                else
-                    onEnd();
-                runDeferTrampoline();
-            },
-            unrecognized: function ( $ ) {
-                $.then( { ok: false,
-                    msg: "Encountered an unrecognized character" } );
-                runDeferTrampoline();
-            },
-            then: function ( result ) {
-                if ( result.ok )
-                    onSuccess( result.val );
-                else
-                    onFailure( result.msg );
-            }
-        } );
-        runDeferTrampoline();
+    function showResults() {
+        document.getElementById( "result" ).value = arrMap(
+            readAll( document.getElementById( "code" ).value ),
+            function ( result ) {
+            
+            if ( result.ok )
+                return JSON.stringify( result.val, null, "    " );
+            else
+                return "Error: " + result.msg;
+        } ).join( "\n" );
     }
-    function readAll() {
-        var stream = stringStream(
-            document.getElementById( "code" ).value );
-        readNext( [] );
-        function readNext( resultsSoFar ) {
-            read( stream, function () {  // onEnd
-                show( resultsSoFar );
-            }, function ( message ) {  // onFailure
-                show( resultsSoFar.concat(
-                    [ "Error: " + message ] ) );
-            }, function ( result ) {  // onSuccess
-                readNext( resultsSoFar.concat(
-                    [ JSON.stringify( result, null, "    " ) ] ) );
-            } );
-        }
-        function show( results ) {
-            document.getElementById( "result" ).value =
-                results.join( "\n" );
-        }
-    }
-    document.getElementById( "read" ).onclick = readAll;
-    readAll();
+    document.getElementById( "read" ).onclick = showResults;
+    showResults();
 };
 </script>
 </body>

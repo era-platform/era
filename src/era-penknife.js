@@ -1,5 +1,5 @@
 // era-penknife.js
-// Copyright 2013, 2014 Ross Angle. Released under the MIT License.
+// Copyright 2013-2015 Ross Angle. Released under the MIT License.
 "use strict";
 
 
@@ -77,15 +77,11 @@
 //   exactly what it's designed to support.
 // - The PkRuntime global environment uses mutation. (TODO: Make
 //   modified copies instead of mutating the original.)
-// - The reader in era-reader.js uses mutation and deferring side
-//   effects, and pkReadAll() in era-penknife-to-js.js works around
-//   that using mutation of its own.
 // - The trampoline in syncYokeCall(), conveniences_syncYoke(), and
 //   runSyncYoke() uses mutation.
-// - A few local loops use very simple mutation. (The reader and
-//   trampoline deserve special attention because they make
-//   side-effectful closures and pass them off to other parts of the
-//   code.)
+// - A few local loops use very simple mutation. (The trampoline
+//   deserves special attention because it makes side-effectful
+//   closures and passes them off to other parts of the code.)
 // - In era-avl.js, makeQuickLazy() uses mutation to make call-by-need
 //   constant-time thunks for use with finger trees.
 

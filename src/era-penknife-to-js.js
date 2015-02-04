@@ -1309,68 +1309,6 @@ function compiledLinkedListToString( yoke, compiled, then ) {
 
 
 
-// Turns out the reader is very slow right now because it makes
-// frequent use of setTimeout() for control flow. This redefinition of
-// `defer` is hackish, but it definitely fixes the speed issue.
-// TODO: Fix this in a better way.
-var deferTrampolineEvents = [];
-defer = function ( func ) {
-    deferTrampolineEvents.push( func );
-};
-function runDeferTrampoline() {
-    while ( deferTrampolineEvents.length !== 0 )
-        deferTrampolineEvents.pop()();
-};
-
-function pkReadAll( yoke, string, then ) {
-    function read( stream, onEnd, onFailure, onSuccess ) {
-        // TODO: Integrate yoke-passing into the reader so we don't
-        // have to run for a non-constant amount of time like this.
-        var readResult;
-        reader( {
-            stream: stream,
-            readerMacros: readerMacros,
-            heedsCommandEnds: true,
-            infixLevel: 0,
-            infixState: { type: "empty" },
-            end: function ( $ ) {
-                if ( $.infixState.type === "ready" )
-                    $.then( { ok: true, val: $.infixState.val } );
-                else
-                    readResult = onEnd();
-                runDeferTrampoline();
-            },
-            unrecognized: function ( $ ) {
-                $.then( { ok: false,
-                    msg: "Encountered an unrecognized character" } );
-                runDeferTrampoline();
-            },
-            then: function ( result ) {
-                if ( result.ok )
-                    readResult = onSuccess( result.val );
-                else
-                    readResult = onFailure( result.msg );
-            }
-        } );
-        runDeferTrampoline();
-        return readResult;
-    }
-    var stream = stringStream( string );
-    return readNext( [] );
-    function readNext( resultsSoFar ) {
-        return read( stream, function () {  // onEnd
-            return then( yoke, resultsSoFar );
-        }, function ( message ) {  // onFailure
-            return then( yoke,
-                resultsSoFar.concat(
-                    [ { ok: false, msg: message } ] ) );
-        }, function ( result ) {  // onSuccess
-            return readNext( resultsSoFar.concat(
-                [ { ok: true, val: result } ] ) );
-        } );
-    }
-}
-
 function processCommands( yoke, commands, processCommand, then ) {
     return go( yoke, commands, null );
     function go( yoke, commands, revDisplays ) {
@@ -1469,9 +1407,8 @@ function processCommands( yoke, commands, processCommand, then ) {
 }
 
 function compileAndDefineFromString( yoke, pkCodeString, then ) {
-    return pkReadAll( yoke, pkCodeString,
-        function ( yoke, tryExprs ) {
-        
+    var tryExprs = readAll( pkCodeString );
+    // TODO: Reindent this.
         return processCommands( yoke, jsListFromArr( tryExprs ),
             function ( yoke, tryExpr, reportError, then ) {
             
@@ -1522,7 +1459,6 @@ function compileAndDefineFromString( yoke, pkCodeString, then ) {
                 displaysArr.push( d.first );
             return then( yoke, displaysArr );
         } );
-    } );
 }
 
 function compileTopLevel( yoke, essence, then ) {

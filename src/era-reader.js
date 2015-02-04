@@ -1,5 +1,5 @@
 // era-reader.js
-// Copyright 2013 Ross Angle. Released under the MIT License.
+// Copyright 2013-2015 Ross Angle. Released under the MIT License.
 "use strict";
 
 // This is a reader for Era's own dialect of s-expressions.
@@ -737,7 +737,7 @@ stringReaderMacros.set( "\\", function ( $ ) {
 } );
 
 
-function stringStream( string ) {
+function stringStream( defer, string ) {
     if ( !isValidUnicode( string ) )
         throw new Error();
     var i = 0, n = string.length;
@@ -761,4 +761,68 @@ function stringStream( string ) {
         readOrPeek( !!"isReading", then );
     };
     return stream;
+}
+
+function makeDeferTrampoline() {
+    var deferTrampolineEvents = [];
+    
+    var result = {};
+    result.defer = function ( func ) {
+        deferTrampolineEvents.push( func );
+    };
+    result.runDeferTrampoline = function () {
+        while ( deferTrampolineEvents.length !== 0 )
+            deferTrampolineEvents.pop()();
+    };
+    return result;
+}
+
+function readAll( string ) {
+    
+    var deferTrampoline = makeDeferTrampoline();
+    var stream = stringStream( deferTrampoline.defer, string );
+    
+    function read( stream, onEnd, onFailure, onSuccess ) {
+        var readResult;
+        reader( {
+            stream: stream,
+            readerMacros: readerMacros,
+            heedsCommandEnds: true,
+            infixLevel: 0,
+            infixState: { type: "empty" },
+            end: function ( $ ) {
+                if ( $.infixState.type === "ready" )
+                    $.then( { ok: true, val: $.infixState.val } );
+                else
+                    readResult = onEnd();
+                deferTrampoline.runDeferTrampoline();
+            },
+            unrecognized: function ( $ ) {
+                $.then( { ok: false,
+                    msg: "Encountered an unrecognized character" } );
+                deferTrampoline.runDeferTrampoline();
+            },
+            then: function ( result ) {
+                if ( result.ok )
+                    readResult = onSuccess( result.val );
+                else
+                    readResult = onFailure( result.msg );
+            }
+        } );
+        deferTrampoline.runDeferTrampoline();
+        return readResult;
+    }
+    
+    return readNext( [] );
+    function readNext( resultsSoFar ) {
+        return read( stream, function () {  // onEnd
+            return resultsSoFar;
+        }, function ( message ) {  // onFailure
+            return resultsSoFar.concat(
+                [ { ok: false, msg: message } ] );
+        }, function ( result ) {  // onSuccess
+            return readNext( resultsSoFar.concat(
+                [ { ok: true, val: result } ] ) );
+        } );
+    }
 }
