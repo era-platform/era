@@ -1052,14 +1052,41 @@ function desugarDefExpr( expr ) {
     } );
 }
 
+function staccatoPretty( expr ) {
+    if ( expr === null ) {
+        return "()";
+    } else if ( isPrimString( expr ) ) {
+        return /^[-a-z]*$/i.test( expr ) ? expr :
+            JSON.stringify( expr );
+    } else if ( likeJsCons( expr ) ) {
+        if ( expr.rest === null ) {
+            if ( expr.first === null || likeJsCons( expr.first ) ) {
+                return "(/" +
+                    staccatoPretty( expr.first ).substring( 1 );
+            } else {
+                return "(" + staccatoPretty( expr.first ) + ")";
+            }
+        } else if ( likeJsCons( expr.rest ) ) {
+            return "(" + staccatoPretty( expr.first ) + " " +
+                staccatoPretty( expr.rest ).substring( 1 );
+        } else {
+            return "(" + staccatoPretty( expr.first ) + " . " +
+                staccatoPretty( expr.rest ) + ")";
+        }
+    } else {
+        throw new Error();
+    }
+}
+
 // TODO: Move this testing code somewhere better.
 // TODO: Try more syntaxes. Especially try something which uses
 // (tail-to-temp ...) and (fn ...).
-console.log( JSON.stringify( desugarDefExpr(
+console.log( arrMap( desugarDefExpr(
     jsList( "def", "rev-onto",
-        jsList( "var-list",
-            jsList( "var-list-cons", "target",
-                jsList( "var-list-nil" ) ) ),
+        jsList( "var-list-omitted" ),
+//        jsList( "var-list",
+//            jsList( "var-list-cons", "target",
+//                jsList( "var-list-nil" ) ) ),
         "source",
         jsList( "if-fn-frame", "cons",
             jsList( "env-pattern-cons", "car", "car",
@@ -1078,4 +1105,6 @@ console.log( JSON.stringify( desugarDefExpr(
                         jsList( "env-nil" ) ) ),
                 jsList( "temp-to-tail", jsList( "local", "cdr" ) ) ),
             jsList( "temp-to-tail", jsList( "local", "target" ) ) ) )
-) ) );
+), function ( def ) {
+    return staccatoPretty( def );
+} ) );
