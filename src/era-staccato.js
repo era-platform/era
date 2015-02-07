@@ -130,8 +130,6 @@ function run( stack, rules ) {
 //   (let-def def get-expr)
 //   (let get-expr get-expr)
 //
-//   (temp-to-tail get-expr)
-//
 //   // This calls the first given get-expr's result as a function
 //   // closure with the second given get-expr's result as its
 //   // argument.
@@ -787,22 +785,6 @@ addSyntax( "let", "getExpr", "getExpr getExpr", {
         return args[ 1 ].expr;
     }
 } );
-addSyntax( "temp-to-tail", "getExpr", "getExpr", {
-    _map: function ( args, writer ) {
-        return writer.redecorate( jsList( "temp-to-tail",
-            writer.consume( args.getExpr ) ) );
-    },
-    _mapWithFreeVarsAfter: defaults.mapWithFreeVarsAfter,
-    
-    getFreeVars: defaults.getFreeVars,
-    
-    desugarVarLists: defaults.desugarVarLists,
-    hasProperScope: defaults.hasProperScope,
-    desugarFn: defaults.desugarFn,
-    desugarSave: defaults.desugarSave,
-    desugarDef: defaults.desugarDef,
-    desugarLet: defaults.desugarLet
-} );
 addSyntax( "call", "getExpr", "getExpr getExpr", {
     // INTERESTING
     
@@ -1238,10 +1220,6 @@ function stcv( va ) {
     return jsList( "local", va );
 }
 
-function stcvTail( va ) {
-    return jsList( "temp-to-tail", stcv( va ) );
-}
-
 // TODO: See if we'll use this.
 function stcIfFrame( expr, frameName, var_args ) {
     var n = arguments.length;
@@ -1328,22 +1306,22 @@ logDefs(
         stcCons.cond( "car", "cdr", stcv( "source" ),
             stcCallFrame( "rev-onto", "target",
                 stcCons.make( stcv( "car" ), stcv( "target" ) ),
-                stcvTail( "cdr" ) ),
-            stcvTail( "target" ) ) ) );
+                stcv( "cdr" ) ),
+            stcv( "target" ) ) ) );
 
 logDefs(
     stcYesDef( "rev", "source",
         stcCallFrame( "rev-onto", "target", stcFrame( "nil" ),
-            stcvTail( "source" ) ) ) );
+            stcv( "source" ) ) ) );
 
 logDefs(
     stcYesDef( "append", "past", "rest",
         stcCallFrame( "rev-onto", "target", stcv( "rest" ),
-            stcCallFrame( "rev", stcvTail( "past" ) ) ) ) );
+            stcCallFrame( "rev", stcv( "past" ) ) ) ) );
 
 logDefs(
     stcYesDef( "pass-to", "arg", "func",
-        jsList( "call", stcv( "func" ), stcvTail( "arg" ) ) ) );
+        jsList( "call", stcv( "func" ), stcv( "arg" ) ) ) );
 
 logDefs(
     stcYesDef( "foldl-iter", "list", "combiner", "init",
@@ -1353,5 +1331,5 @@ logDefs(
                 "combiner", stcv( "combiner" ),
                 stcCallFrame( "pass-to", "arg", stcv( "car" ),
                     jsList( "call", stcv( "combiner" ),
-                        stcvTail( "init" ) ) ) ),
-            stcvTail( "init" ) ) ) );
+                        stcv( "init" ) ) ) ),
+            stcv( "init" ) ) ) );
