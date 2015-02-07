@@ -1078,33 +1078,190 @@ function staccatoPretty( expr ) {
     }
 }
 
+function stcListMacro( cons, nil, args ) {
+    var result = jsList( nil );
+    for ( var i = args.length - 1; 0 <= i; i-- ) {
+        result = jsList( cons, args[ i ], result );
+    }
+    return result;
+}
+
+function stcEntriesMacro( entry, nil, args ) {
+    var n = args.length;
+    if ( n % 2 !== 0 )
+        throw new Error();
+    var result = jsList( nil );
+    for ( var i = n - 2; 0 <= i; i -= 2 ) {
+        result = jsList( entry, args[ i ], args[ i + 1 ], result );
+    }
+    return result;
+}
+
+function stcEntriesPairMacro( entry, nil, first, second ) {
+    var n = first.length;
+    if ( n !== second.length )
+        throw new Error();
+    var result = jsList( nil );
+    for ( var i = n - 1; 0 <= i; i-- ) {
+        result = jsList( entry, first[ i ], second[ i ], result );
+    }
+    return result;
+}
+
+function stcEnvArr( args ) {
+    return stcEntriesMacro( "env-cons", "env-nil", args );
+}
+
+function stcEnv( var_args ) {
+    return stcEnvArr( arguments );
+}
+
+function stcEnvPatArr( args ) {
+    return stcEntriesMacro(
+        "env-pattern-cons", "env-pattern-nil", args );
+}
+
+function stcEnvPat( var_args ) {
+    return stcEnvPatArr( arguments );
+}
+
+function stcFrame( frameName, var_args ) {
+    return jsList( "fn-frame", frameName,
+        stcEnvArr( [].slice.call( arguments, 1 ) ) );
+}
+
+function stcYesVarsArr( args ) {
+    return jsList( "var-list",
+        stcListMacro( "var-list-cons", "var-list-nil", args ) );
+}
+
+function stcYesVars( var_args ) {
+    return stcYesVarsArr( arguments );
+}
+
+// TODO: See if we'll use this.
+function stcNoVars() {
+    return jsList( "var-list-omitted" );
+}
+
+function stcv( va ) {
+    return jsList( "local", va );
+}
+
+function stcvTail( va ) {
+    return jsList( "temp-to-tail", stcv( va ) );
+}
+
+// TODO: See if we'll use this.
+function stcIfFrame( expr, frameName, var_args ) {
+    var n = arguments.length;
+    if ( n < 4 )
+        throw new Error();
+    var entries = [].slice.call( arguments, 2, n - 2 );
+    var then = arguments[ n - 2 ];
+    var els = arguments[ n - 1 ];
+    return jsList( "if-fn-frame", frameName, stcEnvPatArr( entries ),
+        expr,
+        then,
+        els );
+}
+
+function stcCallFrame( frameName, var_args ) {
+    var n = arguments.length;
+    if ( n < 2 )
+        throw new Error();
+    var entries = [].slice.call( arguments, 1, n - 1 );
+    var input = arguments[ n - 1 ];
+    return jsList( "call",
+        jsList( "fn-frame", frameName, stcEnvArr( entries ) ),
+        input );
+}
+
+function stcYesDef( frameName, var_args ) {
+    var n = arguments.length;
+    if ( n < 3 )
+        throw new Error();
+    var frameVars = [].slice.call( arguments, 1, n - 2 );
+    var input = arguments[ n - 2 ];
+    var body = arguments[ n - 1 ];
+    return jsList( "def", frameName,
+        stcYesVarsArr( frameVars ),
+        input,
+        body );
+}
+
+function stcType( frameName, var_args ) {
+    var frameVars = [].slice.call( arguments, 1 );
+    var n = frameVars.length;
+    
+    var result = {};
+    result.make = function ( var_args ) {
+        if ( arguments.length !== n )
+            throw new Error();
+        return jsList( "fn-frame", frameName,
+            stcEntriesPairMacro(
+                "env-cons", "env-nil", frameVars, arguments ) );
+    };
+    result.cond = function ( var_args ) {
+        if ( arguments.length !== n + 3 )
+            throw new Error();
+        var localVars = [].slice.call( arguments, 0, n );
+        var expr = arguments[ n ];
+        var then = arguments[ n + 1 ];
+        var els = arguments[ n + 2 ];
+        return jsList( "if-fn-frame", frameName,
+            stcEntriesPairMacro(
+                "env-pattern-cons", "env-pattern-nil",
+                frameVars, localVars ),
+            expr,
+            then,
+            els );
+    };
+    return result;
+}
+
+
 // TODO: Move this testing code somewhere better.
 // TODO: Try more syntaxes. Especially try something which uses
 // (tail-to-temp ...) and (fn ...).
-console.log( arrMap( desugarDefExpr(
-    jsList( "def", "rev-onto",
-        jsList( "var-list-omitted" ),
-//        jsList( "var-list",
-//            jsList( "var-list-cons", "target",
-//                jsList( "var-list-nil" ) ) ),
-        "source",
-        jsList( "if-fn-frame", "cons",
-            jsList( "env-pattern-cons", "car", "car",
-                jsList( "env-pattern-cons", "cdr", "cdr",
-                    jsList( "env-pattern-nil" ) ) ),
-            jsList( "local", "source" ),
-            jsList( "call",
-                jsList( "fn-frame", "rev-onto",
-                    jsList( "env-cons", "target",
-                        jsList( "fn-frame", "cons",
-                            jsList( "env-cons", "car",
-                                jsList( "local", "car" ),
-                                jsList( "env-cons", "cdr",
-                                    jsList( "local", "target" ),
-                                    jsList( "env-nil" ) ) ) ),
-                        jsList( "env-nil" ) ) ),
-                jsList( "temp-to-tail", jsList( "local", "cdr" ) ) ),
-            jsList( "temp-to-tail", jsList( "local", "target" ) ) ) )
-), function ( def ) {
-    return staccatoPretty( def );
-} ) );
+
+function logDefs( defExpr ) {
+    console.log( arrMap( desugarDefExpr( defExpr ), function ( def ) {
+        return staccatoPretty( def );
+    } ) );
+}
+
+var stcCons = stcType( "cons", "car", "cdr" );
+
+logDefs(
+    stcYesDef( "rev-onto", "target", "source",
+        stcCons.cond( "car", "cdr", stcv( "source" ),
+            stcCallFrame( "rev-onto", "target",
+                stcCons.make( stcv( "car" ), stcv( "target" ) ),
+                stcvTail( "cdr" ) ),
+            stcvTail( "target" ) ) ) );
+
+logDefs(
+    stcYesDef( "def", "rev", "source",
+        stcCallFrame( "rev-onto", "target", stcFrame( "nil" ),
+            stcvTail( "source" ) ) ) );
+
+logDefs(
+    stcYesDef( "def", "append", "past", "rest",
+        stcCallFrame( "rev-onto", "target", stcv( "rest" ),
+            stcCallFrame( "rev", stcvTail( "past" ) ) ) ) );
+
+logDefs(
+    stcYesDef( "def", "pass-to", "arg", "func",
+        jsList( "call", stcv( "func" ), stcvTail( "arg" ) ) ) );
+
+logDefs(
+    stcYesDef( "def", "foldl-iter", "list", "combiner", "init",
+        stcCons.cond( "car", "cdr", stcv( "list" ),
+            stcCallFrame( "foldl-iter",
+                "list", stcv( "cdr" ),
+                "combiner", stcv( "combiner" ),
+                stcCallFrame( "pass-to", "arg", stcv( "car" ),
+                    jsList( "call", stcv( "combiner" ),
+                        stcvTail( "init" ) ) ) ),
+            stcvTail( "init" ) ) ) );

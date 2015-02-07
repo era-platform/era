@@ -3,6 +3,101 @@
 "use strict";
 
 
+function strAvlRotateLesserToBigger( lesser, bigger, k, v, balance ) {
+    // The depth of `bigger` should be exactly one less than `balance`
+    // would suggest. Everything in `lesser` should be lesser than
+    // `k`, and everything in `bigger` should be bigger.
+    
+    // The result's `depthDecreased` is stated relative to a supposed
+    // original tree where `bigger` went one level deeper and
+    // `balance` was accurate.
+    
+    if ( balance === "lesser" ) {
+        // The "lmb" stands for "lesser minusBiggest_".
+        var lmb = { key: k, val: v,
+            shrunk: { depthDecreased: false, after: lesser } };
+        
+        // The "bp" stands for "bigger plusEntry_".
+        var bp = { depthIncreased: false, after: bigger };
+        
+        while ( !(false
+            || lmb.shrunk.depthDecreased
+            || bp.depthIncreased
+        ) ) {
+            
+            // TODO: This might do unnecessary comparisons, since we
+            // already know the key is the least value in this
+            // subtree. Stop that.
+            bp = bp.after.plusEntry_( lmb.key, lmb.val );
+            
+            lmb = lmb.shrunk.after.minusBiggest_();
+            if ( lmb === null )
+                throw new Error();
+        }
+        
+        return { depthDecreased: lmb.shrunk.depthDecreased,
+            after: new StrAvlBranch_( lmb.shrunk.after, bp.after,
+                lmb.key, lmb.val,
+                lmb.shrunk.depthDecreased && bp.depthIncreased ?
+                    "balanced" : "lesser" ) };
+    } else if ( balance === "balanced" ) {
+        return { depthDecreased: false, after:
+            new StrAvlBranch_( lesser, bigger, k, v, "lesser" ) };
+    } else if ( balance === "bigger" ) {
+        return { depthDecreased: true, after:
+            new StrAvlBranch_( lesser, bigger, k, v, "balanced" ) };
+    } else {
+        throw new Error();
+    }
+}
+function strAvlRotateBiggerToLesser( lesser, bigger, k, v, balance ) {
+    // The depth of `lesser` should be exactly one less than `balance`
+    // would suggest. Everything in `lesser` should be lesser than
+    // `k`, and everything in `bigger` should be bigger.
+    
+    // The result's `depthDecreased` is stated relative to a supposed
+    // original tree where `lesser` went one level deeper and
+    // `balance` was accurate.
+    
+    if ( balance === "lesser" ) {
+        return { depthDecreased: true, after:
+            new StrAvlBranch_( lesser, bigger, k, v, "balanced" ) };
+    } else if ( balance === "balanced" ) {
+        return { depthDecreased: false, after:
+            new StrAvlBranch_( lesser, bigger, k, v, "bigger" ) };
+    } else if ( balance === "bigger" ) {
+        // The "bml" stands for "bigger minusLeast_".
+        var bml = { key: k, val: v,
+            shrunk: { depthDecreased: false, after: bigger } };
+        
+        // The "lp" stands for "lesser plusEntry_".
+        var lp = { depthIncreased: false, after: lesser };
+        
+        while ( !(false
+            || bml.shrunk.depthDecreased
+            || lp.depthIncreased
+        ) ) {
+            
+            // TODO: This might do unnecessary comparisons, since we
+            // already know the key is the least value in this
+            // subtree. Stop that.
+            lp = lp.after.plusEntry_( bml.key, bml.val );
+            
+            bml = bml.shrunk.after.minusLeast_();
+            if ( bml === null )
+                throw new Error();
+        }
+        
+        return { depthDecreased: bml.shrunk.depthDecreased,
+            after: new StrAvlBranch_( lp.after, bml.shrunk.after,
+                bml.key, bml.val,
+                bml.shrunk.depthDecreased && lp.depthIncreased ?
+                    "balanced" : "bigger" ) };
+    } else {
+        throw new Error();
+    }
+}
+
 function StrAvlLeaf_() {}
 StrAvlLeaf_.prototype.has = function ( k ) {
     return false;
@@ -51,62 +146,16 @@ StrAvlBranch_.prototype.shrinkLesser_ = function ( lm ) {
         return { depthDecreased: false,
             after: new StrAvlBranch_( lm.after, this.bigger_,
                 this.key_, this.val_, this.balance_ ) };
-    if ( this.balance_ === "lesser" ) {
-        return { depthDecreased: false,
-            after: new StrAvlBranch_( lm.after, this.bigger_,
-                this.key_, this.val_, "balanced" ) };
-    } else if ( this.balance_ === "balanced" ) {
-        return { depthDecreased: false,
-            after: new StrAvlBranch_( lm.after, this.bigger_,
-                this.key_, this.val_, "bigger" ) };
-    } else if ( this.balance_ === "bigger" ) {
-        var bml = this.bigger_.minusLeast_();
-        if ( bml === null )
-            throw new Error();
-        // TODO: This might do unnecessary comparisons, since we
-        // already know the key is the biggest value in this subtree.
-        // Stop that.
-        var lmp = lm.after.plusEntry_( this.key_, this.val_ );
-        if ( !lmp.depthIncreased )
-            throw new Error();
-        return { depthDecreased: bml.shrunk.depthDecreased,
-            after: new StrAvlBranch_( lmp.after, bml.shrunk.after,
-                bml.key, bml.val,
-                bml.shrunk.depthDecreased ? "balanced" : "bigger" ) };
-    } else {
-        throw new Error();
-    }
+    return strAvlRotateBiggerToLesser(
+        lm.after, this.bigger_, this.key_, this.val_, this.balance_ );
 };
 StrAvlBranch_.prototype.shrinkBigger_ = function ( bm ) {
     if ( !bm.depthDecreased )
         return { depthDecreased: false,
             after: new StrAvlBranch_( this.lesser_, bm.after,
                 this.key_, this.val_, this.balance_ ) };
-    if ( this.balance_ === "lesser" ) {
-        var lmb = this.lesser_.minusBiggest_();
-        if ( lmb === null )
-            throw new Error();
-        // TODO: This might do unnecessary comparisons, since we
-        // already know the key is the least value in this subtree.
-        // Stop that.
-        var bmp = bm.after.plusEntry_( this.key_, this.val_ );
-        if ( !bmp.depthIncreased )
-            throw new Error();
-        return { depthDecreased: lmb.shrunk.depthDecreased,
-            after: new StrAvlBranch_( lmb.shrunk.after, bmp.after,
-                lmb.key, lmb.val,
-                lmb.shrunk.depthDecreased ? "balanced" : "lesser" ) };
-    } else if ( this.balance_ === "balanced" ) {
-        return { depthDecreased: false,
-            after: new StrAvlBranch_( this.lesser_, bm.after,
-                this.key_, this.val_, "lesser" ) };
-    } else if ( this.balance_ === "bigger" ) {
-        return { depthDecreased: false,
-            after: new StrAvlBranch_( this.lesser_, bm.after,
-                this.key_, this.val_, "balanced" ) };
-    } else {
-        throw new Error();
-    }
+    return strAvlRotateLesserToBigger(
+        this.lesser_, bm.after, this.key_, this.val_, this.balance_ );
 };
 StrAvlBranch_.prototype.minusEntry_ = function ( k ) {
     if ( this.key_ === k ) {
@@ -176,64 +225,22 @@ StrAvlBranch_.prototype.plusEntry_ = function ( k, v ) {
             return { depthIncreased: false,
                 after: new StrAvlBranch_( subPlus.after, this.bigger_,
                     this.key_, this.val_, this.balance_ ) };
-        if ( this.balance_ === "lesser" ) {
-            var spmb = subPlus.after.minusBiggest_();
-            if ( spmb === null )
-                throw new Error();
-            // TODO: This might do unnecessary comparisons, since we
-            // already know the key is the least value in this
-            // subtree. Stop that.
-            var bp = this.bigger_.plusEntry_( this.key_, this.val_ );
-            if ( !bp.depthIncreased )
-                throw new Error();
-            return { depthIncreased: !spmb.shrunk.depthDecreased,
-                after: new StrAvlBranch_( spmb.shrunk.after, bp.after,
-                    spmb.key, spmb.val,
-                    spmb.shrunk.depthDecreased ?
-                        "balanced" : "lesser" ) };
-        } else if ( this.balance_ === "balanced" ) {
-            return { depthIncreased: false,
-                after: new StrAvlBranch_( subPlus.after, this.bigger_,
-                    this.key_, this.val_, "lesser" ) };
-        } else if ( this.balance_ === "bigger" ) {
-            return { depthIncreased: false,
-                after: new StrAvlBranch_( subPlus.after, this.bigger_,
-                    this.key_, this.val_, "balanced" ) };
-        } else {
-            throw new Error();
-        }
+        var rotated = strAvlRotateLesserToBigger(
+            subPlus.after, this.bigger_,
+            this.key_, this.val_, this.balance_ );
+        return { depthIncreased: !rotated.depthDecreased,
+            after: rotated.after };
     } else {
         var subPlus = this.bigger_.plusEntry_( k, v );
         if ( !subPlus.depthIncreased )
             return { depthIncreased: false,
                 after: new StrAvlBranch_( this.lesser_, subPlus.after,
                     this.key_, this.val_, this.balance_ ) };
-        if ( this.balance_ === "lesser" ) {
-            return { depthIncreased: false,
-                after: new StrAvlBranch_( this.lesser_, subPlus.after,
-                    this.key_, this.val_, "balanced" ) };
-        } else if ( this.balance_ === "balanced" ) {
-            return { depthIncreased: false,
-                after: new StrAvlBranch_( this.lesser_, subPlus.after,
-                    this.key_, this.val_, "bigger" ) };
-        } else if ( this.balance_ === "bigger" ) {
-            var spml = subPlus.after.minusLeast_();
-            if ( spml === null )
-                throw new Error();
-            // TODO: This might do unnecessary comparisons, since we
-            // already know the key is the biggest value in this
-            // subtree. Stop that.
-            var lp = this.lesser_.plusEntry_( this.key_, this.val_ );
-            if ( !lp.depthIncreased )
-                throw new Error();
-            return { depthIncreased: !spml.shrunk.depthDecreased,
-                after: new StrAvlBranch_( lp.after, spml.shrunk.after,
-                    spml.key, spml.val,
-                    spml.shrunk.depthDecreased ?
-                        "balanced" : "bigger" ) };
-        } else {
-            throw new Error();
-        }
+        var rotated = strAvlRotateBiggerToLesser(
+            this.lesser_, subPlus.after,
+            this.key_, this.val_, this.balance_ );
+        return { depthIncreased: !rotated.depthDecreased,
+            after: rotated.after };
     }
 };
 // NOTE: This body takes its args as ( v, k ).
