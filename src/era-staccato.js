@@ -30,7 +30,7 @@
 // multithreading environment; they won't cause long pauses. (To make
 // this bound meaningful, most Staccato operations can be implemented
 // in constant time on most target platforms. Unfortunately, an
-// exception is the (fn-frame ...) Staccato operation, which performs
+// exception is the (frame ...) Staccato operation, which performs
 // allocation.)
 //
 // Since the Staccato language and Staccato programs go to the trouble
@@ -137,7 +137,7 @@ function run( stack, rules ) {
 //   //
 //   // When implementing this operation on a target platform, it may
 //   // be a good optimization to special-case
-//   // (call (fn-frame frame-name env-expr) tail-expr) so that an
+//   // (call (frame frame-name env-expr) tail-expr) so that an
 //   // allocation can be avoided.
 //   //
 //   (call temp-expr tail-expr)
@@ -154,7 +154,7 @@ function run( stack, rules ) {
 //   // special ways here, there's no need to define independent stack
 //   // frames for the branches because this is a cheap operation.
 //   //
-//   (if-fn-frame frame-name env-pattern temp-expr
+//   (if-frame frame-name env-pattern temp-expr
 //     tail-expr
 //     tail-expr)
 //
@@ -168,7 +168,7 @@ function run( stack, rules ) {
 //   // This forms a function closure from any frame and any
 //   // environment. Whenever the function's argument is supplied, it
 //   // will be used as the frame's incoming return value.
-//   (fn-frame frame-name env-expr)
+//   (frame frame-name env-expr)
 //
 //   // Sugar.
 //   //
@@ -380,7 +380,7 @@ function processTailToTempRoot( exprObj ) {
                     desugared.va.expr,
                     desugared.frameBodyExpr ),
                 jsList( "call",
-                    jsList( "fn-frame", desugared.frameName.expr,
+                    jsList( "frame", desugared.frameName.expr,
                         desugared.varList.capture() ),
                     desugared.arg.expr ) ) ) );
     } else {
@@ -710,12 +710,12 @@ addSyntax( "call", "tailExpr", "tempExpr tailExpr", {
     desugarDef: defaults.desugarDef,
     desugarLet: defaults.desugarLet
 } );
-addSyntax( "if-fn-frame", "tailExpr",
+addSyntax( "if-frame", "tailExpr",
     "frameName envPattern tempExpr tailExpr tailExpr", {
     // INTERESTING
     
     _map: function ( args, writer ) {
-        return writer.redecorate( jsList( "if-fn-frame",
+        return writer.redecorate( jsList( "if-frame",
             args.frameName.expr,
             args.envPattern.expr,
             writer.consume( args.tempExpr ),
@@ -726,7 +726,7 @@ addSyntax( "if-fn-frame", "tailExpr",
         var freeVarsMid = args[ 3 ].getFreeVars( strMap() ).
             minus( args.envPattern.vals() ).
             plus( args[ 4 ].getFreeVars( strMap() ) );
-        return writer.redecorate( jsList( "if-fn-frame",
+        return writer.redecorate( jsList( "if-frame",
             args.frameName.expr,
             args.envPattern.expr,
             writer.consume( args.tempExpr, freeVarsMid ),
@@ -756,7 +756,7 @@ addSyntax( "if-fn-frame", "tailExpr",
     desugarFn: defaults.desugarFn,
     desugarTailToTemp: function ( args ) {
         var writer = desugarTailToTempWriter();
-        return writer.redecorate( jsList( "if-fn-frame",
+        return writer.redecorate( jsList( "if-frame",
             args.frameName.expr,
             args.envPattern.expr,
             writer.consume( args.tempExpr ),
@@ -826,9 +826,9 @@ addSyntax( "local", "tempExpr", "va", {
     desugarDef: defaults.desugarDef,
     desugarLet: defaults.desugarLet
 } );
-addSyntax( "fn-frame", "tempExpr", "frameName envExpr", {
+addSyntax( "frame", "tempExpr", "frameName envExpr", {
     _map: function ( args, writer ) {
-        return writer.redecorate( jsList( "fn-frame",
+        return writer.redecorate( jsList( "frame",
             args.frameName.expr,
             writer.consume( args.envExpr ) ) );
     },
@@ -938,7 +938,7 @@ addSyntax( "fn", "tempExpr", "frameName optVarList va tailExpr", {
                 args.optVarList.expr,
                 args.va.expr,
                 args.tailExpr.desugarFn() ),
-            jsList( "fn-frame", args.frameName.expr,
+            jsList( "frame", args.frameName.expr,
                 args.optVarList.capture() ) );
     },
     desugarTailToTemp: function ( args, freeVarsAfter ) {
@@ -1126,7 +1126,7 @@ function stcEnvPat( var_args ) {
 }
 
 function stcFrame( frameName, var_args ) {
-    return jsList( "fn-frame", frameName,
+    return jsList( "frame", frameName,
         stcEnvArr( [].slice.call( arguments, 1 ) ) );
 }
 
@@ -1160,7 +1160,7 @@ function stcIfFrame( expr, frameName, var_args ) {
     var entries = [].slice.call( arguments, 2, n - 2 );
     var then = arguments[ n - 2 ];
     var els = arguments[ n - 1 ];
-    return jsList( "if-fn-frame", frameName, stcEnvPatArr( entries ),
+    return jsList( "if-frame", frameName, stcEnvPatArr( entries ),
         expr,
         then,
         els );
@@ -1173,7 +1173,7 @@ function stcCallFrame( frameName, var_args ) {
     var entries = [].slice.call( arguments, 1, n - 1 );
     var input = arguments[ n - 1 ];
     return jsList( "call",
-        jsList( "fn-frame", frameName, stcEnvArr( entries ) ),
+        jsList( "frame", frameName, stcEnvArr( entries ) ),
         input );
 }
 
@@ -1198,7 +1198,7 @@ function stcType( frameName, var_args ) {
     result.make = function ( var_args ) {
         if ( arguments.length !== n )
             throw new Error();
-        return jsList( "fn-frame", frameName,
+        return jsList( "frame", frameName,
             stcEntriesPairMacro(
                 "env-cons", "env-nil", frameVars, arguments ) );
     };
@@ -1209,7 +1209,7 @@ function stcType( frameName, var_args ) {
         var expr = arguments[ n ];
         var then = arguments[ n + 1 ];
         var els = arguments[ n + 2 ];
-        return jsList( "if-fn-frame", frameName,
+        return jsList( "if-frame", frameName,
             stcEntriesPairMacro(
                 "env-pattern-cons", "env-pattern-nil",
                 frameVars, localVars ),
