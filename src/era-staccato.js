@@ -127,8 +127,8 @@ function run( stack, rules ) {
 //
 // get-expr ::=
 //   // Sugar.
-//   (tail-def def get-expr)
-//   (tail-let get-expr get-expr)
+//   (let-def def get-expr)
+//   (let get-expr get-expr)
 //
 //   (temp-to-tail get-expr)
 //
@@ -159,10 +159,6 @@ function run( stack, rules ) {
 //   (if-frame frame-name env-pattern get-expr
 //     get-expr
 //     get-expr)
-//
-//   // Sugar.
-//   (temp-def def get-expr)
-//   (temp-let get-expr get-expr)
 //
 //   (local var)
 //
@@ -487,7 +483,7 @@ function processSaveRoot( exprObj ) {
         return desugared.expr;
     } else if ( desugared.type === "save" ) {
         return processSaveRoot( parseSyntax( "getExpr",
-            jsList( "tail-def",
+            jsList( "let-def",
                 jsList( "def",
                     desugared.frameName.expr,
                     desugared.varList.expr,
@@ -746,9 +742,9 @@ addSyntax( "env-cons", "envExpr", "va getExpr envExpr", {
     desugarDef: defaults.desugarDef,
     desugarLet: defaults.desugarLet
 } );
-addSyntax( "tail-def", "getExpr", "def getExpr", {
+addSyntax( "let-def", "getExpr", "def getExpr", {
     _map: function ( args, writer ) {
-        return writer.redecorate( jsList( "tail-def",
+        return writer.redecorate( jsList( "let-def",
             writer.consume( args.def ),
             writer.consume( args.getExpr ) ) );
     },
@@ -772,9 +768,9 @@ addSyntax( "tail-def", "getExpr", "def getExpr", {
         throw new Error();
     }
 } );
-addSyntax( "tail-let", "getExpr", "getExpr getExpr", {
+addSyntax( "let", "getExpr", "getExpr getExpr", {
     _map: function ( args, writer ) {
-        return writer.redecorate( jsList( "tail-let",
+        return writer.redecorate( jsList( "let",
             writer.consume( args[ 0 ] ),
             writer.consume( args[ 1 ] ) ) );
     },
@@ -895,51 +891,6 @@ addSyntax( "if-frame", "getExpr",
     },
     desugarDef: defaults.desugarDef,
     desugarLet: defaults.desugarLet
-} );
-addSyntax( "temp-def", "getExpr", "def getExpr", {
-    _map: function ( args, writer ) {
-        return writer.redecorate( jsList( "temp-def",
-            writer.consume( args.def ),
-            writer.consume( args.getExpr ) ) );
-    },
-    _mapWithFreeVarsAfter: defaults.mapWithFreeVarsAfter,
-    
-    getFreeVars: defaults.getFreeVars,
-    
-    desugarVarLists: defaults.desugarVarLists,
-    hasProperScope: defaults.hasProperScope,
-    desugarFn: defaults.desugarFn,
-    desugarSave: defaults.desugarSave,
-    desugarDef: function ( args ) {
-        var desugaredDef = args.def.desugarDefIncludingSelf();
-        var desugaredExpr = args.getExpr.desugarDefs();
-        return {
-            defs: desugaredDef.concat( desugaredExpr.defs ),
-            expr: desugaredExpr.expr
-        };
-    },
-    desugarLet: function ( args ) {
-        throw new Error();
-    }
-} );
-addSyntax( "temp-let", "getExpr", "getExpr getExpr", {
-    _map: function ( args, writer ) {
-        return writer.redecorate( jsList( "temp-let",
-            writer.consume( args[ 0 ] ),
-            writer.consume( args[ 1 ] ) ) );
-    },
-    _mapWithFreeVarsAfter: defaults.mapWithFreeVarsAfter,
-    
-    getFreeVars: defaults.getFreeVars,
-    
-    desugarVarLists: defaults.desugarVarLists,
-    hasProperScope: defaults.hasProperScope,
-    desugarFn: defaults.desugarFn,
-    desugarSave: defaults.desugarSave,
-    desugarDef: defaults.desugarDef,
-    desugarLet: function ( args ) {
-        return args[ 1 ].expr;
-    }
 } );
 addSyntax( "local", "getExpr", "va", {
     _map: defaults.map,
@@ -1069,7 +1020,7 @@ addSyntax( "fn", "getExpr", "frameName optVarList va getExpr", {
             args.getExpr.hasProperScope( innerFreeVarsAfter );
     },
     desugarFn: function ( args ) {
-        return jsList( "temp-def",
+        return jsList( "let-def",
             jsList( "def", args.frameName.expr,
                 args.optVarList.expr,
                 args.va.expr,
