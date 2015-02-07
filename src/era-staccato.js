@@ -116,8 +116,8 @@ function run( stack, rules ) {
 //   // get-expr with that scope augmented by an entry binding the
 //   // given variable to the incoming return value.
 //   //
-//   // The get-expr counts as a new root parent expression and scope
-//   // boundary for the purposes of (save ...).
+//   // For the purposes of (save ...), the get-expr counts as a new
+//   // root parent expression and scope boundary.
 //   //
 //   (def frame-name opt-var-list var get-expr)
 //
@@ -146,9 +146,12 @@ function run( stack, rules ) {
 //   // the second get-expr with the pattern's variables in scope.
 //   // Otherwise, it proceeds as the third get-expr.
 //   //
-//   // Each of the second and third get-expr counts as a new root
-//   // parent expression and scope boundary for the purposes of
-//   // (save ...).
+//   // For the purposes of (save ...), each of the second and third
+//   // get-expr counts as a new root parent expression and scope
+//   // boundary. However, if this expression isn't the last thing
+//   // that happens in the current root parent expression, then each
+//   // get-expr isn't the last thing that happens in its root parent
+//   // either.
 //   //
 //   // Notice that even though the scope and control flow behave in
 //   // special ways here, there's no need to define independent stack
@@ -167,6 +170,9 @@ function run( stack, rules ) {
 //
 //   // Sugar.
 //   //
+//   // To use this, the expression must be the last computation that
+//   // happens under the root parent expression.
+//   //
 //   // This defines and calls a frame that takes an environment with
 //   // entries for the variables needed in the remainder of the
 //   // parent expression minus the given variable, which (in this
@@ -177,8 +183,8 @@ function run( stack, rules ) {
 //   // remainder of the parent expression in that scope, augmented by
 //   // a binding of the variable to that incoming return value.
 //   //
-//   // The get-expr counts as a new root parent expression and scope
-//   // boundary for the purposes of (save ...).
+//   // For the purposes of (save ...), the get-expr counts as a new
+//   // root parent expression and scope boundary.
 //   //
 //   (save frame-name opt-var-list var get-expr)
 //
@@ -192,8 +198,8 @@ function run( stack, rules ) {
 //   // by an entry binding the given variable to the frame's incoming
 //   // return value.
 //   //
-//   // The get-expr counts as a new root parent expression and scope
-//   // boundary for the purposes of (save ...).
+//   // For the purposes of (save ...), the get-expr counts as a new
+//   // root parent expression and scope boundary.
 //   //
 //   (fn frame-name opt-var-list var get-expr)
 //
