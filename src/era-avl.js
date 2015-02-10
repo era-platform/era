@@ -41,12 +41,12 @@ function jsListShortFoldl( yoke, init, list, func, then ) {
         if ( list === null )
             return then( yoke, init, !"exitedEarly" );
         return func( yoke, init, list.first,
-            function ( yoke, combined, exitedEarly ) {
+            function ( yoke, init, exitedEarly ) {
             
             if ( exitedEarly )
                 return then( yoke, init, !!"exitedEarly" );
             return jsListShortFoldl( yoke,
-                combined, list.rest, func, then );
+                init, list.rest, func, then );
         } );
     } );
 }

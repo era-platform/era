@@ -71,7 +71,9 @@ if ( args.staccato ) tasks.push( function ( then ) {
     Function( readFiles( [
         "src/era-misc-strmap-avl.js",
         "src/era-misc.js",
-        "src/era-staccato.js"
+        "src/era-staccato.js",
+        "src/era-staccato-builders.js",
+        "src/era-staccato-lib.js"
     ] ) )();
 } );
 

@@ -474,6 +474,14 @@ function parseSyntax( nontermName, expr ) {
                     [ args ].concat( [].slice.call( arguments ) ) );
             };
         } );
+        result.hasProperScope = function ( var_args ) {
+            var methodResult =
+                syntax.methods.get( "hasProperScope" ).apply( {},
+                    [ args ].concat( [].slice.call( arguments ) ) );
+            if ( !methodResult )
+                throw new Error();
+            return methodResult;
+        };
         return result;
     } else {
         throw new Error();
@@ -491,12 +499,12 @@ function processSaveRoot( exprObj ) {
             jsList( "let-def",
                 jsList( "def",
                     desugared.frameName.expr,
-                    desugared.varList.expr,
+                    desugared.optVarList.expr,
                     desugared.va.expr,
                     desugared.frameBodyExpr ),
                 jsList( "call",
                     jsList( "frame", desugared.frameName.expr,
-                        desugared.varList.capture() ),
+                        desugared.optVarList.capture() ),
                     desugared.arg.expr ) ) ) );
     } else {
         throw new Error();
@@ -546,9 +554,9 @@ function desugarSaveWriter() {
                 state = {
                     type: "saveState",
                     frameName: desugared.frameName,
-                    varList: desugared.optVarList,
+                    optVarList: desugared.optVarList,
                     va: desugared.va,
-                    arg: desugared.getExpr
+                    arg: desugared.arg
                 };
                 return desugared.frameBodyExpr;
             } else {
@@ -567,9 +575,9 @@ function desugarSaveWriter() {
             return {
                 type: "save",
                 frameName: state.frameName,
-                varList: state.optVarList,
+                optVarList: state.optVarList,
                 va: state.va,
-                arg: state.getExpr,
+                arg: state.arg,
                 frameBodyExpr: whole
             };
         } else {
@@ -690,6 +698,8 @@ addSyntax( "def", "def", "frameName optVarList va getExpr", {
             getFreeVars( innerFreeVarsAfter ).
             minusEntry( [ "va", args.va.expr ] );
         var declaredInnerFreeVars = args.optVarList.set();
+        if ( declaredInnerFreeVars === null )
+            throw new Error();
         return args.optVarList.isProvidedProperlyForSet( strMap() ) &&
             innerFreeVars.subset( declaredInnerFreeVars ) &&
             args.getExpr.hasProperScope( innerFreeVarsAfter );
@@ -763,7 +773,7 @@ addSyntax( "let-def", "getExpr", "def getExpr", {
     desugarSave: defaults.desugarSave,
     desugarDef: function ( args ) {
         var desugaredDef = args.def.desugarDefIncludingSelf();
-        var desugaredExpr = args.getExpr.desugarDefs();
+        var desugaredExpr = args.getExpr.desugarDef();
         return {
             defs: desugaredDef.concat( desugaredExpr.defs ),
             expr: desugaredExpr.expr
@@ -951,6 +961,8 @@ addSyntax( "save", "getExpr", "frameName optVarList va getExpr", {
             minusEntry( [ "va", args.va.expr ] ).
             minusEntry( [ "final" ] );
         var declaredInnerFreeVarsAfter = args.optVarList.set();
+        if ( declaredInnerFreeVarsAfter === null )
+            throw new Error();
         return args.optVarList.isProvidedProperlyForSet( strMap() ) &&
             innerFreeVarsAfter.subset( declaredInnerFreeVarsAfter ) &&
             args.getExpr.hasProperScope(
@@ -961,7 +973,7 @@ addSyntax( "save", "getExpr", "frameName optVarList va getExpr", {
         return {
             type: "save",
             frameName: args.frameName,
-            varList: args.optVarList,
+            optVarList: args.optVarList,
             va: args.va,
             arg: args.getExpr,
             frameBodyExpr: jsList( "local", args.va.expr )
@@ -978,7 +990,7 @@ addSyntax( "fn", "getExpr", "frameName optVarList va getExpr", {
     // INTERESTING
     
     getFreeVars: function ( args, freeVarsAfter ) {
-        var innerFreeVarsAfter = jsnMap().plusEntry( [ "final" ] );
+        var innerFreeVarsAfter = jsnMap().plusTruth( [ "final" ] );
         var innerFreeVars = args.getExpr.
             getFreeVars( innerFreeVarsAfter ).
             minusEntry( [ "va", args.va.expr ] );
@@ -988,7 +1000,7 @@ addSyntax( "fn", "getExpr", "frameName optVarList va getExpr", {
     },
     
     desugarVarLists: function ( args, freeVarsAfter ) {
-        var innerFreeVarsAfter = jsnMap().plusEntry( [ "final" ] );
+        var innerFreeVarsAfter = jsnMap().plusTruth( [ "final" ] );
         var innerFreeVars = args.getExpr.
             getFreeVars( innerFreeVarsAfter ).
             minusEntry( [ "va", args.va.expr ] );
@@ -999,11 +1011,13 @@ addSyntax( "fn", "getExpr", "frameName optVarList va getExpr", {
             args.getExpr.desugarVarLists( innerFreeVarsAfter ) );
     },
     hasProperScope: function ( args, freeVarsAfter ) {
-        var innerFreeVarsAfter = jsnMap().plusEntry( [ "final" ] );
+        var innerFreeVarsAfter = jsnMap().plusTruth( [ "final" ] );
         var innerFreeVars = args.getExpr.
             getFreeVars( innerFreeVarsAfter ).
             minusEntry( [ "va", args.va.expr ] );
         var declaredInnerFreeVars = args.optVarList.set();
+        if ( declaredInnerFreeVars === null )
+            throw new Error();
         return args.optVarList.isProvidedProperlyForSet( strMap() ) &&
             innerFreeVars.subset( declaredInnerFreeVars ) &&
             args.getExpr.hasProperScope( innerFreeVarsAfter );
@@ -1029,7 +1043,7 @@ addSyntax( "fn", "getExpr", "frameName optVarList va getExpr", {
 } );
 addSyntax( "var-list-omitted", "optVarList", "", {
     set: function ( args ) {
-        return jsnMap();
+        return null;
     },
     or: function ( args, varSet ) {
         var varSetExpr = jsList( "var-list-nil" );
@@ -1118,7 +1132,7 @@ function desugarDefExpr( expr ) {
     if ( !noVarLists.hasProperScope( jsnMap() ) )
         throw new Error();
     var noFns = parseSyntax( "def", noVarLists.desugarFn() );
-    var noSavesResult = noVarLists.desugarSave();
+    var noSavesResult = noFns.desugarSave();
     if ( noSavesResult.type !== "expr" )
         throw new Error();
     var noSaves = parseSyntax( "def", noSavesResult.expr );

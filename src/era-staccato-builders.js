@@ -112,6 +112,14 @@ function stcYesDef( frameName, var_args ) {
         body );
 }
 
+function stcFn( frameName, va, body ) {
+    return jsList( "fn", frameName, stcNoVars(), va, body );
+}
+
+function stcSave( va, frameName, expr ) {
+    return jsList( "save", frameName, stcNoVars(), va, expr );
+}
+
 function stcType( frameName, var_args ) {
     var frameVars = [].slice.call( arguments, 1 );
     var n = frameVars.length;
