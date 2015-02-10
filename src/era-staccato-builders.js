@@ -1,4 +1,5 @@
 // era-staccato-builders.js
+// Copyright 2015 Ross Angle. Released under the MIT License.
 //
 // These are JavaScript utilities for building Staccato expressions.
 // See era-staccato.js for more information about what Staccato is.
