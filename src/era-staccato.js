@@ -474,6 +474,10 @@ function parseSyntax( nontermName, expr ) {
                     [ args ].concat( [].slice.call( arguments ) ) );
             };
         } );
+        
+        // TODO: See if we should leave this in. It's a hack so that
+        // it's easier to debug static scope errors, but it does
+        // indeed make them a lot easier to debug.
         result.hasProperScope = function ( var_args ) {
             var methodResult =
                 syntax.methods.get( "hasProperScope" ).apply( {},
@@ -482,6 +486,7 @@ function parseSyntax( nontermName, expr ) {
                 throw new Error();
             return methodResult;
         };
+        
         return result;
     } else {
         throw new Error();

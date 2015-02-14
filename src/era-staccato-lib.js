@@ -187,8 +187,7 @@ stcAddYesDef( "foldl-double-iter",
         stcv( "result" ),
         stcErr( "Internal error" ) ) );
 
-// TODO: Choose just one of these implementations of
-// `rev-onto`.
+// TODO: Choose just one of these implementations of `rev-onto`.
 
 // This implements `rev-onto` independently.
 stcAddYesDef( "rev-onto", "target", "source",
@@ -214,6 +213,102 @@ stcAddYesDef( "rev", "source",
 stcAddYesDef( "append", "past", "rest",
     stcCallFrame( "rev-onto", "target", stcv( "rest" ),
         stcCallFrame( "rev", stcv( "past" ) ) ) );
+
+// TODO: Choose just one of these implementations of `map-iter`.
+
+// This implements `map-iter` independently assuming unbounded stack
+// size. (If we had a `foldr` of some sort, this could use that.)
+stcAddYesDef( "map-iter", "func", "list",
+    stcCons.cond( "elem", "rest", stcv( "list" ),
+        stcCons.make(
+            stcSave( "combiner-result", "map-iter-inner-1",
+                jsList( "call", stcv( "func" ), stcv( "elem" ) ) ),
+            stcSave( "combiner-result", "map-iter-inner-2",
+                stcCallFrame( "map-iter", "func", stcv( "func" ),
+                    stcv( "rest" ) ) ) ),
+        stcNil.make() ) );
+
+// This implements `map-iter` independently and with bounded stack
+// size.
+stcAddYesDef( "map-iter", "func", "list",
+    jsList( "let-def",
+        stcYesDef( "rev-onto-map-iter", "func", "target", "source",
+            stcCons.cond( "elem", "rest", stcv( "source" ),
+                stcCallFrame( "rev-onto-map-iter",
+                    "func", stcv( "func" ),
+                    "target",
+                    stcCons.make(
+                        stcSave( "combiner-result",
+                            "rev-onto-map-iter-inner-1",
+                            jsList( "call", stcv( "func" ),
+                                stcv( "elem" ) ) ),
+                        stcv( "target" ) ),
+                    stcv( "source" ) ),
+                stcv( "target" ) ) ),
+        stcCallFrame( "rev",
+            stcCallFrame( "rev-onto-map-iter", "func", stcv( "func" ),
+                "target", stcNil.make(),
+                stcv( "list" ) ) ) ) );
+
+// This implements `map-iter` in terms of `foldl-iter` and with
+// bounded stack size.
+stcAddYesDef( "map-iter", "func", "list",
+    stcCallFrame( "rev",
+        stcCallFrame( "foldl-iter", "list", stcv( "list" ),
+            "combiner",
+            stcFn( "map-iter-adapter-1", "state",
+                stcFn( "map-iter-adapter-2", "elem",
+                    stcCons.make(
+                        stcSave( "combiner-result",
+                            "map-iter-adapter-3",
+                            jsList( "call", stcv( "func" ),
+                                stcv( "elem" ) ) ),
+                        stcv( "state" ) ) ) ),
+            stcNil.make() ) ) );
+
+// TODO: Choose just one of these implementations of `any-iter`.
+
+// This implements `any-iter` independently.
+stcAddYesDef( "any-iter", "func", "list",
+    stcCons.cond( "first", "rest", stcv( "list" ),
+        stcYep.cond( "result",
+            stcSave( "func-result", "any-iter-inner-1",
+                jsList( "call", stcv( "func" ), stcv( "first" ) ) ),
+            stcv( "func-result" ),
+            stcNope.cond( "result", stcv( "func-result" ),
+                stcCallFrame( "any-iter", "func", stcv( "func" ),
+                    stcv( "rest" ) ),
+                stcErr(
+                    "Expected a func-result of type yep or " +
+                    "nope" ) ) ),
+        stcNope.make( stcNil.make() ) ) );
+
+// This implements `any-iter` in terms of `foldl-short-iter`.
+stcAddYesDef( "any-iter", "func", "list",
+    stcSave( "fold-result", "any-iter-inner-1",
+        stcCallFrame( "foldl-short-iter", "list", stcv( "list" ),
+            "combiner",
+            stcFn( "any-iter-adapter-1", "state",
+                stcFn( "any-iter-adapter-2", "elem",
+                    stcYep.cond( "result",
+                        stcSave( "func-result", "any-iter-adapter-3",
+                            jsList( "call", stcv( "func" ),
+                                stcv( "elem" ) ) ),
+                        stcv( "func-result" ),
+                        stcNope.cond( "result",
+                            stcv( "func-result" ),
+                            stcNope.make( stcNil.make() ),
+                            stcErr(
+                                "Expected a func-result of type " +
+                                "yep or nope" ) ) ) ) ),
+            stcNil.make() ) ) );
+
+stcAddYesDef( "not-yep-nope", "yep-nope",
+    stcYep.cond( "val", stcv( "yep-nope" ),
+        stcNope.make( stcv( "val" ) ),
+        stcNope.cond( "val", stcv( "yep-nope" ),
+            stcYep.make( stcv( "val" ) ),
+            stcErr( "Expected a yep-nope of type yep or nope" ) ) ) );
 
 
 // TODO: Move this testing code somewhere better.
