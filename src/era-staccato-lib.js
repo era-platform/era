@@ -187,6 +187,10 @@ stcAddYesDef( "foldl-double-iter",
         stcv( "result" ),
         stcErr( "Internal error" ) ) );
 
+// TODO: Choose just one of these implementations of
+// `rev-onto`.
+
+// This implements `rev-onto` independently.
 stcAddYesDef( "rev-onto", "target", "source",
     stcCons.cond( "first", "rest", stcv( "source" ),
         stcCallFrame( "rev-onto", "target",
@@ -194,8 +198,17 @@ stcAddYesDef( "rev-onto", "target", "source",
             stcv( "rest" ) ),
         stcv( "target" ) ) );
 
+// This implements `rev-onto` in terms of `foldl-iter`.
+stcAddYesDef( "rev-onto", "target", "source",
+    stcCallFrame( "foldl-iter", "list", stcv( "source" ),
+        "combiner",
+        stcFn( "rev-onto-adapter-1", "state",
+            stcFn( "rev-onto-adapter-2", "elem",
+                stcCons.make( stcv( "elem" ), stcv( "state" ) ) ) ),
+        stcv( "target" ) ) );
+
 stcAddYesDef( "rev", "source",
-    stcCallFrame( "rev-onto", "target", stcFrame( "nil" ),
+    stcCallFrame( "rev-onto", "target", stcNil.make(),
         stcv( "source" ) ) );
 
 stcAddYesDef( "append", "past", "rest",
