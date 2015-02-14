@@ -62,6 +62,7 @@ stcAddYesDef( "foldl-short-iter", "list", "combiner", "state",
 
 // TODO: Choose just one of these implementations of `foldl-iter`.
 
+// This implements `foldl-iter` independently.
 stcAddYesDef( "foldl-iter", "list", "combiner", "state",
     stcCons.cond( "first", "rest", stcv( "list" ),
         stcCallFrame( "foldl-iter", "list", stcv( "rest" ),
@@ -71,6 +72,7 @@ stcAddYesDef( "foldl-iter", "list", "combiner", "state",
                     stcv( "state" ) ) ) ),
         stcv( "state" ) ) );
 
+// This implements `foldl-iter` in terms of `foldl-short-iter`.
 stcAddYesDef( "foldl-iter", "list", "combiner", "state",
     stcNope.cond( "result",
         stcSave( "short-result", "foldl-iter-inner-1",
@@ -89,16 +91,125 @@ stcAddYesDef( "foldl-iter", "list", "combiner", "state",
         stcv( "result" ),
         stcErr( "Internal error" ) ) );
 
+// TODO: Choose just one of these implementations of
+// `foldl-double-short-iter`.
+
+// This implements `foldl-double-short-iter` independently.
+stcAddYesDef( "foldl-double-short-iter",
+    "list-a", "list-b", "combiner", "state",
+    stcCons.cond( "first-a", "rest-a", stcv( "list-a" ),
+        stcCons.cond( "first-b", "rest-b", stcv( "list-b" ),
+            stcYep.cond( "result",
+                stcSave( "combiner-result",
+                    "foldl-double-short-with-combiner-result",
+                    stcCallFrame( "pass-to", "arg", stcv( "first-b" ),
+                        stcCallFrame( "pass-to",
+                            "arg", stcv( "first-a" ),
+                            jsList( "call", stcv( "combiner" ),
+                                stcv( "state" ) ) ) ) ),
+                stcv( "combiner-result" ),
+                stcNope.cond( "result", stcv( "combiner-result" ),
+                    stcCallFrame( "foldl-double-short-iter",
+                        "list-a", stcv( "rest-a" ),
+                        "list-b", stcv( "rest-b" ),
+                        "combiner", stcv( "combiner" ),
+                        stcv( "result" ) ),
+                    stcErr(
+                        "Expected a combiner-result of type yep or " +
+                        "nope" ) ) ),
+            stcNope.make( stcv( "state" ) ) ),
+        stcNope.make( stcv( "state" ) ) ) );
+
+// This implements `foldl-double-short-iter` in terms of
+// `foldl-short-iter`.
+stcAddYesDef( "foldl-double-short-iter",
+    "list-a", "list-b", "combiner", "state",
+    stcYep.cond( "result",
+        stcSave( "short-result", "foldl-double-short-iter-inner-1",
+            stcCallFrame( "foldl-short-iter",
+                "list", stcv( "list-a" ),
+                "combiner",
+                stcFn( "foldl-double-short-iter-adapter-1", "state",
+                    stcFn( "foldl-double-short-iter-adapter-2",
+                        "elem-a",
+                        stcCons.cond( "rest-b", "state",
+                            stcv( "state" ),
+                            stcCons.cond( "elem-b", "rest-b",
+                                stcv( "rest-b" ),
+                                stcYep.cond( "result",
+                                    stcSave( "combiner-result", "foldl-double-short-iter-adapter-3",
+                                        stcCallFrame( "pass-to", "arg", stcv( "elem-b" ),
+                                            stcCallFrame( "pass-to", "arg", stcv( "elem-a" ),
+                                                jsList( "call", stcv( "combiner" ),
+                                                    stcv( "state" ) ) ) ) ),
+                                    stcYep.make( stcv( "combiner-result" ) ),
+                                    stcNope.cond( "result", stcv( "combiner-result" ),
+                                        stcNope.make(
+                                            stcCons.make( stcv( "rest-b" ), stcv( "result" ) ) ),
+                                        stcErr( "Expected a combiner-result of type yep or nope" ) ) ),
+                                stcYep.make(
+                                    stcNope.make( stcv( "state" ) ) ) ),
+                            stcErr( "Internal error" ) ) ) ),
+                stcCons.make( stcv( "list-b" ), stcv( "state" ) ) ) ),
+        stcv( "result" ),
+        stcNope.cond( "result", stcv( "short-result" ),
+            stcCons.cond( "rest-b", "state", stcv( "result" ),
+                stcNope.make( stcv( "state" ) ),
+                stcErr( "Internal error" ) ),
+            stcErr( "Internal error" ) ) ) );
+
+// TODO: Choose just one of these implementations of
+// `foldl-double-iter`.
+
+// This implements `foldl-double-iter` independently.
+stcAddYesDef( "foldl-double-iter",
+    "list-a", "list-b", "combiner", "state",
+    stcCons.cond( "first-a", "rest-a", stcv( "list-a" ),
+        stcCons.cond( "first-b", "rest-b", stcv( "list-b" ),
+            stcCallFrame( "foldl-double-iter",
+                "list-a", stcv( "rest-a" ),
+                "list-b", stcv( "rest-b" ),
+                "combiner", stcv( "combiner" ),
+                stcCallFrame( "pass-to", "arg", stcv( "first-b" ),
+                    stcCallFrame( "pass-to",
+                        "arg", stcv( "first-a" ),
+                        jsList( "call", stcv( "combiner" ),
+                            stcv( "state" ) ) ) ) ),
+            stcv( "state" ) ),
+        stcv( "state" ) ) );
+
+// This implements `foldl-double-iter` in terms of
+// `foldl-double-short-iter`.
+stcAddYesDef( "foldl-double-iter",
+    "list-a", "list-b", "combiner", "state",
+    stcNope.cond( "result",
+        stcSave( "short-result", "foldl-double-iter-inner-1",
+            stcCallFrame( "foldl-double-short-iter",
+                "list-a", stcv( "list-a" ),
+                "list-b", stcv( "list-b" ),
+                "combiner",
+                stcFn( "foldl-double-iter-adapter-1", "state",
+                    stcFn( "foldl-double-iter-adapter-2", "elem-a",
+                        stcFn( "foldl-double-iter-adapter-3", "elem-b",
+                            stcNope.make(
+                                stcSave( "combiner-result",
+                                    "foldl-double-iter-adapter-4",
+                                    stcCallFrame( "pass-to", "arg", stcv( "elem-b" ),
+                                        stcCallFrame( "pass-to", "arg", stcv( "elem-a" ),
+                                            jsList( "call", stcv( "combiner" ),
+                                                stcv( "state" ) ) ) ) ) ) ) ) ),
+                stcv( "state" ) ) ),
+        stcv( "result" ),
+        stcErr( "Internal error" ) ) );
+
 
 // TODO: Move this testing code somewhere better.
-// TODO: Try more syntaxes above. Especially try something which uses
-// (save ...) and (fn ...).
 
 function staccatoPretty( expr ) {
     if ( expr === null ) {
         return "()";
     } else if ( isPrimString( expr ) ) {
-        return /^[-a-z]*$/i.test( expr ) ? expr :
+        return /^[-a-z01-9]*$/i.test( expr ) ? expr :
             JSON.stringify( expr );
     } else if ( likeJsCons( expr ) ) {
         if ( expr.rest === null ) {

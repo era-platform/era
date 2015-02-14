@@ -65,7 +65,7 @@ function jsListDoubleShortFoldl( yoke,
     init, listA, listB, func, then ) {
     
     return jsListShortFoldl( yoke,
-        { state: init, restB: restB }, listA,
+        { state: init, restB: listB }, listA,
         function ( yoke, state, elemA, then ) {
         
         var restB = state.restB;
