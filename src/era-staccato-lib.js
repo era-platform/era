@@ -23,21 +23,6 @@ var stcYep = stcType( "yep", "val" );
 var stcNope = stcType( "nope", "val" );
 var stcNil = stcType( "nil" );
 
-stcAddYesDef( "rev-onto", "target", "source",
-    stcCons.cond( "first", "rest", stcv( "source" ),
-        stcCallFrame( "rev-onto", "target",
-            stcCons.make( stcv( "first" ), stcv( "target" ) ),
-            stcv( "rest" ) ),
-        stcv( "target" ) ) );
-
-stcAddYesDef( "rev", "source",
-    stcCallFrame( "rev-onto", "target", stcFrame( "nil" ),
-        stcv( "source" ) ) );
-
-stcAddYesDef( "append", "past", "rest",
-    stcCallFrame( "rev-onto", "target", stcv( "rest" ),
-        stcCallFrame( "rev", stcv( "past" ) ) ) );
-
 stcAddYesDef( "pass-to", "arg", "func",
     jsList( "call", stcv( "func" ), stcv( "arg" ) ) );
 
@@ -201,6 +186,21 @@ stcAddYesDef( "foldl-double-iter",
                 stcv( "state" ) ) ),
         stcv( "result" ),
         stcErr( "Internal error" ) ) );
+
+stcAddYesDef( "rev-onto", "target", "source",
+    stcCons.cond( "first", "rest", stcv( "source" ),
+        stcCallFrame( "rev-onto", "target",
+            stcCons.make( stcv( "first" ), stcv( "target" ) ),
+            stcv( "rest" ) ),
+        stcv( "target" ) ) );
+
+stcAddYesDef( "rev", "source",
+    stcCallFrame( "rev-onto", "target", stcFrame( "nil" ),
+        stcv( "source" ) ) );
+
+stcAddYesDef( "append", "past", "rest",
+    stcCallFrame( "rev-onto", "target", stcv( "rest" ),
+        stcCallFrame( "rev", stcv( "past" ) ) ) );
 
 
 // TODO: Move this testing code somewhere better.
