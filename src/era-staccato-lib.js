@@ -285,23 +285,69 @@ stcAddYesDef( "any-iter", "func", "list",
 
 // This implements `any-iter` in terms of `foldl-short-iter`.
 stcAddYesDef( "any-iter", "func", "list",
-    stcSave( "fold-result", "any-iter-inner-1",
-        stcCallFrame( "foldl-short-iter", "list", stcv( "list" ),
-            "combiner",
-            stcFn( "any-iter-adapter-1", "state",
-                stcFn( "any-iter-adapter-2", "elem",
+    stcCallFrame( "foldl-short-iter", "list", stcv( "list" ),
+        "combiner",
+        stcFn( "any-iter-adapter-1", "state",
+            stcFn( "any-iter-adapter-2", "elem",
+                stcYep.cond( "result",
+                    stcSave( "func-result", "any-iter-adapter-3",
+                        jsList( "call", stcv( "func" ),
+                            stcv( "elem" ) ) ),
+                    stcv( "func-result" ),
+                    stcNope.cond( "result", stcv( "func-result" ),
+                        stcNope.make( stcNil.make() ),
+                        stcErr(
+                            "Expected a func-result of type yep or " +
+                            "nope" ) ) ) ) ),
+        stcNil.make() ) );
+
+// TODO: Choose just one of these implementations of `any-double`.
+
+// This implements `any-double` independently.
+stcAddYesDef( "any-double", "list-a", "list-b", "func",
+    stcCons.cond( "first-a", "rest-a", stcv( "list-a" ),
+        stcCons.cond( "first-b", "rest-b", stcv( "list-b" ),
+            stcYep.cond( "result",
+                stcSave( "func-result", "any-double-inner-1",
+                    stcCallFrame( "pass-to", "arg", stcv( "first-b" ),
+                        jsList( "call", stcv( "func" ),
+                            stcv( "first-a" ) ) ) ),
+                stcv( "func-result" ),
+                stcNope.cond( "result", stcv( "func-result" ),
+                    stcCallFrame( "any-double",
+                        "list-a", stcv( "rest-a" ),
+                        "list-b", stcv( "rest-b" ),
+                        stcv( "func" ) ),
+                    stcErr(
+                        "Expected a func-result of type yep or " +
+                        "nope" ) ) ),
+            stcNope.make( stcNil.make() ) ),
+        stcNope.make( stcNil.make() ) ) );
+
+// This implements `any-double` in terms of `foldl-double-short-iter`.
+stcAddYesDef( "any-double", "list-a", "list-b", "func",
+    stcCallFrame( "foldl-double-short-iter",
+        "list-a", stcv( "list-a" ),
+        "list-b", stcv( "list-b" ),
+        "combiner",
+        stcFn( "any-double-adapter-1", "state",
+            stcFn( "any-double-adapter-2", "elem-a",
+                stcFn( "any-double-adapter-3", "elem-b",
                     stcYep.cond( "result",
-                        stcSave( "func-result", "any-iter-adapter-3",
-                            jsList( "call", stcv( "func" ),
-                                stcv( "elem" ) ) ),
+                        stcSave( "func-result",
+                            "any-double-adapter-4",
+                            stcCallFrame( "pass-to",
+                                "arg", stcv( "elem-b" ),
+                                jsList( "call", stcv( "func" ),
+                                    stcv( "elem-a" ) ) ) ),
                         stcv( "func-result" ),
                         stcNope.cond( "result",
                             stcv( "func-result" ),
                             stcNope.make( stcNil.make() ),
                             stcErr(
                                 "Expected a func-result of type " +
-                                "yep or nope" ) ) ) ) ),
-            stcNil.make() ) ) );
+                                "yep or nope" ) ) ) ) ) ),
+        stcNil.make() ) );
 
 stcAddYesDef( "not-yep-nope", "yep-nope",
     stcYep.cond( "val", stcv( "yep-nope" ),
@@ -309,6 +355,44 @@ stcAddYesDef( "not-yep-nope", "yep-nope",
         stcNope.cond( "val", stcv( "yep-nope" ),
             stcYep.make( stcv( "val" ) ),
             stcErr( "Expected a yep-nope of type yep or nope" ) ) ) );
+
+stcAddYesDef( "all-iter", "func", "list",
+    stcCallFrame( "not-yep-nope",
+        stcCallFrame( "any-iter",
+            "func",
+            stcFn( "all-iter-adapter-1", "elem",
+                stcCallFrame( "not-yep-nope",
+                    jsList( "call", stcv( "func" ),
+                        stcv( "elem" ) ) ) ),
+            stcv( "list" ) ) ) );
+
+stcAddYesDef( "cut", "list-to-measure-by", "list-to-cut",
+    stcCallFrame( "foldl-iter", "list", stcv( "list-to-measure-by" ),
+        "combiner",
+        stcFn( "cut-adapter-1", "state",
+            stcFn( "cut-adapter-2", "ignored-elem",
+                stcCons.cond( "rev-before", "after", stcv( "state" ),
+                    stcCons.cond( "first", "after", stcv( "after" ),
+                        stcCons.make(
+                            stcCons.make( stcv( "first" ),
+                                stcv( "rev-before" ) ),
+                            stcv( "after" ) ),
+                        stcErr(
+                            "Expected a list-to-measure-by no " +
+                            "longer than the list-to-cut" ) ),
+                    stcErr( "Internal error" ) ) ) ),
+        stcCons.make( stcNil.make(), stcv( "list-to-cut" ) ) ) );
+
+stcAddYesDef( "tails", "lists",
+    stcCons.cond( "list-a", "list-b", stcv( "lists" ),
+        stcCons.cond( "elem-a", "list-a", stcv( "list-a" ),
+            stcCons.cond( "elem-b", "list-b", stcv( "list-b" ),
+                stcCallFrame( "tails",
+                    stcCons.make(
+                        stcv( "list-a" ), stcv( "list-b" ) ) ),
+                stcv( "lists" ) ),
+            stcv( "lists" ) ),
+        stcErr( "Expected a lists value of type cons" ) ) );
 
 
 // TODO: Move this testing code somewhere better.
