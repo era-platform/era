@@ -426,3 +426,35 @@ function staccatoPretty( expr ) {
 console.log( arrMap( stcDefs, function ( def ) {
     return staccatoPretty( def );
 } ) );
+
+var defs = {};
+function Stc( frameTag, opt_frameVars ) {
+    this.frameTag = frameTag;
+    this.frameVars = opt_frameVars || [];
+}
+Stc.prototype.call = function ( arg ) {
+    var func = defs[ this.frameTag ];
+    return func( this.frameVars, arg );
+};
+Stc.prototype.pretty = function () {
+    return "(" + this.frameTag +
+        arrMap( this.frameVars, function ( elem, i ) {
+            return " " + elem.pretty();
+        } ).join( "" ) + ")";
+};
+
+arrEach( stcDefs, function ( def ) {
+    Function( "defs", "Stc",
+        parseSyntax( "def", def ).compileToNaiveJs()
+    )( defs, Stc );
+} );
+
+function testStcDef( frameTag, frameVars, arg ) {
+    var def = defs[ frameTag ];
+    console.log( def( frameVars, arg ).pretty() );
+}
+
+testStcDef( JSON.stringify( [ "rev", [] ] ), [],
+    stcCons.makeStc( stcYep.makeStc( stcNil.makeStc() ),
+        stcCons.makeStc( stcNope.makeStc( stcNil.makeStc() ),
+            stcNil.makeStc() ) ) );

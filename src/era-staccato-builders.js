@@ -147,5 +147,18 @@ function stcType( frameName, var_args ) {
             then,
             els );
     };
+    // TODO: See if we should leave this in. If so, optimize it.
+    result.makeStc = function ( var_args ) {
+        var args = arguments;
+        var sortedFrameVars = frameVars.slice().sort();
+        return new Stc(
+            JSON.stringify( [ frameName, sortedFrameVars ] ),
+            arrMap( sortedFrameVars, function ( va ) {
+                for ( var i = 0, n = frameVars.length; i < n; i++ )
+                    if ( frameVars[ i ] === va )
+                        return args[ i ];
+                throw new Error();
+            } ) );
+    };
     return result;
 }

@@ -135,6 +135,9 @@ function run( stack, rules ) {
 //   // closure with the second given get-expr's result as its
 //   // argument.
 //   //
+//   // For the purposes of (save ...), the second get-expr counts as
+//   // a new root parent expression and scope boundary.
+//   //
 //   // When implementing this operation on a target platform, it may
 //   // be a good optimization to special-case
 //   // (call (frame frame-name env-expr) get-expr) so that an
@@ -226,19 +229,24 @@ function run( stack, rules ) {
 //   (env-pattern-cons var var env-pattern)
 
 // NOTE: We implement these methods on every corresponding syntax:
-// getExpr/envExpr/def getFreeVars( freeVarsAfter )
-// getExpr/envExpr/def desugarVarLists( freeVarsAfter )
-// getExpr/envExpr/def hasProperScope( freeVarsAfter )
-// getExpr/envExpr/def desugarFn()
+// getExpr/envExpr/def getFreeVars()
 // getExpr/envExpr/def desugarSave()
+// getExpr/envExpr/def desugarVarLists()
+// getExpr/envExpr/def hasProperScope( isFinal )
+// getExpr/envExpr/def desugarFn()
 // getExpr/envExpr desugarDef()
 // def desugarDefIncludingSelf()
 // getExpr/envExpr/def desugarLet()
+// getExpr compileToNaiveJs( gensym, locals )
+// envExpr keys()
+// envExpr compileToNaiveJs( gensym, locals, keyToI )
+// def compileToNaiveJs()
 // optVarList/varList set()
 // optVarList or( varSet )
 // optVarList/varList isProvidedProperlyForSet( varSet )
 // optVarList/varList capture()
-// envPattern vals()
+// envPattern valsToKeys()
+// envPattern keysToVals()
 // envPattern isProperForSets( keySet, varSet )
 
 // NOTE: Certain parts of the implementation are marked "INTERESTING".
@@ -325,7 +333,7 @@ JsnMap.prototype.minus = function ( other ) {
 // NOTE: This body takes its args as ( v, k ).
 JsnMap.prototype.any = function ( body ) {
     return this.contents_.any( function ( kv, k ) {
-        return body( kv.k, kv.v );
+        return body( kv.v, kv.k );
     } );
 };
 JsnMap.prototype.hasAny = function () {
@@ -352,7 +360,7 @@ JsnMap.prototype.map = function ( func ) {
 // NOTE: This body takes its args as ( v, k ).
 JsnMap.prototype.keep = function ( body ) {
     var result = jsnMap();
-    this.each( function ( v, k ) {
+    this.each( function ( k, v ) {
         if ( body( v, k ) )
             result.set( k, v );
     } );
@@ -501,16 +509,13 @@ function processSaveRoot( exprObj ) {
         return desugared.expr;
     } else if ( desugared.type === "save" ) {
         return processSaveRoot( parseSyntax( "getExpr",
-            jsList( "let-def",
-                jsList( "def",
+            jsList( "call",
+                jsList( "fn",
                     desugared.frameName.expr,
                     desugared.optVarList.expr,
                     desugared.va.expr,
                     desugared.frameBodyExpr ),
-                jsList( "call",
-                    jsList( "frame", desugared.frameName.expr,
-                        desugared.optVarList.capture() ),
-                    desugared.arg.expr ) ) ) );
+                desugared.arg.expr ) ) );
     } else {
         throw new Error();
     }
@@ -592,28 +597,35 @@ function desugarSaveWriter() {
     return writer;
 }
 
+function makeFrameVars( varSet ) {
+    var frameVars = [];
+    varSet.each( function ( va, truth ) {
+        frameVars.push( va );
+    } );
+    frameVars.sort();
+    return frameVars;
+}
+
 var defaults = {
     map: function ( args, writer ) {
         return writer.redecorate( args.self.expr );
     },
-    mapWithFreeVarsAfter: function ( args, freeVarsAfter, writer ) {
+    mapWithIsFinal: function ( args, isFinal, writer ) {
         var parts = [];
         args.self._map( idWriter( function ( part ) {
             parts.push( part );
             return part.expr;
         } ) );
-        var freeVarsMid = freeVarsAfter;
-        var freeVarsMidList = [];
+        var isFinalMid = isFinal;
+        var isFinalMidList = [];
         for ( var i = parts.length - 1; 0 <= i; i-- ) {
-            var part = parts[ i ];
-            freeVarsMidList.unshift( freeVarsMid );
-            if ( i !== 0 )
-                freeVarsMid = part.getFreeVars( freeVarsMid );
+            isFinalMidList.unshift( isFinalMid );
+            isFinalMid = false;
         }
         
         var delegateWriter = {};
         delegateWriter.consume = function ( part ) {
-            return writer.consume( part, freeVarsMidList.shift() );
+            return writer.consume( part, isFinalMidList.shift() );
         };
         delegateWriter.redecorate = function ( whole ) {
             return writer.redecorate( whole );
@@ -622,31 +634,26 @@ var defaults = {
         return args.self._map( delegateWriter );
     },
     
-    getFreeVars: function ( args, freeVarsAfter ) {
-        var parts = [];
+    getFreeVars: function ( args ) {
+        var result = jsnMap();
         args.self._map( idWriter( function ( part ) {
-            parts.push( part );
+            result.setAll( part.getFreeVars() );
             return part.expr;
         } ) );
-        var freeVarsMid = freeVarsAfter;
-        for ( var i = parts.length - 1; 0 <= i; i-- )
-            freeVarsMid = parts[ i ].getFreeVars( freeVarsMid );
-        return freeVarsMid.minusEntry( [ "final" ] );
+        return result;
     },
     
-    desugarVarLists: function ( args, freeVarsAfter ) {
-        return args.self._mapWithFreeVarsAfter( freeVarsAfter,
-            idWriter( function ( arg, freeVarsAfter ) {
-            
-            return arg.desugarVarLists( freeVarsAfter );
+    desugarVarLists: function ( args ) {
+        return args.self._map( idWriter( function ( arg ) {
+            return arg.desugarVarLists();
         } ) );
     },
-    hasProperScope: function ( args, freeVarsAfter ) {
+    hasProperScope: function ( args, isFinal ) {
         var proper = true;
-        args.self._mapWithFreeVarsAfter( freeVarsAfter,
-            idWriter( function ( part, freeVarsAfter ) {
+        args.self._mapWithIsFinal( isFinal,
+            idWriter( function ( part, isFinal ) {
             
-            proper = proper && part.hasProperScope( freeVarsAfter );
+            proper = proper && part.hasProperScope( isFinal );
             return part.expr;
         } ) );
         return proper;
@@ -682,44 +689,39 @@ addSyntax( "def", "def", "frameName optVarList va getExpr", {
             writer.consume( args.getExpr ) ) );
     },
     
-    getFreeVars: function ( args, freeVarsAfter ) {
-        return freeVarsAfter;
+    getFreeVars: function ( args ) {
+        return jsnMap();
     },
     
-    desugarVarLists: function ( args, freeVarsAfter ) {
-        var innerFreeVarsAfter = jsnMap().plusTruth( [ "final" ] );
-        var innerFreeVars = args.getExpr.
-            getFreeVars( innerFreeVarsAfter ).
+    desugarSave: function ( args ) {
+        var writer = desugarSaveWriter();
+        return writer.redecorate( jsList( "def",
+            args.frameName.expr,
+            args.optVarList.expr,
+            args.va.expr,
+            processSaveRoot( args.getExpr ) ) );
+    },
+    desugarVarLists: function ( args ) {
+        var innerFreeVars = args.getExpr.getFreeVars().
             minusEntry( [ "va", args.va.expr ] );
         return jsList( "def",
             args.frameName.expr,
             args.optVarList.or( innerFreeVars ),
             args.va.expr,
-            args.getExpr.desugarVarLists( innerFreeVarsAfter ) );
+            args.getExpr.desugarVarLists() );
     },
-    hasProperScope: function ( args, freeVarsAfter ) {
-        var innerFreeVarsAfter = jsnMap().plusTruth( [ "final" ] );
-        var innerFreeVars = args.getExpr.
-            getFreeVars( innerFreeVarsAfter ).
+    hasProperScope: function ( args, isFinal ) {
+        var innerFreeVars = args.getExpr.getFreeVars().
             minusEntry( [ "va", args.va.expr ] );
         var declaredInnerFreeVars = args.optVarList.set();
         if ( declaredInnerFreeVars === null )
             throw new Error();
-        return args.optVarList.isProvidedProperlyForSet( strMap() ) &&
+        return args.optVarList.isProvidedProperlyForSet(
+            strMap().plusTruth( args.va.expr ) ) &&
             innerFreeVars.subset( declaredInnerFreeVars ) &&
-            args.getExpr.hasProperScope( innerFreeVarsAfter );
+            args.getExpr.hasProperScope( !!"isFinal" );
     },
     desugarFn: defaults.desugarFn,
-    desugarSave: function ( args ) {
-        return {
-            type: "expr",
-            expr: jsList( "def",
-                args.frameName.expr,
-                args.optVarList.expr,
-                args.va.expr,
-                processSaveRoot( args.getExpr ) )
-        };
-    },
     desugarDefIncludingSelf: function ( args ) {
         var desugared = args.getExpr.desugarDef();
         return desugared.defs.concat( [ jsList( "def",
@@ -729,20 +731,64 @@ addSyntax( "def", "def", "frameName optVarList va getExpr", {
             desugared.expr
         ) ] );
     },
-    desugarLet: defaults.desugarLet
+    desugarLet: defaults.desugarLet,
+    compileToNaiveJs: function ( args ) {
+        var nextGensymI = 0;
+        function gensym() {
+            return "v" + nextGensymI++;
+        }
+        
+        var frameVarSet = strMap();
+        args.optVarList.set().each( function ( va, truth ) {
+            if ( va[ 0 ] !== "va" )
+                throw new Error();
+            frameVarSet.add( va[ 1 ] );
+        } );
+        var frameVars = makeFrameVars( frameVarSet );
+        var frameTag =
+            JSON.stringify( [ args.frameName.expr, frameVars ] );
+        
+        var locals = strMap().plusEntry( args.va.expr, "arg" );
+        var varStatements = "";
+        arrEach( frameVars, function ( va, i ) {
+            var gs = gensym();
+            varStatements =
+                "var " + gs + " = frameVars[ " + i + " ];\n" +
+                varStatements;
+            locals.set( va, gs );
+        } );
+        
+        return (
+            "defs[ " + jsStr( frameTag ) + " ] = " +
+                "function ( frameVars, arg ) {\n" +
+            "\n" +
+            varStatements +
+            "return " +
+                args.getExpr.compileToNaiveJs( gensym, locals ) +
+                ";\n" +
+            "\n" +
+            "};"
+        );
+    }
 } );
 addSyntax( "env-nil", "envExpr", "", {
     _map: defaults.map,
-    _mapWithFreeVarsAfter: defaults.mapWithFreeVarsAfter,
+    _mapWithIsFinal: defaults.mapWithIsFinal,
     
     getFreeVars: defaults.getFreeVars,
     
+    desugarSave: defaults.desugarSave,
     desugarVarLists: defaults.desugarVarLists,
     hasProperScope: defaults.hasProperScope,
     desugarFn: defaults.desugarFn,
-    desugarSave: defaults.desugarSave,
     desugarDef: defaults.desugarDef,
-    desugarLet: defaults.desugarLet
+    desugarLet: defaults.desugarLet,
+    keys: function ( args ) {
+        return strMap();
+    },
+    compileToNaiveJs: function ( args, gensym, locals, keyToI ) {
+        return "";
+    }
 } );
 addSyntax( "env-cons", "envExpr", "va getExpr envExpr", {
     _map: function ( args, writer ) {
@@ -751,16 +797,29 @@ addSyntax( "env-cons", "envExpr", "va getExpr envExpr", {
             writer.consume( args.getExpr ),
             writer.consume( args.envExpr ) ) );
     },
-    _mapWithFreeVarsAfter: defaults.mapWithFreeVarsAfter,
+    _mapWithIsFinal: defaults.mapWithIsFinal,
     
     getFreeVars: defaults.getFreeVars,
     
+    desugarSave: defaults.desugarSave,
     desugarVarLists: defaults.desugarVarLists,
     hasProperScope: defaults.hasProperScope,
     desugarFn: defaults.desugarFn,
-    desugarSave: defaults.desugarSave,
     desugarDef: defaults.desugarDef,
-    desugarLet: defaults.desugarLet
+    desugarLet: defaults.desugarLet,
+    keys: function ( args ) {
+        return args.envExpr.keys().plusTruth( args.va.expr );
+    },
+    compileToNaiveJs: function ( args, gensym, locals, keyToI ) {
+        if ( !keyToI.has( args.va.expr ) )
+            throw new Error();
+        return (
+            "x.frameVars[ " + keyToI.get( args.va.expr ) + " ] = " +
+                args.getExpr.compileToNaiveJs( gensym, locals ) +
+                ";\n" +
+            args.envExpr.compileToNaiveJs( gensym, locals, keyToI )
+        );
+    }
 } );
 addSyntax( "let-def", "getExpr", "def getExpr", {
     _map: function ( args, writer ) {
@@ -768,14 +827,14 @@ addSyntax( "let-def", "getExpr", "def getExpr", {
             writer.consume( args.def ),
             writer.consume( args.getExpr ) ) );
     },
-    _mapWithFreeVarsAfter: defaults.mapWithFreeVarsAfter,
+    _mapWithIsFinal: defaults.mapWithIsFinal,
     
     getFreeVars: defaults.getFreeVars,
     
+    desugarSave: defaults.desugarSave,
     desugarVarLists: defaults.desugarVarLists,
     hasProperScope: defaults.hasProperScope,
     desugarFn: defaults.desugarFn,
-    desugarSave: defaults.desugarSave,
     desugarDef: function ( args ) {
         var desugaredDef = args.def.desugarDefIncludingSelf();
         var desugaredExpr = args.getExpr.desugarDef();
@@ -786,6 +845,9 @@ addSyntax( "let-def", "getExpr", "def getExpr", {
     },
     desugarLet: function ( args ) {
         throw new Error();
+    },
+    compileToNaiveJs: function ( args, gensym, locals ) {
+        throw new Error();
     }
 } );
 addSyntax( "let", "getExpr", "getExpr getExpr", {
@@ -794,17 +856,20 @@ addSyntax( "let", "getExpr", "getExpr getExpr", {
             writer.consume( args[ 0 ] ),
             writer.consume( args[ 1 ] ) ) );
     },
-    _mapWithFreeVarsAfter: defaults.mapWithFreeVarsAfter,
+    _mapWithIsFinal: defaults.mapWithIsFinal,
     
     getFreeVars: defaults.getFreeVars,
     
+    desugarSave: defaults.desugarSave,
     desugarVarLists: defaults.desugarVarLists,
     hasProperScope: defaults.hasProperScope,
     desugarFn: defaults.desugarFn,
-    desugarSave: defaults.desugarSave,
     desugarDef: defaults.desugarDef,
     desugarLet: function ( args ) {
         return args[ 1 ].expr;
+    },
+    compileToNaiveJs: function ( args, gensym, locals ) {
+        throw new Error();
     }
 } );
 addSyntax( "call", "getExpr", "getExpr getExpr", {
@@ -815,21 +880,26 @@ addSyntax( "call", "getExpr", "getExpr getExpr", {
             writer.consume( args[ 0 ] ),
             writer.consume( args[ 1 ] ) ) );
     },
-    _mapWithFreeVarsAfter: defaults.mapWithFreeVarsAfter,
+    _mapWithIsFinal: defaults.mapWithIsFinal,
     
     getFreeVars: defaults.getFreeVars,
     
-    desugarVarLists: defaults.desugarVarLists,
-    hasProperScope: function ( args, freeVarsAfter ) {
-        var freeVarsMid = args[ 1 ].getFreeVars( freeVarsAfter );
-        return freeVarsAfter.has( [ "final" ] ) &&
-            args[ 0 ].hasProperScope( freeVarsMid ) &&
-            args[ 1 ].hasProperScope( freeVarsAfter );
+    desugarSave: function ( args ) {
+        var writer = desugarSaveWriter();
+        return writer.redecorate( jsList( "call",
+            writer.consume( args[ 0 ] ),
+            processSaveRoot( args[ 1 ] ) ) );
     },
+    desugarVarLists: defaults.desugarVarLists,
+    hasProperScope: defaults.hasProperScope,
     desugarFn: defaults.desugarFn,
-    desugarSave: defaults.desugarSave,
     desugarDef: defaults.desugarDef,
-    desugarLet: defaults.desugarLet
+    desugarLet: defaults.desugarLet,
+    compileToNaiveJs: function ( args, gensym, locals ) {
+        return "" + args[ 0 ].compileToNaiveJs( gensym, locals ) +
+            ".call( " +
+                args[ 1 ].compileToNaiveJs( gensym, locals ) + " )";
+    }
 } );
 addSyntax( "if-frame", "getExpr",
     "frameName envPattern getExpr getExpr getExpr", {
@@ -843,47 +913,22 @@ addSyntax( "if-frame", "getExpr",
             writer.consume( args[ 3 ] ),
             writer.consume( args[ 4 ] ) ) );
     },
-    _mapWithFreeVarsAfter: function ( args, freeVarsAfter, writer ) {
-        var freeVarsMid2 = freeVarsAfter.keep( function ( truth, k ) {
-            return k[ 0 ] === "final";
-        } );
-        var freeVarsMid1 = args[ 3 ].getFreeVars( freeVarsMid2 ).
-            minus( args.envPattern.vals() ).
-            plus( args[ 4 ].getFreeVars( freeVarsMid2 ) );
+    _mapWithIsFinal: function ( args, isFinal, writer ) {
         return writer.redecorate( jsList( "if-frame",
             args.frameName.expr,
             args.envPattern.expr,
-            writer.consume( args[ 2 ], freeVarsMid1 ),
-            writer.consume( args[ 3 ], freeVarsMid2 ),
-            writer.consume( args[ 4 ], freeVarsMid2 ) ) );
+            writer.consume( args[ 2 ], !"isFinal" ),
+            writer.consume( args[ 3 ], isFinal ),
+            writer.consume( args[ 4 ], isFinal ) ) );
     },
     
-    getFreeVars: function ( args, freeVarsAfter ) {
-        var freeVarsMid2 = freeVarsAfter.keep( function ( truth, k ) {
-            return k[ 0 ] === "final";
-        } );
-        var freeVarsMid1 = args[ 3 ].getFreeVars( freeVarsMid2 ).
-            minus( args.envPattern.vals() ).
-            plus( args[ 4 ].getFreeVars( freeVarsMid2 ) );
-        return args[ 2 ].getFreeVars( freeVarsMid1 ).
-            plus( freeVarsAfter ).minusEntry( [ "final" ] );
+    getFreeVars: function ( args ) {
+        return args[ 2 ].getFreeVars().
+            plus( args[ 3 ].getFreeVars().
+                minus( args.envPattern.valsToKeys() ) ).
+            plus( args[ 4 ].getFreeVars() );
     },
     
-    desugarVarLists: defaults.desugarVarLists,
-    hasProperScope: function ( args, freeVarsAfter ) {
-        var freeVarsMid2 = freeVarsAfter.keep( function ( truth, k ) {
-            return k[ 0 ] === "final";
-        } );
-        var freeVarsMid1 = args[ 3 ].getFreeVars( freeVarsMid2 ).
-            minus( args.envPattern.vals() ).
-            plus( args[ 4 ].getFreeVars( freeVarsMid2 ) );
-        return args.envPattern.isProperForSets(
-                strMap(), strMap() ) &&
-            args[ 2 ].hasProperScope( freeVarsMid1 ) &&
-            args[ 3 ].hasProperScope( freeVarsMid2 ) &&
-            args[ 4 ].hasProperScope( freeVarsMid2 );
-    },
-    desugarFn: defaults.desugarFn,
     desugarSave: function ( args ) {
         var writer = desugarSaveWriter();
         return writer.redecorate( jsList( "if-frame",
@@ -893,24 +938,78 @@ addSyntax( "if-frame", "getExpr",
             processSaveRoot( args[ 3 ] ),
             processSaveRoot( args[ 4 ] ) ) );
     },
+    desugarVarLists: defaults.desugarVarLists,
+    hasProperScope: function ( args, isFinal ) {
+        return args.envPattern.isProperForSets(
+                strMap(), strMap() ) &&
+            args[ 2 ].hasProperScope( !"isFinal" ) &&
+            args[ 3 ].hasProperScope( isFinal ) &&
+            args[ 4 ].hasProperScope( isFinal );
+    },
+    desugarFn: defaults.desugarFn,
     desugarDef: defaults.desugarDef,
-    desugarLet: defaults.desugarLet
+    desugarLet: defaults.desugarLet,
+    compileToNaiveJs: function ( args, gensym, locals ) {
+        var entries = args.envPattern.keysToVals();
+        var frameVars = makeFrameVars( entries );
+        var frameTag =
+            JSON.stringify( [ args.frameName.expr, frameVars ] );
+        
+        var varStatements = "";
+        var thenLocals = strMap();
+        arrEach( frameVars, function ( va, i ) {
+            var gs = gensym();
+            varStatements +=
+                "var " + gs + " = x.frameVars[ " + i + " ];\n";
+            var local = entries.get( va );
+            if ( local[ 0 ] !== "va" )
+                throw new Error();
+            thenLocals.set( local[ 1 ], gs );
+        } );
+        
+        return (
+            "(function () {\n" +
+            "\n" +
+            "var x = " +
+                args[ 2 ].compileToNaiveJs( gensym, locals ) + ";\n" +
+            "\n" +
+            "if ( x.frameTag === " + jsStr( frameTag ) + " ) {\n" +
+            "\n" +
+            varStatements +
+            "return " +
+                args[ 3 ].compileToNaiveJs( gensym,
+                    locals.plus( thenLocals ) ) +
+                ";\n" +
+            "\n" +
+            "} else {\n" +
+            "\n" +
+            "return " +
+                args[ 4 ].compileToNaiveJs( gensym, locals ) + ";\n" +
+            "\n" +
+            "}\n" +
+            "})()"
+        );
+    }
 } );
 addSyntax( "local", "getExpr", "va", {
     _map: defaults.map,
-    _mapWithFreeVarsAfter: defaults.mapWithFreeVarsAfter,
+    _mapWithIsFinal: defaults.mapWithIsFinal,
     
-    getFreeVars: function ( args, freeVarsAfter ) {
-        return freeVarsAfter.plusTruth( [ "va", args.va.expr ] ).
-            minusEntry( [ "final" ] );
+    getFreeVars: function ( args ) {
+        return jsnMap().plusTruth( [ "va", args.va.expr ] );
     },
     
+    desugarSave: defaults.desugarSave,
     desugarVarLists: defaults.desugarVarLists,
     hasProperScope: defaults.hasProperScope,
     desugarFn: defaults.desugarFn,
-    desugarSave: defaults.desugarSave,
     desugarDef: defaults.desugarDef,
-    desugarLet: defaults.desugarLet
+    desugarLet: defaults.desugarLet,
+    compileToNaiveJs: function ( args, gensym, locals ) {
+        if ( !locals.has( args.va.expr ) )
+            throw new Error();
+        return locals.get( args.va.expr );
+    }
 } );
 addSyntax( "frame", "getExpr", "frameName envExpr", {
     _map: function ( args, writer ) {
@@ -918,16 +1017,36 @@ addSyntax( "frame", "getExpr", "frameName envExpr", {
             args.frameName.expr,
             writer.consume( args.envExpr ) ) );
     },
-    _mapWithFreeVarsAfter: defaults.mapWithFreeVarsAfter,
+    _mapWithIsFinal: defaults.mapWithIsFinal,
     
     getFreeVars: defaults.getFreeVars,
     
+    desugarSave: defaults.desugarSave,
     desugarVarLists: defaults.desugarVarLists,
     hasProperScope: defaults.hasProperScope,
     desugarFn: defaults.desugarFn,
-    desugarSave: defaults.desugarSave,
     desugarDef: defaults.desugarDef,
-    desugarLet: defaults.desugarLet
+    desugarLet: defaults.desugarLet,
+    compileToNaiveJs: function ( args, gensym, locals ) {
+        var frameVars = makeFrameVars( args.envExpr.keys() );
+        var frameTag =
+            JSON.stringify( [ args.frameName.expr, frameVars ] );
+        var keyToI = strMap();
+        arrEach( frameVars, function ( va, i ) {
+            keyToI.set( va, i );
+        } );
+        return (
+            "(function () {\n" +
+            "\n" +
+            "var x = new Stc( " + jsStr( frameTag ) + " );\n" +
+            "\n" +
+            args.envExpr.compileToNaiveJs( gensym, locals, keyToI ) +
+            "\n" +
+            "return x;\n" +
+            "\n" +
+            "})()"
+        );
+    }
 } );
 addSyntax( "save", "getExpr", "frameName optVarList va getExpr", {
     // INTERESTING
@@ -940,40 +1059,10 @@ addSyntax( "save", "getExpr", "frameName optVarList va getExpr", {
             writer.consume( args.getExpr ) ) );
     },
     
-    getFreeVars: function ( args, freeVarsAfter ) {
-        var innerFreeVarsAfter = freeVarsAfter.
-            minusEntry( [ "va", args.va.expr ] ).
-            minusEntry( [ "final" ] );
-        var declaredInnerFreeVarsAfter = args.optVarList.set();
-        return args.getExpr.
-            getFreeVars( jsnMap().plusTruth( [ "final" ] ) ).
-            plus( declaredInnerFreeVarsAfter || innerFreeVarsAfter );
+    getFreeVars: function ( args ) {
+        throw new Error();
     },
     
-    desugarVarLists: function ( args, freeVarsAfter ) {
-        var innerFreeVarsAfter = freeVarsAfter.
-            minusEntry( [ "va", args.va.expr ] ).
-            minusEntry( [ "final" ] );
-        return jsList( "save",
-            args.frameName.expr,
-            args.optVarList.or( innerFreeVarsAfter ),
-            args.va.expr,
-            args.getExpr.desugarVarLists(
-                jsnMap().plusTruth( [ "final" ] ) ) );
-    },
-    hasProperScope: function ( args, freeVarsAfter ) {
-        var innerFreeVarsAfter = freeVarsAfter.
-            minusEntry( [ "va", args.va.expr ] ).
-            minusEntry( [ "final" ] );
-        var declaredInnerFreeVarsAfter = args.optVarList.set();
-        if ( declaredInnerFreeVarsAfter === null )
-            throw new Error();
-        return args.optVarList.isProvidedProperlyForSet( strMap() ) &&
-            innerFreeVarsAfter.subset( declaredInnerFreeVarsAfter ) &&
-            args.getExpr.hasProperScope(
-                jsnMap().plusTruth( [ "final" ] ) );
-    },
-    desugarFn: defaults.desugarFn,
     desugarSave: function ( args ) {
         return {
             type: "save",
@@ -984,48 +1073,61 @@ addSyntax( "save", "getExpr", "frameName optVarList va getExpr", {
             frameBodyExpr: jsList( "local", args.va.expr )
         };
     },
+    desugarVarLists: function ( args ) {
+        throw new Error();
+    },
+    hasProperScope: function ( args, isFinal ) {
+        throw new Error();
+    },
+    desugarFn: function ( args ) {
+        throw new Error();
+    },
     desugarDef: function ( args ) {
         throw new Error();
     },
     desugarLet: function ( args ) {
+        throw new Error();
+    },
+    compileToNaiveJs: function ( args, gensym, locals ) {
         throw new Error();
     }
 } );
 addSyntax( "fn", "getExpr", "frameName optVarList va getExpr", {
     // INTERESTING
     
-    getFreeVars: function ( args, freeVarsAfter ) {
-        var innerFreeVarsAfter = jsnMap().plusTruth( [ "final" ] );
-        var innerFreeVars = args.getExpr.
-            getFreeVars( innerFreeVarsAfter ).
+    getFreeVars: function ( args ) {
+        var innerFreeVars = args.getExpr.getFreeVars().
             minusEntry( [ "va", args.va.expr ] );
         var declaredInnerFreeVars = args.optVarList.set();
-        return (declaredInnerFreeVars || innerFreeVars).plus(
-            freeVarsAfter ).minusEntry( [ "final" ] );
+        return declaredInnerFreeVars || innerFreeVars;
     },
     
-    desugarVarLists: function ( args, freeVarsAfter ) {
-        var innerFreeVarsAfter = jsnMap().plusTruth( [ "final" ] );
-        var innerFreeVars = args.getExpr.
-            getFreeVars( innerFreeVarsAfter ).
+    desugarSave: function ( args ) {
+        var writer = desugarSaveWriter();
+        return writer.redecorate( jsList( "fn",
+            args.frameName.expr,
+            args.optVarList.expr,
+            args.va.expr,
+            processSaveRoot( args.getExpr ) ) );
+    },
+    desugarVarLists: function ( args ) {
+        var innerFreeVars = args.getExpr.getFreeVars().
             minusEntry( [ "va", args.va.expr ] );
         return jsList( "fn",
             args.frameName.expr,
             args.optVarList.or( innerFreeVars ),
             args.va.expr,
-            args.getExpr.desugarVarLists( innerFreeVarsAfter ) );
+            args.getExpr.desugarVarLists() );
     },
-    hasProperScope: function ( args, freeVarsAfter ) {
-        var innerFreeVarsAfter = jsnMap().plusTruth( [ "final" ] );
-        var innerFreeVars = args.getExpr.
-            getFreeVars( innerFreeVarsAfter ).
+    hasProperScope: function ( args, isFinal ) {
+        var innerFreeVars = args.getExpr.getFreeVars().
             minusEntry( [ "va", args.va.expr ] );
         var declaredInnerFreeVars = args.optVarList.set();
         if ( declaredInnerFreeVars === null )
             throw new Error();
         return args.optVarList.isProvidedProperlyForSet( strMap() ) &&
             innerFreeVars.subset( declaredInnerFreeVars ) &&
-            args.getExpr.hasProperScope( innerFreeVarsAfter );
+            args.getExpr.hasProperScope( !!"isFinal" );
     },
     desugarFn: function ( args ) {
         return jsList( "let-def",
@@ -1036,13 +1138,13 @@ addSyntax( "fn", "getExpr", "frameName optVarList va getExpr", {
             jsList( "frame", args.frameName.expr,
                 args.optVarList.capture() ) );
     },
-    desugarSave: function ( args, freeVarsAfter ) {
-        throw new Error();
-    },
     desugarDef: function ( args ) {
         throw new Error();
     },
     desugarLet: function ( args ) {
+        throw new Error();
+    },
+    compileToNaiveJs: function ( args, gensym, locals ) {
         throw new Error();
     }
 } );
@@ -1052,7 +1154,7 @@ addSyntax( "var-list-omitted", "optVarList", "", {
     },
     or: function ( args, varSet ) {
         var varSetExpr = jsList( "var-list-nil" );
-        varSet.each( function ( truth, va ) {
+        varSet.each( function ( va, truth ) {
             if ( va[ 0 ] !== "va" )
                 throw new Error();
             varSetExpr =
@@ -1109,17 +1211,24 @@ addSyntax( "var-list-cons", "varList", "va varList", {
     }
 } );
 addSyntax( "env-pattern-nil", "envPattern", "", {
-    vals: function ( args ) {
+    valsToKeys: function ( args ) {
         return jsnMap();
+    },
+    keysToVals: function ( args ) {
+        return strMap();
     },
     isProperForSets: function ( args, keySet, varSet ) {
         return true;
     }
 } );
 addSyntax( "env-pattern-cons", "envPattern", "va va envPattern", {
-    vals: function ( args ) {
-        return args.envPattern.vals().
-            plusTruth( [ "va", args[ 1 ].expr ] );
+    valsToKeys: function ( args ) {
+        return args.envPattern.valsToKeys().
+            plusEntry( [ "va", args[ 1 ].expr ], args[ 0 ].expr );
+    },
+    keysToVals: function ( args ) {
+        return args.envPattern.keysToVals().
+            plusEntry( args[ 0 ].expr, [ "va", args[ 1 ].expr ] );
     },
     isProperForSets: function ( args, keySet, varSet ) {
         var k = args[ 0 ].expr;
@@ -1131,21 +1240,15 @@ addSyntax( "env-pattern-cons", "envPattern", "va va envPattern", {
 } );
 
 function desugarDefExpr( expr ) {
-    var parsed = parseSyntax( "def", expr );
-    var noVarLists =
-        parseSyntax( "def", parsed.desugarVarLists( jsnMap() ) );
-    if ( !noVarLists.hasProperScope( jsnMap() ) )
-        throw new Error();
-    var noFns = parseSyntax( "def", noVarLists.desugarFn() );
-    var noSavesResult = noFns.desugarSave();
+    var noSavesResult = parseSyntax( "def", expr ).desugarSave();
     if ( noSavesResult.type !== "expr" )
         throw new Error();
     var noSaves = parseSyntax( "def", noSavesResult.expr );
-    return arrMap( noSaves.desugarDefIncludingSelf(),
-        function ( def ) {
-        
-        var parsed = parseSyntax( "def", def );
-        return parsed.desugarLet();
-        return noLet;
+    var noVarLists = parseSyntax( "def", noSaves.desugarVarLists() );
+    if ( !noVarLists.hasProperScope( !"isFinal" ) )
+        throw new Error();
+    var noFns = parseSyntax( "def", noVarLists.desugarFn() );
+    return arrMap( noFns.desugarDefIncludingSelf(), function ( def ) {
+        return parseSyntax( "def", def ).desugarLet();
     } );
 }
