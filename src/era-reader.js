@@ -273,24 +273,26 @@ function ignoreRestOfLine( $ ) {
     } );
 }
 
-var readerMacros = strMap();
-readerMacros.set( ";", function ( $ ) {
+var whiteReaderMacros = strMap();
+whiteReaderMacros.set( ";", function ( $ ) {
     if ( bankCommand( $ ) )
         return;
     ignoreRestOfLine( $ );
 } );
-addReaderMacros( readerMacros, commandEndChars, function ( $ ) {
+addReaderMacros( whiteReaderMacros, commandEndChars, function ( $ ) {
     if ( bankCommand( $ ) )
         return;
     $.stream.readc( function ( c ) {
         reader( $ );
     } );
 } );
-addReaderMacros( readerMacros, whiteChars, function ( $ ) {
+addReaderMacros( whiteReaderMacros, whiteChars, function ( $ ) {
     $.stream.readc( function ( c ) {
         reader( $ );
     } );
 } );
+
+var readerMacros = whiteReaderMacros.copy();
 addReaderMacros( readerMacros, symbolChars, function ( $ ) {
     if ( bankInfix( $, 0 ) )
         return;
@@ -386,7 +388,7 @@ function defineInfixOperator(
                 infixState: { type: "empty" }
             } );
             $sub1.stream.readc( function ( c ) {
-                function read( heedsCommandEnds, then ) {
+                function read( heedsCommandEnds, level, then ) {
                     reader( objPlus( $sub1, {
                         heedsCommandEnds:
                             origHeedsCommandEnds && heedsCommandEnds,
@@ -407,7 +409,36 @@ function defineInfixOperator(
                         }
                     } ) );
                 }
-                readRemaining( lhs, read, function ( result ) {
+                function expectChar( heedsCommandEnds, ch, then ) {
+                    reader( objPlus( $sub1, {
+                        heedsCommandEnds:
+                            origHeedsCommandEnds && heedsCommandEnds,
+                        readerMacros: whiteReaderMacros.plusEntry( ch,
+                            function ( $sub2 ) {
+                            
+                            $sub2.stream.readc( function ( c ) {
+                                $sub2.then( { ok: true } );
+                            } );
+                        } ),
+                        unrecognized: function ( $sub ) {
+                            $.then( { ok: false, msg:
+                                "Encountered an unrecognized " +
+                                "character when expecting " + ch } );
+                        },
+                        then: function ( result ) {
+                            if ( !result.ok )
+                                return void $sub1.then( result );
+                            then();
+                        },
+                        end: function ( $sub2 ) {
+                            $sub2.then( { ok: false,
+                                msg: incompleteErr } );
+                        }
+                    } ) );
+                }
+                readRemaining( lhs, read, expectChar,
+                    function ( result ) {
+                    
                     continueInfix( $sub1, result );
                 } );
             } );
@@ -416,10 +447,18 @@ function defineInfixOperator(
         }
     } );
 }
+// TODO: Remove the `a :b c` syntax in favor of writing `a<b>c`. The
+// latter is visually symmetrical, but more importantly, it does not
+// require whitespace between `b` and `c`. The lack of whitespace
+// makes it easier to visually group it among list elements like
+// (a b c<d>e f), and it makes multi-line infix expressions look even
+// more unusual. This saves us from multi-line infix indentation
+// dilemmas because it discourages us from writing such expressions in
+// the first place.
 defineInfixOperator( ":", 1,
     "Tertiary infix expression without lhs",
     "Incomplete tertiary infix expression",
-    function ( lhs, read, then ) {
+    function ( lhs, read, expectChar, then ) {
     
     // NOTE: We support top-level code like the following by disabling
     // heedsCommandEnds when reading the operator:
@@ -431,18 +470,43 @@ defineInfixOperator( ":", 1,
     // always be disabled in contexts where it's obvious the command
     // is incomplete and could be completed.
     //
-    read( !"heedsCommandEnds", function ( op ) {
-        read( !!"heedsCommandEnds", function ( rhs ) {
+    read( !"heedsCommandEnds", 1, function ( op ) {
+        read( !!"heedsCommandEnds", 1, function ( rhs ) {
             then( [ op, lhs, rhs ] );
         } );
     } );
 } );
+defineInfixOperator( "<", 1,
+    "Tertiary infix expression without lhs",
+    "Incomplete tertiary infix expression",
+    function ( lhs, read, expectChar, then ) {
+    
+    // NOTE: We support top-level code like the following by disabling
+    // heedsCommandEnds when reading the operator:
+    //
+    //  a <b
+    //      .c> d
+    //
+    read( !"heedsCommandEnds", 0, function ( op ) {
+        expectChar( !"heedsCommandEnds", ">", function () {
+            read( !!"heedsCommandEnds", 1, function ( rhs ) {
+                then( [ op, lhs, rhs ] );
+            } );
+        } );
+    } );
+} );
+readerMacros.set( ">", function ( $ ) {
+    if ( bankInfix( $, 0 ) )
+        return;
+    $.then( { ok: false,
+        msg: "Tertiary infix expression without lhs or operator" } );
+} );
 defineInfixOperator( ".", 2,
     "Binary infix expression without lhs",
     "Incomplete binary infix expression",
-    function ( lhs, read, then ) {
+    function ( lhs, read, expectChar, then ) {
     
-    read( !!"heedsCommandEnds", function ( rhs ) {
+    read( !!"heedsCommandEnds", 2, function ( rhs ) {
         then( [ lhs, rhs ] );
     } );
 } );
