@@ -507,9 +507,9 @@ symbolChopsChars.each( function ( openBracket, closeBracket ) {
             then: function ( result ) {
                 if ( result.ok )
                     $.then( { ok: true, val: [].concat(
-                        { type: "nonWhite", text: openBracket },
+                        [ { type: "nonWhite", text: openBracket } ],
                         result.val,
-                        { type: "nonWhite", text: closeBracket }
+                        [ { type: "nonWhite", text: closeBracket } ]
                     ) } );
                 else
                     $.then( result );
@@ -577,11 +577,11 @@ stringReaderMacros.set( "\\", function ( $ ) {
                         then: function ( result ) {
                             if ( result.ok )
                                 $.then( { ok: true, val: [].concat(
-                                    { type: "nonWhite", text:
-                                        escStart + openBracket },
+                                    [ { type: "nonWhite", text:
+                                        escStart + openBracket } ],
                                     result.val,
-                                    { type: "nonWhite",
-                                        text: closeBracket }
+                                    [ { type: "nonWhite",
+                                        text: closeBracket } ]
                                 ) } );
                             else
                                 $.then( result );
