@@ -237,10 +237,10 @@ function run( stack, rules ) {
 // getExpr/envExpr desugarDef()
 // def desugarDefIncludingSelf()
 // getExpr/envExpr/def desugarLet()
-// getExpr compileToNaiveJs( gensym, locals )
+// getExpr compileToNaiveJs( options, locals )
 // envExpr keys()
-// envExpr compileToNaiveJs( gensym, locals, keyToI )
-// def compileToNaiveJs()
+// envExpr compileToNaiveJs( options, locals, keyToI )
+// def compileToNaiveJs( options )
 // optVarList/varList set()
 // optVarList or( varSet )
 // optVarList/varList isProvidedProperlyForSet( varSet )
@@ -747,7 +747,7 @@ addSyntax( "def", "def", "frameName optVarList va getExpr", {
         ) ] );
     },
     desugarLet: defaults.desugarLet,
-    compileToNaiveJs: function ( args ) {
+    compileToNaiveJs: function ( args, options ) {
         var nextGensymI = 0;
         function gensym() {
             return "v" + nextGensymI++;
@@ -779,7 +779,8 @@ addSyntax( "def", "def", "frameName optVarList va getExpr", {
             "\n" +
             varStatements +
             "return " +
-                args.getExpr.compileToNaiveJs( gensym, locals ) +
+                args.getExpr.compileToNaiveJs(
+                    objPlus( options, { gensym: gensym } ), locals ) +
                 ";\n" +
             "\n" +
             "};"
@@ -801,7 +802,7 @@ addSyntax( "env-nil", "envExpr", "", {
     keys: function ( args ) {
         return strMap();
     },
-    compileToNaiveJs: function ( args, gensym, locals, keyToI ) {
+    compileToNaiveJs: function ( args, options, locals, keyToI ) {
         return "";
     }
 } );
@@ -825,14 +826,14 @@ addSyntax( "env-cons", "envExpr", "va getExpr envExpr", {
     keys: function ( args ) {
         return args.envExpr.keys().plusTruth( args.va.expr );
     },
-    compileToNaiveJs: function ( args, gensym, locals, keyToI ) {
+    compileToNaiveJs: function ( args, options, locals, keyToI ) {
         if ( !keyToI.has( args.va.expr ) )
             throw new Error();
         return (
             "x.frameVars[ " + keyToI.get( args.va.expr ) + " ] = " +
-                args.getExpr.compileToNaiveJs( gensym, locals ) +
+                args.getExpr.compileToNaiveJs( options, locals ) +
                 ";\n" +
-            args.envExpr.compileToNaiveJs( gensym, locals, keyToI )
+            args.envExpr.compileToNaiveJs( options, locals, keyToI )
         );
     }
 } );
@@ -861,7 +862,7 @@ addSyntax( "let-def", "getExpr", "def getExpr", {
     desugarLet: function ( args ) {
         throw new Error();
     },
-    compileToNaiveJs: function ( args, gensym, locals ) {
+    compileToNaiveJs: function ( args, options, locals ) {
         throw new Error();
     }
 } );
@@ -883,7 +884,7 @@ addSyntax( "let", "getExpr", "getExpr getExpr", {
     desugarLet: function ( args ) {
         return args[ 1 ].expr;
     },
-    compileToNaiveJs: function ( args, gensym, locals ) {
+    compileToNaiveJs: function ( args, options, locals ) {
         throw new Error();
     }
 } );
@@ -905,10 +906,12 @@ addSyntax( "call", "getExpr", "getExpr getExpr", {
     desugarFn: defaults.desugarFn,
     desugarDef: defaults.desugarDef,
     desugarLet: defaults.desugarLet,
-    compileToNaiveJs: function ( args, gensym, locals ) {
-        return "" + args[ 0 ].compileToNaiveJs( gensym, locals ) +
-            ".call( " +
-                args[ 1 ].compileToNaiveJs( gensym, locals ) + " )";
+    compileToNaiveJs: function ( args, options, locals ) {
+        var func = args[ 0 ].compileToNaiveJs( options, locals );
+        var arg = args[ 1 ].compileToNaiveJs( options, locals );
+        return options.savable ?
+            "new StcPendingFrame( " + func + ", " + arg + " )" :
+            "" + func + ".call( " + arg + " )";
     }
 } );
 addSyntax( "if-frame", "getExpr",
@@ -951,7 +954,7 @@ addSyntax( "if-frame", "getExpr",
     desugarFn: defaults.desugarFn,
     desugarDef: defaults.desugarDef,
     desugarLet: defaults.desugarLet,
-    compileToNaiveJs: function ( args, gensym, locals ) {
+    compileToNaiveJs: function ( args, options, locals ) {
         var entries = args.envPattern.keysToVals();
         var frameVars = makeFrameVars( entries );
         var frameTag =
@@ -960,7 +963,7 @@ addSyntax( "if-frame", "getExpr",
         var varStatements = "";
         var thenLocals = strMap();
         arrEach( frameVars, function ( va, i ) {
-            var gs = gensym();
+            var gs = options.gensym();
             varStatements +=
                 "var " + gs + " = x.frameVars[ " + i + " ];\n";
             var local = entries.get( va );
@@ -973,20 +976,21 @@ addSyntax( "if-frame", "getExpr",
             "(function () {\n" +
             "\n" +
             "var x = " +
-                args[ 2 ].compileToNaiveJs( gensym, locals ) + ";\n" +
+                args[ 2 ].compileToNaiveJs( options, locals ) + ";\n" +
             "\n" +
             "if ( x.frameTag === " + jsStr( frameTag ) + " ) {\n" +
             "\n" +
             varStatements +
             "return " +
-                args[ 3 ].compileToNaiveJs( gensym,
+                args[ 3 ].compileToNaiveJs( options,
                     locals.plus( thenLocals ) ) +
                 ";\n" +
             "\n" +
             "} else {\n" +
             "\n" +
             "return " +
-                args[ 4 ].compileToNaiveJs( gensym, locals ) + ";\n" +
+                args[ 4 ].compileToNaiveJs( options, locals ) +
+                ";\n" +
             "\n" +
             "}\n" +
             "})()"
@@ -1007,7 +1011,7 @@ addSyntax( "local", "getExpr", "va", {
     desugarFn: defaults.desugarFn,
     desugarDef: defaults.desugarDef,
     desugarLet: defaults.desugarLet,
-    compileToNaiveJs: function ( args, gensym, locals ) {
+    compileToNaiveJs: function ( args, options, locals ) {
         if ( !locals.has( args.va.expr ) )
             throw new Error();
         return locals.get( args.va.expr );
@@ -1029,7 +1033,7 @@ addSyntax( "frame", "getExpr", "frameName envExpr", {
     desugarFn: defaults.desugarFn,
     desugarDef: defaults.desugarDef,
     desugarLet: defaults.desugarLet,
-    compileToNaiveJs: function ( args, gensym, locals ) {
+    compileToNaiveJs: function ( args, options, locals ) {
         var frameVars = makeFrameVars( args.envExpr.keys() );
         var frameTag =
             JSON.stringify( [ args.frameName.expr, frameVars ] );
@@ -1042,7 +1046,7 @@ addSyntax( "frame", "getExpr", "frameName envExpr", {
             "\n" +
             "var x = new Stc( " + jsStr( frameTag ) + " );\n" +
             "\n" +
-            args.envExpr.compileToNaiveJs( gensym, locals, keyToI ) +
+            args.envExpr.compileToNaiveJs( options, locals, keyToI ) +
             "\n" +
             "return x;\n" +
             "\n" +
@@ -1090,7 +1094,7 @@ addSyntax( "save", "getExpr", "frameName optVarList va getExpr", {
     desugarLet: function ( args ) {
         throw new Error();
     },
-    compileToNaiveJs: function ( args, gensym, locals ) {
+    compileToNaiveJs: function ( args, options, locals ) {
         throw new Error();
     }
 } );
@@ -1147,7 +1151,7 @@ addSyntax( "fn", "getExpr", "frameName optVarList va getExpr", {
     desugarLet: function ( args ) {
         throw new Error();
     },
-    compileToNaiveJs: function ( args, gensym, locals ) {
+    compileToNaiveJs: function ( args, options, locals ) {
         throw new Error();
     }
 } );

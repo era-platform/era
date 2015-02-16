@@ -442,19 +442,62 @@ Stc.prototype.pretty = function () {
             return " " + elem.pretty();
         } ).join( "" ) + ")";
 };
+function StcPendingFrame( frame, next ) {
+    this.frame = frame;
+    this.next = next;
+}
 
+var testWithSavable = true;
 arrEach( stcDefs, function ( def ) {
     Function( "defs", "Stc",
-        parseSyntax( "def", def ).compileToNaiveJs()
+        parseSyntax( "def", def ).compileToNaiveJs( {
+            savable: testWithSavable
+        } )
     )( defs, Stc );
 } );
 
 function testStcDef( frameTag, frameVars, arg ) {
-    var def = defs[ frameTag ];
-    console.log( def( frameVars, arg ).pretty() );
+    
+    if ( testWithSavable ) {
+        var maxStackDepth = 0;
+        var calls = 0;
+        
+        var stack = [ new Stc( frameTag, frameVars ) ];
+        var result = arg;
+        while ( true ) {
+            while ( result instanceof StcPendingFrame ) {
+                stack.push( result.frame );
+                result = result.next;
+            }
+            if ( !(result instanceof Stc) )
+                throw new Error();
+            var n = stack.length;
+            if ( n === 0 )
+                break;
+            result = stack.pop().call( result );
+            
+            if ( maxStackDepth < n )
+                maxStackDepth = n;
+            calls++;
+        }
+    } else {
+        var result = new Stc( frameTag, frameVars ).call( arg );
+    }
+    
+    console.log( result.pretty() );
+    
+    if ( testWithSavable )
+        console.log(
+            "in " + calls + " " + (calls === 1 ? "call" : "calls") +
+            " with a maximum stack depth of " + maxStackDepth );
 }
 
 testStcDef( JSON.stringify( [ "rev", [] ] ), [],
     stcCons.makeStc( stcYep.makeStc( stcNil.makeStc() ),
         stcCons.makeStc( stcNope.makeStc( stcNil.makeStc() ),
             stcNil.makeStc() ) ) );
+
+testStcDef( JSON.stringify( [ "rev", [] ] ), [], stcNil.makeStc() );
+
+testStcDef( JSON.stringify( [ "not-yep-nope", [] ] ), [],
+    stcYep.makeStc( stcNil.makeStc() ) );
