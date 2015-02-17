@@ -281,10 +281,6 @@ var readerMacros = whiteReaderMacros.copy();
 addReaderMacros( readerMacros, symbolChars, function ( $ ) {
     if ( bankInfix( $, 0 ) )
         return;
-    // TODO: See if this series of string concatenations is a
-    // painter's algorithm. Those in the know seem to say it's faster
-    // than keeping a big Array and concatenating later, but maybe
-    // there's something even better than either option.
     function collectChops( stringSoFar, open, close, nesting ) {
         if ( nesting === 0 )
             return void collect( stringSoFar );
@@ -673,15 +669,6 @@ stringReaderMacros.set( "\\", function ( $ ) {
                             infixState: { type: "empty" },
                             readerMacros: readerMacros,
                             unrecognized: function ( $sub2 ) {
-                                // TODO: See if we can make this error
-                                // message, the error message in
-                                // penknife.html, and the error
-                                // message in test-reader.js use the
-                                // same code. Also, see if these
-                                // should all use a bankInfix line
-                                // like the following.
-//                                if ( bankInfix( $, 0 ) )
-//                                    return;
                                 $sub2.then( { ok: false, msg:
                                     "Encountered an unrecognized " +
                                     "character" } );
