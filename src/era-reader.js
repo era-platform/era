@@ -247,9 +247,7 @@ function postprocessWhitespace( stringParts ) {
 
 function ignoreRestOfLine( $, then ) {
     $.stream.peekc( function ( c ) {
-        if ( c === "" )
-            $.end( $ );
-        else if ( /^[\r\n]$/.test( c ) )
+        if ( /^[\r\n]?$/.test( c ) )
             then();
         else
             $.stream.readc( function ( c ) {
