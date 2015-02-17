@@ -84,7 +84,7 @@
 // $.heedsCommandEnds
 // $.infixLevel
 // $.infixState
-// $.list
+// $.qqDepth
 // $.end
 // $.unrecognized
 
@@ -132,10 +132,9 @@ function continueInfix( $, val ) {
 // NOTE: The readListUntilParen() function is only for use by the "("
 // and "/" reader macros to reduce duplication.
 function readListUntilParen( $, consumeParen ) {
-    function sub( $, list ) {
-        return objPlus( $, {
+    function loop( $, list ) {
+        reader( objPlus( $, {
             heedsCommandEnds: false,
-            list: list,
             readerMacros: $.readerMacros.plusEntry( ")",
                 function ( $sub ) {
                 
@@ -150,10 +149,12 @@ function readListUntilParen( $, consumeParen ) {
                     next();
                 
                 function next() {
+                    // TODO: Make this trampolined with constant time
+                    // between bounces. This might be tricky because
+                    // it's stateful.
                     var result = [];
-                    for ( var list = $sub.list;
-                        list !== null; list = list.past )
-                        result.unshift( list.last );
+                    for ( var ls = list; ls !== null; ls = ls.past )
+                        result.unshift( ls.last );
                     continueInfix( $, result );
                 }
             } ),
@@ -161,18 +162,17 @@ function readListUntilParen( $, consumeParen ) {
             infixState: { type: "empty" },
             then: function ( result ) {
                 if ( result.ok )
-                    reader(
-                        sub( $, { past: list, last: result.val } ) );
+                    loop( $, { past: list, last: result.val } );
                 else
                     $.then( result );
             },
             end: function ( $sub ) {
                 $.then( { ok: false, msg: "Incomplete list" } );
             }
-        } );
+        } ) );
     }
     $.stream.readc( function ( c ) {
-        reader( sub( $, null ) );
+        loop( $, null );
     } );
 }
 
@@ -183,6 +183,9 @@ var commandEndChars = "\r\n";
 var whiteChars = " \t";
 
 function postprocessWhitespace( stringParts ) {
+    // TODO: Make this trampolined with constant time between bounces.
+    // This might be tricky because it's stateful.
+    
     // Remove all raw whitespace adjacent to the ends of the string
     // and adjacent to whitespace escapes.
     function removeAfterStartOrExplicitWhitespace( parts ) {
@@ -471,18 +474,19 @@ defineInfixOperator( ".", 2,
 } );
 
 function readStringUntilBracket( bracket, qqDepth, $ ) {
-    function sub( $, string ) {
-        return objPlus( $, {
-            string: string,
+    function loop( $, string ) {
+        reader( objPlus( $, {
             qqDepth: qqDepth,
             readerMacros: stringReaderMacros.plusEntry( bracket,
                 function ( $sub ) {
                 
                 $sub.stream.readc( function ( c ) {
+                    // TODO: Make this trampolined with constant time
+                    // between bounces. This might be tricky because
+                    // it's stateful.
                     var result = [];
-                    for ( var string = $sub.string;
-                        string !== null; string = string.past )
-                        result = string.last.concat( result );
+                    for ( var s = string; s !== null; s = s.past )
+                        result = s.last.concat( result );
                     $.then( { ok: true, val: result } );
                 } );
             } ),
@@ -497,16 +501,14 @@ function readStringUntilBracket( bracket, qqDepth, $ ) {
             },
             then: function ( result ) {
                 if ( result.ok )
-                    reader(
-                        sub(
-                            $, { past: string, last: result.val } ) );
+                    loop( $, { past: string, last: result.val } );
                 else
                     $.then( result );
             }
-        } );
+        } ) );
     }
     $.stream.readc( function ( c ) {
-        reader( sub( $, null ) );
+        loop( $, null );
     } );
 }
 
@@ -800,6 +802,9 @@ function stringStream( defer, string ) {
 }
 
 function makeDeferTrampoline() {
+    // TODO: Refactor this to be a trampoline with constant time
+    // between bounces, like what Penknife and era-avl.js use.
+    
     var deferTrampolineEvents = [];
     
     var result = {};
@@ -819,6 +824,8 @@ function readAll( string ) {
     var stream = stringStream( deferTrampoline.defer, string );
     
     function read( stream, onEnd, onFailure, onSuccess ) {
+        // TODO: Make this trampolined with constant time between
+        // bounces. This might be tricky because it's stateful.
         var readResult;
         reader( {
             stream: stream,
