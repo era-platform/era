@@ -72,24 +72,9 @@
 // this depth. They really begin with \ followed by a number of ,
 // equal to the depth. For instance, at a depth of 2, the \n escape
 // sequence must actually be written as \,,n in the code. If any of
-// these escape sequences other than \_ appears with fewer commas than
-// the depth, it's still parsed the same way, but the result is the
-// unprocessed text.
-//
-// If the escape sequence \_ appears with fewer commas than the depth,
-// that's an error. Someday we may treat it the same way as the other
-// escape sequences, but this would make the steep assumption that the
-// code being generated shares Penknife's complete expression syntax,
-// rather than just sharing its string syntax.
-//
-// TODO: Actually that's not such an unreasonable assumption. After
-// all, the programmer uses the \[ escape sequence if they want to
-// generate string code that's like Penknife string code, and they
-// can potentially use \_ to generate interpolated expression code
-// that's like Penknife interpolated expression code. We should
-// probably support this. To do so, we'll need every Penknife reader
-// behavior to sometimes return the raw string it consumed, rather
-// than returning an expression or other result.
+// these escape sequences appears with fewer commas than the depth,
+// it's still parsed the same way, but the result is the unprocessed
+// text.
 
 
 // $.stream.readc
@@ -675,13 +660,37 @@ stringReaderMacros.set( "\\", function ( $ ) {
                     readRestOfLine( "", $ );
                 },
                 "_": function ( $ ) {
-                    if ( escQqDepth < $.qqDepth )
-                        return void $.then( { ok: false, msg:
-                            "Tried to interpolate in a " +
-                            "string-within-a-string" } );
                     
-                    $.stream.readc( function ( c ) {
+                    function makeCapturingStream( underlyingStream ) {
+                        var captured = "";
+                        
+                        var stream = {};
+                        stream.peekc = function ( then ) {
+                            underlyingStream.peekc( then );
+                        };
+                        stream.readc = function ( then ) {
+                            underlyingStream.readc( function ( ch ) {
+                                captured += ch;
+                                then( ch );
+                            } );
+                        };
+                        
+                        var result = {};
+                        result.stream = stream;
+                        result.getCaptured = function () {
+                            return captured;
+                        };
+                        return result;
+                    }
+                    
+                    var inStringWithinString = escQqDepth < $.qqDepth;
+                    var capturing = inStringWithinString ?
+                        makeCapturingStream( $.stream ) :
+                        { stream: $.stream };
+                    
+                    capturing.stream.readc( function ( c ) {
                         reader( objPlus( $, {
+                            stream: capturing.stream,
                             heedsCommandEnds: false,
                             infixLevel: 3,
                             infixState: { type: "empty" },
@@ -712,17 +721,26 @@ stringReaderMacros.set( "\\", function ( $ ) {
                             then: function ( result ) {
                                 if ( !result.ok )
                                     return void $.then( result );
-                                $.stream.readc( function ( c ) {
-                                    if ( c === "." )
-                                        $.then( { ok: true, val: [ {
-                                            type: "interpolation",
-                                            val: result.val
-                                        } ] } );
-                                    else
+                                capturing.stream.readc(
+                                    function ( c ) {
+                                    
+                                    if ( c !== "." )
                                         $.then( { ok: false, val:
                                             "Didn't end a string " +
                                             "interpolation with a " +
                                             "dot" } );
+                                    else if ( inStringWithinString )
+                                        $.then( { ok: true, val: [ {
+                                            type: "nonWhite",
+                                            text: escStart +
+                                                capturing.
+                                                    getCaptured()
+                                        } ] } );
+                                    else
+                                        $.then( { ok: true, val: [ {
+                                            type: "interpolation",
+                                            val: result.val
+                                        } ] } );
                                 } );
                             }
                         } ) );
