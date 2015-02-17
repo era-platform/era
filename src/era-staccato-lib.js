@@ -449,11 +449,11 @@ function StcPendingFrame( frame, next ) {
 
 var testWithSavable = true;
 arrEach( stcDefs, function ( def ) {
-    Function( "defs", "Stc",
+    Function( "defs", "Stc", "StcPendingFrame",
         parseSyntax( "def", def ).compileToNaiveJs( {
             savable: testWithSavable
         } )
-    )( defs, Stc );
+    )( defs, Stc, StcPendingFrame );
 } );
 
 function testStcDef( frameTag, frameVars, arg ) {
