@@ -245,15 +245,15 @@ function postprocessWhitespace( stringParts ) {
     return { type: "interpolatedString", parts: resultParts };
 }
 
-function ignoreRestOfLine( $ ) {
+function ignoreRestOfLine( $, then ) {
     $.stream.peekc( function ( c ) {
         if ( c === "" )
             $.end( $ );
         else if ( /^[\r\n]$/.test( c ) )
-            reader( $ );
+            then();
         else
             $.stream.readc( function ( c ) {
-                ignoreRestOfLine( $ );
+                ignoreRestOfLine( $, then );
             } );
     } );
 }
@@ -262,7 +262,9 @@ var whiteReaderMacros = strMap();
 whiteReaderMacros.set( ";", function ( $ ) {
     if ( bankCommand( $ ) )
         return;
-    ignoreRestOfLine( $ );
+    ignoreRestOfLine( $, function () {
+        reader( $ );
+    } );
 } );
 addReaderMacros( whiteReaderMacros, commandEndChars, function ( $ ) {
     if ( bankCommand( $ ) )
@@ -571,8 +573,51 @@ symbolChopsChars.each( function ( openBracket, closeBracket ) {
     } );
 } );
 stringReaderMacros.set( "\\", function ( $ ) {
-    function readForEscQqDepth( escStart, escQqDepth ) {
+    loop( "", -1 );
+    function loop( escStart, escQqDepth ) {
+        if ( $.qqDepth < escQqDepth )
+            return void $.then( { ok: false,
+                msg: "Unquoted past the quasiquotation depth" } );
+        
+        $.stream.readc( function ( c1 ) {
+            $.stream.peekc( function ( c2 ) {
+                if ( c2 === "," )
+                    loop( escStart + c1, escQqDepth + 1 );
+                else
+                    next( escStart + c1, escQqDepth + 1 );
+            } );
+        } );
+    }
+    function next( escStart, escQqDepth ) {
+        function makeCapturingStream( underlyingStream ) {
+            var captured = "";
+            
+            var stream = {};
+            stream.peekc = function ( then ) {
+                underlyingStream.peekc( then );
+            };
+            stream.readc = function ( then ) {
+                underlyingStream.readc( function ( c ) {
+                    captured += c;
+                    then( c );
+                } );
+            };
+            
+            var result = {};
+            result.stream = stream;
+            result.getCaptured = function () {
+                return captured;
+            };
+            return result;
+        }
+        
+        var inStringWithinString = escQqDepth < $.qqDepth;
+        var capturing = inStringWithinString ?
+            makeCapturingStream( $.stream ) :
+            { stream: $.stream };
+        
         reader( objPlus( $, {
+            stream: capturing.stream,
             readerMacros: strMap().setAll( strMap().setObj( {
                 "s": " ",
                 "t": "\t",
@@ -581,13 +626,9 @@ stringReaderMacros.set( "\\", function ( $ ) {
                 "#": ""
             } ).map( function ( text, escName ) {
                 return function ( $sub ) {
-                    $.stream.readc( function ( c ) {
-                        $.then( { ok: true, val:
-                            escQqDepth < $.qqDepth ?
-                                [ { type: "nonWhite",
-                                    text: escStart + escName } ] :
-                                [ { type: "explicitWhite",
-                                    text: text } ]
+                    $sub.stream.readc( function ( c ) {
+                        $sub.then( { ok: true, val:
+                            [ { type: "explicitWhite", text: text } ]
                         } );
                     } );
                 };
@@ -599,28 +640,32 @@ stringReaderMacros.set( "\\", function ( $ ) {
                 "}": ")"
             } ).map( function ( text, escName ) {
                 return function ( $sub ) {
-                    $.stream.readc( function ( c ) {
-                        $.then( { ok: true, val:
-                            escQqDepth < $.qqDepth ?
-                                [ { type: "nonWhite",
-                                    text: escStart + escName } ] :
-                                [ { type: "nonWhite", text: text } ]
+                    $sub.stream.readc( function ( c ) {
+                        $sub.then( { ok: true, val:
+                            [ { type: "nonWhite", text: text } ]
                         } );
                     } );
                 };
             } ) ).setAll( symbolChopsChars.map(
                 function ( closeBracket, openBracket ) {
                 
+                // NOTE: Unlike the rest of these escape sequences,
+                // this one directly uses `$` instead of `$sub`. It
+                // does to bypass the makeCapturingStream() behavior
+                // on `$sub.stream`, which would otherwise suppress
+                // *all* escape sequences occurring inside this one's
+                // boundaries.
+                
                 return function ( $sub ) {
-                    if ( $.qqDepth !== 0 )
-                        return void $.then( { ok: false, msg:
+                    if ( $sub.qqDepth !== 0 )
+                        return void $sub.then( { ok: false, msg:
                             "Used a string-within-a-string escape " +
                             "sequence with an unquote level other " +
                             "than zero" } );
                     
                     readStringUntilBracket(
                         closeBracket,
-                        $.qqDepth + 1,
+                        $sub.qqDepth + 1,
                         objPlus( $, {
                         
                         then: function ( result ) {
@@ -639,63 +684,19 @@ stringReaderMacros.set( "\\", function ( $ ) {
                 };
             } ) ).setObj( {
                 ";": function ( $sub ) {
-                    if ( $.qqDepth <= escQqDepth )
-                        return void ignoreRestOfLine( $ );
-                    
-                    function readRestOfLine( soFar, $ ) {
-                        $.stream.peekc( function ( c ) {
-                            if ( c === "" )
-                                $.end( $ );
-                            else if ( /^[\r\n]$/.test( c ) )
-                                $.then( { ok: true, val:
-                                    [ { type: "nonWhite",
-                                        text: escStart + soFar } ]
-                                } );
-                            else
-                                $.stream.readc( function ( c ) {
-                                    readRestOfLine( soFar + c, $ );
-                                } );
-                        } );
-                    }
-                    readRestOfLine( "", $ );
+                    return void ignoreRestOfLine( $sub, function () {
+                        $sub.then( { ok: true, val: [] } );
+                    } );
                 },
-                "_": function ( $ ) {
+                "_": function ( $sub ) {
                     
-                    function makeCapturingStream( underlyingStream ) {
-                        var captured = "";
-                        
-                        var stream = {};
-                        stream.peekc = function ( then ) {
-                            underlyingStream.peekc( then );
-                        };
-                        stream.readc = function ( then ) {
-                            underlyingStream.readc( function ( ch ) {
-                                captured += ch;
-                                then( ch );
-                            } );
-                        };
-                        
-                        var result = {};
-                        result.stream = stream;
-                        result.getCaptured = function () {
-                            return captured;
-                        };
-                        return result;
-                    }
-                    
-                    var inStringWithinString = escQqDepth < $.qqDepth;
-                    var capturing = inStringWithinString ?
-                        makeCapturingStream( $.stream ) :
-                        { stream: $.stream };
-                    
-                    capturing.stream.readc( function ( c ) {
-                        reader( objPlus( $, {
-                            stream: capturing.stream,
+                    $sub.stream.readc( function ( c ) {
+                        reader( objPlus( $sub, {
                             heedsCommandEnds: false,
                             infixLevel: 3,
                             infixState: { type: "empty" },
                             readerMacros: readerMacros,
-                            unrecognized: function ( $ ) {
+                            unrecognized: function ( $sub2 ) {
                                 // TODO: See if we can make this error
                                 // message, the error message in
                                 // penknife.html, and the error
@@ -705,117 +706,107 @@ stringReaderMacros.set( "\\", function ( $ ) {
                                 // like the following.
 //                                if ( bankInfix( $, 0 ) )
 //                                    return;
-                                $.then( { ok: false, msg:
+                                $sub2.then( { ok: false, msg:
                                     "Encountered an unrecognized " +
                                     "character" } );
                             },
-                            end: function ( $ ) {
-                                if ( $.infixState.type === "ready" )
-                                    $.then( { ok: true,
-                                        val: $.infixState.val } );
-                                else
-                                    $.then( { ok: false, msg:
-                                        "Incomplete interpolation " +
-                                        "in string" } );
+                            end: function ( $sub2 ) {
+                                $sub2.then( { ok: false, msg:
+                                    "Incomplete interpolation in " +
+                                    "string" } );
                             },
                             then: function ( result ) {
                                 if ( !result.ok )
-                                    return void $.then( result );
-                                capturing.stream.readc(
-                                    function ( c ) {
-                                    
-                                    if ( c !== "." )
-                                        $.then( { ok: false, val:
+                                    return void $sub.then( result );
+                                $sub.stream.readc( function ( c ) {
+                                    if ( c === "." )
+                                        $sub.then( { ok: true, val:
+                                            [ {
+                                                type: "interpolation",
+                                                val: result.val
+                                            } ]
+                                        } );
+                                    else
+                                        $sub.then( { ok: false, val:
                                             "Didn't end a string " +
                                             "interpolation with a " +
                                             "dot" } );
-                                    else if ( inStringWithinString )
-                                        $.then( { ok: true, val: [ {
-                                            type: "nonWhite",
-                                            text: escStart +
-                                                capturing.
-                                                    getCaptured()
-                                        } ] } );
-                                    else
-                                        $.then( { ok: true, val: [ {
-                                            type: "interpolation",
-                                            val: result.val
-                                        } ] } );
                                 } );
                             }
                         } ) );
                     } );
                 },
-                "u": function ( $ ) {
-                    $.stream.readc( function ( c ) {
+                "u": function ( $sub ) {
+                    $sub.stream.readc( function ( c ) {
                         loop( "", 6 );
                         function loop( hexSoFar, digitsLeft ) {
-                            $.stream.readc( function ( c ) {
+                            $sub.stream.readc( function ( c ) {
                                 if ( c === "" )
-                                    $.then( { ok: false, msg:
+                                    $sub.then( { ok: false, msg:
                                         "Incomplete Unicode escape"
                                     } );
                                 else if ( c === "." )
                                     next( hexSoFar );
                                 else if ( digitsLeft === 0 )
-                                    $.then( { ok: false, msg:
+                                    $sub.then( { ok: false, msg:
                                         "Unterminated Unicode escape"
                                     } );
                                 else if ( /^[01-9A-F]$/.test( c ) )
                                     loop( hexSoFar + c,
                                         digitsLeft - 1 );
                                 else
-                                    $.then( { ok: false, msg:
+                                    $sub.then( { ok: false, msg:
                                         "Unrecognized character in " +
                                         "Unicode escape" } );
                             } );
                         }
                         function next( hex ) {
                             if ( hex.length === 0 )
-                                return void $.then( { ok: false, msg:
-                                    "Unicode escape with no digits"
-                                } );
-                            console.log( hex.length );
+                                return void $sub.then(
+                                    { ok: false, msg:
+                                        "Unicode escape with no " +
+                                        "digits" } );
                             var text = unicodeCodePointToString(
                                 parseInt( hex, 16 ) );
                             if ( text === null )
-                                return void $.then( { ok: false, msg:
-                                    "Unicode escape out of range" } );
-                            $.then( { ok: true, val:
-                                escQqDepth < $.qqDepth ?
-                                    [ { type: "nonWhite", text:
-                                        escStart + hex + "." } ] :
-                                    [ { type: "nonWhite",
-                                        text: text } ]
+                                return void $sub.then(
+                                    { ok: false, msg:
+                                        "Unicode escape out of range"
+                                    } );
+                            $sub.then( { ok: true, val:
+                                [ { type: "nonWhite", text: text } ]
                             } );
                         }
                     } );
                 },
                 ",": function ( $sub ) {
-                    if ( $.qqDepth <= escQqDepth )
-                        return void $.then( { ok: false, msg:
-                            "Unquoted past the quasiquotation " +
-                            "depth" } );
-                    
-                    $.stream.readc( function ( c ) {
-                        readForEscQqDepth(
-                            escStart + ",", escQqDepth + 1 );
-                    } );
+                    // NOTE: We shouldn't get here. We already read
+                    // all the commas first.
+                    $sub.then( { ok: false, msg:
+                        "Unquoted past the quasiquotation depth, " +
+                        "and also caused an internal error in the " +
+                        "reader" } );
                 }
             } ),
             unrecognized: function ( $sub ) {
-                $.then( { ok: false,
+                $sub.then( { ok: false,
                     msg: "Unrecognized escape sequence" } );
             },
             end: function ( $sub ) {
-                $.then( { ok: false,
+                $sub.then( { ok: false,
                     msg: "Incomplete escape sequence" } );
+            },
+            then: function ( result ) {
+                if ( result.ok && inStringWithinString )
+                    $.then( { ok: true, val: [ {
+                        type: "nonWhite",
+                        text: escStart + capturing.getCaptured()
+                    } ] } );
+                else
+                    $.then( result );
             }
         } ) );
     }
-    $.stream.readc( function ( c ) {
-        readForEscQqDepth( "\\", 0 );
-    } );
 } );
 
 
