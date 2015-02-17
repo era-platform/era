@@ -463,7 +463,7 @@
 (nil)
 (yep (nil))
 (cons (nil) (nil))
-(yep/nil) :cons (nil)
+(yep/nil)<cons>(nil)
 ((fn x (cons x x)) (nil) (nil))
 ((fn x ((fn x (cons x x)) x x)) (nil) (nil))
 

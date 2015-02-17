@@ -28,24 +28,24 @@ foo
 (a b c)
 
 ; This is the Array [ "a", "b", "c" ] in tertiary infix notation.
-b :a c
+b&lt;a&gt;c
 
 ; This is the Array [ "a", "b" ] in binary infix notation. Lisp
 ; dialects usually use the '.' character for dotted lists, but this
 ; syntax uses it for infix instead.
 a.b
 
-; The "b :a c" operator has lower precedence than the "a.b" operator,
+; The "b&lt;a&gt;c" operator has lower precedence than the "a.b" operator,
 ; so this is [ [ "a", "b" ], [ "c", "d" ], [ "e", "f" ] ].
-c.d :a.b e.f
+c.d&lt;a.b&gt;e.f
 
 ; The "a.b" operator is left-associative, so this is
 ; [ [ "a", "b" ], "c" ].
 a.b.c
 
-; The "b :a c" operator is left-associative, so this is
+; The "b&lt;a&gt;c" operator is left-associative, so this is
 ; [ "a", [ "b", "c", "d" ], "e" ].
-c :b d :a e
+c&lt;b&gt;d&lt;a&gt;e
 
 ; The / reader macro is like ( but doesn't consume ). Thus, the
 ; following is shorthand for (a b (c d)).

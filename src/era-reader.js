@@ -432,35 +432,13 @@ function defineInfixOperator(
         }
     } );
 }
-// TODO: Remove the `a :b c` syntax in favor of writing `a<b>c`. The
-// latter is visually symmetrical, but more importantly, it does not
-// require whitespace between `b` and `c`. The lack of whitespace
-// makes it easier to visually group it among list elements like
-// (a b c<d>e f), and it makes multi-line infix expressions look even
-// more unusual. This saves us from multi-line infix indentation
-// dilemmas because it discourages us from writing such expressions in
-// the first place.
-defineInfixOperator( ":", 1,
-    "Tertiary infix expression without lhs",
-    "Incomplete tertiary infix expression",
-    function ( lhs, read, expectChar, then ) {
-    
-    // NOTE: We support top-level code like the following by disabling
-    // heedsCommandEnds when reading the operator:
-    //
-    //  a :b
-    //      .c d
-    //
-    // This is a weird thing to support, but heedsCommandEnds should
-    // always be disabled in contexts where it's obvious the command
-    // is incomplete and could be completed.
-    //
-    read( !"heedsCommandEnds", 1, function ( op ) {
-        read( !!"heedsCommandEnds", 1, function ( rhs ) {
-            then( [ op, lhs, rhs ] );
-        } );
-    } );
-} );
+// NOTE: A previous syntax for `a<b>c` was `a :b c`. The newer syntax
+// is visually symmetrical, but more importantly, it does not require
+// whitespace between `b` and `c`. The lack of whitespace makes it
+// easier to visually group it among list elements like (a b c<d>e f),
+// and it makes multi-line infix expressions look even more unusual.
+// This saves us from multi-line infix indentation dilemmas because it
+// discourages us from writing such expressions in the first place.
 defineInfixOperator( "<", 1,
     "Tertiary infix expression without lhs",
     "Incomplete tertiary infix expression",
