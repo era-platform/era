@@ -81,13 +81,13 @@
 // $.stream.getCaptured
 // $.stream.readc
 // $.stream.peekc
-// $.readerMacros
 // $.heedsCommandEnds
 // $.infixLevel
 // $.infixState
 // $.qqDepth
-// $.end
+// $.readerMacros
 // $.unrecognized
+// $.end
 
 function streamReadc( $, then ) {
     $.stream.readc( function ( stream, c ) {
@@ -142,6 +142,8 @@ function readListUntilParen( $, consumeParen, then ) {
     function loop( $, list ) {
         reader( objPlus( $, {
             heedsCommandEnds: false,
+            infixLevel: 0,
+            infixState: { type: "empty" },
             readerMacros: $.readerMacros.plusEntry( ")",
                 function ( $, then ) {
                 
@@ -167,8 +169,6 @@ function readListUntilParen( $, consumeParen, then ) {
                             val: result } } );
                 }
             } ),
-            infixLevel: 0,
-            infixState: { type: "empty" },
             end: function ( $, then ) {
                 then( $, { ok: false, msg: "Incomplete list" } );
             }
@@ -178,9 +178,9 @@ function readListUntilParen( $, consumeParen, then ) {
             
             var $sub2 = objPlus( $sub, {
                 heedsCommandEnds: $.heedsCommandEnds,
-                readerMacros: $.readerMacros,
                 infixLevel: $.infixLevel,
                 infixState: $.infixState,
+                readerMacros: $.readerMacros,
                 end: $.end
             } );
             
@@ -867,20 +867,20 @@ function readAll( string ) {
         var readResult;
         reader( {
             stream: stream,
-            readerMacros: readerMacros,
             heedsCommandEnds: true,
             infixLevel: 0,
             infixState: { type: "empty" },
             qqDepth: null,
+            readerMacros: readerMacros,
+            unrecognized: function ( $, then ) {
+                then( $, { ok: false,
+                    msg: "Encountered an unrecognized character" } );
+            },
             end: function ( $, then ) {
                 if ( $.infixState.type === "ready" )
                     then( $, { ok: true, val: $.infixState.val } );
                 else
                     then( $, { ok: true, val: { type: "end" } } );
-            },
-            unrecognized: function ( $, then ) {
-                then( $, { ok: false,
-                    msg: "Encountered an unrecognized character" } );
             }
         }, function ( $, result ) {
             if ( !result.ok )

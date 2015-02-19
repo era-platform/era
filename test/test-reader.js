@@ -7,20 +7,20 @@ function addReaderTest( code, expected ) {
     addNaiveIsoUnitTest( function ( then ) {
         reader( {
             stream: stringStream( defer, code ),
-            readerMacros: readerMacros,
             heedsCommandEnds: true,
             infixLevel: 0,
             infixState: { type: "empty" },
             qqDepth: null,
+            readerMacros: readerMacros,
+            unrecognized: function ( $, then ) {
+                then( $, { ok: false,
+                    msg: "Encountered an unrecognized character" } );
+            },
             end: function ( $, then ) {
                 if ( $.infixState.type === "ready" )
                     then( $, { ok: true, val: $.infixState.val } );
                 else
                     then( $, { ok: false, msg: "Reached the end" } );
-            },
-            unrecognized: function ( $, then ) {
-                then( $, { ok: false,
-                    msg: "Encountered an unrecognized character" } );
             }
         }, function ( $, result ) {
             then( result, { ok: true, val: expected } );
