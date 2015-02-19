@@ -135,13 +135,13 @@ function readListUntilParen( $, consumeParen, then ) {
         reader( objPlus( $, {
             heedsCommandEnds: false,
             readerMacros: $.readerMacros.plusEntry( ")",
-                function ( $sub, then ) {
+                function ( $, then ) {
                 
-                if ( bankInfix( $sub, 0, then ) )
+                if ( bankInfix( $, 0, then ) )
                     return;
                 
                 if ( consumeParen )
-                    $sub.stream.readc( function ( c ) {
+                    $.stream.readc( function ( c ) {
                         next();
                     } );
                 else
@@ -154,15 +154,15 @@ function readListUntilParen( $, consumeParen, then ) {
                     var result = [];
                     for ( var ls = list; ls !== null; ls = ls.past )
                         result.unshift( ls.last );
-                    then( $sub, { ok: true, val:
+                    then( $, { ok: true, val:
                         { type: "freshlyCompletedCompound",
                             val: result } } );
                 }
             } ),
             infixLevel: 0,
             infixState: { type: "empty" },
-            end: function ( $sub, then ) {
-                then( $sub, { ok: false, msg: "Incomplete list" } );
+            end: function ( $, then ) {
+                then( $, { ok: false, msg: "Incomplete list" } );
             }
         } ), function ( $sub, result ) {
             if ( !result.ok )
@@ -351,12 +351,12 @@ readerMacros.set( "\\", function ( $, then ) {
                     } );
                 };
             } ),
-            unrecognized: function ( $sub, then ) {
-                then( $sub, { ok: false,
+            unrecognized: function ( $, then ) {
+                then( $, { ok: false,
                     msg: "Unrecognized string opening character" } );
             },
-            end: function ( $sub, then ) {
-                then( $sub, { ok: false, msg: "Incomplete string" } );
+            end: function ( $, then ) {
+                then( $, { ok: false, msg: "Incomplete string" } );
             }
         } ), then );
     } );
@@ -484,28 +484,28 @@ function readStringUntilBracket( $, bracket, qqDepth, then ) {
         reader( objPlus( $, {
             qqDepth: qqDepth,
             readerMacros: stringReaderMacros.plusEntry( bracket,
-                function ( $sub, then ) {
+                function ( $, then ) {
                 
-                $sub.stream.readc( function ( c ) {
+                $.stream.readc( function ( c ) {
                     // TODO: Make this trampolined with constant time
                     // between bounces. This might be tricky because
                     // it's stateful.
                     var result = [];
                     for ( var s = string; s !== null; s = s.past )
                         result = s.last.concat( result );
-                    then( $sub, { ok: true, val:
+                    then( $, { ok: true, val:
                         { type: "freshlyCompletedCompound",
                             val: result } } );
                 } );
             } ),
-            unrecognized: function ( $sub, then ) {
-                $sub.stream.readc( function ( c ) {
-                    then( $sub, { ok: true,
+            unrecognized: function ( $, then ) {
+                $.stream.readc( function ( c ) {
+                    then( $, { ok: true,
                         val: [ { type: "nonWhite", text: c } ] } );
                 } );
             },
-            end: function ( $sub, then ) {
-                then( $sub, { ok: false, msg: "Incomplete string" } );
+            end: function ( $, then ) {
+                then( $, { ok: false, msg: "Incomplete string" } );
             }
         } ), function ( $, result ) {
             if ( !result.ok )
@@ -610,9 +610,9 @@ stringReaderMacros.set( "\\", function ( $, then ) {
                 "n": "\n",
                 "#": ""
             } ).map( function ( text, escName ) {
-                return function ( $sub, then ) {
-                    $sub.stream.readc( function ( c ) {
-                        then( $sub, { ok: true, val:
+                return function ( $, then ) {
+                    $.stream.readc( function ( c ) {
+                        then( $, { ok: true, val:
                             [ { type: "explicitWhite", text: text } ]
                         } );
                     } );
@@ -624,9 +624,9 @@ stringReaderMacros.set( "\\", function ( $, then ) {
                 "{": "(",
                 "}": ")"
             } ).map( function ( text, escName ) {
-                return function ( $sub, then ) {
-                    $sub.stream.readc( function ( c ) {
-                        then( $sub, { ok: true, val:
+                return function ( $, then ) {
+                    $.stream.readc( function ( c ) {
+                        then( $, { ok: true, val:
                             [ { type: "nonWhite", text: text } ]
                         } );
                     } );
@@ -635,11 +635,11 @@ stringReaderMacros.set( "\\", function ( $, then ) {
                 function ( closeBracket, openBracket ) {
                 
                 // NOTE: Unlike the rest of these escape sequences,
-                // this one directly uses `$` instead of `$sub`. It
-                // does to bypass the makeCapturingStream() behavior
-                // on `$sub.stream`, which would otherwise suppress
-                // *all* escape sequences occurring inside this one's
-                // boundaries.
+                // this one directly uses the original `$` rather than
+                // its own version, `$sub`. It does to bypass the
+                // makeCapturingStream() behavior on `$sub.stream`,
+                // which would otherwise suppress *all* escape
+                // sequences occurring inside this one's boundaries.
                 
                 return function ( $sub, then ) {
                     if ( $sub.qqDepth !== 0 )
@@ -665,41 +665,41 @@ stringReaderMacros.set( "\\", function ( $, then ) {
                     } );
                 };
             } ) ).setObj( {
-                ";": function ( $sub, then ) {
-                    return void ignoreRestOfLine( $sub, function () {
-                        then( $sub, { ok: true, val: [] } );
+                ";": function ( $, then ) {
+                    ignoreRestOfLine( $, function () {
+                        then( $, { ok: true, val: [] } );
                     } );
                 },
-                "_": function ( $sub, then ) {
-                    $sub.stream.readc( function ( c ) {
-                        reader( objPlus( $sub, {
+                "_": function ( $, then ) {
+                    $.stream.readc( function ( c ) {
+                        reader( objPlus( $, {
                             heedsCommandEnds: false,
                             infixLevel: 3,
                             infixState: { type: "empty" },
                             readerMacros: readerMacros,
-                            unrecognized: function ( $sub2, then ) {
-                                then( $sub2, { ok: false, msg:
+                            unrecognized: function ( $, then ) {
+                                then( $, { ok: false, msg:
                                     "Encountered an unrecognized " +
                                     "character" } );
                             },
-                            end: function ( $sub2, then ) {
-                                then( $sub2, { ok: false, msg:
+                            end: function ( $, then ) {
+                                then( $, { ok: false, msg:
                                     "Incomplete interpolation in " +
                                     "string" } );
                             }
-                        } ), function ( $sub, result ) {
+                        } ), function ( $, result ) {
                             if ( !result.ok )
-                                return void then( $sub, result );
-                            $sub.stream.readc( function ( c ) {
+                                return void then( $, result );
+                            $.stream.readc( function ( c ) {
                                 if ( c === "." )
-                                    then( $sub, { ok: true, val:
+                                    then( $, { ok: true, val:
                                         [ {
                                             type: "interpolation",
                                             val: result.val
                                         } ]
                                     } );
                                 else
-                                    then( $sub, { ok: false, val:
+                                    then( $, { ok: false, val:
                                         "Didn't end a string " +
                                         "interpolation with a " +
                                         "dot" } );
@@ -707,64 +707,61 @@ stringReaderMacros.set( "\\", function ( $, then ) {
                         } );
                     } );
                 },
-                "u": function ( $sub, then ) {
-                    $sub.stream.readc( function ( c ) {
+                "u": function ( $, then ) {
+                    $.stream.readc( function ( c ) {
                         loop( "", 6 );
                         function loop( hexSoFar, digitsLeft ) {
-                            $sub.stream.readc( function ( c ) {
+                            $.stream.readc( function ( c ) {
                                 if ( c === "" )
-                                    then( $sub, { ok: false, msg:
+                                    then( $, { ok: false, msg:
                                         "Incomplete Unicode escape"
                                     } );
                                 else if ( c === "." )
                                     next( hexSoFar );
                                 else if ( digitsLeft === 0 )
-                                    then( $sub, { ok: false, msg:
+                                    then( $, { ok: false, msg:
                                         "Unterminated Unicode escape"
                                     } );
                                 else if ( /^[01-9A-F]$/.test( c ) )
                                     loop( hexSoFar + c,
                                         digitsLeft - 1 );
                                 else
-                                    then( $sub, { ok: false, msg:
+                                    then( $, { ok: false, msg:
                                         "Unrecognized character in " +
                                         "Unicode escape" } );
                             } );
                         }
                         function next( hex ) {
                             if ( hex.length === 0 )
-                                return void then( $sub,
-                                    { ok: false, msg:
-                                        "Unicode escape with no " +
-                                        "digits" } );
+                                return void then( $, { ok: false, msg:
+                                    "Unicode escape with no " +
+                                    "digits" } );
                             var text = unicodeCodePointToString(
                                 parseInt( hex, 16 ) );
                             if ( text === null )
-                                return void then( $sub,
-                                    { ok: false, msg:
-                                        "Unicode escape out of range"
-                                    } );
-                            then( $sub, { ok: true, val:
+                                return void then( $, { ok: false, msg:
+                                    "Unicode escape out of range" } );
+                            then( $, { ok: true, val:
                                 [ { type: "nonWhite", text: text } ]
                             } );
                         }
                     } );
                 },
-                ",": function ( $sub, then ) {
+                ",": function ( $, then ) {
                     // NOTE: We shouldn't get here. We already read
                     // all the commas first.
-                    then( $sub, { ok: false, msg:
+                    then( $, { ok: false, msg:
                         "Unquoted past the quasiquotation depth, " +
                         "and also caused an internal error in the " +
                         "reader" } );
                 }
             } ),
-            unrecognized: function ( $sub, then ) {
-                then( $sub, { ok: false,
+            unrecognized: function ( $, then ) {
+                then( $, { ok: false,
                     msg: "Unrecognized escape sequence" } );
             },
-            end: function ( $sub, then ) {
-                then( $sub, { ok: false,
+            end: function ( $, then ) {
+                then( $, { ok: false,
                     msg: "Incomplete escape sequence" } );
             }
         } ), function ( $sub, result ) {
