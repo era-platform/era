@@ -460,9 +460,10 @@ function defineInfixOperator(
 // NOTE: A previous syntax for `a<b>c` was `a :b c`. The newer syntax
 // is visually symmetrical, but more importantly, it does not require
 // whitespace between `b` and `c`. The lack of whitespace makes it
-// easier to visually group it among list elements like (a b c<d>e f),
-// and it makes multi-line infix expressions look even more unusual.
-// This saves us from multi-line infix indentation dilemmas because it
+// easier to visually group it among list elements like (a b c<d>e f).
+// Moreover, as long as we do follow this no-whitespace style,
+// multi-line infix expressions will look particularly unusual. This
+// saves us from multi-line infix indentation dilemmas because it
 // discourages us from writing such expressions in the first place.
 defineInfixOperator( "<", 1,
     "Tertiary infix expression without lhs",
@@ -870,6 +871,7 @@ function readAll( string ) {
             heedsCommandEnds: true,
             infixLevel: 0,
             infixState: { type: "empty" },
+            qqDepth: null,
             end: function ( $, then ) {
                 if ( $.infixState.type === "ready" )
                     then( $, { ok: true, val: $.infixState.val } );

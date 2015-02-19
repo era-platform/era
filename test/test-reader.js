@@ -11,6 +11,7 @@ function addReaderTest( code, expected ) {
             heedsCommandEnds: true,
             infixLevel: 0,
             infixState: { type: "empty" },
+            qqDepth: null,
             end: function ( $, then ) {
                 if ( $.infixState.type === "ready" )
                     then( $, { ok: true, val: $.infixState.val } );
