@@ -342,12 +342,10 @@ readerMacros.set( "\\", function ( $, then ) {
                     readStringUntilBracket( $, closeBracket, 0,
                         function ( $, result ) {
                         
-                        if ( result.ok )
-                            then( $, { ok: true,
-                                val: postprocessWhitespace(
-                                    result.val ) } );
-                        else
-                            then( $, result );
+                        if ( !result.ok )
+                            return void then( $, result );
+                        then( $, { ok: true, val:
+                            postprocessWhitespace( result.val ) } );
                     } );
                 };
             } ),
@@ -542,14 +540,13 @@ symbolChopsChars.each( function ( openBracket, closeBracket ) {
         readStringUntilBracket( $, closeBracket, $.qqDepth,
             function ( $, result ) {
             
-            if ( result.ok )
-                then( $, { ok: true, val: [].concat(
-                    [ { type: "nonWhite", text: openBracket } ],
-                    result.val,
-                    [ { type: "nonWhite", text: closeBracket } ]
-                ) } );
-            else
-                then( $, result );
+            if ( !result.ok )
+                return void then( $, result );
+            then( $, { ok: true, val: [].concat(
+                [ { type: "nonWhite", text: openBracket } ],
+                result.val,
+                [ { type: "nonWhite", text: closeBracket } ]
+            ) } );
         } );
     } );
     stringReaderMacros.set( closeBracket, function ( $, then ) {
@@ -652,16 +649,15 @@ stringReaderMacros.set( "\\", function ( $, then ) {
                         $, closeBracket, $sub.qqDepth + 1,
                         function ( $, result ) {
                         
-                        if ( result.ok )
-                            then( $, { ok: true, val: [].concat(
-                                [ { type: "nonWhite", text:
-                                    escStart + openBracket } ],
-                                result.val,
-                                [ { type: "nonWhite",
-                                    text: closeBracket } ]
-                            ) } );
-                        else
-                            then( $, result );
+                        if ( !result.ok )
+                            return void then( $, result );
+                        then( $, { ok: true, val: [].concat(
+                            [ { type: "nonWhite",
+                                text: escStart + openBracket } ],
+                            result.val,
+                            [ { type: "nonWhite",
+                                text: closeBracket } ]
+                        ) } );
                     } );
                 };
             } ) ).setObj( {
@@ -765,13 +761,12 @@ stringReaderMacros.set( "\\", function ( $, then ) {
                     msg: "Incomplete escape sequence" } );
             }
         } ), function ( $sub, result ) {
-            if ( result.ok && inStringWithinString )
-                then( $, { ok: true, val: [ {
-                    type: "nonWhite",
-                    text: escStart + capturing.getCaptured()
-                } ] } );
-            else
-                then( $, result );
+            if ( !result.ok || !inStringWithinString )
+                return void then( $, result );
+            then( $, { ok: true, val: [ {
+                type: "nonWhite",
+                text: escStart + capturing.getCaptured()
+            } ] } );
         } );
     }
 } );
