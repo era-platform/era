@@ -77,6 +77,8 @@
 // text.
 
 
+// $.stream.underlyingStream
+// $.stream.getCaptured
 // $.stream.readc
 // $.stream.peekc
 // $.readerMacros
@@ -86,6 +88,12 @@
 // $.qqDepth
 // $.end
 // $.unrecognized
+
+function streamReadc( $, then ) {
+    $.stream.readc( function ( stream, c ) {
+        then( objPlus( $, { stream: stream } ), c );
+    } );
+}
 
 function reader( $, then ) {
     $.stream.peekc( function ( c ) {
@@ -141,13 +149,13 @@ function readListUntilParen( $, consumeParen, then ) {
                     return;
                 
                 if ( consumeParen )
-                    $.stream.readc( function ( c ) {
-                        next();
+                    streamReadc( $, function ( $, c ) {
+                        next( $ );
                     } );
                 else
-                    next();
+                    next( $ );
                 
-                function next() {
+                function next( $ ) {
                     // TODO: Make this trampolined with constant time
                     // between bounces. This might be tricky because
                     // it's stateful.
@@ -183,7 +191,7 @@ function readListUntilParen( $, consumeParen, then ) {
                 loop( $sub2, { past: list, last: result.val } );
         } );
     }
-    $.stream.readc( function ( c ) {
+    streamReadc( $, function ( $, c ) {
         loop( $, null );
     } );
 }
@@ -263,9 +271,9 @@ function postprocessWhitespace( stringParts ) {
 function ignoreRestOfLine( $, then ) {
     $.stream.peekc( function ( c ) {
         if ( /^[\r\n]?$/.test( c ) )
-            then();
+            then( $ );
         else
-            $.stream.readc( function ( c ) {
+            streamReadc( $, function ( $, c ) {
                 ignoreRestOfLine( $, then );
             } );
     } );
@@ -275,7 +283,7 @@ var whiteReaderMacros = strMap();
 whiteReaderMacros.set( ";", function ( $, then ) {
     if ( bankCommand( $, then ) )
         return;
-    ignoreRestOfLine( $, function () {
+    ignoreRestOfLine( $, function ( $ ) {
         reader( $, then );
     } );
 } );
@@ -284,12 +292,12 @@ addReaderMacros( whiteReaderMacros, commandEndChars,
     
     if ( bankCommand( $, then ) )
         return;
-    $.stream.readc( function ( c ) {
+    streamReadc( $, function ( $, c ) {
         reader( $, then );
     } );
 } );
 addReaderMacros( whiteReaderMacros, whiteChars, function ( $, then ) {
-    $.stream.readc( function ( c ) {
+    streamReadc( $, function ( $, c ) {
         reader( $, then );
     } );
 } );
@@ -298,35 +306,36 @@ var readerMacros = whiteReaderMacros.copy();
 addReaderMacros( readerMacros, symbolChars, function ( $, then ) {
     if ( bankInfix( $, 0, then ) )
         return;
-    function collectChops( stringSoFar, open, close, nesting ) {
+    function collectChops( $, stringSoFar, open, close, nesting ) {
         if ( nesting === 0 )
-            return void collect( stringSoFar );
-        $.stream.readc( function ( c ) {
+            return void collect( $, stringSoFar );
+        streamReadc( $, function ( $, c ) {
             var nextStringSoFar = stringSoFar + c;
             if ( c === "" )
                 return void then( $,
                     { ok: false, msg: "Incomplete symbol" } );
-            collectChops( nextStringSoFar, open, close,
+            collectChops( $, nextStringSoFar, open, close,
                 nesting + (c === open ? 1 : c === close ? -1 : 0) );
         } );
     }
-    function collect( stringSoFar ) {
+    function collect( $, stringSoFar ) {
         $.stream.peekc( function ( c ) {
             if ( c === ""
                 || (symbolChars.indexOf( c ) === -1
                     && !symbolChopsChars.has( c )) )
                 return void continueInfix( $, stringSoFar, then );
-            $.stream.readc( function ( open ) {
+            streamReadc( $, function ( $, open ) {
                 var nextStringSoFar = stringSoFar + open;
                 var close = symbolChopsChars.get( open );
                 if ( close !== void 0 )
-                    collectChops( nextStringSoFar, open, close, 1 );
+                    collectChops( $,
+                        nextStringSoFar, open, close, 1 );
                 else
-                    collect( nextStringSoFar );
+                    collect( $, nextStringSoFar );
             } );
         } );
     }
-    collect( "" );
+    collect( $, "" );
 } );
 readerMacros.set( "(", function ( $, then ) {
     if ( bankInfix( $, 0, then ) )
@@ -341,7 +350,7 @@ readerMacros.set( "/", function ( $, then ) {
 readerMacros.set( "\\", function ( $, then ) {
     if ( bankInfix( $, 0, then ) )
         return;
-    $.stream.readc( function ( c ) {
+    streamReadc( $, function ( $, c ) {
         reader( objPlus( $, {
             readerMacros: symbolChopsChars.map(
                 function ( closeBracket, openBracket ) {
@@ -380,7 +389,7 @@ function defineInfixOperator(
         } else if ( $.infixState.type === "ready" ) {
             var lhs = $.infixState.val;
             var origHeedsCommandEnds = $.heedsCommandEnds;
-            $.stream.readc( function ( c ) {
+            streamReadc( $, function ( $, c ) {
                 function read( $, heedsCommandEnds, level, then ) {
                     reader( objPlus( $, {
                         heedsCommandEnds:
@@ -413,7 +422,7 @@ function defineInfixOperator(
                         readerMacros: whiteReaderMacros.plusEntry( ch,
                             function ( $, then ) {
                             
-                            $.stream.readc( function ( c ) {
+                            streamReadc( $, function ( $, c ) {
                                 then( $, { ok: true, val: null } );
                             } );
                         } ),
@@ -510,7 +519,7 @@ function readStringUntilBracket( $, bracket, qqDepth, then ) {
             readerMacros: stringReaderMacros.plusEntry( bracket,
                 function ( $, then ) {
                 
-                $.stream.readc( function ( c ) {
+                streamReadc( $, function ( $, c ) {
                     // TODO: Make this trampolined with constant time
                     // between bounces. This might be tricky because
                     // it's stateful.
@@ -523,7 +532,7 @@ function readStringUntilBracket( $, bracket, qqDepth, then ) {
                 } );
             } ),
             unrecognized: function ( $, then ) {
-                $.stream.readc( function ( c ) {
+                streamReadc( $, function ( $, c ) {
                     then( $, { ok: true,
                         val: [ { type: "nonWhite", text: c } ] } );
                 } );
@@ -542,7 +551,7 @@ function readStringUntilBracket( $, bracket, qqDepth, then ) {
                 loop( $, { past: string, last: result.val } );
         } );
     }
-    $.stream.readc( function ( c ) {
+    streamReadc( $, function ( $, c ) {
         loop( $, null );
     } );
 }
@@ -555,7 +564,7 @@ stringReaderMacros.setAll( strMap().setObj( {
     "\n": "\n"
 } ).map( function ( text ) {
     return function ( $, then ) {
-        $.stream.readc( function ( c ) {
+        streamReadc( $, function ( $, c ) {
             then( $, { ok: true,
                 val: [ { type: "rawWhite", text: text } ] } );
         } );
@@ -581,38 +590,35 @@ symbolChopsChars.each( function ( openBracket, closeBracket ) {
     } );
 } );
 stringReaderMacros.set( "\\", function ( $, then ) {
-    loop( "", -1 );
-    function loop( escStart, escQqDepth ) {
+    loop( $, "", -1 );
+    function loop( $, escStart, escQqDepth ) {
         var newEscQqDepth = escQqDepth + 1;
         if ( $.qqDepth < newEscQqDepth )
             return void then( $, { ok: false,
                 msg: "Unquoted past the quasiquotation depth" } );
         
-        $.stream.readc( function ( c1 ) {
+        streamReadc( $, function ( $, c1 ) {
             $.stream.peekc( function ( c2 ) {
                 if ( c2 === "," )
-                    loop( escStart + c1, newEscQqDepth );
+                    loop( $, escStart + c1, newEscQqDepth );
                 else
-                    next( c2, escStart + c1, newEscQqDepth );
+                    next( $, c2, escStart + c1, newEscQqDepth );
             } );
         } );
     }
-    function next( c, escStart, escQqDepth ) {
-        function makeCapturingStream( underlyingStream ) {
-            var captured = "";
-            
+    function next( $, c, escStart, escQqDepth ) {
+        function capturingStream( captured, s ) {
             var stream = {};
-            stream.underlyingStream = underlyingStream;
+            stream.underlyingStream = s;
             stream.getCaptured = function () {
                 return captured;
             };
             stream.peekc = function ( then ) {
-                underlyingStream.peekc( then );
+                s.peekc( then );
             };
             stream.readc = function ( then ) {
-                underlyingStream.readc( function ( c ) {
-                    captured += c;
-                    then( c );
+                s.readc( function ( s, c ) {
+                    then( capturingStream( captured + c, s ), c );
                 } );
             };
             return stream;
@@ -623,7 +629,7 @@ stringReaderMacros.set( "\\", function ( $, then ) {
         
         reader( objPlus( $, {
             stream: inStringWithinString ?
-                makeCapturingStream( $.stream ) : $.stream,
+                capturingStream( "", $.stream ) : $.stream,
             readerMacros: strMap().setAll( strMap().setObj( {
                 "s": " ",
                 "t": "\t",
@@ -632,7 +638,7 @@ stringReaderMacros.set( "\\", function ( $, then ) {
                 "#": ""
             } ).map( function ( text, escName ) {
                 return function ( $, then ) {
-                    $.stream.readc( function ( c ) {
+                    streamReadc( $, function ( $, c ) {
                         then( $, { ok: true, val:
                             [ { type: "explicitWhite", text: text } ]
                         } );
@@ -646,7 +652,7 @@ stringReaderMacros.set( "\\", function ( $, then ) {
                 "}": ")"
             } ).map( function ( text, escName ) {
                 return function ( $, then ) {
-                    $.stream.readc( function ( c ) {
+                    streamReadc( $, function ( $, c ) {
                         then( $, { ok: true, val:
                             [ { type: "nonWhite", text: text } ]
                         } );
@@ -679,12 +685,12 @@ stringReaderMacros.set( "\\", function ( $, then ) {
                 };
             } ) ).setObj( {
                 ";": function ( $, then ) {
-                    ignoreRestOfLine( $, function () {
+                    ignoreRestOfLine( $, function ( $ ) {
                         then( $, { ok: true, val: [] } );
                     } );
                 },
                 "_": function ( $, then ) {
-                    $.stream.readc( function ( c ) {
+                    streamReadc( $, function ( $, c ) {
                         reader( objPlus( $, {
                             heedsCommandEnds: false,
                             infixLevel: 3,
@@ -703,7 +709,7 @@ stringReaderMacros.set( "\\", function ( $, then ) {
                         } ), function ( $, result ) {
                             if ( !result.ok )
                                 return void then( $, result );
-                            $.stream.readc( function ( c ) {
+                            streamReadc( $, function ( $, c ) {
                                 if ( c === "." )
                                     then( $, { ok: true, val:
                                         [ {
@@ -721,10 +727,10 @@ stringReaderMacros.set( "\\", function ( $, then ) {
                     } );
                 },
                 "u": function ( $, then ) {
-                    $.stream.readc( function ( c ) {
+                    streamReadc( $, function ( $, c ) {
                         loop( "", 6 );
                         function loop( hexSoFar, digitsLeft ) {
-                            $.stream.readc( function ( c ) {
+                            streamReadc( $, function ( $, c ) {
                                 if ( c === "" )
                                     then( $, { ok: false, msg:
                                         "Incomplete Unicode escape"
@@ -802,31 +808,34 @@ stringReaderMacros.set( "\\", function ( $, then ) {
 function stringStream( defer, string ) {
     if ( !isValidUnicode( string ) )
         throw new Error();
-    var i = 0, n = string.length;
-    function readOrPeek( isReading, then ) {
-        defer( function () {
-            if ( n <= i )
-                return void then( "" );
-            var charCodeInfo =
-                getUnicodeCodePointAtCodeUnitIndex( string, i );
-            var result = charCodeInfo.charString;
-            if ( isReading )
-                i += result.length;
-            then( result );
-        } );
+    
+    var n = string.length;
+    
+    return streamAt( 0 );
+    function streamAt( i ) {
+        var stream = {};
+        stream.underlying = null;
+        stream.getCaptured = function () {
+            throw new Error();
+        };
+        stream.peekc = function ( then ) {
+            stream.readc( function ( stream, c ) {
+                // We just ignore the new stream.
+                then( c );
+            } );
+        };
+        stream.readc = function ( then ) {
+            defer( function () {
+                if ( n <= i )
+                    return void then( stream, "" );
+                var charCodeInfo =
+                    getUnicodeCodePointAtCodeUnitIndex( string, i );
+                var result = charCodeInfo.charString;
+                then( streamAt( i + result.length ), result );
+            } );
+        };
+        return stream;
     }
-    var stream = {};
-    stream.underlying = null;
-    stream.getCaptured = function () {
-        throw new Error();
-    };
-    stream.peekc = function ( then ) {
-        readOrPeek( !"isReading", then );
-    };
-    stream.readc = function ( then ) {
-        readOrPeek( !!"isReading", then );
-    };
-    return stream;
 }
 
 function makeDeferTrampoline() {
@@ -865,33 +874,34 @@ function readAll( string ) {
                 if ( $.infixState.type === "ready" )
                     then( $, { ok: true, val: $.infixState.val } );
                 else
-                    readResult = onEnd();
-                deferTrampoline.runDeferTrampoline();
+                    then( $, { ok: true, val: { type: "end" } } );
             },
             unrecognized: function ( $, then ) {
                 then( $, { ok: false,
                     msg: "Encountered an unrecognized character" } );
-                deferTrampoline.runDeferTrampoline();
             }
         }, function ( $, result ) {
-            if ( result.ok )
-                readResult = onSuccess( result.val );
-            else
+            if ( !result.ok )
                 readResult = onFailure( result.msg );
+            else if ( likeObjectLiteral( result.val )
+                && result.val.type === "end" )
+                readResult = onEnd();
+            else
+                readResult = onSuccess( $.stream, result.val );
         } );
         deferTrampoline.runDeferTrampoline();
         return readResult;
     }
     
-    return readNext( [] );
-    function readNext( resultsSoFar ) {
+    return readNext( stream, [] );
+    function readNext( stream, resultsSoFar ) {
         return read( stream, function () {  // onEnd
             return resultsSoFar;
         }, function ( message ) {  // onFailure
             return resultsSoFar.concat(
                 [ { ok: false, msg: message } ] );
-        }, function ( result ) {  // onSuccess
-            return readNext( resultsSoFar.concat(
+        }, function ( stream, result ) {  // onSuccess
+            return readNext( stream, resultsSoFar.concat(
                 [ { ok: true, val: result } ] ) );
         } );
     }
