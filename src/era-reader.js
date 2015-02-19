@@ -79,7 +79,6 @@
 
 // $.stream.readc
 // $.stream.peekc
-// $.then
 // $.readerMacros
 // $.heedsCommandEnds
 // $.infixLevel
@@ -88,14 +87,14 @@
 // $.end
 // $.unrecognized
 
-function reader( $ ) {
+function reader( $, then ) {
     $.stream.peekc( function ( c ) {
         if ( c === "" )
-            return void $.end( $ );
+            return void $.end( $, then );
         var readerMacro = $.readerMacros.get( c );
         if ( readerMacro === void 0 )
-            return void $.unrecognized( $ );
-        readerMacro( $ );
+            return void $.unrecognized( $, then );
+        readerMacro( $, then );
     } );
 }
 function addReaderMacros( readerMacros, string, func ) {
@@ -103,24 +102,24 @@ function addReaderMacros( readerMacros, string, func ) {
         readerMacros.set( codePointInfo.charString, func );
     } );
 }
-function bankInfix( $, minInfixLevel ) {
+function bankInfix( $, minInfixLevel, then ) {
     var result = $.infixState.type === "ready" &&
         minInfixLevel <= $.infixLevel;
     if ( result )
-        $.then( { ok: true, val: $.infixState.val } );
+        then( $, { ok: true, val: $.infixState.val } );
     return result;
 }
-function bankCommand( $ ) {
+function bankCommand( $, then ) {
     var result = $.infixState.type === "ready" && $.heedsCommandEnds;
     if ( result )
-        $.then( { ok: true, val: $.infixState.val } );
+        then( $, { ok: true, val: $.infixState.val } );
     return result;
 }
-function continueInfix( $, val ) {
+function continueInfix( $, val, then ) {
     if ( $.infixState.type === "empty" ) {
         reader( objPlus( $, {
             infixState: { type: "ready", val: val }
-        } ) );
+        } ), then );
     } else if ( $.infixState.type === "ready" ) {
         throw new Error(
             "Read a second complete value before realizing this " +
@@ -131,14 +130,14 @@ function continueInfix( $, val ) {
 }
 // NOTE: The readListUntilParen() function is only for use by the "("
 // and "/" reader macros to reduce duplication.
-function readListUntilParen( $, consumeParen ) {
+function readListUntilParen( $, consumeParen, then ) {
     function loop( $, list ) {
         reader( objPlus( $, {
             heedsCommandEnds: false,
             readerMacros: $.readerMacros.plusEntry( ")",
-                function ( $sub ) {
+                function ( $sub, then ) {
                 
-                if ( bankInfix( $sub, 0 ) )
+                if ( bankInfix( $sub, 0, then ) )
                     return;
                 
                 if ( consumeParen )
@@ -155,21 +154,26 @@ function readListUntilParen( $, consumeParen ) {
                     var result = [];
                     for ( var ls = list; ls !== null; ls = ls.past )
                         result.unshift( ls.last );
-                    continueInfix( $, result );
+                    then( $sub, { ok: true, val:
+                        { type: "freshlyCompletedCompound",
+                            val: result } } );
                 }
             } ),
             infixLevel: 0,
             infixState: { type: "empty" },
-            then: function ( result ) {
-                if ( result.ok )
-                    loop( $, { past: list, last: result.val } );
-                else
-                    $.then( result );
-            },
-            end: function ( $sub ) {
-                $.then( { ok: false, msg: "Incomplete list" } );
+            end: function ( $sub, then ) {
+                then( $sub, { ok: false, msg: "Incomplete list" } );
             }
-        } ) );
+        } ), function ( $sub, result ) {
+            if ( !result.ok )
+                return void then( $, result );
+            
+            if ( likeObjectLiteral( result.val )
+                && result.val.type === "freshlyCompletedCompound" )
+                continueInfix( $, result.val.val, then );
+            else
+                loop( $, { past: list, last: result.val } );
+        } );
     }
     $.stream.readc( function ( c ) {
         loop( $, null );
@@ -260,29 +264,31 @@ function ignoreRestOfLine( $, then ) {
 }
 
 var whiteReaderMacros = strMap();
-whiteReaderMacros.set( ";", function ( $ ) {
-    if ( bankCommand( $ ) )
+whiteReaderMacros.set( ";", function ( $, then ) {
+    if ( bankCommand( $, then ) )
         return;
     ignoreRestOfLine( $, function () {
-        reader( $ );
+        reader( $, then );
     } );
 } );
-addReaderMacros( whiteReaderMacros, commandEndChars, function ( $ ) {
-    if ( bankCommand( $ ) )
+addReaderMacros( whiteReaderMacros, commandEndChars,
+    function ( $, then ) {
+    
+    if ( bankCommand( $, then ) )
         return;
     $.stream.readc( function ( c ) {
-        reader( $ );
+        reader( $, then );
     } );
 } );
-addReaderMacros( whiteReaderMacros, whiteChars, function ( $ ) {
+addReaderMacros( whiteReaderMacros, whiteChars, function ( $, then ) {
     $.stream.readc( function ( c ) {
-        reader( $ );
+        reader( $, then );
     } );
 } );
 
 var readerMacros = whiteReaderMacros.copy();
-addReaderMacros( readerMacros, symbolChars, function ( $ ) {
-    if ( bankInfix( $, 0 ) )
+addReaderMacros( readerMacros, symbolChars, function ( $, then ) {
+    if ( bankInfix( $, 0, then ) )
         return;
     function collectChops( stringSoFar, open, close, nesting ) {
         if ( nesting === 0 )
@@ -290,7 +296,7 @@ addReaderMacros( readerMacros, symbolChars, function ( $ ) {
         $.stream.readc( function ( c ) {
             var nextStringSoFar = stringSoFar + c;
             if ( c === "" )
-                return void $.then(
+                return void then( $,
                     { ok: false, msg: "Incomplete symbol" } );
             collectChops( nextStringSoFar, open, close,
                 nesting + (c === open ? 1 : c === close ? -1 : 0) );
@@ -301,7 +307,7 @@ addReaderMacros( readerMacros, symbolChars, function ( $ ) {
             if ( c === ""
                 || (symbolChars.indexOf( c ) === -1
                     && !symbolChopsChars.has( c )) )
-                return void continueInfix( $, stringSoFar );
+                return void continueInfix( $, stringSoFar, then );
             $.stream.readc( function ( open ) {
                 var nextStringSoFar = stringSoFar + open;
                 var close = symbolChopsChars.get( open );
@@ -314,57 +320,55 @@ addReaderMacros( readerMacros, symbolChars, function ( $ ) {
     }
     collect( "" );
 } );
-readerMacros.set( "(", function ( $ ) {
-    if ( bankInfix( $, 0 ) )
+readerMacros.set( "(", function ( $, then ) {
+    if ( bankInfix( $, 0, then ) )
         return;
-    readListUntilParen( $, !!"consumeParen" );
+    readListUntilParen( $, !!"consumeParen", then );
 } );
-readerMacros.set( "/", function ( $ ) {
-    if ( bankInfix( $, 0 ) )
+readerMacros.set( "/", function ( $, then ) {
+    if ( bankInfix( $, 0, then ) )
         return;
-    readListUntilParen( $, !"consumeParen" );
+    readListUntilParen( $, !"consumeParen", then );
 } );
-readerMacros.set( "\\", function ( $ ) {
-    if ( bankInfix( $, 0 ) )
+readerMacros.set( "\\", function ( $, then ) {
+    if ( bankInfix( $, 0, then ) )
         return;
     $.stream.readc( function ( c ) {
         reader( objPlus( $, {
             readerMacros: symbolChopsChars.map(
                 function ( closeBracket, openBracket ) {
                 
-                return function ( $sub ) {
-                    readStringUntilBracket( closeBracket, 0,
-                        objPlus( $, {
+                return function ( $sub, then ) {
+                    readStringUntilBracket( $, closeBracket, 0,
+                        function ( $, result ) {
                         
-                        then: function ( result ) {
-                            if ( result.ok )
-                                $.then( { ok: true,
-                                    val: postprocessWhitespace(
-                                        result.val ) } );
-                            else
-                                $.then( result );
-                        }
-                    } ) );
+                        if ( result.ok )
+                            then( $, { ok: true,
+                                val: postprocessWhitespace(
+                                    result.val ) } );
+                        else
+                            then( $, result );
+                    } );
                 };
             } ),
-            unrecognized: function ( $sub ) {
-                $.then( { ok: false,
+            unrecognized: function ( $sub, then ) {
+                then( $sub, { ok: false,
                     msg: "Unrecognized string opening character" } );
             },
-            end: function ( $sub ) {
-                $.then( { ok: false, msg: "Incomplete string" } );
+            end: function ( $sub, then ) {
+                then( $sub, { ok: false, msg: "Incomplete string" } );
             }
-        } ) );
+        } ), then );
     } );
 } );
 function defineInfixOperator(
     ch, level, noLhsErr, incompleteErr, readRemaining ) {
     
-    readerMacros.set( ch, function ( $ ) {
-        if ( bankInfix( $, level ) )
+    readerMacros.set( ch, function ( $, then ) {
+        if ( bankInfix( $, level, then ) )
             return;
         if ( $.infixState.type === "empty" ) {
-            $.then( { ok: false, msg: noLhsErr } );
+            then( $, { ok: false, msg: noLhsErr } );
         } else if ( $.infixState.type === "ready" ) {
             var lhs = $.infixState.val;
             var origHeedsCommandEnds = $.heedsCommandEnds;
@@ -378,52 +382,45 @@ function defineInfixOperator(
                             origHeedsCommandEnds && heedsCommandEnds,
                         infixLevel: level,
                         infixState: { type: "empty" },
-                        then: function ( result ) {
-                            if ( !result.ok )
-                                return void $sub1.then( result );
-                            then( result.val );
-                        },
-                        end: function ( $sub2 ) {
+                        end: function ( $sub2, then ) {
                             if ( $sub2.infixState.type === "ready" )
-                                $sub2.then( { ok: true,
+                                then( $sub1, { ok: true,
                                     val: $sub2.infixState.val } );
                             else
-                                $sub2.then( { ok: false,
+                                then( $sub1, { ok: false,
                                     msg: incompleteErr } );
                         }
-                    } ) );
+                    } ), then );
                 }
                 function expectChar( heedsCommandEnds, ch, then ) {
                     reader( objPlus( $sub1, {
                         heedsCommandEnds:
                             origHeedsCommandEnds && heedsCommandEnds,
                         readerMacros: whiteReaderMacros.plusEntry( ch,
-                            function ( $sub2 ) {
+                            function ( $sub2, then ) {
                             
                             $sub2.stream.readc( function ( c ) {
-                                $sub2.then( { ok: true } );
+                                then( $sub1,
+                                    { ok: true, val: null } );
                             } );
                         } ),
-                        unrecognized: function ( $sub ) {
-                            $.then( { ok: false, msg:
+                        unrecognized: function ( $sub2, then ) {
+                            then( $sub1, { ok: false, msg:
                                 "Encountered an unrecognized " +
                                 "character when expecting " + ch } );
                         },
-                        then: function ( result ) {
-                            if ( !result.ok )
-                                return void $sub1.then( result );
-                            then();
-                        },
-                        end: function ( $sub2 ) {
-                            $sub2.then( { ok: false,
-                                msg: incompleteErr } );
+                        end: function ( $sub2, then ) {
+                            then( $sub1,
+                                { ok: false, msg: incompleteErr } );
                         }
-                    } ) );
+                    } ), then );
                 }
                 readRemaining( lhs, read, expectChar,
-                    function ( result ) {
+                    function ( $sub2, result ) {
                     
-                    continueInfix( $sub1, result );
+                    if ( !result.ok )
+                        return void then( $sub1, result );
+                    continueInfix( $sub1, result.val, then );
                 } );
             } );
         } else {
@@ -449,18 +446,25 @@ defineInfixOperator( "<", 1,
     //  a <b
     //      .c> d
     //
-    read( !"heedsCommandEnds", 0, function ( op ) {
-        expectChar( !"heedsCommandEnds", ">", function () {
-            read( !!"heedsCommandEnds", 1, function ( rhs ) {
-                then( [ op, lhs, rhs ] );
+    read( !"heedsCommandEnds", 0, function ( $, op ) {
+        if ( !op.ok )
+            return void then( $, op );
+        expectChar( !"heedsCommandEnds", ">", function ( $, status ) {
+            if ( !status.ok )
+                return void then( $, status );
+            read( !!"heedsCommandEnds", 1, function ( $, rhs ) {
+                if ( !rhs.ok )
+                    return void then( $, rhs );
+                then( $,
+                    { ok: true, val: [ op.val, lhs, rhs.val ] } );
             } );
         } );
     } );
 } );
-readerMacros.set( ">", function ( $ ) {
-    if ( bankInfix( $, 0 ) )
+readerMacros.set( ">", function ( $, then ) {
+    if ( bankInfix( $, 0, then ) )
         return;
-    $.then( { ok: false,
+    then( $, { ok: false,
         msg: "Tertiary infix expression without lhs or operator" } );
 } );
 defineInfixOperator( ".", 2,
@@ -468,17 +472,19 @@ defineInfixOperator( ".", 2,
     "Incomplete binary infix expression",
     function ( lhs, read, expectChar, then ) {
     
-    read( !!"heedsCommandEnds", 2, function ( rhs ) {
-        then( [ lhs, rhs ] );
+    read( !!"heedsCommandEnds", 2, function ( $, rhs ) {
+        if ( !rhs.ok )
+            return void then( $, rhs );
+        then( $, { ok: true, val: [ lhs, rhs.val ] } );
     } );
 } );
 
-function readStringUntilBracket( bracket, qqDepth, $ ) {
+function readStringUntilBracket( $, bracket, qqDepth, then ) {
     function loop( $, string ) {
         reader( objPlus( $, {
             qqDepth: qqDepth,
             readerMacros: stringReaderMacros.plusEntry( bracket,
-                function ( $sub ) {
+                function ( $sub, then ) {
                 
                 $sub.stream.readc( function ( c ) {
                     // TODO: Make this trampolined with constant time
@@ -487,25 +493,30 @@ function readStringUntilBracket( bracket, qqDepth, $ ) {
                     var result = [];
                     for ( var s = string; s !== null; s = s.past )
                         result = s.last.concat( result );
-                    $.then( { ok: true, val: result } );
+                    then( $sub, { ok: true, val:
+                        { type: "freshlyCompletedCompound",
+                            val: result } } );
                 } );
             } ),
-            unrecognized: function ( $sub2 ) {
-                $sub2.stream.readc( function ( c ) {
-                    $sub2.then( { ok: true,
+            unrecognized: function ( $sub, then ) {
+                $sub.stream.readc( function ( c ) {
+                    then( $sub, { ok: true,
                         val: [ { type: "nonWhite", text: c } ] } );
                 } );
             },
-            end: function ( $sub ) {
-                $.then( { ok: false, msg: "Incomplete string" } );
-            },
-            then: function ( result ) {
-                if ( result.ok )
-                    loop( $, { past: string, last: result.val } );
-                else
-                    $.then( result );
+            end: function ( $sub, then ) {
+                then( $sub, { ok: false, msg: "Incomplete string" } );
             }
-        } ) );
+        } ), function ( $, result ) {
+            if ( !result.ok )
+                return void then( $, result );
+            
+            if ( likeObjectLiteral( result.val )
+                && result.val.type === "freshlyCompletedCompound" )
+                then( $, { ok: true, val: result.val.val } );
+            else
+                loop( $, { past: string, last: result.val } );
+        } );
     }
     $.stream.readc( function ( c ) {
         loop( $, null );
@@ -519,38 +530,38 @@ stringReaderMacros.setAll( strMap().setObj( {
     "\r": "\r",
     "\n": "\n"
 } ).map( function ( text ) {
-    return function ( $ ) {
+    return function ( $, then ) {
         $.stream.readc( function ( c ) {
-            $.then( { ok: true,
+            then( $, { ok: true,
                 val: [ { type: "rawWhite", text: text } ] } );
         } );
     };
 } ) );
 symbolChopsChars.each( function ( openBracket, closeBracket ) {
-    stringReaderMacros.set( openBracket, function ( $ ) {
-        readStringUntilBracket( closeBracket, $.qqDepth, objPlus( $, {
-            then: function ( result ) {
-                if ( result.ok )
-                    $.then( { ok: true, val: [].concat(
-                        [ { type: "nonWhite", text: openBracket } ],
-                        result.val,
-                        [ { type: "nonWhite", text: closeBracket } ]
-                    ) } );
-                else
-                    $.then( result );
-            }
-        } ) );
+    stringReaderMacros.set( openBracket, function ( $, then ) {
+        readStringUntilBracket( $, closeBracket, $.qqDepth,
+            function ( $, result ) {
+            
+            if ( result.ok )
+                then( $, { ok: true, val: [].concat(
+                    [ { type: "nonWhite", text: openBracket } ],
+                    result.val,
+                    [ { type: "nonWhite", text: closeBracket } ]
+                ) } );
+            else
+                then( $, result );
+        } );
     } );
-    stringReaderMacros.set( closeBracket, function ( $ ) {
-        $.then( { ok: false,
+    stringReaderMacros.set( closeBracket, function ( $, then ) {
+        then( $, { ok: false,
             msg: "Unmatched " + closeBracket + " in string" } );
     } );
 } );
-stringReaderMacros.set( "\\", function ( $ ) {
+stringReaderMacros.set( "\\", function ( $, then ) {
     loop( "", -1 );
     function loop( escStart, escQqDepth ) {
         if ( $.qqDepth < escQqDepth )
-            return void $.then( { ok: false,
+            return void then( $, { ok: false,
                 msg: "Unquoted past the quasiquotation depth" } );
         
         $.stream.readc( function ( c1 ) {
@@ -599,9 +610,9 @@ stringReaderMacros.set( "\\", function ( $ ) {
                 "n": "\n",
                 "#": ""
             } ).map( function ( text, escName ) {
-                return function ( $sub ) {
+                return function ( $sub, then ) {
                     $sub.stream.readc( function ( c ) {
-                        $sub.then( { ok: true, val:
+                        then( $sub, { ok: true, val:
                             [ { type: "explicitWhite", text: text } ]
                         } );
                     } );
@@ -613,9 +624,9 @@ stringReaderMacros.set( "\\", function ( $ ) {
                 "{": "(",
                 "}": ")"
             } ).map( function ( text, escName ) {
-                return function ( $sub ) {
+                return function ( $sub, then ) {
                     $sub.stream.readc( function ( c ) {
-                        $sub.then( { ok: true, val:
+                        then( $sub, { ok: true, val:
                             [ { type: "nonWhite", text: text } ]
                         } );
                     } );
@@ -630,147 +641,141 @@ stringReaderMacros.set( "\\", function ( $ ) {
                 // *all* escape sequences occurring inside this one's
                 // boundaries.
                 
-                return function ( $sub ) {
+                return function ( $sub, then ) {
                     if ( $sub.qqDepth !== 0 )
-                        return void $sub.then( { ok: false, msg:
+                        return void then( $sub, { ok: false, msg:
                             "Used a string-within-a-string escape " +
                             "sequence with an unquote level other " +
                             "than zero" } );
                     
                     readStringUntilBracket(
-                        closeBracket,
-                        $sub.qqDepth + 1,
-                        objPlus( $, {
+                        $, closeBracket, $sub.qqDepth + 1,
+                        function ( $, result ) {
                         
-                        then: function ( result ) {
-                            if ( result.ok )
-                                $.then( { ok: true, val: [].concat(
-                                    [ { type: "nonWhite", text:
-                                        escStart + openBracket } ],
-                                    result.val,
-                                    [ { type: "nonWhite",
-                                        text: closeBracket } ]
-                                ) } );
-                            else
-                                $.then( result );
-                        }
-                    } ) );
+                        if ( result.ok )
+                            then( $, { ok: true, val: [].concat(
+                                [ { type: "nonWhite", text:
+                                    escStart + openBracket } ],
+                                result.val,
+                                [ { type: "nonWhite",
+                                    text: closeBracket } ]
+                            ) } );
+                        else
+                            then( $, result );
+                    } );
                 };
             } ) ).setObj( {
-                ";": function ( $sub ) {
+                ";": function ( $sub, then ) {
                     return void ignoreRestOfLine( $sub, function () {
-                        $sub.then( { ok: true, val: [] } );
+                        then( $sub, { ok: true, val: [] } );
                     } );
                 },
-                "_": function ( $sub ) {
-                    
+                "_": function ( $sub, then ) {
                     $sub.stream.readc( function ( c ) {
                         reader( objPlus( $sub, {
                             heedsCommandEnds: false,
                             infixLevel: 3,
                             infixState: { type: "empty" },
                             readerMacros: readerMacros,
-                            unrecognized: function ( $sub2 ) {
-                                $sub2.then( { ok: false, msg:
+                            unrecognized: function ( $sub2, then ) {
+                                then( $sub2, { ok: false, msg:
                                     "Encountered an unrecognized " +
                                     "character" } );
                             },
-                            end: function ( $sub2 ) {
-                                $sub2.then( { ok: false, msg:
+                            end: function ( $sub2, then ) {
+                                then( $sub2, { ok: false, msg:
                                     "Incomplete interpolation in " +
                                     "string" } );
-                            },
-                            then: function ( result ) {
-                                if ( !result.ok )
-                                    return void $sub.then( result );
-                                $sub.stream.readc( function ( c ) {
-                                    if ( c === "." )
-                                        $sub.then( { ok: true, val:
-                                            [ {
-                                                type: "interpolation",
-                                                val: result.val
-                                            } ]
-                                        } );
-                                    else
-                                        $sub.then( { ok: false, val:
-                                            "Didn't end a string " +
-                                            "interpolation with a " +
-                                            "dot" } );
-                                } );
                             }
-                        } ) );
+                        } ), function ( $sub, result ) {
+                            if ( !result.ok )
+                                return void then( $sub, result );
+                            $sub.stream.readc( function ( c ) {
+                                if ( c === "." )
+                                    then( $sub, { ok: true, val:
+                                        [ {
+                                            type: "interpolation",
+                                            val: result.val
+                                        } ]
+                                    } );
+                                else
+                                    then( $sub, { ok: false, val:
+                                        "Didn't end a string " +
+                                        "interpolation with a " +
+                                        "dot" } );
+                            } );
+                        } );
                     } );
                 },
-                "u": function ( $sub ) {
+                "u": function ( $sub, then ) {
                     $sub.stream.readc( function ( c ) {
                         loop( "", 6 );
                         function loop( hexSoFar, digitsLeft ) {
                             $sub.stream.readc( function ( c ) {
                                 if ( c === "" )
-                                    $sub.then( { ok: false, msg:
+                                    then( $sub, { ok: false, msg:
                                         "Incomplete Unicode escape"
                                     } );
                                 else if ( c === "." )
                                     next( hexSoFar );
                                 else if ( digitsLeft === 0 )
-                                    $sub.then( { ok: false, msg:
+                                    then( $sub, { ok: false, msg:
                                         "Unterminated Unicode escape"
                                     } );
                                 else if ( /^[01-9A-F]$/.test( c ) )
                                     loop( hexSoFar + c,
                                         digitsLeft - 1 );
                                 else
-                                    $sub.then( { ok: false, msg:
+                                    then( $sub, { ok: false, msg:
                                         "Unrecognized character in " +
                                         "Unicode escape" } );
                             } );
                         }
                         function next( hex ) {
                             if ( hex.length === 0 )
-                                return void $sub.then(
+                                return void then( $sub,
                                     { ok: false, msg:
                                         "Unicode escape with no " +
                                         "digits" } );
                             var text = unicodeCodePointToString(
                                 parseInt( hex, 16 ) );
                             if ( text === null )
-                                return void $sub.then(
+                                return void then( $sub,
                                     { ok: false, msg:
                                         "Unicode escape out of range"
                                     } );
-                            $sub.then( { ok: true, val:
+                            then( $sub, { ok: true, val:
                                 [ { type: "nonWhite", text: text } ]
                             } );
                         }
                     } );
                 },
-                ",": function ( $sub ) {
+                ",": function ( $sub, then ) {
                     // NOTE: We shouldn't get here. We already read
                     // all the commas first.
-                    $sub.then( { ok: false, msg:
+                    then( $sub, { ok: false, msg:
                         "Unquoted past the quasiquotation depth, " +
                         "and also caused an internal error in the " +
                         "reader" } );
                 }
             } ),
-            unrecognized: function ( $sub ) {
-                $sub.then( { ok: false,
+            unrecognized: function ( $sub, then ) {
+                then( $sub, { ok: false,
                     msg: "Unrecognized escape sequence" } );
             },
-            end: function ( $sub ) {
-                $sub.then( { ok: false,
+            end: function ( $sub, then ) {
+                then( $sub, { ok: false,
                     msg: "Incomplete escape sequence" } );
-            },
-            then: function ( result ) {
-                if ( result.ok && inStringWithinString )
-                    $.then( { ok: true, val: [ {
-                        type: "nonWhite",
-                        text: escStart + capturing.getCaptured()
-                    } ] } );
-                else
-                    $.then( result );
             }
-        } ) );
+        } ), function ( $sub, result ) {
+            if ( result.ok && inStringWithinString )
+                then( $, { ok: true, val: [ {
+                    type: "nonWhite",
+                    text: escStart + capturing.getCaptured()
+                } ] } );
+            else
+                then( $, result );
+        } );
     }
 } );
 
@@ -833,24 +838,23 @@ function readAll( string ) {
             heedsCommandEnds: true,
             infixLevel: 0,
             infixState: { type: "empty" },
-            end: function ( $ ) {
+            end: function ( $, then ) {
                 if ( $.infixState.type === "ready" )
-                    $.then( { ok: true, val: $.infixState.val } );
+                    then( $, { ok: true, val: $.infixState.val } );
                 else
                     readResult = onEnd();
                 deferTrampoline.runDeferTrampoline();
             },
-            unrecognized: function ( $ ) {
-                $.then( { ok: false,
+            unrecognized: function ( $, then ) {
+                then( $, { ok: false,
                     msg: "Encountered an unrecognized character" } );
                 deferTrampoline.runDeferTrampoline();
-            },
-            then: function ( result ) {
-                if ( result.ok )
-                    readResult = onSuccess( result.val );
-                else
-                    readResult = onFailure( result.msg );
             }
+        }, function ( $, result ) {
+            if ( result.ok )
+                readResult = onSuccess( result.val );
+            else
+                readResult = onFailure( result.msg );
         } );
         deferTrampoline.runDeferTrampoline();
         return readResult;
