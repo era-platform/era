@@ -385,7 +385,13 @@ readerMacros.set( "\\", function ( $, then ) {
             end: function ( $, then ) {
                 then( $, { ok: false, msg: "Incomplete string" } );
             }
-        } ), then );
+        } ), function ( $sub, result ) {
+            then( objPlus( $sub, {
+                readerMacros: $.readerMacros,
+                unrecognized: $.unrecognized,
+                end: $.end
+            } ), result );
+        } );
     } );
 } );
 function defineInfixOperator(
@@ -551,15 +557,22 @@ function readStringUntilBracket( $, bracket, qqDepth, then ) {
             end: function ( $, then ) {
                 then( $, { ok: false, msg: "Incomplete string" } );
             }
-        } ), function ( $, result ) {
+        } ), function ( $sub, result ) {
+            var $sub2 = objPlus( $sub, {
+                qqDepth: $.qqDepth,
+                readerMacros: $.readerMacros,
+                unrecognized: $.unrecognized,
+                end: $.end
+            } );
+            
             if ( !result.ok )
-                return void then( $, result );
+                return void then( $sub2, result );
             
             if ( likeObjectLiteral( result.val )
                 && result.val.type === "freshlyCompletedCompound" )
-                then( $, { ok: true, val: result.val.val } );
+                then( $sub2, { ok: true, val: result.val.val } );
             else
-                loop( $, { past: string, last: result.val } );
+                loop( $sub2, { past: string, last: result.val } );
         } );
     }
     streamReadc( $, function ( $, c ) {
@@ -809,7 +822,6 @@ stringReaderMacros.set( "\\", function ( $, then ) {
             var $sub2 = objPlus( $sub, {
                 stream: inStringWithinString ?
                     $sub.stream.underlyingStream : $sub.stream,
-                heedsCommandEnds: $.heedsCommandEnds,
                 readerMacros: $.readerMacros,
                 unrecognized: $.unrecognized,
                 end: $.end
