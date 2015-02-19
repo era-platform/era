@@ -114,13 +114,17 @@ function bankInfix( $, minInfixLevel, then ) {
     var result = $.infixState.type === "ready" &&
         minInfixLevel <= $.infixLevel;
     if ( result )
-        then( $, { ok: true, val: $.infixState.val } );
+        then( objPlus( $, {
+            infixState: { type: "empty" }
+        } ), { ok: true, val: $.infixState.val } );
     return result;
 }
 function bankCommand( $, then ) {
     var result = $.infixState.type === "ready" && $.heedsCommandEnds;
     if ( result )
-        then( $, { ok: true, val: $.infixState.val } );
+        then( objPlus( $, {
+            infixState: { type: "empty" }
+        } ), { ok: true, val: $.infixState.val } );
     return result;
 }
 function continueInfix( $, val, then ) {
@@ -145,26 +149,32 @@ function readListUntilParen( $, consumeParen, then ) {
             infixLevel: 0,
             infixState: { type: "empty" },
             readerMacros: $.readerMacros.plusEntry( ")",
-                function ( $, then ) {
+                function ( $sub, then ) {
                 
-                if ( bankInfix( $, 0, then ) )
+                if ( bankInfix( $sub, 0, then ) )
                     return;
                 
                 if ( consumeParen )
-                    streamReadc( $, function ( $, c ) {
-                        next( $ );
+                    streamReadc( $sub, function ( $sub, c ) {
+                        next( $sub );
                     } );
                 else
-                    next( $ );
+                    next( $sub );
                 
-                function next( $ ) {
+                function next( $sub ) {
                     // TODO: Make this trampolined with constant time
                     // between bounces. This might be tricky because
                     // it's stateful.
                     var result = [];
                     for ( var ls = list; ls !== null; ls = ls.past )
                         result.unshift( ls.last );
-                    then( $, { ok: true, val:
+                    then( objPlus( $sub, {
+                        heedsCommandEnds: $.heedsCommandEnds,
+                        infixLevel: $.infixLevel,
+                        infixState: $.infixState,
+                        readerMacros: $.readerMacros,
+                        end: $.end
+                    } ), { ok: true, val:
                         { type: "freshlyCompletedCompound",
                             val: result } } );
                 }
@@ -389,28 +399,28 @@ function defineInfixOperator(
         } else if ( $.infixState.type === "ready" ) {
             var lhs = $.infixState.val;
             var origHeedsCommandEnds = $.heedsCommandEnds;
-            streamReadc( $, function ( $, c ) {
+            streamReadc( objPlus( $, {
+                infixState: { type: "empty" }
+            } ), function ( $, c ) {
                 function read( $, heedsCommandEnds, level, then ) {
                     reader( objPlus( $, {
                         heedsCommandEnds:
                             origHeedsCommandEnds && heedsCommandEnds,
                         infixLevel: level,
-                        infixState: { type: "empty" },
                         end: function ( $, then ) {
                             if ( $.infixState.type === "ready" )
-                                then( $, { ok: true,
+                                then( objPlus( $sub, {
+                                    infixState: { type: "empty" }
+                                } ), { ok: true,
                                     val: $.infixState.val } );
                             else
                                 then( $, { ok: false,
                                     msg: incompleteErr } );
                         }
                     } ), function ( $sub, result ) {
-                        // NOTE: This does not restore the original
-                        // infixState.
                         then( objPlus( $sub, {
                             heedsCommandEnds: $.heedsCommandEnds,
                             infixLevel: $.infixLevel,
-                            infixState: { type: "empty" },
                             end: $.end
                         } ), result );
                     } );
@@ -707,10 +717,20 @@ stringReaderMacros.set( "\\", function ( $, then ) {
                                     "Incomplete interpolation in " +
                                     "string" } );
                             }
-                        } ), function ( $, result ) {
+                        } ), function ( $sub, result ) {
+                            
+                            var $sub2 = objPlus( $sub, {
+                                heedsCommandEnds: $.heedsCommandEnds,
+                                infixLevel: $.infixLevel,
+                                infixState: $.infixState,
+                                readerMacros: $.readerMacros,
+                                unrecognized: $.unrecognized,
+                                end: $.end
+                            } );
+                            
                             if ( !result.ok )
-                                return void then( $, result );
-                            streamReadc( $, function ( $, c ) {
+                                return void then( $sub2, result );
+                            streamReadc( $sub2, function ( $, c ) {
                                 if ( c === "." )
                                     then( $, { ok: true, val:
                                         [ {
@@ -878,7 +898,9 @@ function readAll( string ) {
             },
             end: function ( $, then ) {
                 if ( $.infixState.type === "ready" )
-                    then( $, { ok: true, val: $.infixState.val } );
+                    then( objPlus( $, {
+                        infixState: { type: "empty" }
+                    } ), { ok: true, val: $.infixState.val } );
                 else
                     then( $, { ok: true, val: { type: "end" } } );
             }
