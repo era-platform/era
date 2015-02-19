@@ -166,13 +166,21 @@ function readListUntilParen( $, consumeParen, then ) {
             }
         } ), function ( $sub, result ) {
             if ( !result.ok )
-                return void then( $, result );
+                return void then( $sub, result );
+            
+            var $sub2 = objPlus( $sub, {
+                heedsCommandEnds: $.heedsCommandEnds,
+                readerMacros: $.readerMacros,
+                infixLevel: $.infixLevel,
+                infixState: $.infixState,
+                end: $.end
+            } );
             
             if ( likeObjectLiteral( result.val )
                 && result.val.type === "freshlyCompletedCompound" )
-                continueInfix( $, result.val.val, then );
+                continueInfix( $sub2, result.val.val, then );
             else
-                loop( $, { past: list, last: result.val } );
+                loop( $sub2, { past: list, last: result.val } );
         } );
     }
     $.stream.readc( function ( c ) {
@@ -339,9 +347,11 @@ readerMacros.set( "\\", function ( $, then ) {
                 function ( closeBracket, openBracket ) {
                 
                 return function ( $sub, then ) {
-                    readStringUntilBracket( $, closeBracket, 0,
-                        function ( $, result ) {
-                        
+                    readStringUntilBracket( objPlus( $sub, {
+                        readerMacros: $.readerMacros,
+                        unrecognized: $.unrecognized,
+                        end: $.end
+                    } ), closeBracket, 0, function ( $, result ) {
                         if ( !result.ok )
                             return void then( $, result );
                         then( $, { ok: true, val:
@@ -370,55 +380,67 @@ function defineInfixOperator(
         } else if ( $.infixState.type === "ready" ) {
             var lhs = $.infixState.val;
             var origHeedsCommandEnds = $.heedsCommandEnds;
-            var $sub1 = objPlus( $, {
-                infixState: { type: "empty" }
-            } );
-            $sub1.stream.readc( function ( c ) {
-                function read( heedsCommandEnds, level, then ) {
-                    reader( objPlus( $sub1, {
+            $.stream.readc( function ( c ) {
+                function read( $, heedsCommandEnds, level, then ) {
+                    reader( objPlus( $, {
                         heedsCommandEnds:
                             origHeedsCommandEnds && heedsCommandEnds,
                         infixLevel: level,
                         infixState: { type: "empty" },
-                        end: function ( $sub2, then ) {
-                            if ( $sub2.infixState.type === "ready" )
-                                then( $sub1, { ok: true,
-                                    val: $sub2.infixState.val } );
+                        end: function ( $, then ) {
+                            if ( $.infixState.type === "ready" )
+                                then( $, { ok: true,
+                                    val: $.infixState.val } );
                             else
-                                then( $sub1, { ok: false,
+                                then( $, { ok: false,
                                     msg: incompleteErr } );
                         }
-                    } ), then );
+                    } ), function ( $sub, result ) {
+                        // NOTE: This does not restore the original
+                        // infixState.
+                        then( objPlus( $sub, {
+                            heedsCommandEnds: $.heedsCommandEnds,
+                            infixLevel: $.infixLevel,
+                            infixState: { type: "empty" },
+                            end: $.end
+                        } ), result );
+                    } );
                 }
-                function expectChar( heedsCommandEnds, ch, then ) {
-                    reader( objPlus( $sub1, {
+                function expectChar( $, heedsCommandEnds, ch, then ) {
+                    reader( objPlus( $, {
                         heedsCommandEnds:
                             origHeedsCommandEnds && heedsCommandEnds,
                         readerMacros: whiteReaderMacros.plusEntry( ch,
-                            function ( $sub2, then ) {
+                            function ( $, then ) {
                             
-                            $sub2.stream.readc( function ( c ) {
-                                then( $sub1,
-                                    { ok: true, val: null } );
+                            $.stream.readc( function ( c ) {
+                                then( $, { ok: true, val: null } );
                             } );
                         } ),
-                        unrecognized: function ( $sub2, then ) {
-                            then( $sub1, { ok: false, msg:
+                        unrecognized: function ( $, then ) {
+                            then( $, { ok: false, msg:
                                 "Encountered an unrecognized " +
                                 "character when expecting " + ch } );
                         },
-                        end: function ( $sub2, then ) {
-                            then( $sub1,
+                        end: function ( $, then ) {
+                            then( $,
                                 { ok: false, msg: incompleteErr } );
                         }
-                    } ), then );
+                    } ), function ( $sub, result ) {
+                        then( objPlus( $sub, {
+                            heedsCommandEnds: $.heedsCommandEnds,
+                            readerMacros: $.readerMacros,
+                            unrecognized: $.unrecognized,
+                            end: $.end
+                        } ), result );
+                    } );
                 }
-                readRemaining( lhs, read, expectChar,
-                    function ( $sub2, result ) {
+                readRemaining( $, lhs, read, expectChar,
+                    function ( $, result ) {
                     
                     if ( !result.ok )
-                        return void then( $sub1, result );
-                    continueInfix( $sub1, result.val, then );
+                        return void then( $, result );
+                    continueInfix( $, result.val, then );
                 } );
             } );
         } else {
@@ -436,7 +458,7 @@ function defineInfixOperator(
 defineInfixOperator( "<", 1,
     "Tertiary infix expression without lhs",
     "Incomplete tertiary infix expression",
-    function ( lhs, read, expectChar, then ) {
+    function ( $, lhs, read, expectChar, then ) {
     
     // NOTE: We support top-level code like the following by disabling
     // heedsCommandEnds when reading the operator:
@@ -444,13 +466,17 @@ defineInfixOperator( "<", 1,
     //  a <b
     //      .c> d
     //
-    read( !"heedsCommandEnds", 0, function ( $, op ) {
+    read( $, !"heedsCommandEnds", 0, function ( $, op ) {
         if ( !op.ok )
             return void then( $, op );
-        expectChar( !"heedsCommandEnds", ">", function ( $, status ) {
+        
+        expectChar( $, !"heedsCommandEnds", ">",
+            function ( $, status ) {
+            
             if ( !status.ok )
                 return void then( $, status );
-            read( !!"heedsCommandEnds", 1, function ( $, rhs ) {
+            
+            read( $, !!"heedsCommandEnds", 1, function ( $, rhs ) {
                 if ( !rhs.ok )
                     return void then( $, rhs );
                 then( $,
@@ -468,9 +494,9 @@ readerMacros.set( ">", function ( $, then ) {
 defineInfixOperator( ".", 2,
     "Binary infix expression without lhs",
     "Incomplete binary infix expression",
-    function ( lhs, read, expectChar, then ) {
+    function ( $, lhs, read, expectChar, then ) {
     
-    read( !!"heedsCommandEnds", 2, function ( $, rhs ) {
+    read( $, !!"heedsCommandEnds", 2, function ( $, rhs ) {
         if ( !rhs.ok )
             return void then( $, rhs );
         then( $, { ok: true, val: [ lhs, rhs.val ] } );
@@ -557,24 +583,29 @@ symbolChopsChars.each( function ( openBracket, closeBracket ) {
 stringReaderMacros.set( "\\", function ( $, then ) {
     loop( "", -1 );
     function loop( escStart, escQqDepth ) {
-        if ( $.qqDepth < escQqDepth )
+        var newEscQqDepth = escQqDepth + 1;
+        if ( $.qqDepth < newEscQqDepth )
             return void then( $, { ok: false,
                 msg: "Unquoted past the quasiquotation depth" } );
         
         $.stream.readc( function ( c1 ) {
             $.stream.peekc( function ( c2 ) {
                 if ( c2 === "," )
-                    loop( escStart + c1, escQqDepth + 1 );
+                    loop( escStart + c1, newEscQqDepth );
                 else
-                    next( escStart + c1, escQqDepth + 1 );
+                    next( c2, escStart + c1, newEscQqDepth );
             } );
         } );
     }
-    function next( escStart, escQqDepth ) {
+    function next( c, escStart, escQqDepth ) {
         function makeCapturingStream( underlyingStream ) {
             var captured = "";
             
             var stream = {};
+            stream.underlyingStream = underlyingStream;
+            stream.getCaptured = function () {
+                return captured;
+            };
             stream.peekc = function ( then ) {
                 underlyingStream.peekc( then );
             };
@@ -584,22 +615,15 @@ stringReaderMacros.set( "\\", function ( $, then ) {
                     then( c );
                 } );
             };
-            
-            var result = {};
-            result.stream = stream;
-            result.getCaptured = function () {
-                return captured;
-            };
-            return result;
+            return stream;
         }
         
-        var inStringWithinString = escQqDepth < $.qqDepth;
-        var capturing = inStringWithinString ?
-            makeCapturingStream( $.stream ) :
-            { stream: $.stream };
+        var inStringWithinString =
+            escQqDepth < $.qqDepth && !symbolChopsChars.has( c );
         
         reader( objPlus( $, {
-            stream: capturing.stream,
+            stream: inStringWithinString ?
+                makeCapturingStream( $.stream ) : $.stream,
             readerMacros: strMap().setAll( strMap().setObj( {
                 "s": " ",
                 "t": "\t",
@@ -631,22 +655,15 @@ stringReaderMacros.set( "\\", function ( $, then ) {
             } ) ).setAll( symbolChopsChars.map(
                 function ( closeBracket, openBracket ) {
                 
-                // NOTE: Unlike the rest of these escape sequences,
-                // this one directly uses the original `$` rather than
-                // its own version, `$sub`. It does to bypass the
-                // makeCapturingStream() behavior on `$sub.stream`,
-                // which would otherwise suppress *all* escape
-                // sequences occurring inside this one's boundaries.
-                
-                return function ( $sub, then ) {
-                    if ( $sub.qqDepth !== 0 )
-                        return void then( $sub, { ok: false, msg:
+                return function ( $, then ) {
+                    if ( escQqDepth !== 0 )
+                        return void then( $, { ok: false, msg:
                             "Used a string-within-a-string escape " +
                             "sequence with an unquote level other " +
                             "than zero" } );
                     
                     readStringUntilBracket(
-                        $, closeBracket, $sub.qqDepth + 1,
+                        $, closeBracket, $.qqDepth + 1,
                         function ( $, result ) {
                         
                         if ( !result.ok )
@@ -761,11 +778,21 @@ stringReaderMacros.set( "\\", function ( $, then ) {
                     msg: "Incomplete escape sequence" } );
             }
         } ), function ( $sub, result ) {
+            
+            var $sub2 = objPlus( $sub, {
+                stream: inStringWithinString ?
+                    $sub.stream.underlyingStream : $sub.stream,
+                heedsCommandEnds: $.heedsCommandEnds,
+                readerMacros: $.readerMacros,
+                unrecognized: $.unrecognized,
+                end: $.end
+            } );
+            
             if ( !result.ok || !inStringWithinString )
-                return void then( $, result );
-            then( $, { ok: true, val: [ {
+                return void then( $sub2, result );
+            then( $sub2, { ok: true, val: [ {
                 type: "nonWhite",
-                text: escStart + capturing.getCaptured()
+                text: escStart + $sub.stream.getCaptured()
             } ] } );
         } );
     }
@@ -789,6 +816,10 @@ function stringStream( defer, string ) {
         } );
     }
     var stream = {};
+    stream.underlying = null;
+    stream.getCaptured = function () {
+        throw new Error();
+    };
     stream.peekc = function ( then ) {
         readOrPeek( !"isReading", then );
     };
