@@ -58,6 +58,14 @@ function objOwnEach( obj, body ) {
         return false;
     } );
 }
+// NOTE: This body takes its args as ( k, v ).
+function objOwnMap( obj, body ) {
+    var result = {};
+    objOwnEach( obj, function ( k, v ) {
+        result[ k ] = body( k, v );
+    } );
+    return result;
+}
 function objPlus( var_args ) {
     var result = {};
     for ( var i = 0, n = arguments.length; i < n; i++ )
