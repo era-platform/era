@@ -4,46 +4,116 @@
 
 // This is a reader for Era's own dialect of s-expressions.
 
-// To make string literals convenient, we implement an interpolated
-// string syntax according to the following design sketch:
+// In the design of the string literal syntax, we have a few use cases
+// in mind:
+//
+//   - Story: As a programmer who uses a text-based programming
+//     language, namely this one, I'd like to generate code sometimes.
+//     In fact, I'd like to generate code to generate code, and so on.
+//
+//     - Problem: Most string syntaxes frustrate me because they
+//       require me to write escape sequences in my code. Different
+//       stages of generated code look completely different because I
+//       have to write escape sequences for my escape sequences. Since
+//       they look so different, I can't easily refactor my project in
+//       ways that add or remove stages.
+//
+//     - Solution: This string syntax supports an escape sequence
+//       \[...] that looks exactly like the string syntax itself, and
+//       the sole purpose of this escape sequence is for generating
+//       code that contains this string syntax. Escape sequences
+//       occurring inside these brackets are suppressed, so \n
+//       generates "\n" rather than a newline, and so on. Thanks to
+//       this, every stage of generated code looks almost entirely the
+//       same.
+//
+//     - Problem: The escape sequence \[...] generates both "\[" and
+//       "]" in a single string, and sometimes I want to insert a
+//       value in the middle. I could write this as a concatenation
+//       bookended by one string that escapes \[ as \-\< and one that
+//       escapes ] as \> but I'd rather not make such a pervasive
+//       syntax replacement for such a focused insertion.
+//
+//     - Solution: There's an interpolation escape sequence
+//       \_expression-goes-here. which lets s-expressions be
+//       interspersed with other string parts at read time.
+//
+//     - Problem: Still, that escape sequence would be suppressed if I
+//       used it inside the \[...] boundaries.
+//
+//     - Solution: Almost all escape sequences can actually be
+//       un-suppressed any number of levels by using commas:
+//       \,,,,_expression-goes-here. for example. The number of commas
+//       represents the number of stages *between* the code-generator
+//       stage and the target stage, so it will tend to remain stable
+//       even if the code is refactored to add or remove early or late
+//       stages.
+//
+//   - As a programmer whose programs contain error messages and
+//     documentation, I'd like to write long strings of
+//     natural-language prose.
+//
+//     - Problem: In most programming languages, if I want to be picky
+//       about whitespace in a long string, then I have to make sure
+//       not to insert any whitespace that I don't want the string to
+//       contain. This gets in my way when I want to use indentation
+//       and line breaks that match the surrounding code style.
+//
+//     - Solution: This string syntax collapses all verbatim
+//       whitespace. It also has whitespace escapes for cases when
+//       that behavior is unwanted.
+//
+// The design we've settled on at this point is the following:
 //
 // reader macro \ followed by ( will read a string terminated by ),
 //   and it results in the string contents, which means a list of
-//   strings interspersed with other values, and then it will
-//   postprocess whitespace as described further below
+//   strings interspersed with other values, with post-processed
+//   whitespace as described further below
 // reader macro \ followed by [ will read a string terminated by ],
 //   and it results in the string contents, which means a list of
-//   strings interspersed with other values, and then it will
-//   postprocess whitespace as described further below
-// any raw Unicode code point except space, tab, carriage return,
-//   newline, \, (, ), [, and ] is used directly and has no other
-//   meaning
-// whitespace tokens:
-//   \s means a single space
+//   strings interspersed with other values, with post-processed
+//   whitespace as described further below
+//
+// raw whitespace tokens:
+//   space, tab, carriage return, and newline all have the same
+//     effect once the whitespace has been post-processed
+// explicit whitespace tokens:
+//   \s means a space
 //   \t means a tab
 //   \r means a carriage return
 //   \n means a newline
 //   \# means empty string
+// tokens with indeterminate whitespace quality:
+//   \; followed by the rest of a line means empty string (for
+//     comments), and it does *not* obstruct raw whitespace on one
+//     side from being adjacent to things on the other side for the
+//     purpose of whitespace post-processing
 // non-whitespace tokens:
+//   any Unicode code point except space, tab, carriage return,
+//     newline, \, (, ), [, and ]
 //   \- means backslash
-//   ( reads a string terminated by ) and means the contents of that
-//     string plus both brackets, without postprocessing whitespace
-//   [ reads a string terminated by ] and means the contents of that
-//     string plus both brackets, without postprocessing whitespace
-//   \( reads a string terminated by ) while boosting the
-//     quasiquotation depth by 1, and it means the contents of the
-//     string plus both brackets, without postprocessing whitespace
-//   \[ reads a string terminated by ] while boosting the
-//     quasiquotation depth by 1, and it means the contents of the
-//     string plus both brackets, without postprocessing whitespace
-//   ) is an error unless it terminates the current string reader
-//   ] is an error unless it terminates the current string reader
 //   \< means left square bracket
 //   \> means right square bracket
 //   \{ means left parenthesis
 //   \} means right parenthesis
-//   \; followed by the rest of a line means empty string (for
-//     comments)
+//   ) is an error if unmatched
+//   ] is an error if unmatched
+//   ( reads a string terminated by ) and means the
+//     whitespace-preserved contents of that string plus both brackets
+//   [ reads a string terminated by ] and means the
+//     whitespace-preserved contents of that string plus both brackets
+//   \( reads a string terminated by ) while boosting the
+//     quasiquotation depth by 1, and it means the
+//     whitespace-preserved contents of the string plus the slash and
+//     both brackets
+//   \[ reads a string terminated by ] while boosting the
+//     quasiquotation depth by 1, and it means the
+//     whitespace-preserved contents of the string plus the slash and
+//     both brackets
+//     // NOTE: By "whitespace-preserved contents," I mean that the
+//     // whitespace post-processor isn't run on the string before
+//     // the escape sequence has its meaning established. The
+//     // whitespace post-processor is still run *afterward* though.
 //   \_ followed by a non-infix s-expression followed by . is that
 //     s-expression; this is one of the "other values" interspersed
 //     with actual strings in the result
@@ -61,9 +131,10 @@
 //     // consistency with the \_ escape sequence. The reason we have
 //     // a terminating character at all is so the following character
 //     // can be a hex digit without ambiguity.
-// postprocess whitespace according to the following rules:
+// post-process whitespace according to the following rules:
 //   - remove all raw whitespace adjacent to the ends of the string
-//   - remove all raw whitespace adjacent to whitespace escapes
+//   - remove all raw whitespace adjacent to explicit whitespace
+//     escapes
 //   - replace every remaining occurrence of one or more raw
 //     whitespace characters with a single space
 //
@@ -207,7 +278,7 @@ var symbolChopsChars = strMap().setObj( { "(": ")", "[": "]" } );
 var commandEndChars = "\r\n";
 var whiteChars = " \t";
 
-function postprocessWhitespace( stringParts ) {
+function postProcessWhitespace( stringParts ) {
     // TODO: Make this trampolined with constant time between bounces.
     // This might be tricky because it's stateful.
     
@@ -370,7 +441,7 @@ readerMacros.set( "\\", function ( $, then ) {
                 if ( !result.ok )
                     return void then( $, result );
                 then( $, { ok: true, val:
-                    postprocessWhitespace( result.val ) } );
+                    postProcessWhitespace( result.val ) } );
             } );
         } );
     } );
