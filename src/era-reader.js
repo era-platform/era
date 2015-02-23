@@ -11,8 +11,9 @@
 // in mind:
 //
 //   - Story: As a programmer who uses a text-based programming
-//     language, namely this one, I'd like to generate code sometimes.
-//     In fact, I'd like to generate code to generate code, and so on.
+//     language, namely this one, I'd like to generate text-based code
+//     sometimes. In fact, I'd like to generate code to generate code,
+//     and so on.
 //
 //     - Problem: Most string syntaxes frustrate me because they
 //       require me to write escape sequences in my code. Different
@@ -51,11 +52,22 @@
 //       \-uq-ls[...] is actually \-ls modified by \-uq, and
 //       \-qq-mk[...] is \-mk modified by \-qq. The function of \-qq
 //       and \-uq is to suppress and un-suppress escape sequences
-//       respectively. (Their interaction is known as quasiquotation.)
-//       Since the number of iterated \-uq modifiers corresponds to
-//       the number of stages *between* the code-generator stage and
-//       the target stage, it will tend to remain stable even if the
-//       code is refactored to add or remove early or late stages.
+//       respectively.
+//
+//     - Problem: Different stages of code still look different
+//       because some of them use \-uq-ls[...] while others have to
+//       use \-uq-uq-uq-uq-ls[...] in its place. If I refactor my code
+//       to add or remove a stage before or after all other stages I'm
+//       fine, but if I refactor it to add or remove a stage somewhere
+//       in the middle, I have to go all over my code to add or remove
+//       "-uq".
+//
+//     - Solution: You can use \-wq[foo]-qq-... to locally define the
+//       name "foo" to refer to the current quasiquote level before
+//       you start a new one. Then you can use \-rq[foo]-... to rewind
+//       back to the original level. Altogether, you can write
+//       \-wq[foo]-qq-mk[...\-rq[foo]-ls[...]...] instead of
+//       \-qq-mk[...\-uq-ls[...]...] for example.
 //
 //   - As a programmer whose programs contain error messages and
 //     documentation, I'd like to write long strings of
@@ -210,9 +222,9 @@
 //     non-interpolated string while discouraging whitespace, and
 //     then it reads any \- escape sequence omitting the \ and
 //     interprets that sequence according to the quasiquotation depth
-//     rewound just past the given quasiquotation label and deeming
-//     all labels rewound past this way to be non-fresh, but there's
-//     an error if the target label is unbound or if it's not fresh
+//     rewound to the given quasiquotation label and deeming all
+//     labels passed this way to be non-fresh, but there's an error if
+//     the target label is unbound or if it's not fresh
 //   \-mk (meaning "markup") reads a delimited string, and it means
 //     the contents of that string plus the remaining parts of this
 //     entire escape sequence, but converting the delimiter to avoid
