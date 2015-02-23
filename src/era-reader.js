@@ -94,7 +94,7 @@
 //   \ reads any \- string escape sequence omitting the \
 //
 // When reading an s-expression at a quasiquotation depth of zero,
-//   these syntaxes are available, including *infix* syntaxes:
+//   these syntaxes are available, including an *infix* syntax:
 //
 //   most characters are errors
 //   space, tab, or newline ignores itself
@@ -110,13 +110,8 @@
 //   / reads any number of s-expressions until it peeks ) or ] and it
 //     means a list of those s-expressions
 //   . consumes a previously read s-expression, and it reads a second
-//     s-expression without . or < infix support and means a
-//     two-element list
-//   < consumes a previously read s-expression, then reads a second
-//     s-expression (with full infix support), then reads > followed
-//     by a third s-expression with no < infix support, and it means
-//     the three-element list of the second, first, and third
-//     s-expressions in that rearranged order
+//     s-expression without . infix support and means a two-element
+//     list
 //   \-qq-md (or any other \- string escape sequence which ends up
 //     meaning \-md with a quasiquotation depth of one) reads a
 //     delimited string, and it means the whitespace-post-processed
