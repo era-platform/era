@@ -4,6 +4,9 @@
 
 // This is a reader for Era's own dialect of s-expressions.
 
+// TODO: Reimplement almost all of the reader to fit the following
+// description. The design has changed immensely.
+//
 // In the design of the string literal syntax, we have a few use cases
 // in mind:
 //
@@ -18,36 +21,41 @@
 //       they look so different, I can't easily refactor my project in
 //       ways that add or remove stages.
 //
-//     - Solution: This string syntax supports an escape sequence
-//       \[...] that looks exactly like the string syntax itself, and
-//       the sole purpose of this escape sequence is for generating
-//       code that contains this string syntax. Escape sequences
-//       occurring inside these brackets are suppressed, so \n
-//       generates "\n" rather than a newline, and so on. Thanks to
-//       this, every stage of generated code looks almost entirely the
-//       same.
+//     - Solution: This string syntax uses escape sequences
+//       \-qq-md[...] and \-qq-2d[...] that looks exactly like the
+//       string syntaxes themselves, and the sole purpose of this
+//       escape sequence is for generating code that contains this
+//       string syntax. Escape sequences occurring inside these
+//       brackets are suppressed, so \-lf generates "\-lf" rather than
+//       a newline, and so on. Thanks to this, every stage of
+//       generated code looks almost entirely the same.
 //
-//     - Problem: The escape sequence \[...] generates both "\[" and
-//       "]" in a single string, and sometimes I want to insert a
-//       value in the middle. I could write this as a concatenation
-//       bookended by one string that escapes \[ as \-\< and one that
-//       escapes ] as \> but I'd rather not make such a pervasive
-//       syntax replacement for such a focused insertion.
+//     - Problem: The escape sequence \-qq-md[...] generates both
+//       "\-qq-md[" and "]" in a single string, and sometimes I want
+//       to insert a value in the middle. I could write this as a
+//       concatenation bookended by one string that escapes \-qq-md[
+//       as \-.-qq-md\-< and one that escapes ] as \-> but I'd rather
+//       not make such a pervasive syntax replacement for such a
+//       focused insertion.
 //
 //     - Solution: There's an interpolation escape sequence
-//       \_expression-goes-here. which lets s-expressions be
+//       \-uq-ls[expression-goes-here] which lets s-expressions be
 //       interspersed with other string parts at read time.
 //
-//     - Problem: Still, that escape sequence would be suppressed if I
-//       used it inside the \[...] boundaries.
+//     - Problem: Wouldn't that be suppressed like any other escape
+//       sequence inside the \-qq-md[...] boundaries?
 //
-//     - Solution: Almost all escape sequences can actually be
-//       un-suppressed any number of levels by using commas:
-//       \,,,,_expression-goes-here. for example. The number of commas
-//       represents the number of stages *between* the code-generator
-//       stage and the target stage, so it will tend to remain stable
-//       even if the code is refactored to add or remove early or late
-//       stages.
+//     - Solution: All \- escape sequences can actually be
+//       un-suppressed any number of levels by writing things like
+//       \-uq-uq-uq-uq-ls[...] for example. The escape sequence
+//       \-uq-ls[...] is actually \-ls modified by \-uq, and
+//       \-qq-md[...] is \-md modified by \-qq. The function of \-qq
+//       and \-uq is to suppress and un-suppress escape sequences
+//       respectively. (Their interaction is known as quasiquotation.)
+//       Since the number of iterated \-uq modifiers corresponds to
+//       the number of stages *between* the code-generator stage and
+//       the target stage, it will tend to remain stable even if the
+//       code is refactored to add or remove early or late stages.
 //
 //   - As a programmer whose programs contain error messages and
 //     documentation, I'd like to write long strings of
@@ -59,93 +67,148 @@
 //       contain. This gets in my way when I want to use indentation
 //       and line breaks that match the surrounding code style.
 //
-//     - Solution: This string syntax collapses all verbatim
-//       whitespace. It also has whitespace escapes for cases when
-//       that behavior is unwanted.
+//     - Solution: The \-qq-md[...] string syntax collapses all
+//       verbatim whitespace. It also has whitespace escapes for local
+//       cases when that behavior is unwanted, such as blank lines
+//       between natural-language paragraphs.
+//
+//     - Problem: Sometimes I do want to be picky about whitespace,
+//       such as when I'm writing my natural-language prose in some
+//       kind of markdown format.
+//
+//     - Solution: The \-qq-2d[...] string syntax does not collapse
+//       whitespace, so it can be used instad of \-qq-md[...] in that
+//       case.
 //
 // The design we've settled on at this point is the following:
 //
-// reader macro \ followed by ( will read a string terminated by ),
-//   and it results in the string contents, which means a list of
-//   strings interspersed with other values, with post-processed
-//   whitespace as described further below
-// reader macro \ followed by [ will read a string terminated by ],
-//   and it results in the string contents, which means a list of
-//   strings interspersed with other values, with post-processed
-//   whitespace as described further below
+// When reading an s-expression at a quasiquotation depth greater than
+//   zero, most syntaxes are trivialized. The reader supports these
+//   syntaxes:
+//
+//   any Unicode code point except ; \ ( ) [ and ]
+//   ; reads until it peeks the end of the line or document
+//   ) or ] is an error if unmatched
+//   ( or [ reads a trivialized s-expression terminated by ) or ]
+//     respectively
+//   \ reads any \- string escape sequence omitting the \
+//
+// When reading an s-expression at a quasiquotation depth of zero,
+//   these syntaxes are available, including *infix* syntaxes:
+//
+//   most characters are errors
+//   space, tab, or newline ignores itself
+//   ; reads until it peeks the end of the line or document, and it
+//     ignores it all (for comments)
+//   \-rm (or any other \- string escape sequence which ends up
+//     meaning \-rm with a quasiquotation depth of zero) reads a
+//     delimited string, and it ignores it all (for comments)
+//   ASCII letters a-z, ASCII letters a-z, ASCII digits 1-9, 0 - or *
+//     reads any number of characters in this set and means a string
+//   ( or [ reads any number of s-expressions followed by ) or ] and
+//     it means a list of those s-expressions
+//   / reads any number of s-expressions until it peeks ) or ] and it
+//     means a list of those s-expressions
+//   . consumes a previously read s-expression, and it reads a second
+//     s-expression without . or < infix support and means a
+//     two-element list
+//   < consumes a previously read s-expression, then reads a second
+//     s-expression (with full infix support), then reads > followed
+//     by a third s-expression with no < infix support, and it means
+//     the three-element list of the second, first, and third
+//     s-expressions in that rearranged order
+//   \-qq-md (or any other \- string escape sequence which ends up
+//     meaning \-md with a quasiquotation depth of one) reads a
+//     delimited string, and it means the whitespace-post-processed
+//     string, but it's an error for any escape sequence inside to
+//     have a quasiquotation depth of zero unless it's an \-ls
+//   \-qq-2d (or any other \- string escape sequence which ends up
+//     meaning \-2d with a quasiquotation depth of one) reads a
+//     delimited string, and it means the whitespace-preserved string,
+//     but it's an error for any escape sequence inside to have a
+//     quasiquotation depth of zero unless it's an \-ls
+//   // NOTE: A string's contents are not only text but also any
+//   // string interpolations occurring in the string.
+//
+// If any syntax is delimited, it means this:
+//
+//   ; reads the syntax until it peeks the end of the line or document
+//   / reads the syntax until it peeks ) or ]
+//   ( or [ reads the syntax until it reads ) or ] respectively
+//
+// In a string, we have the following syntaxes:
 //
 // raw whitespace tokens:
-//   space, tab, carriage return, and newline all have the same
-//     effect once the whitespace has been post-processed
+//   space, tab, or newline
 // explicit whitespace tokens:
-//   \s means a space
-//   \t means a tab
-//   \r means a carriage return
-//   \n means a newline
-//   \# means empty string
+//   \-sp means a space
+//   \-tb means a tab
+//   \-cr means a carriage return
+//   \-lf means a newline
+//   \-es means empty string
 // tokens with indeterminate whitespace quality:
-//   \; followed by the rest of a line means empty string (for
+//   \-rm reads a delimited string and means empty string (for
 //     comments), and it does *not* obstruct raw whitespace on one
 //     side from being adjacent to things on the other side for the
 //     purpose of whitespace post-processing
 // non-whitespace tokens:
 //   any Unicode code point except space, tab, carriage return,
-//     newline, \, (, ), [, and ]
-//   \- means backslash
-//   \< means left square bracket
-//   \> means right square bracket
-//   \{ means left parenthesis
-//   \} means right parenthesis
-//   ) is an error if unmatched
-//   ] is an error if unmatched
-//   ( reads a string terminated by ) and means the
-//     whitespace-preserved contents of that string plus both brackets
-//   [ reads a string terminated by ] and means the
-//     whitespace-preserved contents of that string plus both brackets
-//   \( reads a string terminated by ) while boosting the
-//     quasiquotation depth by 1, and it means the
-//     whitespace-preserved contents of the string plus the slash and
-//     both brackets
-//   \[ reads a string terminated by ] while boosting the
-//     quasiquotation depth by 1, and it means the
-//     whitespace-preserved contents of the string plus the slash and
-//     both brackets
-//     // NOTE: By "whitespace-preserved contents," I mean that the
-//     // whitespace post-processor isn't run on the string before
-//     // the escape sequence has its meaning established. The
-//     // whitespace post-processor is still run *afterward* though.
-//   \_ followed by a non-infix s-expression followed by . is that
-//     s-expression; this is one of the "other values" interspersed
-//     with actual strings in the result
-//     // NOTE: The reason we choose the character . here is that it's
-//     // already an infix operator, so it will be left behind by a
-//     // non-infix s-expression. The reason we have a terminating
-//     // character at all is so the s-expression reader can consume
-//     // all the whitespace before that, leaving the whitespace
-//     // after that for the string reader to process.
-//   \u followed by 1-6 uppercase hexadecimal digits followed by .
-//     means the appropriate Unicode code point, unless it's a code
-//     point value outside the Unicode range or reserved for UTF-16
-//     surrogates, in which case it's an error
-//     // NOTE: The reason we choose the character . here is for
-//     // consistency with the \_ escape sequence. The reason we have
-//     // a terminating character at all is so the following character
-//     // can be a hex digit without ambiguity.
-// post-process whitespace according to the following rules:
+//     newline, \ ( ) [ and ]
+//   \-. means backslash
+//   \-< or \-> means left or right square bracket, respectively
+//   \-{ or \-} means left or right parenthesis, respectively
+//   ) or ] is an error if unmatched
+//   ( or [ reads a string terminated by ) or ] respectively, and it
+//     means the contents of this entire escape sequence, to be
+//     whitespace-normalized by the current whitespace normalization
+//     policy
+//   \-ch reads a delimited sequence of 1-6 uppercase hexadecimal
+//     digits and means the appropriate Unicode code point, but
+//     there's an error if the code point is outside the Unicode range
+//     or reserved for UTF-16 surrogates
+//     // NOTE: The reason we use delimiters here is so the following
+//     // character can be a hex digit without ambiguity.
+//   \-qq reads any \- escape sequence omitting the \ and interprets
+//     that sequence according to the current quasiquotation depth
+//     plus one
+//   \-uq reads any \- escape sequence omitting the \ and interprets
+//     that sequence according to the current quasiquotation depth
+//     minus one
+//   \-sv reads a delimited, non-interpolated string
+//     whitespace-normalized according to the current whitespace
+//     normalization policy, and then it reads any \- escape sequence
+//     omitting the \ and interprets that sequence with the given
+//     quasiquotation label bound to a fresh view of the current
+//     quasiquotation depth
+//   \-to reads a delimited, non-interpolated string
+//     whitespace-normalized according to the current whitespace
+//     normalization policy, and then it reads any \- escape sequence
+//     omitting the \ and interprets that sequence according to the
+//     quasiquotation depth rewound just past the given quasiquotation
+//     label and deeming all labels rewound past this way to be
+//     non-fresh, but there's an error if the target label is unbound
+//     or if it's not fresh
+//   \-md reads a delimited string, and it means the contents of that
+//     string whitespace-normalized by the current whitespace
+//     normalization policy, plus the remaining parts of this entire
+//     escape sequence, but converting a / delimiter to [ ] or ( )
+//     if the encountered closing bracket is not already going to be
+//     part of the encompassing string
+//   \-2d reads a delimited string, and it means the
+//     whitespace-preserved contents of that string plus the remaining
+//     parts of this entire escape sequence but converting a /
+//     delimiter to [ ] or ( ) if the encountered closing bracket is
+//     not already going to be part of the encompassing string
+//   \-ls reads a delimited s-expression and means an interpolation
+//
+// post-process whitespace according to the following rules, except
+// during quasiquotation levels where the whitespace normalization
+// policy is to preserve whitespace:
 //   - remove all raw whitespace adjacent to the ends of the string
 //   - remove all raw whitespace adjacent to explicit whitespace
 //     escapes
 //   - replace every remaining occurrence of one or more raw
 //     whitespace characters with a single space
-//
-// The quasiquotation depth is a nonnegative integer that's usually 0.
-// All \ escape sequences except \( and \[ actually vary depending on
-// this depth. They really begin with \ followed by a number of ,
-// equal to the depth. For instance, at a depth of 2, the \n escape
-// sequence must actually be written as \,,n in the code. If any of
-// these escape sequences appears with fewer commas than the depth,
-// it's still parsed the same way, but the result is the unprocessed
-// text.
 
 
 // $.stream.underlyingStream
