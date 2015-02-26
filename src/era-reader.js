@@ -23,34 +23,33 @@
 //       ways that add or remove stages.
 //
 //     - Solution: This string syntax uses escape sequences
-//       \-qq-mk[...] and \-qq-pf[...] that looks exactly like the
-//       string syntaxes themselves, and the sole purpose of this
-//       escape sequence is for generating code that contains this
-//       string syntax. Escape sequences occurring inside these
-//       brackets are suppressed, so \-lf generates "\-lf" rather than
-//       a newline, and so on. Thanks to this, every stage of
-//       generated code looks almost entirely the same.
+//       \-qq[...] and \-qq-sp[...] that look exactly like the string
+//       syntaxes themselves, and the sole purpose of this escape
+//       sequence is for generating code that contains this string
+//       syntax. Escape sequences occurring inside these brackets are
+//       suppressed, so \.n generates "\.n" rather than a newline, and
+//       so on. Thanks to this, every stage of generated code looks
+//       almost entirely the same.
 //
-//     - Problem: The escape sequence \-qq-mk[...] generates both
-//       "\-qq-mk[" and "]" in a single string, and sometimes I want
-//       to insert a value in the middle. I could write this as a
-//       concatenation bookended by one string that escapes \-qq-mk[
-//       as \`-qq-mk\-< and one that escapes ] as \-> but I'd rather
-//       not make such a pervasive syntax replacement for such a
-//       focused insertion.
+//     - Problem: The escape sequence \-qq[...] generates both "\-qq["
+//       and "]" in a single string, and sometimes I want to insert a
+//       value in the middle. I could write this as a concatenation
+//       bookended by one string that escapes \-qq[ as \`-qq\-< and
+//       one that escapes ] as \-> but I'd rather not make such a
+//       pervasive syntax replacement for such a focused insertion.
 //
 //     - Solution: There's an interpolation escape sequence
 //       \-uq-ls[expression-goes-here] which lets s-expressions be
 //       interspersed with other string parts at read time.
 //
 //     - Problem: Wouldn't that be suppressed like any other escape
-//       sequence inside the \-qq-mk[...] boundaries?
+//       sequence inside the \-qq[...] boundaries?
 //
 //     - Solution: All \- escape sequences can actually be
 //       un-suppressed any number of levels by writing things like
 //       \-uq-uq-uq-uq-ls[...] for example. The escape sequence
 //       \-uq-ls[...] is actually \-ls modified by \-uq, and
-//       \-qq-mk[...] is \-mk modified by \-qq. The function of \-qq
+//       \-qq[...] is \[...] modified by \-qq. The function of \-qq
 //       and \-uq is to suppress and un-suppress escape sequences
 //       respectively.
 //
@@ -66,8 +65,8 @@
 //       name "foo" to refer to the current quasiquote level before
 //       you start a new one. Then you can use \-rq[foo]-... to rewind
 //       back to the original level. Altogether, you can write
-//       \-wq[foo]-qq-mk[...\-rq[foo]-ls[...]...] instead of
-//       \-qq-mk[...\-uq-ls[...]...] for example.
+//       \-wq[foo]-qq[...\-rq[foo]-ls[...]...] instead of
+//       \-qq[...\-uq-ls[...]...] for example.
 //
 //   - As a programmer whose programs contain error messages and
 //     documentation, I'd like to write long strings of
@@ -79,8 +78,8 @@
 //       contain. This gets in my way when I want to use indentation
 //       and line breaks that match the surrounding code style.
 //
-//     - Solution: The \-qq-mk[...] string syntax collapses all
-//       verbatim whitespace. It also has whitespace escapes for local
+//     - Solution: The \-qq[...] string syntax collapses all
+//       whitespace. It also supports whitespace escapes for local
 //       cases when that behavior is unwanted, such as blank lines
 //       between natural-language paragraphs.
 //
@@ -88,8 +87,8 @@
 //       such as when I'm writing my natural-language prose in some
 //       kind of markdown format.
 //
-//     - Solution: The \-qq-pf[...] string syntax does not collapse
-//       whitespace, so it can be used instad of \-qq-mk[...] in that
+//     - Solution: The \-qq-sp[...] string syntax does not collapse
+//       whitespace, so it can be used instad of \-qq[...] in that
 //       case.
 //
 // The design we've settled on at this point is the following:
@@ -112,8 +111,8 @@
 //   carriage return, newline, or a sequence of carriage return and
 //     newline ignores itself, but in a command stream it prevents any
 //     . that may follow from consuming this command
-//   ; reads until it peeks the end of the line or document, and it
-//     ignores it all (for comments)
+//   \ followed by space or tab reads until it peeks the end of the
+//     line or the document, and it ignores it all (for comments)
 //   \-rm (or any other string escape sequence which ends up meaning
 //     \-rm with a quasiquotation depth of zero) reads a delimited
 //     string, and it ignores it all (for comments)
@@ -126,20 +125,16 @@
 //   . consumes a previously read s-expression, and it reads a second
 //     s-expression without . infix support and means a two-element
 //     list
-//   \-qq-mk (or any other string escape sequence which ends up
-//     meaning \-mk with a quasiquotation depth of one) reads a
-//     delimited string, and it means the string with its lurking
-//     commands processed, but it's an error for any escape sequence
-//     inside to have a quasiquotation depth of zero unless it's an
-//     \-ls
-//   \-qq-pf (or any other string escape sequence which ends up
-//     meaning \-pf with a quasiquotation depth of one) reads a
-//     delimited string while suppressing whitespace normalization,
-//     and it means the string with its lurking commands processed,
-//     but it's an error for any escape sequence inside to have a
-//     quasiquotation depth of zero unless it's an \-ls
-//   // NOTE: A string's contents are not only text but also any
-//   // string interpolations occurring in the string.
+//   \-qq or \-qq-sp followed by a delimited string (or any other
+//     string escape sequence involving -qq -uq -wq -rq and -sp which
+//     ends up being a delimited string with a quasiquotation depth of
+//     one) reads that string while suppressing whitespace as
+//     appropriate, and it means the string with its lurking commands
+//     processed, but it's an error for any escape sequence inside to
+//     have a quasiquotation depth of zero unless it's an \-ls or for
+//     -sp to be used at a depth of zero
+//     // NOTE: A string's contents are not only text but also any
+//     // string interpolations occurring in the string.
 //
 // If any syntax is delimited, it means this:
 //
@@ -207,6 +202,21 @@
 //   ) or ] is an error if unmatched
 //   ( or [ reads a string terminated by ) or ] respectively, and it
 //     means the contents of this entire escape sequence
+//   \ followed by a delimited string reads it, and it means the
+//     contents of that string plus the remaining parts of this entire
+//     escape sequence, but converting the delimiter to avoid peeking
+//     past the end of the encompassing string. If whitespace
+//     normalization is not suppressed, the string contents will also
+//     be prefixed with a lurking command to remove any successive
+//     raw whitespace and ignore its lurking commands, and they'll be
+//     suffixed with a lurking command to do the same thing to its
+//     preceding raw whitespace.
+//   \-sp (meaning "space") reads any escape sequence omitting the \
+//     while suppressing whitespace normalization
+//     // TODO: Stop using "space" as the name for both \-sp and \.s
+//     // at the same time.
+//   \-ls (meaning "lists and strings") reads a delimited s-expression
+//     and means an interpolation
 //   \-ch (meaning "code point in hexadecimal") reads a delimited
 //     sequence of 1-6 uppercase hexadecimal digits and means the
 //     appropriate Unicode code point, but there's an error if the
@@ -233,27 +243,11 @@
 //     the given quasiquotation label and deeming all labels passed
 //     this way to be non-fresh, but there's an error if the target
 //     label is unbound or if it's not fresh
-//   \-mk (meaning "markup") reads a delimited string, and it means
-//     the contents of that string plus the remaining parts of this
-//     entire escape sequence, but converting the delimiter to avoid
-//     peeking past the end of the encompassing string. If whitespace
-//     normalization is not suppressed, the string contents will also
-//     be prefixed with a lurking command to remove any successive
-//     raw whitespace and ignore its lurking commands, and they'll be
-//     suffixed with a lurking command to do the same thing to its
-//     preceding raw whitespace.
-//   \-pf (meaning "preformatted") reads a delimited string while
-//     suppressing whitespace normalization, and it means the contents
-//     of that string plus the remaining parts of this entire escape
-//     sequence but converting the delimiter to avoid peeking past the
-//     end of the encompassing string
-//   \-ls (meaning "lists and strings") reads a delimited s-expression
-//     and means an interpolation
 //   // NOTE: We give most escape sequences two-letter names because
 //   // that makes them a little more mnemonic, lets us use "l" and
 //   // "o" without confusing them with digits, lets us avoid
 //   // resorting to idiosyncratic capitalization, and gives us a
-//   // three-letter string like "-mk" we can grep for. For escapes
+//   // three-letter string like "-sp" we can grep for. For escapes
 //   // dedicated to single code points, we use short escape sequences
 //   // with punctuation like "\.<" or letters like "\.t" depending
 //   // on whether the original code point was already punctuation.
