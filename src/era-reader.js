@@ -657,7 +657,7 @@ function readSexpOrControl( yoke, s,
     // "stringCons", and "stringNil", this may also read a value of
     // type "end", "infixNewline", or "infixDot".
     
-    return s.readUnsophisticatedStringElement( yoke,
+    return s.readElementOrControl( yoke,
         function ( yoke, s, result ) {
         
         if ( !result.ok )
@@ -1150,8 +1150,33 @@ function readSexpOrControl( yoke, s,
                 return then( yoke, s, { ok: true, val:
                     { type: "infixNewline" } );
             } else if ( /^[-*a-z01-9]$/i.test( result.val.val ) ) {
-                // TODO: Implement this. Read any number of code
-                // points in this set to build a string.
+                // We read any number of code points in this set to
+                // build a string.
+                return loop( yoke, jsList( result.val.val ) );
+                function loop( yoke, revElements ) {
+                    return s.peekElementOrControl( yoke,
+                        function ( yoke, s, result ) {
+                        
+                        if ( !result.ok )
+                            return then( yoke, s, result );
+                        
+                        var element = result.val;
+                        if ( element.type === "codePoint"
+                            && /^[-*a-z01-9]$/i.test( element.val ) )
+                            return loop( yoke,
+                                { first: element,
+                                    rest: revElements } );
+                        else
+                            return jsListRev( yoke, revElements,
+                                function ( yoke, elements ) {
+                                
+                                return then( yoke, s,
+                                    { ok: true, val:
+                                        { type: "stringNil", string:
+                                            elements } } );
+                            } );
+                    } );
+                }
             } else if ( result.val.val === "/" ) {
                 if ( encompassingClosingBracket === null )
                     return then( yoke, s, { ok: false, msg:
@@ -1177,14 +1202,30 @@ function readSexpOrControl( yoke, s,
             
             function unsophisticatedStringElementsStream( elements ) {
                 var stream = {};
-                stream.readUnsophisticatedStringElement =
+                stream.peekElementOrControl =
                     function ( yoke, then ) {
                     
                     return runWaitOne( yoke, function ( yoke ) {
-                        return then( yoke,
-                            unsophisticatedStringElementsStream(
-                                elements.rest ),
-                            elements.first );
+                        if ( elements === null )
+                            return then( yoke, stream,
+                                { ok: true, val: { type: "end" } } );
+                        else
+                            return then( yoke, stream,
+                                { ok: true, val: elements.first } );
+                    } );
+                };
+                stream.readElementOrControl =
+                    function ( yoke, then ) {
+                    
+                    return runWaitOne( yoke, function ( yoke ) {
+                        if ( elements === null )
+                            return then( yoke, stream,
+                                { ok: true, val: { type: "end" } } );
+                        else
+                            return then( yoke,
+                                unsophisticatedStringElementsStream(
+                                    elements.rest ),
+                                { ok: true, val: elements.first } );
                     } );
                 };
                 return stream;
