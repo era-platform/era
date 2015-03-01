@@ -261,15 +261,15 @@
 //     quasiquotation depth minus one, and there's an error if the
 //     quasiquotation depth is zero to begin with
 //   \-wq= (meaning "with current quasiquotation level") reads a
-//     delimited, non-interpolated string while discouraging
-//     whitespace and disallowing peeking avoidance, it processes the
+//     delimited string while discouraging whitespace and disallowing
+//     -sp -ls -qq -uq -wq -rq and peeking avoidance, it processes the
 //     lurking commands in that string, and then it reads any escape
 //     sequence omitting the \ and interprets that sequence with the
 //     given quasiquotation label bound to a fresh view of the current
 //     quasiquotation depth
-//   \-rq= (meaning "restore quasiquotation level") reads a delimited,
-//     non-interpolated string while discouraging whitespace and
-//     disallowing peeking avoidance, it processes the lurking
+//   \-rq= (meaning "restore quasiquotation level") reads a delimited
+//     string while discouraging whitespace and disallowing -sp -ls
+//     -qq -uq -wq -rq and peeking avoidance, it processes the lurking
 //     commands in that string, and then it reads any escape sequence
 //     omitting the \ and interprets that sequence according to the
 //     quasiquotation depth rewound to the given quasiquotation label
@@ -578,6 +578,131 @@ function readUnsophisticatedStringElement( yoke, s, then ) {
                 { val: { type: "codePoint", val: c } } } );
     } );
 }
+
+function asciiToEl( ascii ) {
+    var result = null;
+    for ( var i = ascii.length - 1; 0 <= i; i-- )
+        result =
+            { first: { type: "codePoint", val: ascii.charAt( i ) },
+                rest: result };
+    return result;
+}
+
+// NOTE: In two cases, unsophisticatedStringElementsToString(),
+// unsophisticatedStringElementToString(), and
+// unsophisticatedStringEscapeSuffixToString() may encode a value in a
+// way that can't be parsed back in:
+//
+//   - The value contains an "escapeDelimited" escape suffix, and its
+//     opening bracket is / but it is not in a context where its
+//     closing bracket will be in the expected place.
+//   - The element contains a "codePoint" string element whose value
+//     is \ ( ) [ ] or whitespace.
+//
+// If the value was created by parsing in the first place, these cases
+// should be impossible anyway, aside from the fact that an
+// "escapeDelimited" whose opening bracket is / may run up to the end
+// of the string.
+function unsophisticatedStringElementsToString( yoke,
+    elements, then ) {
+    
+    return jsListMappend( yoke, elements,
+        function ( yoke, element, then ) {
+        
+        return unsophisticatedStringElementToString( yoke,
+            element, then );
+    }, then );
+}
+function unsophisticatedStringEscapeSuffixToString( yoke,
+    esc, then ) {
+    
+    return runWaitOne( yoke, function ( yoke ) {
+        if ( esc.type === "veryShort" ) {
+            return then( yoke, asciiToEl( "`" ) );
+        } else if ( esc.type === "short" ) {
+            return jsListAppend( yoke,
+                asciiToEl( "." ),
+                jsList( { type: "codePoint", val: esc.name } ),
+                then );
+        } else if ( esc.type === "modifier" ) {
+            return unsophisticatedStringEscapeSuffixToString( yoke,
+                esc.suffix,
+                function ( yoke, suffix ) {
+                
+                return jsListAppend( yoke,
+                    asciiToEl( "-" + esc.name ), suffix, then );
+            } );
+        } else if ( esc.type === "pair" ) {
+            return unsophisticatedStringEscapeSuffixToString( yoke,
+                esc.first,
+                function ( yoke, first ) {
+            return unsophisticatedStringEscapeSuffixToString( yoke,
+                esc.second,
+                function ( yoke, second ) {
+            
+            return jsListFlattenOnce( yoke,
+                jsList( asciiToEl( "=" ), first, second ), then );
+            
+            } );
+            } );
+        } else if ( esc.type === "comment" ) {
+            return jsListAppend( yoke,
+                jsList( esc.start ), esc.elements, then );
+        } else if ( esc.type === "escapeDelimited" ) {
+            return unsophisticatedStringElementsToString( yoke,
+                esc.elements,
+                function ( yoke, elements ) {
+                
+                return jsListFlattenOnce( yoke, jsList(
+                    asciiToEl( esc.open ),
+                    elements,
+                    asciiToEl( esc.open === "/" ? "" : esc.close )
+                ) );
+            } );
+        } else {
+            throw new Error();
+        }
+    } );
+}
+function unsophisticatedStringElementToString( yoke, element, then ) {
+    if ( element.type === "escape" )
+        return unsophisticatedStringEscapeSuffixToString( yoke,
+            element.suffix,
+            function ( yoke, elements ) {
+            
+            return jsListAppend( yoke,
+                asciiToEl( "\\" ), elements, then );
+        } );
+    else if ( element.type === "textParens" )
+        return unsophisticatedStringElementsToString( yoke,
+            element.elements,
+            function ( yoke, elements ) {
+            
+            return jsListFlattenOnce( yoke, jsList(
+                asciiToEl( "(" ),
+                elements,
+                asciiToEl( ")" )
+            ), then );
+        } );
+    else if ( element.type === "textSquareBrackets" )
+        return unsophisticatedStringElementsToString( yoke,
+            element.elements,
+            function ( yoke, elements ) {
+            
+            return jsListFlattenOnce( yoke, jsList(
+                asciiToEl( "[" ),
+                elements,
+                asciiToEl( "]" )
+            ), then );
+        } );
+    else if ( element.type === "codePoint" )
+        return runWaitOne( yoke, function ( yoke ) {
+            return then( yoke, jsList( element ) );
+        } );
+    else
+        throw new Error();
+}
+
 // NOTE: For this, `s` must be a stream of Unicode code points as
 // short JavaScript strings.
 function readLowercaseBasicLatinCodePoint( yoke, s, then ) {
@@ -952,16 +1077,6 @@ function readSexpOrInfixOp( yoke, s,
                         } );
                     }
                     
-                    function asciiToEl( ascii ) {
-                        var result = null;
-                        for ( var i = ascii.length - 1; 0 <= i; i-- )
-                            result =
-                                { first:
-                                    { type: "codePoint", val: ascii.charAt( i ) },
-                                    rest: result };
-                        return result;
-                    }
-                    
                     if ( element.type === "escape" ) {
                         var readEscapeLurking = function ( yoke,
                             prefix, esc, qqStack, then ) {
@@ -1030,27 +1145,177 @@ function readSexpOrInfixOp( yoke, s,
                                     return unexpected( yoke, JSON.stringify( "." + esc.name ) );
                                 }
                             } else if ( esc.type === "modifier" ) {
-                                if ( esc.name === "rm" ) {
-                                    // TODO: Implement this.
-                                } else if ( esc.name === "sp" ) {
-                                    if ( qqStack.uq === null )
-                                        return unexpected( yoke, "-sp" );
-                                    else
-                                        return jsListAppend( yoke, prefix, asciiToEl( "-sp" ),
-                                            function ( yoke, prefix ) {
-                                            
-                                            return readEscapeLurking( yoke, prefix, esc.suffix, {
-                                                uq: qqStack.uq,
-                                                cache: qqStack.cache.plusObj( {
-                                                    normalizingWhitespace: false
-                                                } )
-                                            }, then );
+                                var readDelimitedLurkingString =
+                                    function ( yoke, esc, qqStack, then ) {
+                                    
+                                    if ( esc.type !== "escapeDelimited" )
+                                        return then( yoke, { ok: false, msg:
+                                            "Expected delimited string, encountered something else" } );
+                                    
+                                    var alreadyInString =
+                                        qqStack.cache.get( "encompassingClosingBracketIsInString" );
+                                    var open = esc.open;
+                                    if ( open === "/" ) {
+                                        if ( alreadyInString === null )
+                                            return then( yoke, { ok: false, msg:
+                                                "Encountered escape suffix / in a quasiquotation " +
+                                                "label, so couldn't convert it to avoid peeking past " +
+                                                "the string's end" } );
+                                        
+                                        if ( alreadyInString )
+                                            ;  // Do nothing.
+                                        else if ( esc.close === ")" )
+                                            open = "(";
+                                        else if ( esc.close === "]" )
+                                            open = "[";
+                                        else
+                                            throw new Error();
+                                    }
+                                    return readStringLurking( yoke, esc.elements, {
+                                        uq: qqStack.uq,
+                                        cache: qqStack.cache.plusObj( {
+                                            encompassingClosingBracket: esc.close,
+                                            encompassingClosingBracketIsInString: true
+                                        } )
+                                    }, function ( yoke, elements ) {
+                                        return jsListFlattenOnce( yoke, jsList(
+                                            asciiToEl( open ),
+                                            elements,
+                                            asciiToEl( open === "/" ? "" : esc.close )
+                                        ), function ( yoke, elements ) {
+                                            return then( yoke, { ok: true, val: elements } );
                                         } );
+                                    } );
+                                };
+                                
+                                if ( esc.name === "rm" ) {
+                                    if ( qqStack.uq === null )
+                                        return unexpected( yoke, "-rm" );
+                                    else if ( qqStack.uq.uq === null )
+                                        return ret( yoke, jsList() );
+                                    else
+                                        return readDelimitedStringLurking( yoke, esc.suffix, qqStack,
+                                            function ( yoke, result ) {
+                                            
+                                            if ( !result.ok )
+                                                return then( yoke, result );
+                                            
+                                            return jsListFlattenOnce( yoke, jsList(
+                                                prefix,
+                                                asciiToEl( "-rm" ),
+                                                result.val
+                                            ), ret );
+                                        } );
+                                } else if ( esc.name === "sp" ) {
+                                    if ( qqStack.cache.get( "inQqLabel" ) )
+                                        return then( yoke, { ok: false, msg:
+                                            "Encountered -sp inside a quasiquotation label" } } );
+                                    else if ( qqStack.uq === null )
+                                        return unexpected( yoke, "-sp" );
+                                    
+                                    return jsListAppend( yoke, prefix, asciiToEl( "-sp" ),
+                                        function ( yoke, prefix ) {
+                                        
+                                        return readEscapeLurking( yoke, prefix, esc.suffix, {
+                                            uq: qqStack.uq,
+                                            cache: qqStack.cache.plusObj( {
+                                                normalizingWhitespace: false
+                                            } )
+                                        }, then );
+                                    } );
                                 } else if ( esc.name === "ls" ) {
-                                    // TODO: Implement this.
+                                    if ( qqStack.cache.get( "inQqLabel" ) )
+                                        return then( yoke, { ok: false, msg:
+                                            "Encountered -ls inside a quasiquotation label" } } );
+                                    
+                                    if ( qqStack.uq === null ) {
+                                        if ( esc.suffix.type !== "escapeDelimited" )
+                                            return unexpected( yoke,
+                                                "-ls but not -ls( or -ls[ or -ls/" );
+                                        
+                                        return readList( yoke, listToStream( esc.suffix.elements ),
+                                            esc.suffix.close,
+                                            function ( yoke, emptyElementsStream, result ) {
+                                            
+                                            if ( !result.ok )
+                                                return then( yoke, result );
+                                            else if ( result.val.type !== "cons" )
+                                                return then( yoke,
+                                                    "Expected an interpolation of exactly one " +
+                                                    "s-expression, got zero" );
+                                            else if ( result.val.rest.type !== "nil" )
+                                                return then( yoke,
+                                                    "Expected an interpolation of exactly one " +
+                                                    "s-expression, got more than one" );
+                                            
+                                            return then( yoke,
+                                                { type: "interpolation", val: result.val.first } );
+                                        } );
+                                    } else if ( qqStack.uq.uq === null ) {
+                                        return unexpected( yoke, "-ls" );
+                                    } else {
+                                        return readDelimitedStringLurking( yoke, esc.suffix, qqStack,
+                                            function ( yoke, result ) {
+                                            
+                                            if ( !result.ok )
+                                                return then( yoke, result );
+                                            
+                                            return jsListFlattenOnce( yoke, jsList(
+                                                prefix,
+                                                asciiToEl( "-ls" ),
+                                                result.val
+                                            ), ret );
+                                        } );
+                                    }
                                 } else if ( esc.name === "ch" ) {
-                                    // TODO: Implement this.
+                                    if ( qqStack.uq === null ) {
+                                        return unexpected( yoke, "-ch" );
+                                    } else if ( qqStack.uq.uq === null ) {
+                                        if ( esc.suffix.type !== "escapeDelimited" )
+                                            return unexpected( yoke,
+                                                "-ch but not -ch( or -ch[ or -ch/" );
+                                        var elementsArr = jsListToArrBounded( esc.suffix.elements, 6 );
+                                        if ( elementsArr === null
+                                            || !(1 <= elementsArr.length && elementsArr.length <= 6)
+                                            || !arrAll( elementsArr, function ( element, i ) {
+                                                return element.type === "codePoint" &&
+                                                    /^[01-9A-F]$/.test( element.val );
+                                            } ) )
+                                            return then( yoke, { ok: false, msg:
+                                                "Encountered -ch with something other than 1-6 " +
+                                                "uppercase hex digits inside" } );
+                                        
+                                        var codePoint = unicodeCodePointToString(
+                                            parseInt( arrMap( elementsArr, function ( element, i ) {
+                                                return element.val;
+                                            } ).join( "" ), 16 ) );
+                                        
+                                        if ( codePoint === null )
+                                            return then( yoke, { ok: false, msg:
+                                                "Encountered -ch denoting either a UTF-16 surrogate " +
+                                                "or a code point outside the Unicode range" } );
+                                        
+                                        return ret( yoke,
+                                            jsList( { type: "codePoint", val: codePoint } ) );
+                                    } else {
+                                        return readDelimitedStringLurking( yoke, esc.suffix, qqStack,
+                                            function ( yoke, result ) {
+                                            
+                                            if ( !result.ok )
+                                                return then( yoke, result );
+                                            
+                                            return jsListFlattenOnce( yoke, jsList(
+                                                prefix,
+                                                asciiToEl( "-ch" ),
+                                                result.val
+                                            ), ret );
+                                        } );
+                                    }
                                 } else if ( esc.name === "qq" ) {
+                                    if ( qqStack.cache.get( "inQqLabel" ) )
+                                        return then( yoke, { ok: false, msg:
+                                            "Encountered -qq inside a quasiquotation label" } } );
+                                    
                                     return jsListAppend( yoke, prefix, asciiToEl( "-qq" ),
                                         function ( yoke, prefix ) {
                                         
@@ -1062,19 +1327,89 @@ function readSexpOrInfixOp( yoke, s,
                                         }, then );
                                     } );
                                 } else if ( esc.name === "uq" ) {
-                                    if ( qqStack.uq === null )
-                                        return unexpected( yoke, "-uq" );
-                                    else
-                                        return jsListAppend( yoke, prefix, asciiToEl( "-uq" ),
-                                            function ( yoke, prefix ) {
-                                            
-                                            return readEscapeLurking( yoke,
-                                                prefix, esc.suffix, qqStack.uq, then );
-                                        } );
+                                    if ( qqStack.cache.get( "inQqLabel" ) )
+                                        return then( yoke, { ok: false, msg:
+                                            "Encountered -uq inside a quasiquotation label" } } );
+                                    else if ( qqStack.uq === null )
+                                        return unexpected( yoke, "-uq at zero depth" );
+                                    
+                                    return jsListAppend( yoke, prefix, asciiToEl( "-uq" ),
+                                        function ( yoke, prefix ) {
+                                        
+                                        return readEscapeLurking( yoke,
+                                            prefix, esc.suffix, qqStack.uq, then );
+                                    } );
                                 } else if ( esc.name === "wq" ) {
-                                    // TODO: Implement this.
+                                    if ( qqStack.cache.get( "inQqLabel" ) )
+                                        return then( yoke, { ok: false, msg:
+                                            "Encountered -wq inside a quasiquotation label" } } );
+                                    
+                                    return parseQqLabelEsc( esc, function ( yoke, result ) {
+                                        
+                                        if ( !result.ok )
+                                            return then( yoke, s, result );
+                                        
+                                        var name = result.val;
+                                        
+                                        return unsophisticatedStringEscapeSuffixToString( yoke,
+                                            esc.suffix.first,
+                                            function ( yoke, labelCode ) {
+                                        return jsListFlattenOnce( yoke, jsList(
+                                            prefix,
+                                            asciiToEl( "-wq=" ),
+                                            labelCode
+                                        ), function ( yoke, prefix ) {
+                                        
+                                        return readEscapeLurking( yoke, prefix, esc.suffix.second, {
+                                            uq: qqStack.uq,
+                                            cache: qqStack.cache.plusObj( {
+                                                names: qqStack.cache.get( "names" ).plusTruth( name )
+                                            } )
+                                        }, then );
+                                        
+                                        } );
+                                        } );
+                                    } );
                                 } else if ( esc.name === "rq" ) {
-                                    // TODO: Implement this.
+                                    if ( qqStack.cache.get( "inQqLabel" ) )
+                                        return then( yoke, { ok: false, msg:
+                                            "Encountered -rq inside a quasiquotation label" } } );
+                                    
+                                    return parseQqLabelEsc( esc, function ( yoke, result ) {
+                                        
+                                        if ( !result.ok )
+                                            return then( yoke, s, result );
+                                        
+                                        var name = result.val;
+                                        
+                                        return unsophisticatedStringEscapeSuffixToString( yoke,
+                                            esc.suffix.first,
+                                            function ( yoke, labelCode ) {
+                                        return jsListFlattenOnce( yoke, jsList(
+                                            prefix,
+                                            asciiToEl( "-rq=" ),
+                                            labelCode
+                                        ), function ( yoke, prefix ) {
+                                        
+                                        return unwindingQqStack( yoke, qqStack );
+                                        function unwindingQqStack( yoke, qqStack ) {
+                                            return runWaitOne( yoke, function ( yoke ) {
+                                                if ( qqStack.cache.get( "names" ).has( name ) )
+                                                    return readEscapeLurking( yoke,
+                                                        prefix, esc.suffix.second, qqStack, then );
+                                                else if ( qqStack.uq === null )
+                                                    return unexpected( yoke,
+                                                        "-rq= for unbound label " +
+                                                        // TODO: Use custom slashification here.
+                                                        JSON.stringify( name ) } );
+                                                else
+                                                    return unwindingQqStack( yoke, qqStack.uq );
+                                            } );
+                                        }
+                                        
+                                        } );
+                                        } );
+                                    } );
                                 } else {
                                     return unexpected( yoke, "-" + esc.name );
                                 }
@@ -1095,8 +1430,15 @@ function readSexpOrInfixOp( yoke, s,
                             } else if ( esc.type ===
                                 "escapeDelimited" ) {
                                 
-                                // TODO: Implement this.
-                                
+                                return readDelimitedStringLurking( yoke,
+                                    esc, qqStack,
+                                    function ( yoke, result ) {
+                                    
+                                    if ( !result.ok )
+                                        return then( yoke, result );
+                                    
+                                    return jsListAppend( yoke, prefix, result.val, ret );
+                                } );
                             } else {
                                 throw new Error();
                             }
@@ -1118,11 +1460,9 @@ function readSexpOrInfixOp( yoke, s,
                             function ( yoke, elements ) {
                             
                             return jsListFlattenOnce( yoke, jsList(
-                                jsList(
-                                    { type: "codePoint", val: "(" } ),
+                                asciiToEl( "(" ),
                                 elements,
-                                jsList(
-                                    { type: "codePoint", val: ")" } )
+                                asciiToEl( ")" )
                             ), ret );
                         } );
                     } else if ( element.type ===
@@ -1132,18 +1472,15 @@ function readSexpOrInfixOp( yoke, s,
                             function ( yoke, elements ) {
                             
                             return jsListFlattenOnce( yoke, jsList(
-                                jsList(
-                                    { type: "codePoint", val: "[" } ),
+                                asciiToEl( "[" ),
                                 elements,
-                                jsList(
-                                    { type: "codePoint", val: "]" } )
+                                asciiToEl( "]" )
                             ), ret );
                         } );
                     } else if ( element.type === "codePoint" ) {
                         var c = element.val;
                         if ( /^[ \t\r\n]$/.test( c ) ) {
-                            if ( qqStack.cache.
-                                get( "discouragingWhitespaceAndInterpolations" ) )
+                            if ( qqStack.cache.get( "inQqLabel" ) )
                                 return ret( yoke, jsList(
                                     { type: "lurkVerify" },
                                     { type: "rawWhiteCodePoint", val: element.val }
@@ -1186,9 +1523,7 @@ function readSexpOrInfixOp( yoke, s,
                         return then( yoke, null );
                     else if ( state.normalizing
                         && state.revWhite !== null )
-                        return next(
-                            jsList(
-                                { type: "codePoint", val: " " } ) );
+                        return next( asciiToEl( " " ) );
                     else
                         return next( state.revWhite );
                     
@@ -1457,7 +1792,7 @@ function readSexpOrInfixOp( yoke, s,
                         encompassingClosingBracketIsInString: null,
                         
                         normalizingWhitespace: false,
-                        discouragingWhitespaceAndInterpolations: true
+                        inQqLabel: true
                     } )
                 }, function ( yoke, result ) {
                     if ( !result.ok )
@@ -1482,7 +1817,7 @@ function readSexpOrInfixOp( yoke, s,
                     encompassingClosingBracket,
                 encompassingClosingBracketIsInString: false,
                 normalizingWhitespace: true,
-                discouragingWhitespaceAndInterpolations: false
+                inQqLabel: false
             ) }, result.val.val.suffix );
         } else if ( result.val.val.type === "textParens" ) {
             return continueListFromElements( yoke,
@@ -1560,7 +1895,7 @@ function readSexpOrInfixOp( yoke, s,
                 function ( yoke, emptyElementsStream, result ) {
                 
                 return then( yoke, s, result );
-            };
+            } );
         }
         function readList( yoke, s,
             encompassingClosingBracket, then ) {
@@ -1687,8 +2022,9 @@ function readSexp( yoke, s, heedCommandEnds, then ) {
 }
 
 
-// TODO: Finish the "implement this" TODOs in the implementation of
-// readSexpOrInfixOp().
+// TODO: Debug any issues in the above reader implementation,
+// including missing dependencies from jsListFlattenOnce(),
+// jsListToArrBounded(), etc.
 //
 // TODO: Once that's done, modify the tests and demos to use the new
 // reader syntax.
