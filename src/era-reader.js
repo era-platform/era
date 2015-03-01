@@ -1152,8 +1152,8 @@ function readSexpOrControl( yoke, s,
             } else if ( /^[-*a-z01-9]$/i.test( result.val.val ) ) {
                 // We read any number of code points in this set to
                 // build a string.
-                return loop( yoke, jsList( result.val.val ) );
-                function loop( yoke, revElements ) {
+                return loop( yoke, s, jsList( result.val.val ) );
+                function loop( yoke, s, revElements ) {
                     return s.peekElementOrControl( yoke,
                         function ( yoke, s, result ) {
                         
@@ -1163,7 +1163,7 @@ function readSexpOrControl( yoke, s,
                         var element = result.val;
                         if ( element.type === "codePoint"
                             && /^[-*a-z01-9]$/i.test( element.val ) )
-                            return loop( yoke,
+                            return loop( yoke, s,
                                 { first: element,
                                     rest: revElements } );
                         else
@@ -1234,17 +1234,95 @@ function readSexpOrControl( yoke, s,
             return readList( yoke,
                 unsophisticatedStringElementsStream( elements ),
                 encompassingClosingBracket,
-                function ( yoke, subS, list ) {
+                function ( yoke, subS, result ) {
                 
-                return then( yoke, s, list );
+                return then( yoke, s, result );
             };
         }
         function readList( yoke, s,
             encompassingClosingBracket, then ) {
             
-            // TODO: Implement this. Read the remainder of the stream
-            // as a list. Ignore its "infixNewline" values, and
-            // process its "infixDot" values.
+            // This reads the remainder of the stream as a list. It
+            // ignores the "infixNewline" values, and it processes the
+            // "infixDot" values.
+            
+            return loop( yoke, s, null, null );
+            function loop( yoke, s,
+                maybeLhs, recentDot, revElements ) {
+                
+                return readSexpOrControl( yoke, s,
+                    encompassingClosingBracket,
+                    function ( yoke, s, result ) {
+                    
+                    if ( !result.ok )
+                        return then( yoke, s, result );
+                    
+                    if ( result.val.type === "end" ) {
+                        
+                        if ( recentDot )
+                            return then( yoke, s, { ok: false, msg:
+                                "Expected s-expression, " +
+                                "encountered . outside an infix " +
+                                "context" } );
+                        
+                        if ( maybeLhs === null )
+                            return next( yoke, s, revElements );
+                        else
+                            return next( yoke, s,
+                                { first: maybeLhs.val,
+                                    rest: revElements } );
+                    } else if ( result.val.type === "infixNewline" ) {
+                        return loop( yoke, s,
+                            maybeLhs, recentDot, revElements );
+                    } else if ( result.val.type === "infixDot" ) {
+                        
+                        if ( maybeLhs === null || recentDot )
+                            return then( yoke, s, { ok: false, msg:
+                                "Expected s-expression, " +
+                                "encountered . outside an infix " +
+                                "context" } );
+                        
+                        return loop( yoke, s,
+                            maybeLhs, !!"recentDot", revElements );
+                    } else {
+                        if ( recentDot )
+                            return loop( yoke, s,
+                                { val:
+                                    { type: "cons", first: maybeLhs.val, rest:
+                                        { type: "cons", first: result.val, rest: { type: "nil" } } } },
+                                !"recentDot",
+                                revElements );
+                        else if ( maybeLhs !== null )
+                            return loop( yoke, s,
+                                { val: result.val },
+                                !"recentDot",
+                                { first: maybeLhs.val,
+                                    rest: revElements } );
+                        else
+                            return loop( yoke, s,
+                                { val: result.val },
+                                !"recentDot",
+                                revElements );
+                    }
+                } );
+            }
+            function next( yoke, s, revElements ) {
+                return buildListLoop( yoke,
+                    revElements, { type: "nil" } );
+                function buildListLoop( yoke, revElements, list ) {
+                    return runWaitOne( yoke, function ( yoke ) {
+                        if ( revElements === null )
+                            return then( yoke, s, { ok: true, val:
+                                list } );
+                        else
+                            return buildListLoop( yoke,
+                                revElements.rest,
+                                { type: "cons",
+                                    first: revElements.first,
+                                    rest: list } );
+                    } );
+                }
+            }
         }
     } );
 }
