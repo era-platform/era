@@ -398,58 +398,140 @@
 //     // example being our own \.{ and \.} escape sequences.
 
 
-function readRestOfLine( yoke, s, revSoFar, then ) {
-    return s.peekc( yoke, function ( yoke, c ) {
-        if ( /^[\r\n]?$/.test( c ) )
-            return jsListRev( yoke, revSoFar,
-                function ( yoke, codePoints ) {
+function customStream( underlyingStream, read ) {
+    var stream = {};
+    stream.peek = function ( yoke, then ) {
+        return runWaitOne( yoke, function ( yoke ) {
+        return read( yoke, underlyingStream,
+            function ( yoke, underlyingStream, result ) {
+        return runWaitOne( yoke, function ( yoke ) {
+        
+        var cachingStream = {};
+        cachingStream.peek = function ( yoke, then ) {
+            return runWaitOne( yoke, function ( yoke ) {
+                return then( yoke, cachingStream, result );
+            } );
+        };
+        cachingStream.read = function ( yoke, then ) {
+            return runWaitOne( yoke, function ( yoke ) {
+                return then( yoke,
+                    customStream( underlyingStream, read ),
+                    result );
+            } );
+        };
+        return then( yoke, cachingStream, result );
+        
+        } );
+        } );
+        } );
+    };
+    stream.read = function ( yoke, then ) {
+        return runWaitOne( yoke, function ( yoke ) {
+        return read( yoke, underlyingStream,
+            function ( yoke, underlyingStream, result ) {
+        return runWaitOne( yoke, function ( yoke ) {
+        
+        return then( yoke,
+            customStream( underlyingStream, read ),
+            result );
+        
+        } );
+        } );
+        } );
+    };
+    return stream;
+}
+function listToStream( list ) {
+    return customStream( list, function ( yoke, list, then ) {
+        if ( list === null )
+            return then( yoke, null, { ok: true, val: null } );
+        else
+            return then( yoke, list.rest, { ok: true, val:
+                { val: list.first } } );
+    } );
+}
+
+// NOTE: For this, `s` must be a stream of Unicode code points as
+// short JavaScript strings.
+function readRestOfLine( yoke, s, revElements, then ) {
+    return s.peek( yoke, function ( yoke, s, result ) {
+        if ( !result.ok )
+            return then( yoke, s, result );
+        
+        if ( result.val === null
+            || /^[\r\n]$/.test( result.val.val ) )
+            return jsListRev( yoke, revElements,
+                function ( yoke, elements ) {
                 
-                return then( yoke, s, codePoints );
+                return then( yoke, s, { ok: true, val: elements } );
             } );
         else
-            return s.readc( yoke, function ( yoke, s, c ) {
+            return s.read( yoke, function ( yoke, s, result ) {
+                if ( !result.ok )
+                    return then( yoke, s, result );
+                
                 return readRestOfLine( yoke, s, end,
-                    { first: c, rest: revSoFar }, then );
+                    { first:
+                        { type: "codePoint", val: result.val.val },
+                        rest: revElements },
+                    then );
             } );
     } );
 }
+// NOTE: For this, `s` must be a stream of Unicode code points as
+// short JavaScript strings.
 function readUnsophisticatedBrackets( yoke, s,
     closeRegex, consume, revSoFar, then ) {
     
-    return s.peekc( yoke, function ( yoke, c ) {
-        if ( closeRegex.test( c ) )
+    return s.peek( yoke, function ( yoke, s, result ) {
+        if ( !result.ok )
+            return then( yoke, s, result );
+        
+        if ( result.val !== null
+            && closeRegex.test( result.val.val ) ) {
             if ( consume )
-                return s.readc( yoke, function ( yoke, s, c ) {
-                    return next( yoke, s, c );
+                return s.read( yoke, function ( yoke, s, result ) {
+                    if ( !result.ok )
+                        return then( yoke, s, result );
+                    return next( yoke, s, result.val.val );
                 } );
             else
-                return next( yoke, s, c );
-        else
+                return next( yoke, s, result.val.val );
+        } else {
             return readUnsophisticatedStringElement( yoke, s,
                 function ( yoke, s, result ) {
                 
                 if ( !result.ok )
                     return then( yoke, s, result );
+                if ( result.val === null )
+                    throw new Error();
                 return readBrackets( yoke, s, closeRegex,
-                    { first: result.val, rest: revSoFar }, then );
+                    { first: result.val.val, rest: revSoFar }, then );
             } );
+        }
         
         function next( yoke, s, close ) {
             return jsListRev( yoke, revSoFar,
                 function ( yoke, elements ) {
                 
                 return then( yoke, s, { ok: true, val:
-                    { close: c, elements: elements } } );
+                    { close: close, elements: elements } } );
             } );
         }
     } );
 }
+// NOTE: For this, `s` must be a stream of Unicode code points as
+// short JavaScript strings.
 function readUnsophisticatedStringElement( yoke, s, then ) {
-    return s.readc( yoke, function ( yoke, s, c ) {
-        if ( c === "" )
-            return then( yoke, s, { ok: true, val:
-                { type: "end" } } );
-        else if ( /^[])]$/.test( c ) )
+    return s.read( yoke, function ( yoke, s, result ) {
+        if ( !result.ok )
+            return then( yoke, s, result );
+        
+        if ( result.val === null )
+            return then( yoke, s, result );
+        
+        var c = result.val.val;
+        if ( /^[])]$/.test( c ) )
             return then( yoke, s, { ok: false, msg:
                 "Unmatched " + c + " in text" } );
         else if ( c === "\\" )
@@ -459,7 +541,8 @@ function readUnsophisticatedStringElement( yoke, s, then ) {
                 if ( !result.ok )
                     return then( yoke, s, result );
                 return then( yoke, s, { ok: true, val:
-                    { type: "escape", suffix: result.val } } );
+                    { val:
+                        { type: "escape", suffix: result.val } } } );
             } );
         else if ( c === "(" )
             return readUnsophisticatedBrackets( yoke, s,
@@ -470,8 +553,9 @@ function readUnsophisticatedStringElement( yoke, s, then ) {
                     return then( yoke, s, result );
                 return then( yoke, s,
                     { ok: true, val:
-                        { type: "textParens",
-                            elements: result.val.elements } } );
+                        { val:
+                            { type: "textParens",
+                                elements: result.val.elements } } } );
             } );
         else if ( c === "[" )
             return readUnsophisticatedBrackets( yoke, s,
@@ -482,25 +566,37 @@ function readUnsophisticatedStringElement( yoke, s, then ) {
                     return then( yoke, s, result );
                 return then( yoke, s,
                     { ok: true, val:
-                        { type: "textSquareBrackets",
-                            elements: result.val.elements } } );
+                        { val:
+                            { type: "textSquareBrackets",
+                                elements: result.val.elements } } } );
             } );
         else
             return then( yoke, s, { ok: true, val:
-                { type: "codePoint", val: c } } );
+                { val: { type: "codePoint", val: c } } } );
     } );
 }
+// NOTE: For this, `s` must be a stream of Unicode code points as
+// short JavaScript strings.
 function readLowercaseBasicLatinCodePoint( yoke, s, then ) {
-    s.peekc( yoke, function ( yoke, c ) {
-        if ( !/^[a-z]$/.test( c ) )
+    return s.peek( yoke, function ( yoke, s, result ) {
+        if ( !result.ok )
+            return then( yoke, s, result );
+        
+        if ( result.val === null )
             return then( yoke, s, { ok: false, msg:
-                "Expected a lowercase Basic Latin code point, got " +
-                c } );
-        s.readc( yoke, function ( yoke, s, c ) {
-            return then( yoke, s, { ok: true, val: c } );
-        } );
+                "Expected lowercase Basic Latin code point, got " +
+                "end of document" } );
+        else if ( !/^[a-z]$/.test( result.val.val ) )
+            return then( yoke, s, { ok: false, msg:
+                "Expected lowercase Basic Latin code point, got " +
+                // TODO: Use custom slashification here.
+                JSON.stringify( result.val.val ) } );
+        
+        return s.read( yoke, then );
     } );
 }
+// NOTE: For this, `s` must be a stream of Unicode code points as
+// short JavaScript strings.
 function readTwoLowercaseBasicLatinCodePoints( yoke, s, then ) {
     return readLowercaseBasicLatinCodePoint( yoke, s,
         function ( yoke, s, result ) {
@@ -518,13 +614,20 @@ function readTwoLowercaseBasicLatinCodePoints( yoke, s, then ) {
         } );
     } );
 }
+// NOTE: For this, `s` must be a stream of Unicode code points as
+// short JavaScript strings.
 function readUnsophisticatedEscapeSequenceSuffix( yoke, s, then ) {
-    return s.readc( yoke, function ( yoke, s, c ) {
-        if ( c === "" )
+    return s.read( yoke, function ( yoke, s, result ) {
+        
+        if ( !result.ok )
+            return then( yoke, s, result );
+        else if ( result.val === null )
             return then( yoke, s, { ok: false, msg:
                 "Expected escape sequence suffix, got end of " +
                 "document" } );
-        else if ( /^[])]$/.test( c ) )
+        
+        var c = result.val.val;
+        if ( /^[])]$/.test( c ) )
             return then( yoke, s, { ok: false, msg:
                 "Unmatched " + c + " in escape sequence suffix" } );
         else if ( /^[!"#$%&'*+/:<>?@\\^_{|}~]$/.test( c ) )
@@ -547,17 +650,21 @@ function readUnsophisticatedEscapeSequenceSuffix( yoke, s, then ) {
             return then( yoke, s, { ok: true, val:
                 { type: "veryShort" } } );
         else if ( c === "." )
-            return s.readc( yoke, function ( yoke, s, c ) {
-                if ( c === "" )
+            return s.read( yoke, function ( yoke, s, result ) {
+                
+                if ( !result.ok )
+                    return then( yoke, s, result );
+                else if ( result.val === null )
                     return then( yoke, s, { ok: false, msg:
                         "Expected any code point, got end of document"
                         } );
+                
                 return then( yoke, s, { ok: true, val:
-                    { type: "short", name: c } } );
+                    { type: "short", name: result.val.val } } );
             } );
         else if ( c === "-" )
             return readTwoLowercaseBasicLatinCodePoints( yoke, s,
-                function ( yoke, s, name ) {
+                function ( yoke, s, result ) {
                 
                 if ( !result.ok )
                     return then( yoke, s, result );
@@ -595,10 +702,12 @@ function readUnsophisticatedEscapeSequenceSuffix( yoke, s, then ) {
             } );
         else if ( /^[ \t]$/.test( c ) )
             return readRestOfLine( yoke, s,
-                function ( yoke, s, codePoints ) {
+                function ( yoke, s, result ) {
                 
+                if ( !result.ok )
+                    return then( yoke, s, result );
                 return then( yoke, s, { ok: true, val:
-                    { type: "comment", codePoints: codePoints } } );
+                    { type: "comment", elements: result.val } } );
             } );
         else if ( c === "(" )
             return readUnsophisticatedBrackets( yoke, s,
@@ -647,26 +756,27 @@ function readUnsophisticatedEscapeSequenceSuffix( yoke, s, then ) {
             } );
         else
             return then( yoke, s, { ok: false, val:
-                "Expected escape sequence suffix, got " + c } );
+                "Expected escape sequence suffix, got " +
+                // TODO: Use custom stringification here.
+                JSON.stringify( c ) } );
     } );
 }
 
-function readSexpOrControl( yoke, s,
+// NOTE: For this, `s` must be a stream of
+// readUnsophisticatedStringElement results.
+function readSexpOrInfixOp( yoke, s,
     encompassingClosingBracket, then ) {
-    // NOTE: Besides reading s-expressions of type "cons", "nil",
-    // "stringCons", and "stringNil", this may also read a value of
-    // type "end", "infixNewline", or "infixDot".
+    // NOTE: Besides resulting in s-expressions of type "cons", "nil",
+    // "stringCons", and "stringNil", this may also result in a value
+    // of type "infixNewline" or "infixDot".
     
-    return s.readElementOrControl( yoke,
-        function ( yoke, s, result ) {
-        
+    return s.read( yoke, function ( yoke, s, result ) {
         if ( !result.ok )
             return then( yoke, s, result );
         
-        if ( result.val.type === "end" ) {
-            return then( yoke, s, { ok: true, val:
-                { type: "end" } } );
-        } else if ( result.val.type === "escape" ) {
+        if ( result.val === null ) {
+            return then( yoke, s, result );
+        } else if ( result.val.val.type === "escape" ) {
             var withQqStack = function ( yoke, qqStack, esc ) {
                 if ( esc.type === "veryShort" ) {
                     return then( yoke, s, { ok: false, msg:
@@ -741,7 +851,7 @@ function readSexpOrControl( yoke, s,
                                 "Expected s-expression escape " +
                                 "suffix, got -rm at nonzero depth"
                                 } );
-                        return readSexpOrControl( yoke, s,
+                        return readSexpOrInfixOp( yoke, s,
                             encompassingClosingBracket, then );
                     } else if ( esc.name === "sp" ) {
                         return runWaitOne( yoke, function ( yoke ) {
@@ -762,7 +872,7 @@ function readSexpOrControl( yoke, s,
                         "Expected s-expression escape suffix, got ="
                         } );
                 } else ( esc.type === "comment" ) {
-                    return readSexpOrControl( yoke, s,
+                    return readSexpOrInfixOp( yoke, s,
                         encompassingClosingBracket, then );
                 } else ( esc.type === "escapeParens" ) {
                     return continueString( yoke,
@@ -1034,7 +1144,7 @@ function readSexpOrControl( yoke, s,
                             function ( yoke, revElements ) {
                         
                         return jsListFoldl( yoke,
-                            { type: "stringNil", elements: null },
+                            { type: "stringNil", string: null },
                             revElements,
                             function ( yoke, state, element, then ) {
                             
@@ -1121,7 +1231,10 @@ function readSexpOrControl( yoke, s,
                                 encompassingClosingBracket
                         } )
                     }, function ( yoke, result ) {
-                        return then( yoke, s, result );
+                        if ( !result.ok )
+                            return then( yoke, s, result );
+                        return then( yoke, s, { ok: true, val:
+                            { val: result.val } } );
                     } );
                 } else {
                     return then( yoke, { ok: false, msg:
@@ -1137,61 +1250,70 @@ function readSexpOrControl( yoke, s,
                     encompassingClosingBracket,
                 normalizingWhitespace: true,
                 discouragingWhitespaceAndInterpolations: false
-            ) }, result.val.val );
-        } else if ( result.val.type === "textParens" ) {
-            return continueListFromElements( yoke, elements, ")" );
-        } else if ( result.val.type === "textSquareBrackets" ) {
-            return continueListFromElements( yoke, elements, "]" );
-        } else if ( result.val.type === "codePoint" ) {
-            if ( /^[ \t]$/.test( result.val.val ) ) {
-                return readSexpOrControl( yoke, s,
+            ) }, result.val.val.suffix );
+        } else if ( result.val.val.type === "textParens" ) {
+            return continueListFromElements( yoke,
+                result.val.val.elements, ")" );
+        } else if ( result.val.val.type === "textSquareBrackets" ) {
+            return continueListFromElements( yoke,
+                result.val.val.elements, "]" );
+        } else if ( result.val.val.type === "codePoint" ) {
+            var c = result.val.val.val;
+            if ( /^[ \t]$/.test( c ) ) {
+                return readSexpOrInfixOp( yoke, s,
                     encompassingClosingBracket, then );
-            } else if ( /^[\r\n]$/.test( result.val.val ) ) {
+            } else if ( /^[\r\n]$/.test( c ) ) {
                 return then( yoke, s, { ok: true, val:
-                    { type: "infixNewline" } );
-            } else if ( /^[-*a-z01-9]$/i.test( result.val.val ) ) {
+                    { val: { type: "infixNewline" } } );
+            } else if ( /^[-*a-z01-9]$/i.test( c ) ) {
                 // We read any number of code points in this set to
                 // build a string.
                 return loop( yoke, s, jsList( result.val.val ) );
                 function loop( yoke, s, revElements ) {
-                    return s.peekElementOrControl( yoke,
+                    return s.peek( yoke,
                         function ( yoke, s, result ) {
                         
                         if ( !result.ok )
                             return then( yoke, s, result );
                         
-                        var element = result.val;
-                        if ( element.type === "codePoint"
-                            && /^[-*a-z01-9]$/i.test( element.val ) )
-                            return loop( yoke, s,
-                                { first: element,
-                                    rest: revElements } );
+                        if ( result.val !== null
+                            && result.val.val.type === "codePoint"
+                            && /^[-*a-z01-9]$/i.test(
+                                result.val.val.val ) )
+                            return s.read( yoke,
+                                function ( yoke, s, result ) {
+                                
+                                if ( !result.ok )
+                                    return then( yoke, s, result );
+                                return loop( yoke, s,
+                                    { first: result.val.val,
+                                        rest: revElements } );
+                            } );
                         else
                             return jsListRev( yoke, revElements,
                                 function ( yoke, elements ) {
                                 
-                                return then( yoke, s,
-                                    { ok: true, val:
-                                        { type: "stringNil", string:
-                                            elements } } );
+                                return then( yoke, s, { ok: true, val:
+                                    { val: { type: "stringNil", string: elements } } } );
                             } );
                     } );
                 }
-            } else if ( result.val.val === "/" ) {
+            } else if ( result.val.val.val === "/" ) {
                 if ( encompassingClosingBracket === null )
                     return then( yoke, s, { ok: false, msg:
                         "Expected s-expression, got / with no " +
                         "encompassing closing bracket" } );
                 return readList( yoke, s,
                     encompassingClosingBracket, then );
-            } else if ( result.val.val === "." ) {
+            } else if ( result.val.val.val === "." ) {
                 return then( yoke, s, { ok: true, val:
-                    { type: "infixDot" } );
+                    { val: { type: "infixDot" } } );
             } else {
                 return then( yoke, s, { ok: false, msg:
                     "Expected s-expression, got unrecognized code " +
+                    "point " +
                     // TODO: Use custom slashification here.
-                    "point " + JSON.stringify( result.val.val ) } );
+                    JSON.stringify( result.val.val.val ) } );
             }
         } else {
             throw new Error();
@@ -1200,41 +1322,9 @@ function readSexpOrControl( yoke, s,
         function continueListFromElements( yoke,
             elements, encompassingClosingBracket ) {
             
-            function unsophisticatedStringElementsStream( elements ) {
-                var stream = {};
-                stream.peekElementOrControl =
-                    function ( yoke, then ) {
-                    
-                    return runWaitOne( yoke, function ( yoke ) {
-                        if ( elements === null )
-                            return then( yoke, stream,
-                                { ok: true, val: { type: "end" } } );
-                        else
-                            return then( yoke, stream,
-                                { ok: true, val: elements.first } );
-                    } );
-                };
-                stream.readElementOrControl =
-                    function ( yoke, then ) {
-                    
-                    return runWaitOne( yoke, function ( yoke ) {
-                        if ( elements === null )
-                            return then( yoke, stream,
-                                { ok: true, val: { type: "end" } } );
-                        else
-                            return then( yoke,
-                                unsophisticatedStringElementsStream(
-                                    elements.rest ),
-                                { ok: true, val: elements.first } );
-                    } );
-                };
-                return stream;
-            }
-            
-            return readList( yoke,
-                unsophisticatedStringElementsStream( elements ),
+            return readList( yoke, listToStream( elements ),
                 encompassingClosingBracket,
-                function ( yoke, subS, result ) {
+                function ( yoke, emptyElementsStream, result ) {
                 
                 return then( yoke, s, result );
             };
@@ -1246,94 +1336,126 @@ function readSexpOrControl( yoke, s,
             // ignores the "infixNewline" values, and it processes the
             // "infixDot" values.
             
-            return loop( yoke, s, null, null );
-            function loop( yoke, s,
-                maybeLhs, recentDot, revElements ) {
-                
-                return readSexpOrControl( yoke, s,
-                    encompassingClosingBracket,
+            return readLoop( yoke,
+                customStream( s, function ( yoke, s, then ) {
+                    return readSexpOrInfixOp( yoke, s,
+                        encompassingClosingBracket, then );
+                } ),
+                null );
+            function readLoop( yoke, s, revElements ) {
+                return readSexp( yoke, s, !"heedCommandEnds",
                     function ( yoke, s, result ) {
                     
                     if ( !result.ok )
                         return then( yoke, s, result );
                     
-                    if ( result.val.type === "end" ) {
-                        
-                        if ( recentDot )
-                            return then( yoke, s, { ok: false, msg:
-                                "Expected s-expression, " +
-                                "encountered . outside an infix " +
-                                "context" } );
-                        
-                        if ( maybeLhs === null )
-                            return next( yoke, s, revElements );
-                        else
-                            return next( yoke, s,
-                                { first: maybeLhs.val,
-                                    rest: revElements } );
-                    } else if ( result.val.type === "infixNewline" ) {
-                        return loop( yoke, s,
-                            maybeLhs, recentDot, revElements );
-                    } else if ( result.val.type === "infixDot" ) {
-                        
-                        if ( maybeLhs === null || recentDot )
-                            return then( yoke, s, { ok: false, msg:
-                                "Expected s-expression, " +
-                                "encountered . outside an infix " +
-                                "context" } );
-                        
-                        return loop( yoke, s,
-                            maybeLhs, !!"recentDot", revElements );
-                    } else {
-                        if ( recentDot )
-                            return loop( yoke, s,
-                                { val:
-                                    { type: "cons", first: maybeLhs.val, rest:
-                                        { type: "cons", first: result.val, rest: { type: "nil" } } } },
-                                !"recentDot",
-                                revElements );
-                        else if ( maybeLhs !== null )
-                            return loop( yoke, s,
-                                { val: result.val },
-                                !"recentDot",
-                                { first: maybeLhs.val,
-                                    rest: revElements } );
-                        else
-                            return loop( yoke, s,
-                                { val: result.val },
-                                !"recentDot",
-                                revElements );
-                    }
+                    if ( result.val === null )
+                        return buildListLoop( yoke,
+                            revElements, { type: "nil" } );
+                    else
+                        return readLoop( yoke, s,
+                            { first: result.val.val,
+                                rest: revElements } );
                 } );
             }
-            function next( yoke, s, revElements ) {
-                return buildListLoop( yoke,
-                    revElements, { type: "nil" } );
-                function buildListLoop( yoke, revElements, list ) {
-                    return runWaitOne( yoke, function ( yoke ) {
-                        if ( revElements === null )
-                            return then( yoke, s, { ok: true, val:
-                                list } );
-                        else
-                            return buildListLoop( yoke,
-                                revElements.rest,
-                                { type: "cons",
-                                    first: revElements.first,
-                                    rest: list } );
-                    } );
-                }
+            function buildListLoop( yoke, revElements, list ) {
+                return runWaitOne( yoke, function ( yoke ) {
+                    if ( revElements === null )
+                        return then( yoke, s, { ok: true, val:
+                            { val: list } } );
+                    else
+                        return buildListLoop( yoke,
+                            revElements.rest,
+                            { type: "cons",
+                                first: revElements.first,
+                                rest: list } );
+                } );
             }
         }
     } );
 }
+// NOTE: For this, `s` must be a stream of readSexpOrInfixOp results.
+function readSexp( yoke, s, heedCommandEnds, then ) {
+    return loop( yoke, s, null );
+    function loop( yoke, s, maybeLhs, recentDot ) {
+        return s.peek( yoke, function ( yoke, s, result ) {
+            
+            if ( !result.ok )
+                return then( yoke, s, result );
+            
+            function complain() {
+                return then( yoke, s, { ok: false, msg:
+                    "Expected s-expression, encountered . outside " +
+                    "an infix context" } );
+            }
+            
+            if ( result.val === null ) {
+                if ( recentDot )
+                    return complain();
+                return then( yoke, s, { ok: true, val: maybeLhs } );
+            } else if ( result.val.val.type === "infixNewline" ) {
+                return s.read( yoke, function ( yoke, s, result ) {
+                    
+                    if ( !result.ok )
+                        return then( yoke, s, result );
+                    
+                    if ( maybeLhs !== null && heedCommandEnds ) {
+                        if ( recentDot )
+                            return complain();
+                        return then( yoke, s, { ok: true, val:
+                            maybeLhs } );
+                    } else {
+                        return loop( yoke, s, maybeLhs, recentDot );
+                    }
+                } );
+            } else if ( result.val.val.type === "infixDot" ) {
+                return s.read( yoke, function ( yoke, s, result ) {
+                    
+                    if ( !result.ok )
+                        return then( yoke, s, result );
+                    else if ( maybeLhs === null || recentDot )
+                        return complain();
+                    
+                    return loop( yoke, s, maybeLhs, !!"recentDot" );
+                } );
+            } else {
+                if ( recentDot )
+                    return s.read( yoke,
+                        function ( yoke, s, result ) {
+                        
+                        if ( !result.ok )
+                            return then( yoke, s, result );
+                        
+                        return loop( yoke, s,
+                            { val:
+                                { type: "cons", first: maybeLhs.val,
+                                    rest: { type: "cons",
+                                        first: result.val.val,
+                                        rest: { type: "nil" } } } },
+                            !"recentDot" );
+                    } );
+                else if ( maybeLhs !== null )
+                    return then( yoke, s, { ok: true, val:
+                        maybeLhs } );
+                else
+                    return s.read( yoke,
+                        function ( yoke, s, result ) {
+                        
+                        if ( !result.ok )
+                            return then( yoke, s, result );
+                        
+                        return loop( yoke, s,
+                            { val: result.val.val },
+                            !"recentDot" );
+                    } );
+            }
+        } );
+    }
+}
 
 
 // TODO: Finish the "implement this" TODOs in the implementation of
-// readSexpOrControl().
-//
-// TODO: Once that's done, implement an s-expression reader in terms
-// of readSexpOrControl(). Make sure it has support for infix at the
-// top level.
+// readSexpOrInfixOp().
 //
 // TODO: Once that's done, modify the tests and demos to use the new
 // reader syntax.
