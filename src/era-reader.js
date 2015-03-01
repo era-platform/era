@@ -1033,15 +1033,44 @@ function readSexpOrInfixOp( yoke, s,
                                 if ( esc.name === "rm" ) {
                                     // TODO: Implement this.
                                 } else if ( esc.name === "sp" ) {
-                                    // TODO: Implement this.
+                                    if ( qqStack.uq === null )
+                                        return unexpected( yoke, "-sp" );
+                                    else
+                                        return jsListAppend( yoke, prefix, asciiToEl( "-sp" ),
+                                            function ( yoke, prefix ) {
+                                            
+                                            return readEscapeLurking( yoke, prefix, esc.suffix, {
+                                                uq: qqStack.uq,
+                                                cache: qqStack.cache.plusObj( {
+                                                    normalizingWhitespace: false
+                                                } )
+                                            }, then );
+                                        } );
                                 } else if ( esc.name === "ls" ) {
                                     // TODO: Implement this.
                                 } else if ( esc.name === "ch" ) {
                                     // TODO: Implement this.
                                 } else if ( esc.name === "qq" ) {
-                                    // TODO: Implement this.
+                                    return jsListAppend( yoke, prefix, asciiToEl( "-qq" ),
+                                        function ( yoke, prefix ) {
+                                        
+                                        return readEscapeLurking( yoke, prefix, esc.suffix, {
+                                            uq: qqStack,
+                                            cache: qqStack.cache.plusObj( {
+                                                names: strMap()
+                                            } )
+                                        }, then );
+                                    } );
                                 } else if ( esc.name === "uq" ) {
-                                    // TODO: Implement this.
+                                    if ( qqStack.uq === null )
+                                        return unexpected( yoke, "-uq" );
+                                    else
+                                        return jsListAppend( yoke, prefix, asciiToEl( "-uq" ),
+                                            function ( yoke, prefix ) {
+                                            
+                                            return readEscapeLurking( yoke,
+                                                prefix, esc.suffix, qqStack.uq, then );
+                                        } );
                                 } else if ( esc.name === "wq" ) {
                                     // TODO: Implement this.
                                 } else if ( esc.name === "rq" ) {
