@@ -1074,7 +1074,6 @@ BigInt.prototype.plusOne = function ( yoke, then ) {
         
         } );
         } );
-        } );
     }
 };
 BigInt.prototype.plus = function ( yoke, other, then ) {
@@ -1485,7 +1484,7 @@ AvlBranch_.prototype.plusEntry = function ( yoke, k, v, then ) {
         self.branches_[ -kVsSelf ].maxDepthAdvantage === null &&
         (self.branches_[ kVsSelf ].maxDepthAdvantage === null
             || (self.branches_[ kVsSelf ].maxDepthAdvantage !== null
-                && depthChanges[ kVsSelf ].sign === 1);
+                && depthChanges[ kVsSelf ].sign === 1));
     return then( yoke, finalMaxDepthIncreased, tree );
     
     } );
@@ -1997,7 +1996,7 @@ AvlBranch_.prototype.mapShortFoldAsc = function ( yoke,
             "-1": { branch: maybeLesserResult.val,
                 maxDepthAdvantage:
                     self.branches[ -1 ].maxDepthAdvantage },
-            "-1": { branch: maybeBiggerResult.val,
+            "1": { branch: maybeBiggerResult.val,
                 maxDepthAdvantage:
                     self.branches[ 1 ].maxDepthAdvantage }
         } ) } );

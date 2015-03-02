@@ -15,48 +15,30 @@ textarea { display: block; }
 <p><a href="https://github.com/rocketnia/era">View the Era project on GitHub.</a></p>
 
 <textarea id="code" cols="80" rows="24">
-; This reads as the string "foo".
+\ This reads as the string "foo".
 foo
 
-; This is the string "12".
+\ This is the string "12".
 12
 
-; Strings can contain letters, numbers, and the '-' and '*'
-; punctuation characters.
+\ Strings can contain letters, numbers, and the '-' and '*'
+\ punctuation characters.
 
-; This is the Array [ "a", "b", "c" ].
+\ This is the Array [ "a", "b", "c" ].
 (a b c)
 
-; This is the Array [ "a", "b", "c" ] in tertiary infix notation.
-b&lt;a&gt;c
-
-; This is the Array [ "a", "b" ] in binary infix notation. Lisp
-; dialects usually use the '.' character for dotted lists, but this
-; syntax uses it for infix instead.
+\ This is the Array [ "a", "b" ] in binary infix notation. Lisp
+\ dialects usually use the '.' character for dotted lists, but this
+\ syntax uses it for infix instead.
 a.b
 
-; The "b&lt;a&gt;c" operator has lower precedence than the "a.b" operator,
-; so this is [ [ "a", "b" ], [ "c", "d" ], [ "e", "f" ] ].
-c.d&lt;a.b&gt;e.f
-
-; The "a.b" operator is left-associative, so this is
-; [ [ "a", "b" ], "c" ].
+\ The "a.b" operator is left-associative, so this is
+\ [ [ "a", "b" ], "c" ].
 a.b.c
 
-; The "b&lt;a&gt;c" operator is left-associative, so this is
-; [ "a", [ "b", "c", "d" ], "e" ].
-c&lt;b&gt;d&lt;a&gt;e
-
-; The / reader macro is like ( but doesn't consume ). Thus, the
-; following is shorthand for (a b (c d)).
+\ The / reader macro is like ( but doesn't consume ). Thus, the
+\ following is shorthand for (a b (c d)).
 (a b /c d)
-
-a(This is all a single string. The reader macro that handles string
-characters (like "a") will continue until the parens in the string are
-matched.
-)b()()c(
-    This is still the same string.
-)
 </textarea>
 <button id="read">Read</button>
 <textarea id="result" disabled cols="80" rows="24"></textarea>
@@ -64,6 +46,8 @@ matched.
 <script type="text/javascript" src="../src/era-misc-strmap-avl.js">
     </script>
 <script type="text/javascript" src="../src/era-misc.js"></script>
+<script type="text/javascript" src="../src/era-avl.js"></script>
+<script type="text/javascript" src="../src/era-penknife.js"></script>
 <script type="text/javascript" src="../src/era-reader.js"></script>
 <script type="text/javascript">"use strict";
 
