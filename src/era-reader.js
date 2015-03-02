@@ -1209,7 +1209,7 @@ function readSexpOrInfixOp( yoke, s,
                                 } else if ( esc.name === "sp" ) {
                                     if ( qqStack.cache.get( "inQqLabel" ) )
                                         return then( yoke, { ok: false, msg:
-                                            "Encountered -sp inside a quasiquotation label" } } );
+                                            "Encountered -sp inside a quasiquotation label" } );
                                     else if ( qqStack.uq === null )
                                         return unexpected( yoke, "-sp" );
                                     
@@ -1226,7 +1226,7 @@ function readSexpOrInfixOp( yoke, s,
                                 } else if ( esc.name === "ls" ) {
                                     if ( qqStack.cache.get( "inQqLabel" ) )
                                         return then( yoke, { ok: false, msg:
-                                            "Encountered -ls inside a quasiquotation label" } } );
+                                            "Encountered -ls inside a quasiquotation label" } );
                                     
                                     if ( qqStack.uq === null ) {
                                         if ( esc.suffix.type !== "escapeDelimited" )
@@ -1314,7 +1314,7 @@ function readSexpOrInfixOp( yoke, s,
                                 } else if ( esc.name === "qq" ) {
                                     if ( qqStack.cache.get( "inQqLabel" ) )
                                         return then( yoke, { ok: false, msg:
-                                            "Encountered -qq inside a quasiquotation label" } } );
+                                            "Encountered -qq inside a quasiquotation label" } );
                                     
                                     return jsListAppend( yoke, prefix, asciiToEl( "-qq" ),
                                         function ( yoke, prefix ) {
@@ -1329,7 +1329,7 @@ function readSexpOrInfixOp( yoke, s,
                                 } else if ( esc.name === "uq" ) {
                                     if ( qqStack.cache.get( "inQqLabel" ) )
                                         return then( yoke, { ok: false, msg:
-                                            "Encountered -uq inside a quasiquotation label" } } );
+                                            "Encountered -uq inside a quasiquotation label" } );
                                     else if ( qqStack.uq === null )
                                         return unexpected( yoke, "-uq at zero depth" );
                                     
@@ -1342,7 +1342,7 @@ function readSexpOrInfixOp( yoke, s,
                                 } else if ( esc.name === "wq" ) {
                                     if ( qqStack.cache.get( "inQqLabel" ) )
                                         return then( yoke, { ok: false, msg:
-                                            "Encountered -wq inside a quasiquotation label" } } );
+                                            "Encountered -wq inside a quasiquotation label" } );
                                     
                                     return parseQqLabelEsc( esc, function ( yoke, result ) {
                                         
@@ -1373,7 +1373,7 @@ function readSexpOrInfixOp( yoke, s,
                                 } else if ( esc.name === "rq" ) {
                                     if ( qqStack.cache.get( "inQqLabel" ) )
                                         return then( yoke, { ok: false, msg:
-                                            "Encountered -rq inside a quasiquotation label" } } );
+                                            "Encountered -rq inside a quasiquotation label" } );
                                     
                                     return parseQqLabelEsc( esc, function ( yoke, result ) {
                                         
@@ -1401,7 +1401,7 @@ function readSexpOrInfixOp( yoke, s,
                                                     return unexpected( yoke,
                                                         "-rq= for unbound label " +
                                                         // TODO: Use custom slashification here.
-                                                        JSON.stringify( name ) } );
+                                                        JSON.stringify( name ) );
                                                 else
                                                     return unwindingQqStack( yoke, qqStack.uq );
                                             } );
@@ -1811,14 +1811,14 @@ function readSexpOrInfixOp( yoke, s,
                     } );
                 } );
             };
-            withQqStack( yoke, { uq: null, cache: strMap().plusObj(
+            withQqStack( yoke, { uq: null, cache: strMap().plusObj( {
                 names: strMap(),
                 encompassingClosingBracket:
                     encompassingClosingBracket,
                 encompassingClosingBracketIsInString: false,
                 normalizingWhitespace: true,
                 inQqLabel: false
-            ) }, result.val.val.suffix );
+            } ) }, result.val.val.suffix );
         } else if ( result.val.val.type === "textParens" ) {
             return continueListFromElements( yoke,
                 result.val.val.elements, ")" );
@@ -1832,12 +1832,11 @@ function readSexpOrInfixOp( yoke, s,
                     encompassingClosingBracket, then );
             } else if ( /^[\r\n]$/.test( c ) ) {
                 return then( yoke, s, { ok: true, val:
-                    { val: { type: "infixNewline" } } );
+                    { val: { type: "infixNewline" } } } );
             } else if ( /^[-*a-z01-9]$/i.test( c ) ) {
                 // We read any number of code points in this set to
                 // build a string.
-                return loop( yoke, s, jsList( result.val.val ) );
-                function loop( yoke, s, revElements ) {
+                var loop = function ( yoke, s, revElements ) {
                     return s.peek( yoke,
                         function ( yoke, s, result ) {
                         
@@ -1865,7 +1864,8 @@ function readSexpOrInfixOp( yoke, s,
                                     { val: { type: "stringNil", string: elements } } } );
                             } );
                     } );
-                }
+                };
+                return loop( yoke, s, jsList( result.val.val ) );
             } else if ( result.val.val.val === "/" ) {
                 if ( encompassingClosingBracket === null )
                     return then( yoke, s, { ok: false, msg:
@@ -1875,7 +1875,7 @@ function readSexpOrInfixOp( yoke, s,
                     encompassingClosingBracket, then );
             } else if ( result.val.val.val === "." ) {
                 return then( yoke, s, { ok: true, val:
-                    { val: { type: "infixDot" } } );
+                    { val: { type: "infixDot" } } } );
             } else {
                 return then( yoke, s, { ok: false, msg:
                     "Expected s-expression, got unrecognized code " +
