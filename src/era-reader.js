@@ -756,7 +756,8 @@ function unsophisticatedStringElementToString( yoke, element, then ) {
 // NOTE: For this, `s` must be a stream of Unicode code points as
 // short JavaScript strings.
 function readLowercaseBasicLatinCodePoint( yoke, s, then ) {
-    return s.peek( yoke, function ( yoke, s, result ) {
+    return s.read( yoke, function ( yoke, s, result ) {
+        
         if ( !result.ok )
             return then( yoke, s, result );
         
@@ -770,7 +771,7 @@ function readLowercaseBasicLatinCodePoint( yoke, s, then ) {
                 // TODO: Use custom slashification here.
                 JSON.stringify( result.val.val ) } );
         
-        return s.read( yoke, then );
+        return then( yoke, s, { ok: true, val: result.val.val } );
     } );
 }
 // NOTE: For this, `s` must be a stream of Unicode code points as
@@ -1115,7 +1116,52 @@ function readSexpOrInfixOp( yoke, s,
             var readStringLurking = function ( yoke,
                 elements, qqStack, then ) {
                 
-                return jsListShortFoldl( yoke, null, elements,
+                return exhaustStream( yoke,
+                    customStream( listToStream( elements ),
+                        function ( yoke, s, then ) {
+                        
+                        return s.read( yoke,
+                            function ( yoke, s, result ) {
+                            
+                            if ( !result.ok
+                                || result.val === null
+                                || result.val.val.type !== "codePoint"
+                                || result.val.val.val !== "\r" )
+                                return then( yoke, s, result );
+                            
+                            // We convert CRLF and CR to LF.
+                            return s.peek( yoke,
+                                function ( yoke, s, result ) {
+                                
+                                if ( !result.ok )
+                                    return then( yoke, s, result );
+                                
+                                if ( result.val === null
+                                    || result.val.val.type !== "codePoint"
+                                    || result.val.val.val !== "\n" )
+                                    return next( yoke, s );
+                                else
+                                    return s.read( yoke, function ( yoke, s, result ) {
+                                        if ( !result.ok )
+                                            return then( yoke, s, result );
+                                        return next( yoke, s );
+                                    } );
+                                
+                                function next( yoke, s ) {
+                                    return then( yoke, s, { ok: true, val:
+                                        { val: { type: "codePoint", val: "\n" } } } );
+                                }
+                            } );
+                        } );
+                        return readSexp( yoke, s,
+                            !"heedCommandEnds", then );
+                    } ),
+                    function ( yoke, emptyStream, result ) {
+                    
+                    if ( !result.ok )
+                        return then( yoke, result );
+                
+                return jsListShortFoldl( yoke, null, result.val,
                     function ( yoke, revResult, element, then ) {
                     
                     function ret( yoke, list ) {
@@ -1227,10 +1273,14 @@ function readSexpOrInfixOp( yoke, s,
                                             encompassingClosingBracket: esc.close,
                                             encompassingClosingBracketIsInString: true
                                         } )
-                                    }, function ( yoke, elements ) {
+                                    }, function ( yoke, result ) {
+                                        
+                                        if ( !result.ok )
+                                            return then( yoke, result );
+                                        
                                         return jsListFlattenOnce( yoke, jsList(
                                             asciiToEl( open ),
-                                            elements,
+                                            result.val,
                                             asciiToEl( open === "/" ? "" : esc.close )
                                         ), function ( yoke, elements ) {
                                             return then( yoke, { ok: true, val: elements } );
@@ -1507,23 +1557,33 @@ function readSexpOrInfixOp( yoke, s,
                     } else if ( element.type === "textParens" ) {
                         return readStringLurking( yoke,
                             element.elements, qqStack,
-                            function ( yoke, elements ) {
+                            function ( yoke, result ) {
+                            
+                            if ( !result.ok )
+                                return then( yoke,
+                                    result, !!"exitedEarly" );
                             
                             return jsListFlattenOnce( yoke, jsList(
                                 asciiToEl( "(" ),
-                                elements,
+                                result.val,
                                 asciiToEl( ")" )
                             ), ret );
                         } );
+                        
                     } else if ( element.type ===
                         "textSquareBrackets" ) {
+                        
                         return readStringLurking( yoke,
                             element.elements, qqStack,
                             function ( yoke, elements ) {
                             
+                            if ( !result.ok )
+                                return then( yoke,
+                                    result, !!"exitedEarly" );
+                            
                             return jsListFlattenOnce( yoke, jsList(
                                 asciiToEl( "[" ),
-                                elements,
+                                result.val,
                                 asciiToEl( "]" )
                             ), ret );
                         } );
@@ -1561,6 +1621,8 @@ function readSexpOrInfixOp( yoke, s,
                             elements } );
                     } );
                 } );
+                
+                } );
             };
             var processLurkingCommands = function ( yoke,
                 elements, then ) {
@@ -1578,15 +1640,12 @@ function readSexpOrInfixOp( yoke, s,
                         return next( state.revWhite );
                     
                     function next( revWhite ) {
-                        return jsListRev( yoke, revWhite,
-                            function ( yoke, white ) {
-                        return jsListRevOnto( yoke,
-                            white, state.revProcessed,
+                        return jsListAppend( yoke,
+                            revWhite, state.revProcessed,
                             function ( yoke, revProcessed ) {
-                        
-                        return then( yoke, { val: revProcessed } );
-                        
-                        } );
+                            
+                            return then( yoke,
+                                { val: revProcessed } );
                         } );
                     }
                 }
@@ -1702,13 +1761,13 @@ function readSexpOrInfixOp( yoke, s,
                             revProcessed: state.revProcessed
                         }, !"exitedEarly" );
                     else if ( element.type === "codePoint" )
-                        return bank();
+                        return bankAndAdd();
                     else if ( element.type === "interpolation" )
-                        return bank();
+                        return bankAndAdd();
                     else
                         throw new Error();
                     
-                    function bank() {
+                    function bankAndAdd() {
                         return bankNormalization( yoke, state,
                             function ( yoke, maybeRevProcessed ) {
                             
@@ -1720,14 +1779,14 @@ function readSexpOrInfixOp( yoke, s,
                                     verifying: false,
                                     normalizing: false,
                                     revWhite: null,
-                                    revProcessed:
-                                        maybeRevProcessed.val
+                                    revProcessed: { first: element,
+                                        rest: maybeRevProcessed.val }
                                 }, !"exitedEarly" );
                         } );
                     }
                 }, function ( yoke, state, exitedEarly ) {
                     
-                    function err() {
+                    function err( yoke ) {
                         return then( yoke, { ok: false, msg:
                             "Encountered a nontrivial sequence of " +
                             "raw whitespace in a quasiquotation " +
@@ -1735,12 +1794,12 @@ function readSexpOrInfixOp( yoke, s,
                     }
                     
                     if ( exitedEarly )
-                        return err();
+                        return err( yoke );
                     return bankNormalization( yoke, state,
                         function ( yoke, maybeRevProcessed ) {
                         
                         if ( maybeRevProcessed === null )
-                            return err();
+                            return err( yoke );
                         else
                             return jsListRev( yoke,
                                 maybeRevProcessed.val,
@@ -1760,26 +1819,31 @@ function readSexpOrInfixOp( yoke, s,
                 elements, qqStack, then ) {
                 
                 return readStringLurking( yoke, elements, qqStack,
-                    function ( yoke, elements ) {
+                    function ( yoke, result ) {
                     
                     if ( !result.ok )
                         return then( yoke, result );
+                    
                     if ( qqStack.cache.
                         get( "normalizingWhitespace" ) )
                         return jsListFlattenOnce( yoke, jsList(
                             jsList(
-                                { type: "lurkObliteratePreceding" } ),
+                                { type: "lurkObliterateFollowing" } ),
                             result.val,
                             jsList(
-                                { type: "lurkObliterateFollowing" } )
+                                { type: "lurkObliteratePreceding" } )
                         ), next );
                     else
                         return next( yoke, result.val );
                     
                     function next( yoke, elements ) {
                         return processLurkingCommands( yoke, elements,
-                            function ( yoke, elements ) {
-                        return jsListRev( yoke, elements,
+                            function ( yoke, result ) {
+                            
+                            if ( !result.ok )
+                                return then( yoke, result );
+                        
+                        return jsListRev( yoke, result.val,
                             function ( yoke, revElements ) {
                         
                         return jsListFoldl( yoke,
@@ -1819,6 +1883,7 @@ function readSexpOrInfixOp( yoke, s,
                         } );
                         
                         } );
+                        
                         } );
                     }
                 } );
