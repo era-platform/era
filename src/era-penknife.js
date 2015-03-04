@@ -315,8 +315,8 @@ function pkStr( jsStr ) {
     // NOTE: This sanity check is just here in case some code happens
     // to be buggy. We always have valid Unicode by the time we get
     // here, even if that means we do a sanity check beforehand. (See
-    // macroexpandArrays(), for example.) If we ever can't afford to
-    // do this linear-time check of all the characters, we should
+    // macroexpandReaderExpr(), for example.) If we ever can't afford
+    // to do this linear-time check of all the characters, we should
     // consider removing this.
     if ( !isValidUnicode( jsStr ) )
         throw new Error();
@@ -1438,44 +1438,70 @@ function macroexpand( yoke, expr ) {
         } );
     } );
 }
-function macroexpandArrays( yoke, arrayExpr ) {
-    function arraysToConses( arrayExpr ) {
-        // TODO: Use something like Lathe.js's _.likeArray() and
-        // _.likeObjectLiteral() here.
-        if ( typeof arrayExpr === "string"
-            && isValidUnicode( arrayExpr ) ) {
-            return pkStrUnsafe( arrayExpr );
-        } else if ( arrayExpr instanceof Array ) {
-            return pkListFromArr(
-                arrMap( arrayExpr, arraysToConses ) );
-        } else if ( typeof arrayExpr === "object"
-            && arrayExpr !== null
-            && arrayExpr.type === "interpolatedString" ) {
-            
-            var contents = arrayExpr.parts.slice();
-            var suffix = contents.pop().text;
-            if ( suffix === void 0 )
-                throw new Error();
-            if ( !isValidUnicode( suffix ) )
-                throw new Error();
-            var result = pkStrUnsafe( suffix );
-            while ( contents.length !== 0 ) {
-                var interpolation = contents.pop().val;
-                var prefix = contents.pop().text;
-                if ( prefix === void 0 || interpolation === void 0 )
+function macroexpandReaderExpr( yoke, readerExpr ) {
+    return convertExpr( yoke, readerExpr, function ( yoke, conses ) {
+        return macroexpand( yoke, conses );
+    } );
+    function convertString( yoke, elements, stringSoFar, then ) {
+        return runWaitOne( yoke, function ( yoke ) {
+            if ( elements === null ) {
+                return then( yoke, stringSoFar );
+            } else {
+                // TODO: Put an isString() utility somewhere.
+                if ( !(typeof elements.first === "string"
+                    && isValidUnicode( elements.first )) )
                     throw new Error();
-                result = pk( "istring-cons",
-                    pkStrUnsafe( prefix ),
-                    arraysToConses( interpolation ),
-                    result );
+                return convertString( yoke,
+                    elements.rest,
+                    "" + stringSoFar + elements.first,
+                    then );
             }
-            return result;
-        } else {
-            throw new Error();
-        }
+        } );
     }
-    
-    return macroexpand( yoke, arraysToConses( arrayExpr ) );
+    function convertExpr( yoke, readerExpr, then ) {
+        return runWaitOne( yoke, function ( yoke ) {
+            if ( readerExpr.type === "nil" ) {
+                return then( yoke, pkNil );
+            } else if ( readerExpr.type === "cons" ) {
+                return convertExpr( yoke, readerExpr.first,
+                    function ( yoke, first ) {
+                return convertExpr( yoke, readerExpr.rest,
+                    function ( yoke, rest ) {
+                return runWaitOne( yoke, function ( yoke ) {
+                
+                return then( yoke, pkCons( first, rest ) );
+                
+                } );
+                } );
+                } );
+            } else if ( readerExpr.type === "stringNil" ) {
+                return convertString( yoke, readerExpr.string, "",
+                    function ( yoke, string ) {
+                
+                return then( yoke, pkStrUnsafe( string ) );
+                
+                } );
+            } else if ( readerExpr.type === "stringCons" ) {
+                return convertString( yoke, readerExpr.string, "",
+                    function ( yoke, string ) {
+                return convertExpr( yoke, readerExpr.interpolation,
+                    function ( yoke, interpolation ) {
+                return convertExpr( yoke, readerExpr.rest,
+                    function ( yoke, rest ) {
+                return runWaitOne( yoke, function ( yoke ) {
+                
+                return then( yoke,
+                    pk( "istring-cons",
+                        pkStrUnsafe( string ), interpolation, rest )
+                    );
+                
+                } );
+                } );
+                } );
+                } );
+            }
+        } );
+    }
 }
 // TODO: Figure out if we should manage `withTopLevelEffects` in a
 // more generalized way.

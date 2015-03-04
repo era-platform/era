@@ -85,6 +85,7 @@ if ( args.build ) tasks.push( function ( then ) {
             "src/era-misc-strmap-avl.js",
             "src/era-misc.js",
             "src/era-reader.js",
+            "src/era-avl.js",
             "src/era-penknife.js",
             "src/era-penknife-to-js.js"
         ] ) + "\n" +

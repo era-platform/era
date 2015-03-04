@@ -1418,7 +1418,7 @@ function compileAndDefineFromString( yoke, pkCodeString, then ) {
                 "Parse",
                 function ( yoke ) {
             return runWait( yoke, function ( yoke ) {
-                return macroexpandArrays( yoke, tryExpr.val );
+                return macroexpandReaderExpr( yoke, tryExpr.val );
             }, function ( yoke, macroexpanded ) {
             return reportError( yoke, macroexpanded, "Macroexpansion",
                 function ( yoke ) {

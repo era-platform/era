@@ -112,8 +112,9 @@
 //   carriage return, newline, or a sequence of carriage return and
 //     newline ignores itself, but in a command stream it prevents any
 //     . that may follow from consuming this command
-//   \ followed by space or tab reads until it peeks the end of the
-//     line or the document, and it ignores it all (for comments)
+//   \ followed by peeking space, tab, or the end of the line or
+//     document reads until it peeks the end of the line or the
+//     document, and it ignores it all (for comments)
 //   \-rm (or any other string escape sequence involving -qq -uq -wq
 //     -rq -sp and -rm which ends up meaning \-rm with a
 //     quasiquotation depth of zero) reads any unsophisticated string
@@ -190,8 +191,9 @@
 //     whitespace needs no normalization, and otherwise if whitespace
 //     normalization is not being suppressed, it leaves a lurking
 //     command to normalize the surrounding whitespace
-//   \ followed by space or tab reads until it peeks the end of the
-//     line or the document, and it means empty string (for comments)
+//   \ followed by peeking space, tab, or the end of the line or
+//     document reads until it peeks the end of the line or the
+//     document, and it means empty string (for comments)
 //   \-rm (meaning "remark") reads any unsophisticated string escape
 //     and means empty string (for comments)
 //     // NOTE: This is especially good for commenting out a span of
@@ -638,11 +640,16 @@ function asciiToEl( ascii ) {
     return result;
 }
 
-// NOTE: In two cases, unsophisticatedStringElementsToString(),
+// NOTE: In a few cases, unsophisticatedStringElementsToString(),
 // unsophisticatedStringElementToString(), and
 // unsophisticatedStringEscapeSuffixToString() may encode a value in a
 // way that can't be parsed back in:
 //
+//   - The element contains a "comment" escape suffix, but it begins
+//     with a code point other than space or tab.
+//   - The element contains a "comment" escape suffix, but it is not
+//     in a context where its closing end-of-line or end-of-document
+//     will be in the expected place.
 //   - The value contains an "escapeDelimited" escape suffix, and its
 //     opening bracket is / but it is not in a context where its
 //     closing bracket will be in the expected place.
@@ -696,8 +703,7 @@ function unsophisticatedStringEscapeSuffixToString( yoke,
             } );
             } );
         } else if ( esc.type === "comment" ) {
-            return jsListAppend( yoke,
-                jsList( esc.start ), esc.elements, then );
+            return then( yoke, esc.elements );
         } else if ( esc.type === "escapeDelimited" ) {
             return unsophisticatedStringElementsToString( yoke,
                 esc.elements,
@@ -796,14 +802,28 @@ function readTwoLowercaseBasicLatinCodePoints( yoke, s, then ) {
 // NOTE: For this, `s` must be a stream of Unicode code points as
 // short JavaScript strings.
 function readUnsophisticatedEscapeSequenceSuffix( yoke, s, then ) {
-    return s.read( yoke, function ( yoke, s, result ) {
+    return s.peek( yoke, function ( yoke, s, result ) {
         
         if ( !result.ok )
             return then( yoke, s, result );
-        else if ( result.val === null )
-            return then( yoke, s, { ok: false, msg:
-                "Expected escape sequence suffix, got end of " +
-                "document" } );
+        
+        if ( result.val === null
+            || /^[ \t\r\n]$/.test( result.val.val ) )
+            return readRestOfLine( yoke, s, null,
+                function ( yoke, s, result ) {
+                
+                if ( !result.ok )
+                    return then( yoke, s, result );
+                return then( yoke, s, { ok: true, val:
+                    { type: "comment", elements: result.val } } );
+            } );
+        
+        
+        return s.read( yoke, function ( yoke, s, result ) {
+            if ( !result.ok )
+                return then( yoke, s, result );
+            
+            // TODO: Reindent this.
         
         var c = result.val.val;
         if ( /^[)\]]$/.test( c ) )
@@ -879,17 +899,6 @@ function readUnsophisticatedEscapeSequenceSuffix( yoke, s, then ) {
                                 second: result.val } } );
                 } );
             } );
-        else if ( /^[ \t]$/.test( c ) )
-            return readRestOfLine( yoke, s, null,
-                function ( yoke, s, result ) {
-                
-                if ( !result.ok )
-                    return then( yoke, s, result );
-                return then( yoke, s, { ok: true, val:
-                    { type: "comment",
-                        start: { type: "codePoint", val: c },
-                        elements: result.val } } );
-            } );
         else if ( c === "(" )
             return readUnsophisticatedBrackets( yoke, s,
                 /^[)]$/, !!"consume", null,
@@ -944,10 +953,12 @@ function readUnsophisticatedEscapeSequenceSuffix( yoke, s, then ) {
                     throw new Error();
             } );
         else
-            return then( yoke, s, { ok: false, val:
+            return then( yoke, s, { ok: false, msg:
                 "Expected escape sequence suffix, got " +
                 // TODO: Use custom stringification here.
                 JSON.stringify( c ) } );
+        
+        } );
     } );
 }
 
@@ -1521,11 +1532,7 @@ function readSexpOrInfixOp( yoke, s,
                                 else if ( qqStack.uq.uq === null )
                                     return ret( yoke, jsList() );
                                 else
-                                    return jsListFlattenOnce( yoke, jsList(
-                                        prefix,
-                                        jsList( esc.start ),
-                                        esc.elements
-                                    ), ret );
+                                    return jsListAppend( yoke, prefix, esc.elements, ret );
                                 
                             } else if ( esc.type ===
                                 "escapeDelimited" ) {
@@ -1971,7 +1978,7 @@ function readSexpOrInfixOp( yoke, s,
                                 if ( !result.ok )
                                     return then( yoke, s, result );
                                 return loop( yoke, s,
-                                    { first: result.val.val,
+                                    { first: result.val.val.val,
                                         rest: revElements } );
                             } );
                         else
@@ -1983,7 +1990,7 @@ function readSexpOrInfixOp( yoke, s,
                             } );
                     } );
                 };
-                return loop( yoke, s, jsList( result.val.val ) );
+                return loop( yoke, s, jsList( result.val.val.val ) );
             } else if ( result.val.val.val === "/" ) {
                 if ( encompassingClosingBracket === null )
                     return then( yoke, s, { ok: false, msg:
@@ -2789,7 +2796,7 @@ stringReaderMacros.set( "\\", function ( $, then ) {
                                         } ]
                                     } );
                                 else
-                                    then( $, { ok: false, val:
+                                    then( $, { ok: false, msg:
                                         "Didn't end a string " +
                                         "interpolation with a " +
                                         "dot" } );
