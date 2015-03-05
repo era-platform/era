@@ -1225,6 +1225,53 @@ function readSexpOrInfixOp( yoke, s,
                                     return jsListAppend( yoke, prefix, asciiToEl( rep ), ret );
                             }
                             
+                            function readDelimitedStringLurking( yoke,
+                                esc, qqStack, then ) {
+                                
+                                if ( esc.type !== "escapeDelimited" )
+                                    return then( yoke, { ok: false, msg:
+                                        "Expected delimited string, encountered something else" } );
+                                
+                                var alreadyInString =
+                                    qqStack.cache.get( "encompassingClosingBracketIsInString" );
+                                var open = esc.open;
+                                if ( open === "/" ) {
+                                    if ( alreadyInString === null )
+                                        return then( yoke, { ok: false, msg:
+                                            "Encountered escape suffix / in a quasiquotation " +
+                                            "label, so couldn't convert it to avoid peeking past " +
+                                            "the string's end" } );
+                                    
+                                    if ( alreadyInString )
+                                        ;  // Do nothing.
+                                    else if ( esc.close === ")" )
+                                        open = "(";
+                                    else if ( esc.close === "]" )
+                                        open = "[";
+                                    else
+                                        throw new Error();
+                                }
+                                return readStringLurking( yoke, esc.elements, {
+                                    uq: qqStack.uq,
+                                    cache: qqStack.cache.plusObj( {
+                                        encompassingClosingBracket: esc.close,
+                                        encompassingClosingBracketIsInString: true
+                                    } )
+                                }, function ( yoke, result ) {
+                                    
+                                    if ( !result.ok )
+                                        return then( yoke, result );
+                                    
+                                    return jsListFlattenOnce( yoke, jsList(
+                                        asciiToEl( open ),
+                                        result.val,
+                                        asciiToEl( open === "/" ? "" : esc.close )
+                                    ), function ( yoke, elements ) {
+                                        return then( yoke, { ok: true, val: elements } );
+                                    } );
+                                } );
+                            }
+                            
                             if ( esc.type === "veryShort" ) {
                                 return simpleEscape( yoke,
                                     "`", "\\" );
@@ -1252,53 +1299,6 @@ function readSexpOrInfixOp( yoke, s,
                                     return unexpected( yoke, JSON.stringify( "." + esc.name ) );
                                 }
                             } else if ( esc.type === "modifier" ) {
-                                var readDelimitedLurkingString =
-                                    function ( yoke, esc, qqStack, then ) {
-                                    
-                                    if ( esc.type !== "escapeDelimited" )
-                                        return then( yoke, { ok: false, msg:
-                                            "Expected delimited string, encountered something else" } );
-                                    
-                                    var alreadyInString =
-                                        qqStack.cache.get( "encompassingClosingBracketIsInString" );
-                                    var open = esc.open;
-                                    if ( open === "/" ) {
-                                        if ( alreadyInString === null )
-                                            return then( yoke, { ok: false, msg:
-                                                "Encountered escape suffix / in a quasiquotation " +
-                                                "label, so couldn't convert it to avoid peeking past " +
-                                                "the string's end" } );
-                                        
-                                        if ( alreadyInString )
-                                            ;  // Do nothing.
-                                        else if ( esc.close === ")" )
-                                            open = "(";
-                                        else if ( esc.close === "]" )
-                                            open = "[";
-                                        else
-                                            throw new Error();
-                                    }
-                                    return readStringLurking( yoke, esc.elements, {
-                                        uq: qqStack.uq,
-                                        cache: qqStack.cache.plusObj( {
-                                            encompassingClosingBracket: esc.close,
-                                            encompassingClosingBracketIsInString: true
-                                        } )
-                                    }, function ( yoke, result ) {
-                                        
-                                        if ( !result.ok )
-                                            return then( yoke, result );
-                                        
-                                        return jsListFlattenOnce( yoke, jsList(
-                                            asciiToEl( open ),
-                                            result.val,
-                                            asciiToEl( open === "/" ? "" : esc.close )
-                                        ), function ( yoke, elements ) {
-                                            return then( yoke, { ok: true, val: elements } );
-                                        } );
-                                    } );
-                                };
-                                
                                 if ( esc.name === "rm" ) {
                                     if ( qqStack.uq === null )
                                         return unexpected( yoke, "-rm" );
@@ -1351,19 +1351,17 @@ function readSexpOrInfixOp( yoke, s,
                                             if ( !result.ok )
                                                 return then( yoke, result );
                                             else if ( result.val.type !== "cons" )
-                                                return then( yoke,
+                                                return then( yoke, { ok: false, msg:
                                                     "Expected an interpolation of exactly one " +
-                                                    "s-expression, got zero" );
+                                                    "s-expression, got zero" } );
                                             else if ( result.val.rest.type !== "nil" )
-                                                return then( yoke,
+                                                return then( yoke, { ok: false, msg:
                                                     "Expected an interpolation of exactly one " +
-                                                    "s-expression, got more than one" );
+                                                    "s-expression, got more than one" } );
                                             
-                                            return then( yoke,
-                                                { type: "interpolation", val: result.val.first } );
+                                            return then( yoke, { ok: true, val:
+                                                { type: "interpolation", val: result.val.first } } );
                                         } );
-                                    } else if ( qqStack.uq.uq === null ) {
-                                        return unexpected( yoke, "-ls" );
                                     } else {
                                         return readDelimitedStringLurking( yoke, esc.suffix, qqStack,
                                             function ( yoke, result ) {
@@ -1559,7 +1557,7 @@ function readSexpOrInfixOp( yoke, s,
                             if ( !result.ok )
                                 return then( yoke,
                                     result, !!"exitedEarly" );
-                            return ret( yoke, result );
+                            return ret( yoke, jsList( result.val ) );
                         } );
                     } else if ( element.type === "textParens" ) {
                         return readStringLurking( yoke,
@@ -2910,23 +2908,6 @@ function stringStream( defer, string ) {
         };
         return stream;
     }
-}
-
-function makeDeferTrampoline() {
-    // TODO: Refactor this to be a trampoline with constant time
-    // between bounces, like what Penknife and era-avl.js use.
-    
-    var deferTrampolineEvents = [];
-    
-    var result = {};
-    result.defer = function ( func ) {
-        deferTrampolineEvents.push( func );
-    };
-    result.runDeferTrampoline = function () {
-        while ( deferTrampolineEvents.length !== 0 )
-            deferTrampolineEvents.pop()();
-    };
-    return result;
 }
 
 function readAll( string ) {

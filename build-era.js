@@ -60,6 +60,8 @@ if ( args.test ) tasks.push( function ( then ) {
         "test/harness-first.js",
         "test/test-bigint.js",
         "src/era-reader.js",
+        "src/era-penknife.js",
+        "src/era-penknife-to-js.js",
         "test/test-reader.js",
         "src/era-modules.js",
         "test/test-modules.js",
