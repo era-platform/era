@@ -3,13 +3,76 @@
 "use strict";
 
 // This is a reader for Era's own dialect of s-expressions.
-
-// TODO: Reimplement almost all of the reader to fit the following
-// description. The design has changed immensely. (Update: We've
-// started on a new implementation now, but it's still incomplete.)
 //
-// In the design of the string literal syntax, we have a few use cases
-// in mind:
+// After reading, the s-expression format is simple:
+//
+//   - An s-expression is either a list or an interpolated string.
+//   - A list is either empty or an s-expression followed by a list.
+//   - An interpolated string is an uninterpolated string, optionally
+//     followed by an s-expression and an interpolated string.
+//   - An uninterpolated string is a sequence of Unicode code points
+//     (integers 0x0..0x10FFFF) but excluding UTF-16 surrogates
+//     (0xD800..0xDFFF).
+//
+// Before reading, the most complicated system is the string syntax.
+// The design considerations for the string syntax actually impact
+// most of the other parts of the syntax design.
+//
+// In the design of the overall syntax, we have several use cases in
+// mind:
+//
+//   - Story: As someone who talks to people about code, I want to use
+//     code snippets as diagrams in natural-language discussions.
+//
+//     - Problem: Some authorship systems would require me to take
+//       screenshots or do export/import in order to properly copy and
+//       paste between authored snippets and discussion.
+//
+//     - Solution: Like many programming langage syntaxes, Era's
+//       syntax is edited as plain Unicode text. These days, plain
+//       Unicode text is a widely used medium for natural language
+//       communication.
+//
+//   - Story: As a programmer, I encounter nested structures all the
+//     time, ranging from lambda calculus terms to loop bodies to data
+//     structures. It would be nice if editing these trees were
+//     straightforward.
+//
+//     - Problem: Most languages' code is plain-text-based, and plain
+//       text is flat.
+//
+//     - Solution: This syntax follows in the tradition of the Lisp
+//       family of languages by defining a single (a b c ...) nested
+//       list syntax that can be used for various kinds of nesting.
+//       Once a programmer adopts tools or habits for this syntax,
+//       it's almost like the syntax is a tree rather than a list in
+//       the first place.
+//
+//     - Problem: Actually, some of the nesting I'm dealing with is
+//       very lopsided to the right, like monadic/continuation-passing
+//       style, pointful function composition, or right-associative
+//       algebraic operations.
+//
+//     - Solution: There's a (a b /c d) syntax, and it's shorthand for
+//       (a b (c d)). Besides saving a ) here and there, since / and (
+//       look so different, they don't have to follow the same
+//       indentation convention. Continuation-passing style code can
+//       be written one call per line, making it look like imperative
+//       code. Pointful function composition can be written
+//       (f/g/h ...).
+//
+//   - Story: As a programmer who uses a text-based programming
+//     language, namely this one, I have the skills and tools to edit
+//     plain text, and I'd like to take advantage of them.
+//
+//     - Problem: If I want to specify plain text assets for my
+//       program to use, I don't want to switch to another editor
+//       environment just to define those assets.
+//
+//     - Solution: Like lots of programming language syntaxes, Era's
+//       syntax supports string literals \-qq[...] and \-qq-sp[...]. A
+//       string literal can contain *practically* any text, and that
+//       text will be *mostly* reflected in the reader's final result.
 //
 //   - Story: As a programmer who uses a text-based programming
 //     language, namely this one, I'd like to generate text-based code
@@ -41,7 +104,9 @@
 //
 //     - Solution: There's an interpolation escape sequence
 //       \-uq-ls[expression-goes-here] which lets s-expressions be
-//       interspersed with other string parts at read time.
+//       interspersed with other string parts at read time. This way
+//       both \-qq[ and ] can be part of the same string, even if
+//       there's an interpolation in the middle.
 //
 //     - Problem: Wouldn't that be suppressed like any other escape
 //       sequence inside the \-qq[...] boundaries?
@@ -2156,760 +2221,6 @@ function readSexp( yoke, s, heedCommandEnds, then ) {
     }
 }
 
-
-// TODO: Debug any issues in the above reader implementation,
-// including missing dependencies from jsListFlattenOnce(),
-// jsListToArrBounded(), etc.
-//
-// TODO: Once that's done, modify the tests and demos to use the new
-// reader syntax.
-//
-// TODO: Once that's done, delete the old reader implementation below.
-
-
-// $.stream.underlyingStream
-// $.stream.getCaptured
-// $.stream.readc
-// $.stream.peekc
-// $.heedsCommandEnds
-// $.infixLevel
-// $.infixState
-// $.qqDepth
-// $.readerMacros
-// $.unrecognized
-// $.end
-
-function streamReadc( $, then ) {
-    $.stream.readc( function ( stream, c ) {
-        then( objPlus( $, { stream: stream } ), c );
-    } );
-}
-
-function reader( $, then ) {
-    $.stream.peekc( function ( c ) {
-        if ( c === "" )
-            return void $.end( $, then );
-        var readerMacro = $.readerMacros.get( c );
-        if ( readerMacro === void 0 )
-            return void $.unrecognized( $, then );
-        readerMacro( $, then );
-    } );
-}
-
-function readerLet( $, props, then ) {
-    reader( objPlus( $, props ), function ( $sub, result ) {
-        then( objPlus( $sub, objOwnMap( props, function ( k, v ) {
-            return $[ k ];
-        } ) ), result );
-    } );
-}
-
-function addReaderMacros( readerMacros, string, func ) {
-    eachUnicodeCodePoint( string, function ( codePointInfo ) {
-        readerMacros.set( codePointInfo.charString, func );
-    } );
-}
-function bankInfix( $, minInfixLevel, then ) {
-    var result = $.infixState.type === "ready" &&
-        minInfixLevel <= $.infixLevel;
-    if ( result )
-        then( objPlus( $, {
-            infixState: { type: "empty" }
-        } ), { ok: true, val: $.infixState.val } );
-    return result;
-}
-function bankCommand( $, then ) {
-    var result = $.infixState.type === "ready" && $.heedsCommandEnds;
-    if ( result )
-        then( objPlus( $, {
-            infixState: { type: "empty" }
-        } ), { ok: true, val: $.infixState.val } );
-    return result;
-}
-function continueInfix( $, val, then ) {
-    if ( $.infixState.type === "empty" ) {
-        reader( objPlus( $, {
-            infixState: { type: "ready", val: val }
-        } ), then );
-    } else if ( $.infixState.type === "ready" ) {
-        throw new Error(
-            "Read a second complete value before realizing this " +
-            "wasn't an infix expression." );
-    } else {
-        throw new Error();
-    }
-}
-// NOTE: The readListUntilParen() function is only for use by the "("
-// and "/" reader macros to reduce duplication.
-function readListUntilParen( $, consumeParen, then ) {
-    function loop( $, list ) {
-        readerLet( $, {
-            heedsCommandEnds: false,
-            infixLevel: 0,
-            infixState: { type: "empty" },
-            readerMacros: $.readerMacros.plusEntry( ")",
-                function ( $, then ) {
-                
-                if ( bankInfix( $, 0, then ) )
-                    return;
-                
-                if ( consumeParen )
-                    streamReadc( $, function ( $, c ) {
-                        next( $ );
-                    } );
-                else
-                    next( $ );
-                
-                function next( $ ) {
-                    // TODO: Make this trampolined with constant time
-                    // between bounces. This might be tricky because
-                    // it's stateful.
-                    var result = [];
-                    for ( var ls = list; ls !== null; ls = ls.past )
-                        result.unshift( ls.last );
-                    then( $, { ok: true, val:
-                        { type: "freshlyCompletedCompound",
-                            val: result } } );
-                }
-            } ),
-            end: function ( $, then ) {
-                then( $, { ok: false, msg: "Incomplete list" } );
-            }
-        }, function ( $, result ) {
-            if ( !result.ok )
-                return void then( $, result );
-            
-            if ( likeObjectLiteral( result.val )
-                && result.val.type === "freshlyCompletedCompound" )
-                continueInfix( $, result.val.val, then );
-            else
-                loop( $, { past: list, last: result.val } );
-        } );
-    }
-    streamReadc( $, function ( $, c ) {
-        loop( $, null );
-    } );
-}
-
-var symbolChars = "abcdefghijklmnopqrstuvwxyz";
-symbolChars += symbolChars.toUpperCase() + "-*0123456789";
-var symbolChopsChars = strMap().setObj( { "(": ")", "[": "]" } );
-var commandEndChars = "\r\n";
-var whiteChars = " \t";
-
-function postProcessWhitespace( stringParts ) {
-    // TODO: Make this trampolined with constant time between bounces.
-    // This might be tricky because it's stateful.
-    
-    // Remove all raw whitespace adjacent to the ends of the string
-    // and adjacent to whitespace escapes.
-    function removeAfterStartOrExplicitWhitespace( parts ) {
-        var parts2 = [];
-        var removing = true;
-        arrEach( parts, function ( part ) {
-            if ( part.type === "interpolation" ) {
-                parts2.push( part );
-                removing = false;
-            } else if ( part.type === "rawWhite" ) {
-                if ( !removing )
-                    parts2.push( part );
-            } else if ( part.type === "explicitWhite" ) {
-                parts2.push( part );
-                removing = true;
-            } else if ( part.type === "nonWhite" ) {
-                parts2.push( part );
-                removing = false;
-            } else {
-                throw new Error();
-            }
-        } );
-        return parts2;
-    }
-    var stringParts2 = removeAfterStartOrExplicitWhitespace(
-        stringParts ).reverse();
-    var stringParts3 = removeAfterStartOrExplicitWhitespace(
-        stringParts2 ).reverse();
-    
-    // Replace every remaining occurrence of one or more raw
-    // whitespace characters with a single space. Meanwhile, drop the
-    // distinction between raw whitespace, explicit whitespace, and
-    // non-whitespace text.
-    var resultParts = [];
-    var currentText = "";
-    var removing = true;
-    arrEach( stringParts3, function ( part ) {
-        if ( part.type === "interpolation" ) {
-            resultParts.push(
-                { type: "text", text: currentText },
-                { type: "interpolation", val: part.val } );
-            currentText = "";
-            removing = false;
-        } else if ( part.type === "rawWhite" ) {
-            if ( !removing ) {
-                currentText += " ";
-                removing = true;
-            }
-        } else if ( part.type === "explicitWhite" ) {
-            currentText += part.text;
-            removing = false;
-        } else if ( part.type === "nonWhite" ) {
-            currentText += part.text;
-            removing = false;
-        } else {
-            throw new Error();
-        }
-    } );
-    resultParts.push( { type: "text", text: currentText } );
-    return { type: "interpolatedString", parts: resultParts };
-}
-
-function ignoreRestOfLine( $, then ) {
-    $.stream.peekc( function ( c ) {
-        if ( /^[\r\n]?$/.test( c ) )
-            then( $ );
-        else
-            streamReadc( $, function ( $, c ) {
-                ignoreRestOfLine( $, then );
-            } );
-    } );
-}
-
-var whiteReaderMacros = strMap();
-whiteReaderMacros.set( ";", function ( $, then ) {
-    if ( bankCommand( $, then ) )
-        return;
-    ignoreRestOfLine( $, function ( $ ) {
-        reader( $, then );
-    } );
-} );
-addReaderMacros( whiteReaderMacros, commandEndChars,
-    function ( $, then ) {
-    
-    if ( bankCommand( $, then ) )
-        return;
-    streamReadc( $, function ( $, c ) {
-        reader( $, then );
-    } );
-} );
-addReaderMacros( whiteReaderMacros, whiteChars, function ( $, then ) {
-    streamReadc( $, function ( $, c ) {
-        reader( $, then );
-    } );
-} );
-
-var readerMacros = whiteReaderMacros.copy();
-addReaderMacros( readerMacros, symbolChars, function ( $, then ) {
-    if ( bankInfix( $, 0, then ) )
-        return;
-    function collectChops( $, stringSoFar, open, close, nesting ) {
-        if ( nesting === 0 )
-            return void collect( $, stringSoFar );
-        streamReadc( $, function ( $, c ) {
-            var nextStringSoFar = stringSoFar + c;
-            if ( c === "" )
-                return void then( $,
-                    { ok: false, msg: "Incomplete symbol" } );
-            collectChops( $, nextStringSoFar, open, close,
-                nesting + (c === open ? 1 : c === close ? -1 : 0) );
-        } );
-    }
-    function collect( $, stringSoFar ) {
-        $.stream.peekc( function ( c ) {
-            if ( c === ""
-                || (symbolChars.indexOf( c ) === -1
-                    && !symbolChopsChars.has( c )) )
-                return void continueInfix( $, stringSoFar, then );
-            streamReadc( $, function ( $, open ) {
-                var nextStringSoFar = stringSoFar + open;
-                var close = symbolChopsChars.get( open );
-                if ( close !== void 0 )
-                    collectChops( $,
-                        nextStringSoFar, open, close, 1 );
-                else
-                    collect( $, nextStringSoFar );
-            } );
-        } );
-    }
-    collect( $, "" );
-} );
-readerMacros.set( "(", function ( $, then ) {
-    if ( bankInfix( $, 0, then ) )
-        return;
-    readListUntilParen( $, !!"consumeParen", then );
-} );
-readerMacros.set( "/", function ( $, then ) {
-    if ( bankInfix( $, 0, then ) )
-        return;
-    readListUntilParen( $, !"consumeParen", then );
-} );
-readerMacros.set( "\\", function ( $, then ) {
-    if ( bankInfix( $, 0, then ) )
-        return;
-    streamReadc( $, function ( $, c ) {
-        $.stream.peekc( function ( c ) {
-            if ( c === "" )
-                return void then( $,
-                    { ok: false, msg: "Incomplete string" } );
-            if ( !symbolChopsChars.has( c ) )
-                return void then( $, { ok: false,
-                    msg: "Unrecognized string opening character" } );
-            var closeBracket = symbolChopsChars.get( c );
-            readStringUntilBracket( $, closeBracket, 0,
-                function ( $, result ) {
-                
-                if ( !result.ok )
-                    return void then( $, result );
-                then( $, { ok: true, val:
-                    postProcessWhitespace( result.val ) } );
-            } );
-        } );
-    } );
-} );
-function defineInfixOperator(
-    ch, level, noLhsErr, incompleteErr, readRemaining ) {
-    
-    readerMacros.set( ch, function ( $, then ) {
-        if ( bankInfix( $, level, then ) )
-            return;
-        if ( $.infixState.type === "empty" ) {
-            then( $, { ok: false, msg: noLhsErr } );
-        } else if ( $.infixState.type === "ready" ) {
-            var lhs = $.infixState.val;
-            var origHeedsCommandEnds = $.heedsCommandEnds;
-            streamReadc( objPlus( $, {
-                infixState: { type: "empty" }
-            } ), function ( $, c ) {
-                function read( $, heedsCommandEnds, level, then ) {
-                    readerLet( $, {
-                        heedsCommandEnds:
-                            origHeedsCommandEnds && heedsCommandEnds,
-                        infixLevel: level,
-                        end: function ( $, then ) {
-                            if ( $.infixState.type === "ready" )
-                                then( objPlus( $, {
-                                    infixState: { type: "empty" }
-                                } ), { ok: true,
-                                    val: $.infixState.val } );
-                            else
-                                then( $, { ok: false,
-                                    msg: incompleteErr } );
-                        }
-                    }, then );
-                }
-                function expectChar( $, heedsCommandEnds, ch, then ) {
-                    readerLet( $, {
-                        heedsCommandEnds:
-                            origHeedsCommandEnds && heedsCommandEnds,
-                        readerMacros: whiteReaderMacros.plusEntry( ch,
-                            function ( $, then ) {
-                            
-                            streamReadc( $, function ( $, c ) {
-                                then( $, { ok: true, val: null } );
-                            } );
-                        } ),
-                        unrecognized: function ( $, then ) {
-                            then( $, { ok: false, msg:
-                                "Encountered an unrecognized " +
-                                "character when expecting " + ch } );
-                        },
-                        end: function ( $, then ) {
-                            then( $,
-                                { ok: false, msg: incompleteErr } );
-                        }
-                    }, then );
-                }
-                readRemaining( $, lhs, read, expectChar,
-                    function ( $, result ) {
-                    
-                    if ( !result.ok )
-                        return void then( $, result );
-                    continueInfix( $, result.val, then );
-                } );
-            } );
-        } else {
-            throw new Error();
-        }
-    } );
-}
-// NOTE: A previous syntax for `a<b>c` was `a :b c`. The newer syntax
-// is visually symmetrical, but more importantly, it does not require
-// whitespace between `b` and `c`. The lack of whitespace makes it
-// easier to visually group it among list elements like (a b c<d>e f).
-// Moreover, as long as we do follow this no-whitespace style,
-// multi-line infix expressions will look particularly unusual. This
-// saves us from multi-line infix indentation dilemmas because it
-// discourages us from writing such expressions in the first place.
-defineInfixOperator( "<", 1,
-    "Tertiary infix expression without lhs",
-    "Incomplete tertiary infix expression",
-    function ( $, lhs, read, expectChar, then ) {
-    
-    // NOTE: We support top-level code like the following by disabling
-    // heedsCommandEnds when reading the operator:
-    //
-    //  a <b
-    //      .c> d
-    //
-    read( $, !"heedsCommandEnds", 0, function ( $, op ) {
-        if ( !op.ok )
-            return void then( $, op );
-        
-        expectChar( $, !"heedsCommandEnds", ">",
-            function ( $, status ) {
-            
-            if ( !status.ok )
-                return void then( $, status );
-            
-            read( $, !!"heedsCommandEnds", 1, function ( $, rhs ) {
-                if ( !rhs.ok )
-                    return void then( $, rhs );
-                then( $,
-                    { ok: true, val: [ op.val, lhs, rhs.val ] } );
-            } );
-        } );
-    } );
-} );
-readerMacros.set( ">", function ( $, then ) {
-    if ( bankInfix( $, 0, then ) )
-        return;
-    then( $, { ok: false,
-        msg: "Tertiary infix expression without lhs or operator" } );
-} );
-defineInfixOperator( ".", 2,
-    "Binary infix expression without lhs",
-    "Incomplete binary infix expression",
-    function ( $, lhs, read, expectChar, then ) {
-    
-    read( $, !!"heedsCommandEnds", 2, function ( $, rhs ) {
-        if ( !rhs.ok )
-            return void then( $, rhs );
-        then( $, { ok: true, val: [ lhs, rhs.val ] } );
-    } );
-} );
-
-function readStringUntilBracket( $, bracket, qqDepth, then ) {
-    function loop( $, string ) {
-        readerLet( $, {
-            qqDepth: qqDepth,
-            readerMacros: stringReaderMacros.plusEntry( bracket,
-                function ( $, then ) {
-                
-                streamReadc( $, function ( $, c ) {
-                    // TODO: Make this trampolined with constant time
-                    // between bounces. This might be tricky because
-                    // it's stateful.
-                    var result = [];
-                    for ( var s = string; s !== null; s = s.past )
-                        result = s.last.concat( result );
-                    then( $, { ok: true, val:
-                        { type: "freshlyCompletedCompound",
-                            val: result } } );
-                } );
-            } ),
-            unrecognized: function ( $, then ) {
-                streamReadc( $, function ( $, c ) {
-                    then( $, { ok: true,
-                        val: [ { type: "nonWhite", text: c } ] } );
-                } );
-            },
-            end: function ( $, then ) {
-                then( $, { ok: false, msg: "Incomplete string" } );
-            }
-        }, function ( $, result ) {
-            if ( !result.ok )
-                return void then( $, result );
-            
-            if ( likeObjectLiteral( result.val )
-                && result.val.type === "freshlyCompletedCompound" )
-                then( $, { ok: true, val: result.val.val } );
-            else
-                loop( $, { past: string, last: result.val } );
-        } );
-    }
-    streamReadc( $, function ( $, c ) {
-        loop( $, null );
-    } );
-}
-
-var stringReaderMacros = strMap();
-stringReaderMacros.setAll( strMap().setObj( {
-    " ": " ",
-    "\t": "\t",
-    "\r": "\r",
-    "\n": "\n"
-} ).map( function ( text ) {
-    return function ( $, then ) {
-        streamReadc( $, function ( $, c ) {
-            then( $, { ok: true,
-                val: [ { type: "rawWhite", text: text } ] } );
-        } );
-    };
-} ) );
-symbolChopsChars.each( function ( openBracket, closeBracket ) {
-    stringReaderMacros.set( openBracket, function ( $, then ) {
-        readStringUntilBracket( $, closeBracket, $.qqDepth,
-            function ( $, result ) {
-            
-            if ( !result.ok )
-                return void then( $, result );
-            then( $, { ok: true, val: [].concat(
-                [ { type: "nonWhite", text: openBracket } ],
-                result.val,
-                [ { type: "nonWhite", text: closeBracket } ]
-            ) } );
-        } );
-    } );
-    stringReaderMacros.set( closeBracket, function ( $, then ) {
-        then( $, { ok: false,
-            msg: "Unmatched " + closeBracket + " in string" } );
-    } );
-} );
-stringReaderMacros.set( "\\", function ( $, then ) {
-    loop( $, "", -1 );
-    function loop( $, escStart, escQqDepth ) {
-        var newEscQqDepth = escQqDepth + 1;
-        if ( $.qqDepth < newEscQqDepth )
-            return void then( $, { ok: false,
-                msg: "Unquoted past the quasiquotation depth" } );
-        
-        streamReadc( $, function ( $, c1 ) {
-            $.stream.peekc( function ( c2 ) {
-                if ( c2 === "," )
-                    loop( $, escStart + c1, newEscQqDepth );
-                else
-                    next( $, c2, escStart + c1, newEscQqDepth );
-            } );
-        } );
-    }
-    function next( $, c, escStart, escQqDepth ) {
-        function capturingStream( captured, s ) {
-            var stream = {};
-            stream.underlyingStream = s;
-            stream.getCaptured = function () {
-                return captured;
-            };
-            stream.peekc = function ( then ) {
-                s.peekc( then );
-            };
-            stream.readc = function ( then ) {
-                s.readc( function ( s, c ) {
-                    then( capturingStream( captured + c, s ), c );
-                } );
-            };
-            return stream;
-        }
-        
-        var inStringWithinString =
-            escQqDepth < $.qqDepth && !symbolChopsChars.has( c );
-        
-        readerLet( objPlus( $, {
-            stream: inStringWithinString ?
-                capturingStream( "", $.stream ) : $.stream
-        } ), {
-            readerMacros: strMap().setAll( strMap().setObj( {
-                "s": " ",
-                "t": "\t",
-                "r": "\r",
-                "n": "\n",
-                "#": ""
-            } ).map( function ( text, escName ) {
-                return function ( $, then ) {
-                    streamReadc( $, function ( $, c ) {
-                        then( $, { ok: true, val:
-                            [ { type: "explicitWhite", text: text } ]
-                        } );
-                    } );
-                };
-            } ) ).setAll( strMap().setObj( {
-                "-": "\\",
-                "<": "[",
-                ">": "]",
-                "{": "(",
-                "}": ")"
-            } ).map( function ( text, escName ) {
-                return function ( $, then ) {
-                    streamReadc( $, function ( $, c ) {
-                        then( $, { ok: true, val:
-                            [ { type: "nonWhite", text: text } ]
-                        } );
-                    } );
-                };
-            } ) ).setAll( symbolChopsChars.map(
-                function ( closeBracket, openBracket ) {
-                
-                return function ( $, then ) {
-                    if ( escQqDepth !== 0 )
-                        return void then( $, { ok: false, msg:
-                            "Used a string-within-a-string escape " +
-                            "sequence with an unquote level other " +
-                            "than zero" } );
-                    
-                    readStringUntilBracket(
-                        $, closeBracket, $.qqDepth + 1,
-                        function ( $, result ) {
-                        
-                        if ( !result.ok )
-                            return void then( $, result );
-                        then( $, { ok: true, val: [].concat(
-                            [ { type: "nonWhite",
-                                text: escStart + openBracket } ],
-                            result.val,
-                            [ { type: "nonWhite",
-                                text: closeBracket } ]
-                        ) } );
-                    } );
-                };
-            } ) ).setObj( {
-                ";": function ( $, then ) {
-                    ignoreRestOfLine( $, function ( $ ) {
-                        then( $, { ok: true, val: [] } );
-                    } );
-                },
-                "_": function ( $, then ) {
-                    streamReadc( $, function ( $, c ) {
-                        readerLet( $, {
-                            heedsCommandEnds: false,
-                            infixLevel: 3,
-                            infixState: { type: "empty" },
-                            readerMacros: readerMacros,
-                            unrecognized: function ( $, then ) {
-                                then( $, { ok: false, msg:
-                                    "Encountered an unrecognized " +
-                                    "character" } );
-                            },
-                            end: function ( $, then ) {
-                                then( $, { ok: false, msg:
-                                    "Incomplete interpolation in " +
-                                    "string" } );
-                            }
-                        }, function ( $, result ) {
-                            if ( !result.ok )
-                                return void then( $, result );
-                            streamReadc( $, function ( $, c ) {
-                                if ( c === "." )
-                                    then( $, { ok: true, val:
-                                        [ {
-                                            type: "interpolation",
-                                            val: result.val
-                                        } ]
-                                    } );
-                                else
-                                    then( $, { ok: false, msg:
-                                        "Didn't end a string " +
-                                        "interpolation with a " +
-                                        "dot" } );
-                            } );
-                        } );
-                    } );
-                },
-                "u": function ( $, then ) {
-                    streamReadc( $, function ( $, c ) {
-                        loop( "", 6 );
-                        function loop( hexSoFar, digitsLeft ) {
-                            streamReadc( $, function ( $, c ) {
-                                if ( c === "" )
-                                    then( $, { ok: false, msg:
-                                        "Incomplete Unicode escape"
-                                    } );
-                                else if ( c === "." )
-                                    next( hexSoFar );
-                                else if ( digitsLeft === 0 )
-                                    then( $, { ok: false, msg:
-                                        "Unterminated Unicode escape"
-                                    } );
-                                else if ( /^[01-9A-F]$/.test( c ) )
-                                    loop( hexSoFar + c,
-                                        digitsLeft - 1 );
-                                else
-                                    then( $, { ok: false, msg:
-                                        "Unrecognized character in " +
-                                        "Unicode escape" } );
-                            } );
-                        }
-                        function next( hex ) {
-                            if ( hex.length === 0 )
-                                return void then( $, { ok: false, msg:
-                                    "Unicode escape with no " +
-                                    "digits" } );
-                            var text = unicodeCodePointToString(
-                                parseInt( hex, 16 ) );
-                            if ( text === null )
-                                return void then( $, { ok: false, msg:
-                                    "Unicode escape out of range" } );
-                            then( $, { ok: true, val:
-                                [ { type: "nonWhite", text: text } ]
-                            } );
-                        }
-                    } );
-                },
-                ",": function ( $, then ) {
-                    // NOTE: We shouldn't get here. We already read
-                    // all the commas first.
-                    then( $, { ok: false, msg:
-                        "Unquoted past the quasiquotation depth, " +
-                        "and also caused an internal error in the " +
-                        "reader" } );
-                }
-            } ),
-            unrecognized: function ( $, then ) {
-                then( $, { ok: false,
-                    msg: "Unrecognized escape sequence" } );
-            },
-            end: function ( $, then ) {
-                then( $, { ok: false,
-                    msg: "Incomplete escape sequence" } );
-            }
-        }, function ( $, result ) {
-            
-            var $sub = objPlus( $, {
-                stream: inStringWithinString ?
-                    $.stream.underlyingStream : $.stream
-            } );
-            
-            if ( !result.ok || !inStringWithinString )
-                return void then( $sub, result );
-            then( $sub, { ok: true, val: [ {
-                type: "nonWhite",
-                text: escStart + $.stream.getCaptured()
-            } ] } );
-        } );
-    }
-} );
-
-
-function stringStream( defer, string ) {
-    if ( !isValidUnicode( string ) )
-        throw new Error();
-    
-    var n = string.length;
-    
-    return streamAt( 0 );
-    function streamAt( i ) {
-        var stream = {};
-        stream.underlying = null;
-        stream.getCaptured = function () {
-            throw new Error();
-        };
-        stream.peekc = function ( then ) {
-            stream.readc( function ( stream, c ) {
-                // We just ignore the new stream.
-                then( c );
-            } );
-        };
-        stream.readc = function ( then ) {
-            defer( function () {
-                if ( n <= i )
-                    return void then( stream, "" );
-                var charCodeInfo =
-                    getUnicodeCodePointAtCodeUnitIndex( string, i );
-                var result = charCodeInfo.charString;
-                then( streamAt( i + result.length ), result );
-            } );
-        };
-        return stream;
-    }
-}
-
 function readAll( string ) {
     return runSyncYoke( exhaustStream(
         new PkRuntime().conveniences_syncYoke(),
@@ -2954,3 +2265,8 @@ function readAll( string ) {
         } );
     } ) ).result;
 }
+
+// TODO: Put any dependencies of the above implementation into
+// era-misc.js, including jsListFlattenOnce(), jsListToArrBounded(),
+// PkRuntime(), etc. Okay, don't actually put PkRuntime() itself in
+// there.
