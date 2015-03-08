@@ -595,7 +595,6 @@ qq.(foo ((qq (uq uq.(succ/succ/nil))) (qq (uqs quote.(a b c))) bar))
     </script>
 <script type="text/javascript" src="../src/era-misc.js"></script>
 <script type="text/javascript" src="../src/era-reader.js"></script>
-<script type="text/javascript" src="../src/era-avl.js"></script>
 <script type="text/javascript" src="../src/era-penknife.js"></script>
 <script type="text/javascript" src="../src/era-penknife-to-js.js">
     </script>
@@ -604,39 +603,47 @@ qq.(foo ((qq (uq uq.(succ/succ/nil))) (qq (uqs quote.(a b c))) bar))
 window.onload = function () {
     function generateOutput() {
         var startMillis = new Date().getTime();
-        var pkRuntime = makePkRuntime();
-        var yoke = pkRuntime.conveniences_syncYoke();
         
-        var maybeYokeAndResult = compileAndDefineFromString( yoke,
+        
+        var displays = runSyncYoke( {
+            pkRuntime: makePkRuntime(),
+            pkRider: pk( "pure-yoke" )
+        }, function ( yoke, then ) {
+        return compileAndDefineFromString( yoke,
             document.getElementById( "pk-prelude" ).firstChild.data,
             function ( yoke, preludeDisplays ) {
         return compileAndDefineFromString( yoke,
             document.getElementById( "code-in-textarea" ).value,
             function ( yoke, textareaDisplays ) {
         
-        var displays = [].concat(
+        return then( yoke, [].concat(
             arrMap( preludeDisplays, function ( display ) {
                 return { display: display, displayThisResult: false };
             } ),
             arrMap( textareaDisplays, function ( display ) {
                 return { display: display, displayThisResult: true };
             } )
-        );
+        ) );
+        
+        } );
+        } );
+        } ).result;
+        
         
         var displayStrings = [];
         var jsFuncCodeStrings = [];
         var hasError = false;
         for ( var i = 0, n = displays.length; i < n; i++ ) {
             var display = displays[ i ];
-            if ( display.display.type === "error" ) {
+            if ( display.display.type === "success" ) {
+                if ( display.displayThisResult )
+                    displayStrings.push( "" + display.display.val );
+                jsFuncCodeStrings.push( display.display.jsFuncCode );
+            } else if ( display.display.type === "error" ) {
                 displayStrings.push(
                     display.display.intro + ": " +
                     display.display.msg );
                 hasError = true;
-            } else if ( display.display.type === "success" ) {
-                if ( display.displayThisResult )
-                    displayStrings.push( "" + display.display.val );
-                jsFuncCodeStrings.push( display.display.jsFuncCode );
             } else {
                 throw new Error();
             }
@@ -667,13 +674,6 @@ window.onload = function () {
 //                document.createTextNode( fileCode ) );
 //            document.body.appendChild( textarea );
         }
-        
-        return pkRet( yoke, pkNil );
-        
-        } );
-        } );
-        
-        runSyncYoke( maybeYokeAndResult );
     }
     document.getElementById( "go" ).onclick = generateOutput;
     generateOutput();

@@ -36,31 +36,6 @@
 // finger trees.
 
 
-function jsListShortFoldl( yoke, init, list, func, then ) {
-    return runWaitOne( yoke, function ( yoke ) {
-        if ( list === null )
-            return then( yoke, init, !"exitedEarly" );
-        return func( yoke, init, list.first,
-            function ( yoke, init, exitedEarly ) {
-            
-            if ( exitedEarly )
-                return then( yoke, init, !!"exitedEarly" );
-            return jsListShortFoldl( yoke,
-                init, list.rest, func, then );
-        } );
-    } );
-}
-function jsListFoldl( yoke, init, list, func, then ) {
-    return jsListShortFoldl( yoke, init, list,
-        function ( yoke, state, elem, then ) {
-        
-        return func( yoke, state, elem, function ( yoke, state ) {
-            return then( yoke, state, !"exitedEarly" );
-        } );
-    }, function ( yoke, state, exitedEarly ) {
-        return then( yoke, state );
-    } );
-}
 function jsListDoubleShortFoldl( yoke,
     init, listA, listB, func, then ) {
     
@@ -92,35 +67,6 @@ function jsListDoubleFoldl( yoke, init, listA, listB, func, then ) {
         } );
     }, function ( yoke, state, exitedEarly ) {
         return then( yoke, state );
-    } );
-}
-// NOTE: This is guaranteed to have O( n ) time complexity in the
-// length of the `backwardFirst` list, JS object allocation time
-// notwithstanding.
-function jsListRevAppend( yoke, backwardFirst, forwardSecond, then ) {
-    return jsListFoldl( yoke, forwardSecond, backwardFirst,
-        function ( yoke, forwardSecond, elem, then ) {
-        
-        return then( yoke, { first: elem, rest: forwardSecond } );
-    }, then );
-}
-function jsListRev( yoke, list, then ) {
-    return jsListRevAppend( yoke, list, null, then );
-}
-function jsListAppend( yoke, a, b, then ) {
-    return jsListRev( yoke, a, function ( yoke, revA ) {
-        return jsListRevAppend( yoke, revA, b, then );
-    } );
-}
-function jsListMap( yoke, list, func, then ) {
-    return jsListFoldl( yoke, null, list,
-        function ( yoke, revPast, elem, then ) {
-        
-        return func( yoke, elem, function ( yoke, elem ) {
-            return then( yoke, { first: elem, rest: revPast } );
-        } );
-    }, function ( yoke, revResult ) {
-        return jsListRev( yoke, revResult, then );
     } );
 }
 function jsListAnySync( yoke, list, func, then ) {

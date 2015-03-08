@@ -60,8 +60,6 @@ if ( args.test ) tasks.push( function ( then ) {
         "test/harness-first.js",
         "test/test-bigint.js",
         "src/era-reader.js",
-        "src/era-penknife.js",
-        "src/era-penknife-to-js.js",
         "test/test-reader.js",
         "src/era-modules.js",
         "test/test-modules.js",
@@ -87,37 +85,37 @@ if ( args.build ) tasks.push( function ( then ) {
             "src/era-misc-strmap-avl.js",
             "src/era-misc.js",
             "src/era-reader.js",
-            "src/era-avl.js",
             "src/era-penknife.js",
             "src/era-penknife-to-js.js"
         ] ) + "\n" +
         "\n" +
         "\n" +
-        "return { pkNil: pkNil, pkRet: pkRet,\n" +
+        "return { runSyncYoke: runSyncYoke,\n" +
         "    makePkRuntime: makePkRuntime,\n" +
+        "    pk: pk,\n" +
         "    compileAndDefineFromString:\n" +
-        "        compileAndDefineFromString,\n" +
-        "    runSyncYoke: runSyncYoke };\n"
+        "        compileAndDefineFromString };\n"
     )();
     
-    
-    var pkRuntime = $pk.makePkRuntime();
-    var yoke = pkRuntime.conveniences_syncYoke();
-    
-    var maybeYokeAndResult = $pk.compileAndDefineFromString( yoke,
-        readFile( "demos/penknife-compiled-src.pk" ),
-        function ( yoke, displays ) {
+    var displays = $pk.runSyncYoke( {
+        pkRuntime: $pk.makePkRuntime(),
+        pkRider: $pk.pk( "pure-yoke" )
+    }, function ( yoke, then ) {
+        return $pk.compileAndDefineFromString( yoke,
+            readFile( "demos/penknife-compiled-src.pk" ),
+            then );
+    } ).result;
     
     var displayStrings = [];
     var jsFuncCodeStrings = [];
     var hasError = false;
     for ( var i = 0, n = displays.length; i < n; i++ ) {
         var display = displays[ i ];
-        if ( display.type === "error" ) {
+        if ( display.type === "success" ) {
+            jsFuncCodeStrings.push( display.jsFuncCode );
+        } else if ( display.type === "error" ) {
             displayStrings.push( display.intro + ": " + display.msg );
             hasError = true;
-        } else if ( display.type === "success" ) {
-            jsFuncCodeStrings.push( display.jsFuncCode );
         } else {
             throw new Error();
         }
@@ -175,7 +173,6 @@ if ( args.build ) tasks.push( function ( then ) {
                         "pkStrUnsafe",
                         "pkErr",
                         "pkRet",
-                        "runRet",
                         "pkfnLinear"
                     ],
                     drop_console: false
@@ -192,12 +189,6 @@ if ( args.build ) tasks.push( function ( then ) {
             then();
         } );
     }
-    
-    return $pk.pkRet( yoke, $pk.pkNil );
-    
-    } );
-    
-    $pk.runSyncYoke( maybeYokeAndResult );
 } );
 
 

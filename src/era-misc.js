@@ -16,6 +16,15 @@ function arrEach( arr, func ) {
         func( arr[ i ], i );
 }
 // NOTE: This body takes its args as ( v, k ).
+function arrAll( arr, func ) {
+    for ( var i = 0, n = arr.length; i < n; i++ ) {
+        var result = func( arr[ i ], i );
+        if ( !result )
+            return result;
+        result = null;
+    }
+}
+// NOTE: This body takes its args as ( v, k ).
 function arrMap( arr, func ) {
     var result = [];
     for ( var i = 0, n = arr.length; i < n; i++ )
@@ -677,6 +686,63 @@ function bigIntFromStringInRadix( base, string ) {
     return result;
 }
 
+
+function runWithSyncYokeAndMaxStack( rider, maxStack, body ) {
+    var initialYoke = {
+        rider: rider,
+        internal: 0,
+        bounce: function ( then ) {
+            var self = this;
+            if ( self.internal < maxStack ) {
+                return then( {
+                    rider: self.rider,
+                    internal: self.internal + 1,
+                    bounce: self.bounce
+                } );
+            } else {
+                deferred.push( function () {
+                    return then( {
+                        rider: self.rider,
+                        internal: 0,
+                        bounce: self.bounce
+                    } );
+                } );
+                return null;
+            }
+        }
+    };
+    var deferred = [ function () {
+        return body( initialYoke, function ( yoke, result ) {
+            return { rider: yoke.rider, result: result };
+        } );
+    } ];
+    var riderAndResult = null;
+    while ( riderAndResult === null && deferred.length !== 0 )
+        riderAndResult = deferred.shift()();
+    if ( riderAndResult === null || deferred.length !== 0 )
+        throw new Error();
+    return riderAndResult;
+}
+function runSyncYoke( rider, body ) {
+    // TODO: Test to see what value is best for all browsers.
+    // TODO: Put this constant somewhere more configurable.
+    // NOTE: Firefox 28 breaks in the reader demo if this value
+    // exceeds 217. Chrome 34 can handle 1236 sometimes, but it's
+    // inconsistent, and its sweet spot seems to be around 500-1000.
+    // IE 11 can handle 367 sometimes, but it's inconsistent.
+    var maxStack = 100;
+    return runWithSyncYokeAndMaxStack( rider, maxStack, body );
+}
+// TODO: See if we'll ever use this.
+function runDebuggableSyncYoke( rider, body ) {
+    return runWithSyncYokeAndMaxStack( rider, 1 / 0, body );
+}
+// TODO: Rename this.
+function runWaitOne( yoke, then ) {
+    return yoke.bounce( then );
+}
+
+
 function jsListFromArr( arr ) {
     var result = null;
     for ( var i = arr.length - 1; 0 <= i; i-- )
@@ -724,4 +790,36 @@ function jsListRevAppend( yoke, backwardFirst, forwardSecond, then ) {
 }
 function jsListRev( yoke, list, then ) {
     return jsListRevAppend( yoke, list, null, then );
+}
+function jsListAppend( yoke, a, b, then ) {
+    return jsListRev( yoke, a, function ( yoke, revA ) {
+        return jsListRevAppend( yoke, revA, b, then );
+    } );
+}
+function jsListFlattenOnce( yoke, list, then ) {
+    return jsListFoldl( yoke, null, list,
+        function ( yoke, revResult, elem, then ) {
+        
+        return jsListRevAppend( yoke, elem, revResult, then );
+    }, function ( yoke, revResult ) {
+        return jsListRev( yoke, revResult, then );
+    } );
+}
+function jsListMap( yoke, list, func, then ) {
+    return jsListFoldl( yoke, null, list,
+        function ( yoke, revPast, elem, then ) {
+        
+        return func( yoke, elem, function ( yoke, elem ) {
+            return then( yoke, { first: elem, rest: revPast } );
+        } );
+    }, function ( yoke, revResult ) {
+        return jsListRev( yoke, revResult, then );
+    } );
+}
+function jsListMappend( yoke, list, func, then ) {
+    return jsListMap( yoke, list, func,
+        function ( yoke, resultLists ) {
+        
+        return jsListFlattenOnce( yoke, resultLists, then );
+    } );
 }

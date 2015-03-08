@@ -25,63 +25,6 @@ function jsListGetNat( yoke, list, nat, then ) {
         return jsListGetNat( yoke, list.rest, nat.ind( 0 ), then );
     } );
 }
-function jsListRevAppend( yoke, backwardFirst, forwardSecond, then ) {
-    if ( backwardFirst === null )
-        return then( yoke, forwardSecond );
-    return runWaitOne( yoke, function ( yoke ) {
-        return jsListRevAppend( yoke, backwardFirst.rest,
-            { first: backwardFirst.first, rest: forwardSecond },
-            then );
-    } );
-}
-function jsListRev( yoke, list, then ) {
-    return jsListRevAppend( yoke, list, null,
-        function ( yoke, result ) {
-        
-        return then( yoke, result );
-    } );
-}
-function jsListAppend( yoke, a, b, then ) {
-    return jsListRev( yoke, a, function ( yoke, revA ) {
-        return jsListRevAppend( yoke, revA, b,
-            function ( yoke, result ) {
-            
-            return then( yoke, result );
-        } );
-    } );
-}
-function jsListFoldl( yoke, init, list, func, then ) {
-    return go( yoke, init, list );
-    function go( yoke, init, list ) {
-        if ( list === null )
-            return then( yoke, init );
-        return runWaitOne( yoke, function ( yoke ) {
-            return func( yoke, init, list.first,
-                function ( yoke, combined ) {
-                
-                return go( yoke, combined, list.rest );
-            } );
-        } );
-    }
-}
-function jsListFlattenOnce( yoke, list, then ) {
-    return go( yoke, list, null );
-    function go( yoke, list, revResult ) {
-        if ( list === null )
-            return jsListRev( yoke, revResult,
-                function ( yoke, result ) {
-                
-                return then( yoke, result );
-            } );
-        return jsListRevAppend( yoke, list.first, revResult,
-            function ( yoke, revResult ) {
-            
-            return runWaitOne( yoke, function ( yoke ) {
-                return go( yoke, list.rest, revResult );
-            } );
-        } );
-    }
-}
 function jsListCount( yoke, list, func, then ) {
     return jsListFoldl( yoke, pkNil, list,
         function ( yoke, count, elem, then ) {
@@ -98,30 +41,6 @@ function jsListLen( yoke, list, then ) {
         return true;
     }, function ( yoke, count ) {
         return then( yoke, count );
-    } );
-}
-function jsListMap( yoke, list, func, then ) {
-    return jsListFoldl( yoke, null, list,
-        function ( yoke, revPast, elem, then ) {
-        
-        return func( yoke, elem, function ( yoke, elem ) {
-            return then( yoke, { first: elem, rest: revPast } );
-        } );
-    }, function ( yoke, revResult ) {
-        return jsListRev( yoke, revResult, function ( yoke, result ) {
-            return then( yoke, result );
-        } );
-    } );
-}
-function jsListMappend( yoke, list, func, then ) {
-    return jsListMap( yoke, list, function ( yoke, elem, then ) {
-        return func( yoke, elem, then );
-    }, function ( yoke, resultLists ) {
-        return jsListFlattenOnce( yoke, resultLists,
-            function ( yoke, result ) {
-            
-            return then( yoke, result );
-        } );
     } );
 }
 function jsListMapMultiWithLen( yoke, nat, lists, func, then ) {
@@ -538,18 +457,15 @@ function compileDupsOfOne( yoke,
             return then( yoke,
                 null, null, null, compiledNumberOfDups );
     
-    return getGs( yoke, gsi, function ( yoke, gsi, callbackVar ) {
     return getGs( yoke, gsi, function ( yoke, gsi, dupsVar ) {
     return compileListToVars( yoke, gsi,
         {
             revStatements: {
                 first: {
                     type: "async",
-                    callbackVar: callbackVar,
                     resultVar: dupsVar,
                     code: "pkDup( yoke, " + sourceVar + ", " +
-                        compiledNumberOfDups.val.resultVar + ", " +
-                        callbackVar + " )"
+                        compiledNumberOfDups.val.resultVar
                 },
                 rest: compiledNumberOfDups.val.revStatements
             },
@@ -565,7 +481,6 @@ function compileDupsOfOne( yoke,
     return then( yoke, gsi, revStatements, compiledDupVars,
         { ok: true, val: null } );
     
-    } );
     } );
     } );
     
@@ -776,16 +691,12 @@ function compileEssence(
             if ( !compiledName.ok )
                 return then( yoke, null, compiledName );
         
-        return getGs( yoke, gsi, function ( yoke, gsi, callbackVar ) {
         return getGs( yoke, gsi, function ( yoke, gsi, resultVar ) {
         return jsListFlattenOnce( yoke, jsList(
             jsList( {
                 type: "async",
-                callbackVar: callbackVar,
                 resultVar: resultVar,
-                code: "pkGetVal( yoke, " +
-                    compiledName.val.resultVar + ", " +
-                    callbackVar + " )"
+                code: "pkGetVal( yoke, " + compiledName.val.resultVar
             } ),
             compiledName.val.revStatements
         ), function ( yoke, revStatements ) {
@@ -795,7 +706,6 @@ function compileEssence(
             resultVar: resultVar
         } } );
         
-        } );
         } );
         } );
         
@@ -821,28 +731,19 @@ function compileEssence(
             if ( !compiledArgs.ok )
                 return then( yoke, null, compiledArgs );
         
-        return getGs( yoke, gsi, function ( yoke, gsi, callbackVar ) {
         return getGs( yoke, gsi, function ( yoke, gsi, resultVar ) {
         var fn = compiledOp.val.resultVar;
         var fnArgs = compiledArgs.val.resultVar;
         return jsListFlattenOnce( yoke, jsList(
             jsList( {
                 type: "async",
-                callbackVar: callbackVar,
                 resultVar: resultVar,
-                code:
-                    "runWaitTry( yoke, function ( yoke ) {\n" +
-                    // NOTE: This optimization doesn't actually seem
-                    // to help any, and it bloats the file size, so
-                    // we're not using it.
-//                    "    if ( " + fn + ".tag === \"fn\" )\n" +
-//                    "        return " + fn + ".special.call( yoke, " +
-//                                fn + ".special.captures, " + fnArgs +
-//                            " );\n" +
-                    "    return callMethod( yoke, \"call\", " +
-                            "pkList( " + fn + ", " + fnArgs + " ) " +
-                        ");\n" +
-                    "}, " + callbackVar + " )"
+                
+                // NOTE: A specialization for "fn" doesn't actually
+                // seem to improve performance any, and it bloats the
+                // file size, so we're not doing that.
+                code: "callMethod( yoke, \"call\", " +
+                    "pkList( " + fn + ", " + fnArgs + " )"
             } ),
             compiledArgs.val.revStatements,
             compiledOp.val.revStatements
@@ -853,7 +754,6 @@ function compileEssence(
             resultVar: resultVar
         } } );
         
-        } );
         } );
         } );
         
@@ -1113,18 +1013,16 @@ function compileEssence(
             if ( !compiledNumberOfElems.ok )
                 return then( yoke, null, compiledNumberOfElems );
         
-        return getGs( yoke, gsi, function ( yoke, gsi, callbackVar ) {
         return getGs( yoke, gsi, function ( yoke, gsi, ignoredVar ) {
         return compileListToVars( yoke, gsi,
             {
                 revStatements: {
                     first: {
                         type: "async",
-                        callbackVar: callbackVar,
                         resultVar: ignoredVar,
-                        code:
-"pkAssertLetList( yoke, " + compiledSource.val.resultVar + ", " +
-    compiledNumberOfElems.val.resultVar + ", " + callbackVar + " )"
+                        code: "pkAssertLetList( yoke, " +
+                            compiledSource.val.resultVar + ", " +
+                            compiledNumberOfElems.val.resultVar
                     },
                     rest: compiledNumberOfElems.val.revStatements
                 },
@@ -1177,7 +1075,6 @@ function compileEssence(
         
         } );
         } );
-        } );
         
         } );
         } );
@@ -1202,7 +1099,8 @@ function compiledLinkedListToString( yoke, compiled, then ) {
     
     return jsListFoldl( yoke,
         { syncInBlock: 0, code:
-            "return then( yoke, " + compiled.resultVar + " );" },
+            "return pkRet( yoke, pkThen, " +
+                compiled.resultVar + " );" },
         compiled.revStatements,
         function ( yoke, state, statement, then ) {
         
@@ -1235,13 +1133,14 @@ function compiledLinkedListToString( yoke, compiled, then ) {
         } else if ( statement.type === "async" ) {
             return runWaitOne( yoke, function ( yoke ) {
                 return then( yoke, { syncInBlock: 0, code:
-                    "return " + statement.code + ";\n" +
-                    "function " + statement.callbackVar + "( yoke, " +
-                        statement.resultVar + " ) {\n" +
+                    "return " + statement.code + ", " +
+                        "pkBubble( pkThen, " +
+                            "function ( yoke, " +
+                                statement.resultVar + " ) {\n" +
                     "\n" +
                     state.code + "\n" +
                     "\n" +
-                    "}"
+                    "} ) );"
                 } );
             } );
         } else if ( statement.type === "if" ) {
@@ -1253,10 +1152,11 @@ function compiledLinkedListToString( yoke, compiled, then ) {
                 function ( yoke, elseCode ) {
             
             return then( yoke, { syncInBlock: 0, code:
+                "var next = pkBubble( pkThen, nextInner );\n" +
                 "if ( " + statement.condCode + " )\n" +
                 "    return runWaitOne( yoke, function ( yoke ) {\n" +
                 "\n" +
-                "var then = next;\n" +
+                "var pkThen = next;\n" +
                 "\n" +
                 thenCode + "\n" +
                 "\n" +
@@ -1264,13 +1164,13 @@ function compiledLinkedListToString( yoke, compiled, then ) {
                 "else\n" +
                 "    return runWaitOne( yoke, function ( yoke ) {\n" +
                 "\n" +
-                "var then = next;\n" +
+                "var pkThen = next;\n" +
                 "\n" +
                 elseCode + "\n" +
                 "\n" +
                 "    } );\n" +
                 "\n" +
-                "function next( yoke, " +
+                "function nextInner( yoke, " +
                     statement.resultVar + " ) {\n" +
                 "\n" +
                 state.code + "\n" +
@@ -1290,9 +1190,8 @@ function compiledLinkedListToString( yoke, compiled, then ) {
                     "(" + statement.capturesCode + "),\n" +
                 "    function ( yoke, " +
                     statement.capturesVar + ", " +
-                    statement.argsVar + " ) {\n" +
-                "\n" +
-                "var then = pkRet;\n" +
+                    statement.argsVar + ", " +
+                    "pkThen ) {\n" +
                 "\n" +
                 bodyCode + "\n" +
                 "\n" +
@@ -1316,35 +1215,25 @@ function processCommands( yoke, commands, processCommand, then ) {
             return { first: display, rest: revDisplays };
         }
         function finish( yoke, revDisplays ) {
-            return jsListRev( yoke, revDisplays,
-                function ( yoke, displays ) {
-                
-                return then( yoke, displays );
-            } );
+            return jsListRev( yoke, revDisplays, then );
         }
         function reportError( yoke,
-            revDisplays, expr, errorIntro, ifOk ) {
+            revDisplays, commandResult, errorIntro, ifOk ) {
             
-            if ( expr.tag === "nope" ) {
+            if ( commandResult.type === "ret" )
+                return runWaitOne( yoke, function ( yoke ) {
+                    return ifOk( yoke, commandResult.val );
+                } );
+            else if ( commandResult.type === "err" )
                 return finish( yoke, addDisplay( revDisplays, {
                     type: "error",
                     intro: "" + errorIntro + " error",
-                    msg: expr.ind( 0 )
+                    msg: commandResult.msg
                 } ) );
-            } else if ( expr.tag !== "yep" ) {
-                return finish( yoke, addDisplay( revDisplays, {
-                    type: "error",
-                    intro:
-                        "" + errorIntro + " error " +
-                        "(poorly wrapped)",
-                    msg: expr
-                } ) );
-            } else {
-                // This is a triumph.
-                return runWaitOne( yoke, function ( yoke ) {
-                    return ifOk( yoke );
-                } );
-            }
+            else if ( commandResult.type === "yield" )
+                throw new Error();
+            else
+                throw new Error();
         }
         
         if ( commands === null )
@@ -1353,53 +1242,36 @@ function processCommands( yoke, commands, processCommand, then ) {
         return processCommand( yoke, commands.first,
             function ( yoke, expr, errorIntro, ifOk ) {
             
-            return reportError( yoke, revDisplays, expr, errorIntro,
-                function ( yoke ) {
-                
-                return ifOk( yoke );
-            } );
+            return reportError( yoke,
+                revDisplays, expr, errorIntro, ifOk );
         }, function ( yoke, commandResult, jsFuncCode ) {
         return reportError( yoke, revDisplays, commandResult,
             "Command execution",
-            function ( yoke ) {
+            function ( yoke, commandResult ) {
         
         var revDisplays2 = addDisplay( revDisplays, {
             type: "success",
             jsFuncCode: jsFuncCode,
-            val: commandResult.ind( 0 )
+            val: commandResult
         } );
         
-        return runWait( yoke, function ( yoke ) {
-            return pkDrop( yoke, commandResult, function ( yoke ) {
-                return pkRet( yoke, pkNil );
-            } );
-        }, function ( yoke, commandResultDrop ) {
+        return pkDup( yoke, commandResult, pkNil,
+            pkNoBubble( function ( yoke, commandResultDrop ) {
         return reportError( yoke, revDisplays2, commandResultDrop,
             "Command result drop",
-            function ( yoke ) {
-        return runWait( yoke, function ( yoke ) {
-            return yoke.pkRuntime.runDefinitions( yoke );
-        }, function ( yoke, defined ) {
+            function ( yoke, commandResultDrop ) {
+        return yoke.rider.pkRuntime.runDefinitions( yoke,
+            pkNoBubble( function ( yoke, defined ) {
         return reportError( yoke, revDisplays2, defined,
             "Definition",
-            function ( yoke ) {
-        return runWait( yoke, function ( yoke ) {
-            return pkDrop( yoke, defined, function ( yoke ) {
-                return pkRet( yoke, pkNil );
-            } );
-        }, function ( yoke, definedDrop ) {
-        return reportError( yoke, revDisplays2, definedDrop,
-            "Definition result drop",
-            function ( yoke ) {
+            function ( yoke, defined ) {
         
         return go( yoke, commands.rest, revDisplays2 );
         
         } );
+        } ) );
         } );
-        } );
-        } );
-        } );
-        } );
+        } ) );
         
         } );
         } );
@@ -1412,45 +1284,48 @@ function compileAndDefineFromString( yoke, pkCodeString, then ) {
         return processCommands( yoke, jsListFromArr( tryExprs ),
             function ( yoke, tryExpr, reportError, then ) {
             
-            return reportError( yoke,
-                tryExpr.ok ? pkYep( pkNil ) :
-                    pk( "nope", pkRawErr( tryExpr.msg ) ),
-                "Parse",
-                function ( yoke ) {
-            return runWait( yoke, function ( yoke ) {
-                return macroexpandReaderExpr( yoke, tryExpr.val );
-            }, function ( yoke, macroexpanded ) {
+            function okToPkErr( yoke, maybeOk, then ) {
+                if ( maybeOk.ok )
+                    return pkRet( yoke, pkNoBubble( then ), pkNil );
+                else
+                    return pkErr( yoke, pkNoBubble( then ),
+                        maybeOk.msg );
+            }
+            
+            return okToPkErr( yoke, tryExpr,
+                function ( yoke, tryExprAsPkErr ) {
+            return reportError( yoke, tryExprAsPkErr, "Parse",
+                function ( yoke, tryExprAsPkErr ) {
+            return macroexpandReaderExpr( yoke, tryExpr.val,
+                pkNoBubble( function ( yoke, macroexpanded ) {
             return reportError( yoke, macroexpanded, "Macroexpansion",
-                function ( yoke ) {
-            return runWait( yoke, function ( yoke ) {
-                return pkDrop( yoke, macroexpanded,
-                    function ( yoke ) {
-                    
-                    return pkRet( yoke, pkNil );
-                } );
-            }, function ( yoke, macroexpandedDrop ) {
+                function ( yoke, macroexpanded ) {
+            return pkDup( yoke, macroexpanded, pkNil,
+                pkNoBubble( function ( yoke, macroexpandedDrop ) {
             return reportError( yoke, macroexpandedDrop,
                 "Macroexpansion result drop",
-                function ( yoke ) {
-            return compileTopLevel( yoke, macroexpanded.ind( 0 ),
+                function ( yoke, macroexpandedDrop ) {
+            return compileTopLevel( yoke, macroexpanded,
                 function ( yoke, jsFuncCode ) {
-            return reportError( yoke,
-                jsFuncCode.ok ? pkYep( pkNil ) :
-                    pk( "nope", pkRawErr( jsFuncCode.val ) ),
+            return okToPkErr( yoke, jsFuncCode,
+                function ( yoke, jsFuncCodeAsPkErr ) {
+            return reportError( yoke, jsFuncCodeAsPkErr,
                 "Compilation",
-                function ( yoke ) {
+                function ( yoke, jsFuncCodeAsPkErr ) {
             return invokeTopLevel( yoke,
                 Function( "return " + jsFuncCode.val + ";" )(),
-                function ( yoke, commandResult ) {
+                pkNoBubble( function ( yoke, commandResult ) {
             
             return then( yoke, commandResult, jsFuncCode.val );
             
+            } ) );
             } );
             } );
             } );
             } );
+            } ) );
             } );
-            } );
+            } ) );
             } );
             } );
         }, function ( yoke, displaysList ) {
@@ -1479,7 +1354,7 @@ function compileTopLevel( yoke, essence, then ) {
         function ( yoke, code ) {
     
     return then( yoke, { ok: true, val:
-        "function ( yoke, cch, then ) {\n" +
+        "function ( yoke, cch, pkThen ) {\n" +
         "\n" +
         // TODO: This first commented-out line may help when debugging
         // compiled code, but it uses the hackish Pk#toString(). See
@@ -1499,26 +1374,21 @@ function compileTopLevel( yoke, essence, then ) {
     } );
 }
 
-function invokeTopLevel( yoke, jsFunc, then ) {
-    return runWait( yoke, function ( yoke ) {
-        return withTopLevelEffects( yoke, function ( yoke ) {
-            return jsFunc( yoke, compiledCodeHelper,
-                function ( yoke, result ) {
-                    
-                    // INTERPRET NOTE: It doesn't seem to make the
-                    // load time faster or the file footprint slimmer,
-                    // but the commented-out code marked "INTERPRET
-                    // NOTE" runs essence expansion at load time
-                    // rather than compile time.
-//                    return interpretEssence( yoke, result );
-                    
-                    return pkRet( yoke, result );
-                }
-            );
-        } );
-    }, function ( yoke, result ) {
-        return then( yoke, result );
-    } );
+function invokeTopLevel( yoke, jsFunc, pkThen ) {
+    return withTopLevelEffects( yoke, function ( yoke, pkThen ) {
+        return jsFunc( yoke, compiledCodeHelper,
+            pkBubble( pkThen, function ( yoke, result ) {
+            
+            // INTERPRET NOTE: It doesn't seem to make the load
+            // time faster or the file footprint slimmer, but the
+            // commented-out code marked "INTERPRET NOTE" runs
+            // essence expansion at load time rather than compile
+            // time.
+//            return interpretEssence( yoke, result, pkThen );
+            
+            return pkRet( yoke, pkThen, result );
+        } ) );
+    }, pkThen );
 }
 
 function invokeFileTopLevel( yoke, jsFuncs, then ) {
@@ -1526,7 +1396,7 @@ function invokeFileTopLevel( yoke, jsFuncs, then ) {
         function ( yoke, jsFunc, reportError, then ) {
         
         return invokeTopLevel( yoke, jsFunc,
-            function ( yoke, commandResult ) {
+            pkNoBubble( function ( yoke, commandResult ) {
             
             return then( yoke, commandResult,
                 // TODO: Make each compiled file a quine, containing
@@ -1534,7 +1404,7 @@ function invokeFileTopLevel( yoke, jsFuncs, then ) {
                 // Once we do that, way we may actually have code to
                 // put here.
                 "((function () { throw new Error(); })())" );
-        } );
+        } ) );
     }, function ( yoke, displaysList ) {
         var displaysArr = [];
         for ( var d = displaysList; d !== null; d = d.rest )
@@ -1547,8 +1417,9 @@ function invokeFileTopLevel( yoke, jsFuncs, then ) {
 // variables:
 //
 // yoke
-// then (only used in compiledLinkedListToString)
+// pkThen
 // next (only used in compiledLinkedListToString)
+// nextInner (only used in compiledLinkedListToString)
 //
 // They also depend on these free variables, but compiledCodeHelper
 // and compiledCodeHelperInit manage these as fields of a single `cch`
@@ -1564,12 +1435,12 @@ function invokeFileTopLevel( yoke, jsFuncs, then ) {
 // pkYep
 // pkPairName
 // pkStrUnsafe
-// runWaitTry
 // pkAssertLetList
 // pkRet
 // pkDup
 // pkGetVal
 // callMethod
+// pkBubble
 // pkfnLinear (only used in compiledLinkedListToString)
 // runWaitOne (only used in compiledLinkedListToString)
 // cachedNats (only used in an optimization)
@@ -1585,12 +1456,12 @@ var compiledCodeHelper = {
     pkYep: pkYep,
     pkPairName: pkPairName,
     pkStrUnsafe: pkStrUnsafe,
-    runWaitTry: runWaitTry,
     pkAssertLetList: pkAssertLetList,
     pkRet: pkRet,
     pkDup: pkDup,
     pkGetVal: pkGetVal,
     callMethod: callMethod,
+    pkBubble: pkBubble,
     pkfnLinear: pkfnLinear,
     runWaitOne: runWaitOne,
     

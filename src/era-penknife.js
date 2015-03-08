@@ -77,8 +77,6 @@
 //   exactly what it's designed to support.
 // - The PkRuntime global environment uses mutation. (TODO: Make
 //   modified copies instead of mutating the original.)
-// - The trampoline in syncYokeCall(), conveniences_syncYoke(), and
-//   runSyncYoke() uses mutation.
 // - A few local loops use very simple mutation. (The trampoline
 //   deserves special attention because it makes side-effectful
 //   closures and passes them off to other parts of the code.)
@@ -249,62 +247,59 @@ function pkRebuild( val, args ) {
 // primitive "get-deep-declarations" that does pkGetLeaves() and then
 // that.
 //
-function pkGetLeaves( yoke, tree ) {
+function pkGetLeaves( yoke, tree, pkThen ) {
     if ( tree.tag === "nonlinear-as-linear" )
-        return pkRet( yoke, pkList( tree ) );
+        return pkRet( yoke, pkThen, pkList( tree ) );
     if ( tree.tag === "linear-as-nonlinear"
         || tree.tag === "string"
         || tree.tag === "token" )
-        return pkRet( yoke, pkNil );
+        return pkRet( yoke, pkThen, pkNil );
     if ( pkIsStruct( tree ) )
         return listMappend( yoke, pkGetArgs( tree ),
-            function ( yoke, arg ) {
+            function ( yoke, arg, pkThen ) {
             
-            return pkGetLeaves( yoke, arg );
-        }, function ( yoke, result ) {
-            return pkRet( yoke, result );
-        } );
+            return pkGetLeaves( yoke, arg, pkThen );
+        }, pkThen );
     if ( tree.tag === "fn" )
         return listMappend( yoke, tree.special.captures,
-            function ( yoke, capture ) {
+            function ( yoke, capture, pkThen ) {
             
             if ( capture.tag !== "yep" )
-                return pkRet( yoke, pkNil );
-            return pkGetLeaves( yoke, capture.ind( 0 ) );
-        }, function ( yoke, result ) {
-            return pkRet( yoke, result );
-        } );
+                return pkRet( yoke, pkThen, pkNil );
+            return pkGetLeaves( yoke, capture.ind( 0 ), pkThen );
+        }, pkThen );
     throw new Error();
 }
-function pkMapLeaves( yoke, tree, func ) {
+function pkMapLeaves( yoke, tree, func, pkThen ) {
     if ( tree.tag === "nonlinear-as-linear" )
-        return func( yoke, tree );
+        return func( yoke, tree, pkThen );
     if ( tree.tag === "linear-as-nonlinear"
         || tree.tag === "string"
         || tree.tag === "token" )
-        return pkRet( yoke, tree );
+        return pkRet( yoke, pkThen, tree );
     if ( pkIsStruct( tree ) )
         return listMap( yoke, pkGetArgs( tree ),
-            function ( yoke, arg ) {
+            function ( yoke, arg, pkThen ) {
             
-            return pkMapLeaves( yoke, arg, func );
-        }, function ( yoke, newArgs ) {
-            return pkRet( yoke, pkRebuild( tree, newArgs ) );
-        } );
+            return pkMapLeaves( yoke, arg, func, pkThen );
+        }, pkBubble( pkThen, function ( yoke, newArgs ) {
+            return pkRet( yoke, pkThen, pkRebuild( tree, newArgs ) );
+        } ) );
     if ( tree.tag === "fn" )
         return listMap( yoke, tree.special.captures,
-            function ( yoke, capture ) {
+            function ( yoke, capture, pkThen ) {
             
             if ( capture.tag !== "yep" )
-                return pkRet( yoke, pkNil );
-            return pkMapLeaves( yoke, capture.ind( 0 ), func );
-        }, function ( yoke, newCaptures ) {
-            return pkRet( yoke,
+                return pkRet( yoke, pkThen, pkNil );
+            return pkMapLeaves( yoke,
+                capture.ind( 0 ), func, pkThen );
+        }, pkBubble( pkThen, function ( yoke, newCaptures ) {
+            return pkRet( yoke, pkThen,
                 new Pk().init_(
                     null, "fn", pkNil, newCaptures.isLinear(),
                     { captures: newCaptures, call: tree.special.call,
                         string: tree.special.string } ) );
-        } );
+        } ) );
     throw new Error();
 }
 function pkStrUnsafe( jsStr ) {
@@ -364,8 +359,8 @@ function pkfnLinear( captures, call ) {
 function pkfn( call ) {
     return new Pk().init_( null, "fn", pkNil, !"isLinear", {
         captures: pkNil,
-        call: function ( yoke, captures, args ) {
-            return call( yoke, args );
+        call: function ( yoke, captures, args, pkThen ) {
+            return call( yoke, args, pkThen );
         },
         string: "" + call
     } );
@@ -444,67 +439,66 @@ function listToArrBounded( x, maxLen ) {
 function listLenIs( x, n ) {
     return listLenBounded( x, n ) === n;
 }
-function runRet( yoke, val ) {
-    return { type: "done", yoke: yoke, result: val };
+function pkRet( yoke, pkThen, val ) {
+    return pkThen( yoke, { type: "ret", val: val } );
 }
-function runYield( yoke, out, then ) {
-    return { type: "yield", yoke: yoke, out: out, then: then };
+function pkErrVal( yoke, pkThen, msg ) {
+    return pkThen( yoke, { type: "err", msg: msg } );
 }
-function pkRet( yoke, val ) {
-    return runRet( yoke, pkYep( val ) );
+function pkYield( yoke, pkThen, out ) {
+    return pkThen( yoke, { type: "yield", out: out } );
 }
-function pkRawErr( jsStr ) {
+function pkErr( yoke, pkThen, jsStr ) {
     // TODO: See if this can use pkStrUnsafe().
-    return pk( "nope", pkStr( jsStr ) );
+    return pkErrVal( yoke, pkThen, pkStr( jsStr ) );
 }
-function pkErr( yoke, jsStr ) {
-    return runRet( yoke, pkRawErr( jsStr ) );
-}
-function pkErrLen( yoke, args, message ) {
+function pkErrLen( yoke, pkThen, args, message ) {
     var len = listLenBounded( args, 100 );
-    return pkErr( yoke, "" + message + " with " + (
+    return pkErr( yoke, pkThen, "" + message + " with " + (
         len === null ? "way too many args" :
         len === 1 ? "1 arg" :
             "" + len + " args") );
 }
-function yokeWithRider( yoke, rider ) {
-    return {
-        pkRuntime: yoke.pkRuntime,
-        yokeRider: rider,
-        internal: yoke.internal,
-        runWaitLinear: yoke.runWaitLinear
+function pkBubble( pkThen, then ) {
+    return function ( yoke, result ) {
+        if ( result.type === "ret" )
+            return then( yoke, result.val );
+        else if ( result.type === "err" )
+            return pkThen( yoke, result );
+        else if ( result.type === "yield" )
+            return pkThen( yoke, result );
+        else
+            throw new Error();
     };
 }
-function runWait( yoke, func, then ) {
-    return yoke.runWaitLinear( function ( yoke ) {
-        return func( yoke );
-    }, function ( yokeAndResult ) {
-        return then( yokeAndResult.yoke, yokeAndResult.result );
-    } );
-}
-function runWaitTry( yoke, func, then ) {
-    return runWait( yoke, function ( yoke ) {
-        return func( yoke );
-    }, function ( yoke, tryVal ) {
-        if ( tryVal.tag !== "yep" )
-            return runRet( yoke, tryVal );
-        return then( yoke, tryVal.ind( 0 ) );
-    } );
-}
-function runWaitOne( yoke, then ) {
-    return runWait( yoke, function ( yoke ) {
-        return runRet( yoke, null );
-    }, function ( yoke, ignored ) {
-        return then( yoke );
-    } );
-}
-function syncYokeCall( maybeYokeAndResult, defer, then ) {
-    defer( function () {
-        if ( maybeYokeAndResult.type === "deferrer" )
-            maybeYokeAndResult.go( defer, then );
+function pkBubbleAssert( then ) {
+    return function ( yoke, result ) {
+        if ( result.type === "ret" )
+            return then( yoke, result.val );
+        else if ( result.type === "err" )
+            throw new Error();
+        else if ( result.type === "yield" )
+            throw new Error();
         else
-            then( maybeYokeAndResult );
-    } );
+            throw new Error();
+    };
+}
+function pkBubbleFinally( pkThen, anyway ) {
+    return function ( yoke, result ) {
+        return anyway( yoke, function ( yoke ) {
+            return pkThen( yoke, result );
+        } );
+    };
+}
+function pkNoBubble( then ) {
+    return then;
+}
+function yokeWithPkRider( yoke, pkRider ) {
+    return {
+        rider: { pkRuntime: yoke.rider.pkRuntime, pkRider: pkRider },
+        internal: yoke.internal,
+        bounce: yoke.bounce
+    };
 }
 function listLenEq( yoke, a, b, then ) {
     if ( a.tag === "nil" && b.tag === "nil" )
@@ -534,58 +528,49 @@ function listGetNat( yoke, list, nat, then ) {
         return listGetNat( yoke, list.ind( 1 ), nat.ind( 0 ), then );
     } );
 }
-function listRevAppend( yoke, backwardFirst, forwardSecond, then ) {
+function listRevAppend( yoke, backwardFirst, forwardSecond, pkThen ) {
     if ( backwardFirst.tag !== "cons" )
-        return then( yoke, forwardSecond );
+        return pkRet( yoke, pkThen, forwardSecond );
     return runWaitOne( yoke, function ( yoke ) {
         return listRevAppend( yoke, backwardFirst.ind( 1 ),
-            pkCons( backwardFirst.ind( 0 ), forwardSecond ), then );
+            pkCons( backwardFirst.ind( 0 ), forwardSecond ),
+            pkThen );
     } );
 }
-function listRev( yoke, list, then ) {
-    return listRevAppend( yoke, list, pkNil,
-        function ( yoke, result ) {
+function listRev( yoke, list, pkThen ) {
+    return listRevAppend( yoke, list, pkNil, pkThen );
+}
+function listAppend( yoke, a, b, pkThen ) {
+    return listRev( yoke, a,
+        pkBubble( pkThen, function ( yoke, revA ) {
         
-        return then( yoke, result );
-    } );
+        return listRevAppend( yoke, revA, b, pkThen );
+    } ) );
 }
-function listAppend( yoke, a, b, then ) {
-    return listRev( yoke, a, function ( yoke, revA ) {
-        return listRevAppend( yoke, revA, b,
-            function ( yoke, result ) {
-            
-            return then( yoke, result );
-        } );
-    } );
-}
-function listFlattenOnce( yoke, list, then ) {
+function listFlattenOnce( yoke, list, pkThen ) {
     return go( yoke, list, pkNil );
     function go( yoke, list, revResult ) {
         if ( list.tag !== "cons" )
-            return listRev( yoke, revResult,
-                function ( yoke, result ) {
-                
-                return then( yoke, result );
-            } );
+            return listRev( yoke, revResult, pkThen );
         return listRevAppend( yoke, list.ind( 0 ), revResult,
-            function ( yoke, revResult ) {
+            pkBubble( pkThen, function ( yoke, revResult ) {
             
             return runWaitOne( yoke, function ( yoke ) {
                 return go( yoke, list.ind( 1 ), revResult );
             } );
-        } );
+        } ) );
     }
 }
-function listFoldl( yoke, init, list, func, then ) {
+function listFoldl( yoke, init, list, func, pkThen ) {
     return go( yoke, init, list );
     function go( yoke, init, list ) {
         if ( list.tag !== "cons" )
-            return then( yoke, init );
-        return runWaitTry( yoke, function ( yoke ) {
-            return func( yoke, init, list.ind( 0 ) );
-        }, function ( yoke, newInit ) {
+            return pkRet( yoke, pkThen, init );
+        return func( yoke, init, list.ind( 0 ),
+            pkBubble( pkThen, function ( yoke, newInit ) {
+            
             return go( yoke, newInit, list.ind( 1 ) );
-        } );
+        } ) );
     }
 }
 function listFoldlJsAsync( yoke, init, list, func, then ) {
@@ -623,65 +608,46 @@ function listFoldlJs( yoke, init, list, func, then ) {
         return then( yoke, result );
     } );
 }
-function listMap( yoke, list, func, then ) {
-    return listFoldl( yoke, pkNil, list, function (
-        yoke, revResults, origElem ) {
+function listMap( yoke, list, func, pkThen ) {
+    return listFoldl( yoke, pkNil, list,
+        function ( yoke, revResults, origElem, pkThen ) {
         
-        return runWaitTry( yoke, function ( yoke ) {
-            return func( yoke, origElem );
-        }, function ( yoke, resultElem ) {
-            return pkRet( yoke, pkCons( resultElem, revResults ) );
-        } );
-    }, function ( yoke, revResults ) {
-        return listRev( yoke, revResults, function ( yoke, results ) {
-            return then( yoke, results );
-        } );
-    } );
-}
-function listMappend( yoke, list, func, then ) {
-    return listMap( yoke, list, function ( yoke, elem ) {
-        return func( yoke, elem );
-    }, function ( yoke, resultLists ) {
-        return listFlattenOnce( yoke, resultLists,
-            function ( yoke, result ) {
+        return func( yoke, origElem,
+            pkBubble( pkThen, function ( yoke, resultElem ) {
             
-            return then( yoke, result );
-        } );
-    } );
+            return pkRet( yoke, pkThen,
+                pkCons( resultElem, revResults ) );
+        } ) )
+    }, pkBubble( pkThen, function ( yoke, revResults ) {
+        return listRev( yoke, revResults, pkThen );
+    } ) );
 }
-function listKeepAsync( yoke, list, func, then ) {
-    return listMappend( yoke, list, function ( yoke, elem ) {
-        return func( yoke, elem, function ( yoke, keep ) {
-            return pkRet( yoke, keep ? pkList( elem ) : pkNil );
-        } );
-    }, function ( yoke, result ) {
-        return then( yoke, result );
-    } );
+function listMappend( yoke, list, func, pkThen ) {
+    return listMap( yoke, list, func,
+        pkBubble( pkThen, function ( yoke, resultLists ) {
+        
+        return listFlattenOnce( yoke, resultLists, pkThen );
+    } ) );
 }
-function listKeep( yoke, list, func, then ) {
-    return listKeepAsync( yoke, list, function ( yoke, elem, then ) {
-        return then( yoke, func( elem ) );
-    }, function ( yoke, result ) {
-        return then( yoke, result );
-    } );
+function listKeep( yoke, list, func, pkThen ) {
+    return listMappend( yoke, list, function ( yoke, elem, pkThen ) {
+        return pkRet( yoke, pkThen,
+            func( elem ) ? pkList( elem ) : pkNil );
+    }, pkThen );
 }
-function listCount( yoke, list, func, then ) {
-    return listFoldl( yoke, pkNil, list, function (
-        yoke, count, elem ) {
+function listCount( yoke, list, func, pkThen ) {
+    return listFoldl( yoke, pkNil, list,
+        function ( yoke, count, elem, pkThen ) {
         
         if ( func( elem ) )
-            return pkRet( yoke, pk( "succ", count ) );
-        return pkRet( yoke, count );
-    }, function ( yoke, count ) {
-        return then( yoke, count );
-    } );
+            return pkRet( yoke, pkThen, pk( "succ", count ) );
+        return pkRet( yoke, pkThen, count );
+    }, pkThen );
 }
 function listLen( yoke, list, then ) {
     return listCount( yoke, list, function ( elem ) {
         return true;
-    }, function ( yoke, count ) {
-        return then( yoke, count );
-    } );
+    }, pkBubbleAssert( then ) );
 }
 function listAnyAsync( yoke, list, func, then ) {
     if ( list.tag !== "cons" )
@@ -716,74 +682,65 @@ function listEach( yoke, list, func, then ) {
         return then( yoke );
     } );
 }
-function listMapMultiWithLen( yoke, nat, lists, func, then ) {
+function listMapMultiWithLen( yoke, nat, lists, func, pkThen ) {
     return go( yoke, nat, lists, pkNil );
     function go( yoke, nat, lists, revResults ) {
         if ( nat.tag !== "succ" )
-            return listRev( yoke, revResults,
-                function ( yoke, results ) {
+            return listRev( yoke, revResults, pkThen );
+        return listMap( yoke, lists, function ( yoke, list, pkThen ) {
+            return pkRet( yoke, pkThen, list.ind( 0 ) );
+        }, pkBubble( pkThen, function ( yoke, firsts ) {
+            return listMap( yoke, lists,
+                function ( yoke, list, pkThen ) {
                 
-                return then( yoke, results );
-            } );
-        return listMap( yoke, lists, function ( yoke, list ) {
-            return pkRet( yoke, list.ind( 0 ) );
-        }, function ( yoke, firsts ) {
-            return listMap( yoke, lists, function ( yoke, list ) {
-                return pkRet( yoke, list.ind( 1 ) );
-            }, function ( yoke, rests ) {
-                return runWaitTry( yoke, function ( yoke ) {
-                    return func( yoke, firsts );
-                }, function ( yoke, resultElem ) {
+                return pkRet( yoke, pkThen, list.ind( 1 ) );
+            }, pkBubble( pkThen, function ( yoke, rests ) {
+                return func( yoke, firsts,
+                    pkBubble( pkThen, function ( yoke, resultElem ) {
+                    
                     return go( yoke, nat.ind( 0 ), rests,
                         pkCons( resultElem, revResults ) );
-                } );
-            } );
-        } );
+                } ) );
+            } ) );
+        } ) );
     }
 }
-function listMapMulti( yoke, lists, func, then ) {
+function listMapMulti( yoke, lists, func, pkThen ) {
     if ( lists.tag !== "cons" )
         throw new Error();
     return listLen( yoke, lists.ind( 0 ), function ( yoke, len ) {
-        return listMapMultiWithLen( yoke, len, lists,
-            function ( yoke, elems ) {
-            
-            return func( yoke, elems );
-        }, function ( yoke, result ) {
-            return then( yoke, result );
-        } );
+        return listMapMultiWithLen( yoke, len, lists, func, pkThen );
     } );
 }
-function listMapTwo( yoke, a, b, func, then ) {
+function listMapTwo( yoke, a, b, func, pkThen ) {
     return listMapMulti( yoke, pkList( a, b ),
-        function ( yoke, elems ) {
+        function ( yoke, elems, pkThen ) {
         
-        return func( yoke, listGet( elems, 0 ), listGet( elems, 1 ) );
-    }, function ( yoke, result ) {
-        return then( yoke, result );
-    } );
+        return func( yoke,
+            listGet( elems, 0 ), listGet( elems, 1 ), pkThen );
+    }, pkThen );
 }
 
-function pkAssertLetList( yoke, list, nat, then ) {
+function pkAssertLetList( yoke, list, nat, pkThen ) {
     return listLenIsNat( yoke, list, nat, function ( yoke, valid ) {
         if ( !valid )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Got the wrong number of elements when " +
                 "destructuring a list" );
-        return then( yoke, pkNil );
+        return pkRet( yoke, pkThen, pkNil );
     } );
 }
 
-function toUnqualifiedName( yoke, x, then ) {
-    return runWaitTry( yoke, function ( yoke ) {
-        return callMethod( yoke, "to-unqualified-name", pkList( x ) );
-    }, function ( yoke, name ) {
+function toUnqualifiedName( yoke, x, pkThen ) {
+    return callMethod( yoke, "to-unqualified-name", pkList( x ),
+        pkBubble( pkThen, function ( yoke, name ) {
+        
         if ( !isUnqualifiedName( name ) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Returned from to-unqualified-name with a value " +
                 "that wasn't an unqualified name" );
-        return then( yoke, name );
-    } );
+        return pkRet( yoke, pkThen, name );
+    } ) );
 }
 
 function isEnoughGetTineShallow( x ) {
@@ -801,42 +758,42 @@ function isEnoughGetTineDeep( yoke, x, then ) {
 }
 function pkGetTineLinear( names, captures, func ) {
     return pkList( names, pkfnLinear( captures,
-        function ( yoke, captures, args ) {
+        function ( yoke, captures, args, pkThen ) {
         
         if ( !listLenIs( args, 1 ) )
-            return pkErrLen( yoke, args,
+            return pkErrLen( yoke, pkThen, args,
                 "Called a get-tine function" );
         var essences = listGet( args, 0 );
         if ( !isList( essences ) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called a get-tine function with a non-list list " +
                 "of essences" );
         return listLenEq( yoke, names, essences,
             function ( yoke, areEq ) {
             
             if ( !areEq )
-                return pkErr( yoke,
+                return pkErr( yoke, pkThen,
                     "Called a get-tine function with a list of " +
                     "essences that wasn't the right length" );
             
-            return func( yoke, captures, essences );
+            return func( yoke, captures, essences, pkThen );
         } );
     } ) );
 }
 function pkGetTine( names, func ) {
     return pkGetTineLinear( names, pkNil,
-        function ( yoke, captures, essences ) {
+        function ( yoke, captures, essences, pkThen ) {
         
-        return func( yoke, essences );
+        return func( yoke, essences, pkThen );
     } );
 }
 
-function pkDup( yoke, val, count, then ) {
+function pkDup( yoke, val, count, pkThen ) {
     
     // If we're only trying to get one duplicate, we already have our
     // answer, regardless of whether the value is linear.
     if ( count.tag === "succ" && count.ind( 0 ).tag === "nil" )
-        return then( yoke, pkList( val ) );
+        return pkRet( yoke, pkThen, pkList( val ) );
     
     if ( !val.isLinear() ) {
         // NOTE: This includes tags "nil", "string", "string-name",
@@ -856,119 +813,107 @@ function pkDup( yoke, val, count, then ) {
                 } );
         } );
     if ( val.tag === "nonlinear-as-linear" )
-        return runWaitTry( yoke, function ( yoke ) {
-            return callMethod( yoke, "call", pkList(
-                val.special.duplicator,
-                pkList( val.special.innerValue, count )
-            ) );
-        }, function ( yoke, innerValues ) {
+        return callMethod( yoke, "call", pkList(
+            val.special.duplicator,
+            pkList( val.special.innerValue, count )
+        ), pkBubble( pkThen, function ( yoke, innerValues ) {
             if ( !isList( innerValues ) )
-                return pkErr( yoke,
+                return pkErr( yoke, pkThen,
                     "Got a non-list from a linear value's custom " +
                     "duplicator function." );
             return listLenIsNat( yoke, innerValues, count,
                 function ( yoke, correct ) {
                 
                 if ( !correct )
-                    return pkErr( yoke,
+                    return pkErr( yoke, pkThen,
                         "Got a list of incorrect length from a " +
                         "linear value's custom duplicator function."
                         );
                 return listMap( yoke, innerValues,
-                    function ( yoke, innerValue ) {
+                    function ( yoke, innerValue, pkThen ) {
                     
-                    return pkRet( yoke, pkNonlinearAsLinear(
+                    return pkRet( yoke, pkThen, pkNonlinearAsLinear(
                         innerValue,
                         val.special.duplicator,
                         val.special.unwrapper
                     ) );
-                }, function ( yoke, outerValues ) {
-                    return then( yoke, outerValues );
-                } );
+                }, pkThen );
             } );
-        } );
+        } ) );
     return withDups( pkGetArgs( val ), function ( args ) {
         return pkRebuild( val, args );
     } );
     function withDups( args, rebuild ) {
-        return listMap( yoke, args, function ( yoke, arg ) {
-            return pkDup( yoke, arg, count,
-                function ( yoke, argDups ) {
-                
-                return pkRet( yoke, argDups );
-            } );
-        }, function ( yoke, argsDuplicates ) {
+        return listMap( yoke, args, function ( yoke, arg, pkThen ) {
+            return pkDup( yoke, arg, count, pkThen );
+        }, pkBubble( pkThen, function ( yoke, argsDuplicates ) {
             return listMapMultiWithLen( yoke, count, argsDuplicates,
-                function ( yoke, args ) {
+                function ( yoke, args, pkThen ) {
                 
-                return pkRet( yoke, rebuild( args ) );
-            }, function ( yoke, result ) {
-                return then( yoke, result );
-            } );
-        } );
+                return pkRet( yoke, pkThen, rebuild( args ) );
+            }, pkThen );
+        } ) );
     }
 }
-function pkDrop( yoke, val, then ) {
-    return pkDup( yoke, val, pkNil, function ( yoke, nothing ) {
+function pkDrop( yoke, val, pkThen, then ) {
+    return pkDup( yoke, val, pkNil,
+        pkBubble( pkThen, function ( yoke, ignoredNil ) {
+        
         return then( yoke );
-    } );
+    } ) );
 }
-function pkUnwrap( yoke, val, then ) {
+function pkUnwrap( yoke, val, pkThen ) {
     if ( val.tag !== "nonlinear-as-linear" )
-        return pkErr( yoke,
+        return pkErr( yoke, pkThen,
             "Tried to unwrap a value that wasn't a " +
             "nonlinear-as-linear" );
-    return runWaitTry( yoke, function ( yoke ) {
-        return callMethod( yoke, "call", pkList(
-            val.special.unwrapper,
-            pkList( val.special.innerValue )
-        ) );
-    }, function ( yoke, unwrapped ) {
+    return callMethod( yoke, "call", pkList(
+        val.special.unwrapper,
+        pkList( val.special.innerValue )
+    ), pkBubble( pkThen, function ( yoke, unwrapped ) {
         if ( unwrapped.isLinear() )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Unwrapped a value and got a linear value" );
-        return then( yoke, unwrapped );
-    } );
+        return pkRet( yoke, pkThen, unwrapped );
+    } ) );
 }
-function fulfillGetTine( yoke, getTine, essences, then ) {
+function fulfillGetTine( yoke, getTine, essences, pkThen, then ) {
     return listFoldl( yoke,
-        pkList( pkNil, essences ), listGet( getTine, 0 ),
-        function ( yoke, takenRevAndNot, name ) {
-            var notTaken = listGet( takenRevAndNot, 1 );
-            if ( notTaken.tag !== "cons" )
-                return pkErr( yoke,
-                    "An internal fulfillGetTine operation " +
-                    "encountered fewer input essences than " +
-                    "required by the get-tines." );
-            return pkRet( yoke, pkList(
-                pkCons( notTaken.ind( 0 ),
-                    listGet( takenRevAndNot, 0 ) ),
-                notTaken.ind( 1 )
-            ) );
-        }, function ( yoke, takenRevAndNot ) {
+        pkList( pkNil, essences ),
+        listGet( getTine, 0 ),
+        function ( yoke, takenRevAndNot, name, pkThen ) {
         
-        return listRev( yoke, listGet( takenRevAndNot, 0 ),
-            function ( yoke, taken ) {
-            
-            return runWaitTry( yoke, function ( yoke ) {
-                return callMethod( yoke, "call",
-                    pkList(
-                        listGet( getTine, 1 ), pkList( taken ) ) );
-            }, function ( yoke, resultEssence ) {
-                return then( yoke,
-                    resultEssence, listGet( takenRevAndNot, 1 ) );
-            } );
-        } );
-    } );
+        var notTaken = listGet( takenRevAndNot, 1 );
+        if ( notTaken.tag !== "cons" )
+            return pkErr( yoke, pkThen,
+                "An internal fulfillGetTine operation encountered " +
+                "fewer input essences than required by the get-tines."
+                );
+        return pkRet( yoke, pkThen, pkList(
+            pkCons( notTaken.ind( 0 ), listGet( takenRevAndNot, 0 ) ),
+            notTaken.ind( 1 )
+        ) );
+    }, pkBubble( pkThen, function ( yoke, takenRevAndNot ) {
+    return listRev( yoke, listGet( takenRevAndNot, 0 ),
+        pkBubble( pkThen, function ( yoke, taken ) {
+    return callMethod( yoke, "call",
+        pkList( listGet( getTine, 1 ), pkList( taken ) ),
+        pkBubble( pkThen, function ( yoke, resultEssence ) {
+    
+    return then( yoke, resultEssence, listGet( takenRevAndNot, 1 ) );
+    
+    } ) );
+    } ) );
+    } ) );
 }
-function fulfillGetTines( yoke, getTines, essences, then ) {
+function fulfillGetTines( yoke, getTines, essences, pkThen, then ) {
     if ( getTines.tag !== "cons" )
         return then( yoke, pkNil, essences );
-    return fulfillGetTine( yoke, getTines.ind( 0 ), essences,
+    return fulfillGetTine( yoke, getTines.ind( 0 ), essences, pkThen,
         function ( yoke, outEssence, inEssencesRemaining ) {
         
         return fulfillGetTines( yoke,
-            getTines.ind( 1 ), inEssencesRemaining,
+            getTines.ind( 1 ), inEssencesRemaining, pkThen,
             function ( yoke, outEssences, inEssencesRemaining ) {
             
             return runWaitOne( yoke, function ( yoke ) {
@@ -980,7 +925,7 @@ function fulfillGetTines( yoke, getTines, essences, then ) {
     } );
 }
 function makeSubEssenceUnderMappendedArgs( yoke,
-    expr, nonlocalGetForkOrNull, gensymBase, argList, then ) {
+    expr, nonlocalGetForkOrNull, gensymBase, argList, pkThen, then ) {
     
     function getEntry( argMap, pkName ) {
         var jsName = pkName.special.unqualifiedNameJson;
@@ -993,7 +938,8 @@ function makeSubEssenceUnderMappendedArgs( yoke,
     // building this result, also initialize `argMap` so we can easily
     // detect whether a name in `captures` is local or nonlocal later
     // on.
-    return listRev( yoke, argList, function ( yoke, revArgList ) {
+    return listRev( yoke, argList,
+        pkBubble( pkThen, function ( yoke, revArgList ) {
     return listFoldlJsAsync( yoke,
         { argMap: strMap(), maybeArgList: pkNil },
         revArgList,
@@ -1014,18 +960,19 @@ function makeSubEssenceUnderMappendedArgs( yoke,
             } );
     }, function ( yoke, maybeArgState ) {
     return listMappend( yoke, maybeArgState.maybeArgList,
-        function ( yoke, maybePkName ) {
+        function ( yoke, maybePkName, pkThen ) {
         
         if ( maybePkName.tag === "yep" )
-            return pkRet( yoke, pkList( maybePkName.ind( 0 ) ) );
+            return pkRet( yoke, pkThen,
+                pkList( maybePkName.ind( 0 ) ) );
         else
-            return pkRet( yoke, pkNil );
-    }, function ( yoke, latestOccurrenceArgList ) {
+            return pkRet( yoke, pkThen, pkNil );
+    }, pkBubble( pkThen, function ( yoke, latestOccurrenceArgList ) {
     
     if ( nonlocalGetForkOrNull === null )
         return next( yoke, expr );
-    return runWaitTryGetmacFork( yoke, "macroexpand-to-fork",
-        function ( yoke ) {
+    return runWaitTryGetmacFork( yoke, pkThen, "macroexpand-to-fork",
+        function ( yoke, pkThen ) {
         
         return callMethod( yoke, "macroexpand-to-fork", pkList(
             expr,
@@ -1036,7 +983,7 @@ function makeSubEssenceUnderMappendedArgs( yoke,
                             void 0 );
                 } ),
             gensymBase
-        ) );
+        ), pkThen );
     }, function ( yoke, innerGetTine, maybeMacro ) {
         return next( yoke, innerGetTine );
     } );
@@ -1047,7 +994,7 @@ function makeSubEssenceUnderMappendedArgs( yoke,
     
     return listKeep( yoke, captures, function ( pkName ) {
         return getEntry( maybeArgState.argMap, pkName ) === void 0;
-    }, function ( yoke, nonlocalNames ) {
+    }, pkBubble( pkThen, function ( yoke, nonlocalNames ) {
     return listLen( yoke, nonlocalNames,
         function ( yoke, lenNonlocalNames ) {
     
@@ -1082,14 +1029,14 @@ function makeSubEssenceUnderMappendedArgs( yoke,
             } );
         }, function ( yoke, state2 ) {
             return listRev( yoke, state2.revIndices,
-                function ( yoke, indices ) {
+                pkBubbleAssert( function ( yoke, indices ) {
                 
                 return then( yoke, {
                     argMap: state.argMap.plusEntry( jsName,
                         { dups: entry.dups, indices: indices } ),
                     i: state2.i
                 } );
-            } );
+            } ) );
         } );
     }, function ( yoke, argMapState ) {
     return listFoldlJsAsync( yoke,
@@ -1127,108 +1074,109 @@ function makeSubEssenceUnderMappendedArgs( yoke,
         }
     }, function ( yoke, revInEssencesState ) {
     return listRev( yoke, revInEssencesState.revInEssences,
-        function ( yoke, inEssences ) {
-    return runWaitTry( yoke, function ( yoke ) {
-        return callMethod( yoke, "call",
-            pkList( cont, pkList( inEssences ) ) );
-    }, function ( yoke, outEssence ) {
+        pkBubble( pkThen, function ( yoke, inEssences ) {
+    return callMethod( yoke, "call",
+        pkList( cont, pkList( inEssences ) ),
+        pkBubble( pkThen, function ( yoke, outEssence ) {
     return listMap( yoke, maybeArgState.maybeArgList,
-        function ( yoke, maybePkName ) {
+        function ( yoke, maybePkName, pkThen ) {
         
         if ( maybePkName.tag === "yep" )
-            return pkRet( yoke,
+            return pkRet( yoke, pkThen,
                 getEntry( revInEssencesState.argMap,
                     maybePkName.ind( 0 ) ).dups );
         else
-            return pkRet( yoke, pkNil );
-    }, function ( yoke, dupsList ) {
+            return pkRet( yoke, pkThen, pkNil );
+    }, pkBubble( pkThen, function ( yoke, dupsList ) {
     
     return then( yoke, nonlocalNames, dupsList, outEssence );
     
-    } );
-    } );
-    } );
+    } ) );
+    } ) );
+    } ) );
     } );
     } );
     } );
     
     } );
-    } );
+    } ) );
     
     }
     
+    } ) );
     } );
-    } );
-    } );
+    } ) );
 }
 function forkGetter( nameForError ) {
-    return pkfn( function ( yoke, args ) {
+    return pkfn( function ( yoke, args, pkThen ) {
         // NOTE: This reads definitions. We maintain the metaphor that
         // we work with an immutable snapshot of the definitions, so
         // we may want to refactor this to be closer to that metaphor
         // someday.
         if ( !listLenIs( args, 1 ) )
-            return pkErrLen( yoke, args, "Called " + nameForError );
+            return pkErrLen( yoke, pkThen, args,
+                "Called " + nameForError );
         var name = listGet( args, 0 );
         
         if ( isQualifiedName( name ) )
             return handleQualifiedName( yoke, name );
         else
             return toUnqualifiedName( yoke, name,
-                function ( yoke, name ) {
+                pkBubble( pkThen, function ( yoke, name ) {
                 
-                return runWaitTry( yoke, function ( yoke ) {
-                    return runRet( yoke,
-                        yoke.pkRuntime.qualifyName( name ) );
-                }, function ( yoke, name ) {
+                return yoke.rider.pkRuntime.qualifyName( yoke, name,
+                    pkBubble( pkThen, function ( yoke, name ) {
+                    
                     return handleQualifiedName( yoke, name );
-                } );
-            } );
+                } ) );
+            } ) );
         
         function handleQualifiedName( yoke, name ) {
-            return runWaitTry( yoke, function ( yoke ) {
-                return runRet( yoke,
-                    yoke.pkRuntime.getMacro( name ) );
-            }, function ( yoke, maybeMacro ) {
-                return pkRet( yoke, pk( "getmac-fork",
-                    pkGetTine( pkNil, function ( yoke, essences ) {
-                        return pkRet( yoke,
+            return yoke.rider.pkRuntime.getMacro( yoke, name,
+                pkBubble( pkThen, function ( yoke, maybeMacro ) {
+                
+                return pkRet( yoke, pkThen, pk( "getmac-fork",
+                    pkGetTine( pkNil,
+                        function ( yoke, essences, pkThen ) {
+                        
+                        return pkRet( yoke, pkThen,
                             pk( "main-essence", name ) );
                     } ),
                     maybeMacro
                 ) );
-            } );
+            } ) );
         }
     } );
 }
 function deriveGetFork( nonlocalGetFork, isLocalName ) {
-    return pkfn( function ( yoke, args ) {
+    return pkfn( function ( yoke, args, pkThen ) {
         if ( !listLenIs( args, 1 ) )
-            return pkErrLen( yoke, args, "Called a get-fork" );
+            return pkErrLen( yoke, pkThen, args,
+                "Called a get-fork" );
         var name = listGet( args, 0 );
         
         if ( isQualifiedName( name ) )
             return handleNonlocal( yoke );
         else
             return toUnqualifiedName( yoke, name,
-                function ( yoke, name ) {
+                pkBubble( pkThen, function ( yoke, name ) {
                 
                 return isLocalName( yoke, name,
                     function ( yoke, isLocal ) {
                     
                     if ( !isLocal )
                         return handleNonlocal( yoke );
-                    return pkRet( yoke, pk( "getmac-fork",
+                    return pkRet( yoke, pkThen, pk( "getmac-fork",
                         pkGetTine( pkList( name ),
-                            function ( yoke, essences ) {
+                            function ( yoke, essences, pkThen ) {
                             
-                            return pkRet( yoke,
+                            return pkRet( yoke, pkThen,
                                 listGet( essences, 0 ) );
                         } ),
                         pkNil
                     ) );
                 } );
-            } );
+            } ) );
         
         function handleNonlocal( yoke ) {
             // NOTE: We don't verify the output of nonlocalGetFork.
@@ -1242,21 +1190,21 @@ function deriveGetFork( nonlocalGetFork, isLocalName ) {
             // macros can pass forks to them.)
             return runWaitOne( yoke, function ( yoke ) {
                 return callMethod( yoke, "call",
-                    pkList( nonlocalGetFork, pkList( name ) ) );
+                    pkList( nonlocalGetFork, pkList( name ) ),
+                    pkThen );
             } );
         }
     } );
 }
-function runWaitTryGetmacFork( yoke, nameForError, func, then ) {
-    return runWaitTry( yoke, function ( yoke ) {
-        return func( yoke );
-    }, function ( yoke, fork ) {
-        return runWaitTry( yoke, function ( yoke ) {
-            return callMethod( yoke, "fork-to-getmac",
-                pkList( fork ) );
-        }, function ( yoke, results ) {
+function runWaitTryGetmacFork( yoke, pkThen,
+    nameForError, func, then ) {
+    
+    return func( yoke, pkBubble( pkThen, function ( yoke, fork ) {
+        return callMethod( yoke, "fork-to-getmac", pkList( fork ),
+            pkBubble( pkThen, function ( yoke, results ) {
+            
             if ( !(isList( results ) && listLenIs( results, 2 )) )
-                return pkErr( yoke,
+                return pkErr( yoke, pkThen,
                     "Got a non-pair from " + nameForError );
             var getTine = listGet( results, 0 );
             var maybeMacro = listGet( results, 1 );
@@ -1271,75 +1219,77 @@ function runWaitTryGetmacFork( yoke, nameForError, func, then ) {
                 function ( yoke, valid ) {
                 
                 if ( !valid )
-                    return pkErr( yoke,
+                    return pkErr( yoke, pkThen,
                         "Got an invalid get-tine from " + nameForError
                         );
                 if ( maybeMacro.tag === "nil" ) {
                     // Do nothing.
                 } else if ( maybeMacro.tag !== "yep" ) {
-                    return pkErr( yoke,
+                    return pkErr( yoke, pkThen,
                         "Got a non-maybe value for the macro " +
                         "result of " + nameForError );
                 } else if ( maybeMacro.isLinear() ) {
-                    return pkErr( yoke,
+                    return pkErr( yoke, pkThen,
                         "Got a linear value for the macro result " +
                         "of " + nameForError );
                 }
                 return then( yoke, getTine, maybeMacro );
             } );
-        } );
-    } );
+        } ) );
+    } ) );
 }
-var nonMacroMacroexpander = pkfn( function ( yoke, args ) {
+var nonMacroMacroexpander = pkfn( function ( yoke, args, pkThen ) {
     if ( !listLenIs( args, 4 ) )
-        return pkErrLen( yoke, args,
+        return pkErrLen( yoke, pkThen, args,
             "Called a non-macro's macroexpander" );
     var fork = listGet( args, 0 );
     var argsList = listGet( args, 1 );
     var getFork = listGet( args, 2 );
     var gensymBase = listGet( args, 3 );
     if ( !isList( argsList ) )
-        return pkErr( yoke,
+        return pkErr( yoke, pkThen,
             "Called a non-macro's macroexpander with a non-list " +
             "args list" );
     if ( getFork.isLinear() )
-        return pkErr( yoke,
+        return pkErr( yoke, pkThen,
             "Called a non-macro's macroexpander with a linear " +
             "get-fork" );
     if ( !isUnqualifiedName( gensymBase ) )
-        return pkErr( yoke,
+        return pkErr( yoke, pkThen,
             "Called a non-macro's macroexpander with a gensym base " +
             "that wasn't an unqualified name" );
-    return runWaitTryGetmacFork( yoke,
+    return runWaitTryGetmacFork( yoke, pkThen,
         "the fork parameter to a non-macro's macroexpander",
-        function ( yoke ) {
+        function ( yoke, pkThen ) {
         
-        return pkRet( yoke, fork );
+        return pkRet( yoke, pkThen, fork );
     }, function ( yoke, funcGetTine, funcMaybeMacro ) {
         return parseList( yoke, argsList, pkNil );
         function parseList( yoke, list, revGetTinesSoFar ) {
             if ( list.tag !== "cons" )
                 return listRev( yoke, revGetTinesSoFar,
-                    function ( yoke, getTines ) {
+                    pkBubble( pkThen, function ( yoke, getTines ) {
                     
                     var allGetTines = pkCons( funcGetTine, getTines );
                     return listMappend( yoke, allGetTines,
-                        function ( yoke, getTine ) {
+                        function ( yoke, getTine, pkThen ) {
                         
-                        return pkRet( yoke, listGet( getTine, 0 ) );
-                    }, function ( yoke, allNames ) {
+                        return pkRet( yoke, pkThen,
+                            listGet( getTine, 0 ) );
+                    }, pkBubble( pkThen, function ( yoke, allNames ) {
                         // <indentation-reset>
-return pkRet( yoke, pk( "getmac-fork",
+return pkRet( yoke, pkThen, pk( "getmac-fork",
     pkGetTineLinear( allNames, pkList( pkYep( allGetTines ) ),
-        function ( yoke, captures, allInEssences ) {
+        function ( yoke, captures, allInEssences, pkThen ) {
         
         var allGetTines = listGet( captures, 0 ).ind( 0 );
         return fulfillGetTines( yoke, allGetTines, allInEssences,
+            pkThen,
             function ( yoke, allOutEssences, inEssencesRemaining ) {
             
             if ( !listLenIs( inEssencesRemaining, 0 ) )
                 throw new Error();
-            return pkRet( yoke,
+            return pkRet( yoke, pkThen,
                 pk( "call-essence",
                     allOutEssences.ind( 0 ),
                     allOutEssences.ind( 1 ) ) );
@@ -1348,14 +1298,15 @@ return pkRet( yoke, pk( "getmac-fork",
     pkNil
 ) );
                         // </indentation-reset>
-                    } );
-                } );
-            return runWaitTryGetmacFork( yoke,
+                    } ) );
+                } ) );
+            return runWaitTryGetmacFork( yoke, pkThen,
                 "macroexpand-to-fork",
-                function ( yoke ) {
+                function ( yoke, pkThen ) {
                 
                 return callMethod( yoke, "macroexpand-to-fork",
-                    pkList( list.ind( 0 ), getFork, gensymBase ) );
+                    pkList( list.ind( 0 ), getFork, gensymBase ),
+                    pkThen );
             }, function ( yoke, getTine, maybeMacro ) {
                 return parseList( yoke, list.ind( 1 ),
                     pkCons( getTine, revGetTinesSoFar ) );
@@ -1363,84 +1314,66 @@ return pkRet( yoke, pk( "getmac-fork",
         }
     } );
 } );
-function callMethod( yoke, jsMethodName, args ) {
-    return yoke.pkRuntime.callMethodRaw( yoke,
+function callMethod( yoke, jsMethodName, args, pkThen ) {
+    return yoke.rider.pkRuntime.callMethodRaw( yoke,
         pkQualifiedName( pkStrNameUnsafeMemoized( jsMethodName ) ),
-        args );
+        args,
+        pkThen );
 }
-function hasDefinerToken( yoke, then ) {
-    var yokeRider = yoke.yokeRider;
-    var pureYoke = yokeWithRider( yoke, pk( "pure-yoke" ) );
-    return runWaitTry( pureYoke, function ( pureYoke ) {
-        return callMethod( pureYoke, "yoke-get-definer-token",
-            pkList( yokeRider ) );
-    }, function ( pureYoke, maybeDefinerToken ) {
-        if ( pureYoke.yokeRider.tag !== "pure-yoke" )
-            return pkErr( yoke,
+function hasDefinerToken( yoke, pkThen, then ) {
+    var yokeRider = yoke.rider.pkRider;
+    var pureYoke = yokeWithPkRider( yoke, pk( "pure-yoke" ) );
+    return callMethod( pureYoke, "yoke-get-definer-token",
+        pkList( yokeRider ),
+        pkBubble( pkThen, function ( pureYoke, maybeDefinerToken ) {
+        
+        if ( pureYoke.rider.pkRider.tag !== "pure-yoke" )
+            return pkErr( yoke, pkThen,
                 "Returned from yoke-get-definer-token with a yoke " +
                 "other than the given one" );
         
         if ( maybeDefinerToken.tag === "yep" ) {
             var definerToken = maybeDefinerToken.ind( 0 );
             if ( definerToken.tag !== "token" )
-                return pkErr( yoke,
+                return pkErr( yoke, pkThen,
                     "Returned from yoke-get-definer-token with a " +
                     "non-token" );
             if ( !definerToken.special.jsPayload.canDefine )
-                return pkErr( yoke,
+                return pkErr( yoke, pkThen,
                     "Returned from yoke-get-definer-token with a " +
                     "token other than the current definer token" );
             return then( yoke, true );
         } else if ( maybeDefinerToken.tag === "nil" ) {
             return then( yoke, false );
         } else {
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Returned from yoke-get-definer-token with a " +
                 "non-maybe" );
         }
-    } );
+    } ) );
 }
-function runSyncYoke( maybeYokeAndResult ) {
-    var deferred = [];
-    var finalYokeAndResult = null;
-    syncYokeCall( maybeYokeAndResult, function ( actionToDefer ) {
-        deferred.push( actionToDefer );
-    }, function ( yokeAndResult ) {
-        if ( deferred.length !== 0 || finalYokeAndResult !== null )
-            throw new Error();
-        finalYokeAndResult = yokeAndResult;
-    } );
-    while ( deferred.length !== 0 )
-        deferred.shift()();
-    if ( deferred.length !== 0 || finalYokeAndResult === null )
-        throw new Error();
-    return finalYokeAndResult;
-}
-function macroexpand( yoke, expr ) {
-    return runWaitTryGetmacFork( yoke, "macroexpand-to-fork",
-        function ( yoke ) {
+function macroexpand( yoke, expr, pkThen ) {
+    return runWaitTryGetmacFork( yoke, pkThen, "macroexpand-to-fork",
+        function ( yoke, pkThen ) {
         
         return callMethod( yoke, "macroexpand-to-fork", pkList(
             expr,
             forkGetter( "the top-level get-fork" ),
             pkStrNameUnsafeMemoized( "root-gensym-base" )
-        ) );
+        ), pkThen );
     }, function ( yoke, getTine, maybeMacro ) {
         if ( !listLenIs( listGet( getTine, 0 ), 0 ) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Got a top-level macroexpansion result with captures"
                 );
-        return runWaitTry( yoke, function ( yoke ) {
-            return callMethod( yoke, "call",
-                pkList( listGet( getTine, 1 ), pkList( pkNil ) ) );
-        }, function ( yoke, essence ) {
-            return pkRet( yoke, essence );
-        } );
+        return callMethod( yoke, "call",
+            pkList( listGet( getTine, 1 ), pkList( pkNil ) ),
+            pkThen );
     } );
 }
-function macroexpandReaderExpr( yoke, readerExpr ) {
+function macroexpandReaderExpr( yoke, readerExpr, pkThen ) {
     return convertExpr( yoke, readerExpr, function ( yoke, conses ) {
-        return macroexpand( yoke, conses );
+        return macroexpand( yoke, conses, pkThen );
     } );
     function convertString( yoke, elements, stringSoFar, then ) {
         return runWaitOne( yoke, function ( yoke ) {
@@ -1507,9 +1440,9 @@ function macroexpandReaderExpr( yoke, readerExpr ) {
 // more generalized way.
 // TODO: See if we should be temporarily augmenting the `yokeRider`,
 // rather than temporarily replacing it.
-function withTopLevelEffects( yoke, body ) {
+function withTopLevelEffects( yoke, body, pkThen ) {
     var empoweredYoke =
-        yokeWithRider( yoke, pk( "definer-yoke", pkToken( {
+        yokeWithPkRider( yoke, pk( "definer-yoke", pkToken( {
             stringRep: "definer",
             comparable: false,
             isMutableBox: false,
@@ -1520,29 +1453,30 @@ function withTopLevelEffects( yoke, body ) {
             canYield: false,
             coroutineNext: null
         } ) ) );
-    return runWaitTry( empoweredYoke, function ( empoweredYoke ) {
-        return body( empoweredYoke );
-    }, function ( empoweredYoke, result ) {
+    return body( empoweredYoke,
+        pkBubble( pkThen, function ( empoweredYoke, result ) {
+        
         var disempoweredYoke =
-            yokeWithRider( empoweredYoke, yoke.yokeRider );
-        if ( empoweredYoke.yokeRider.tag !== "definer-yoke" )
+            yokeWithPkRider( empoweredYoke, yoke.rider.pkRider );
+        if ( empoweredYoke.rider.pkRider.tag !== "definer-yoke" )
             return pkErr( disempoweredYoke,
                 "Returned from a top-level command with a yoke " +
                 "that wasn't a definer-yoke" );
-        var definerToken = empoweredYoke.yokeRider.ind( 0 );
+        var definerToken = empoweredYoke.rider.pkRider.ind( 0 );
         if ( !definerToken.special.jsPayload.canDefine )
             return pkErr( disempoweredYoke,
                 "Returned from a top-level command with a " +
                 "non-current definer token" );
         definerToken.special.jsPayload.canDefine = false;
-        return pkRet( disempoweredYoke, result );
-    } );
+        return pkRet( disempoweredYoke, pkThen, result );
+    } ) );
 }
-function interpretEssence( yoke, essence ) {
-    return withTopLevelEffects( yoke, function ( yoke ) {
+function interpretEssence( yoke, essence, pkThen ) {
+    return withTopLevelEffects( yoke, function ( yoke, pkThen ) {
         return callMethod( yoke, "essence-interpret",
-            pkList( essence, pkNil ) );
-    } );
+            pkList( essence, pkNil ),
+            pkThen );
+    }, pkThen );
 }
 
 var cachedNats = [];
@@ -1584,37 +1518,40 @@ function makePkRuntime() {
         self.defVal( globalName( name ), val );
     }
     function defFunc( name, arity, jsFunc ) {
-        defVal( name, pkfn( function ( yoke, args ) {
+        defVal( name, pkfn( function ( yoke, args, pkThen ) {
             if ( !listLenIs( args, arity ) )
-                return pkErrLen( yoke, args, "Called " + name );
+                return pkErrLen( yoke, pkThen, args,
+                    "Called " + name );
             return jsFunc.apply( {},
-                [ yoke ].concat( listToArrBounded( args, arity ) ) );
+                [ yoke, pkThen
+                    ].concat( listToArrBounded( args, arity ) ) );
         } ) );
     }
     function defMacro( name, body ) {
         self.defMacro( globalName( name ),
-            pkfn( function ( yoke, args ) {
+            pkfn( function ( yoke, args, pkThen ) {
             
             if ( !listLenIs( args, 4 ) )
-                return pkErrLen( yoke, args,
+                return pkErrLen( yoke, pkThen, args,
                     "Called " + name + "'s macroexpander" );
             var fork = listGet( args, 0 );
             var macroBody = listGet( args, 1 );
             var getFork = listGet( args, 2 );
             var gensymBase = listGet( args, 3 );
             if ( !isList( macroBody ) )
-                return pkErr( yoke,
+                return pkErr( yoke, pkThen,
                     "Called " + name + "'s macroexpander with a " +
                     "non-list macro body" );
             if ( getFork.isLinear() )
-                return pkErr( yoke,
+                return pkErr( yoke, pkThen,
                     "Called " + name + "'s macroexpander with a " +
                     "linear get-fork" );
             if ( !isUnqualifiedName( gensymBase ) )
-                return pkErr( yoke,
+                return pkErr( yoke, pkThen,
                     "Called " + name + "'s macroexpander with a " +
                     "gensym base that wasn't an unqualified name" );
-            return body( yoke, fork, macroBody, getFork, gensymBase );
+            return body( yoke,
+                fork, macroBody, getFork, gensymBase, pkThen );
         } ) );
     }
     function setStrictImpl( methodName, tagName, call ) {
@@ -1623,187 +1560,196 @@ function makePkRuntime() {
     }
     
     defTag( "cons", "first", "rest" );
-    defFunc( "cons", 2, function ( yoke, first, rest ) {
+    defFunc( "cons", 2, function ( yoke, pkThen, first, rest ) {
         if ( !isList( rest ) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called cons with a rest that wasn't a list" );
-        return pkRet( yoke, pkCons( first, rest ) );
+        return pkRet( yoke, pkThen, pkCons( first, rest ) );
     } );
     defTag( "succ", "pred" );
-    defFunc( "succ", 1, function ( yoke, pred ) {
+    defFunc( "succ", 1, function ( yoke, pkThen, pred ) {
         if ( !isNat( pred ) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called succ with a predecessor that wasn't a nat" );
-        return pkRet( yoke, pk( "succ", pred ) );
+        return pkRet( yoke, pkThen, pk( "succ", pred ) );
     } );
     defTag( "yep", "val" );
     defTag( "nope", "val" );
     defTag( "nil" );
     defTag( "string" );
-    defVal( "string", pkfn( function ( yoke, args ) {
-        return pkErr( yoke, "The string function has no behavior" );
+    defVal( "string", pkfn( function ( yoke, args, pkThen ) {
+        return pkErr( yoke, pkThen,
+            "The string function has no behavior" );
     } ) );
     defTag( "istring-cons", "prefix", "interpolation", "rest" );
     defFunc( "istring-cons", 3,
-        function ( yoke, prefix, interpolation, rest ) {
+        function ( yoke, pkThen, prefix, interpolation, rest ) {
         
         if ( prefix.tag !== "string" )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called istring-cons with a prefix that wasn't a " +
                 "string" );
         if ( !isIstring( rest ) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called istring-cons with a rest that wasn't an " +
                 "istring" );
-        return pkRet( yoke,
+        return pkRet( yoke, pkThen,
             pk( "istring-cons", prefix, interpolation, rest ) );
     } );
     defTag( "string-name", "string" );
-    defFunc( "string-name", 1, function ( yoke, string ) {
+    defFunc( "string-name", 1, function ( yoke, pkThen, string ) {
         if ( string.tag !== "string" )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called string-name with a non-string" );
-        return pkRet( yoke, pkStrNameRaw( string ) );
+        return pkRet( yoke, pkThen, pkStrNameRaw( string ) );
     } );
     defTag( "pair-name", "first", "second" );
-    defFunc( "pair-name", 2, function ( yoke, first, second ) {
+    defFunc( "pair-name", 2, function ( yoke, pkThen, first, second ) {
         if ( !(true
             && isUnqualifiedName( first )
             && isUnqualifiedName( second )
         ) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called pair-name with an element that wasn't an " +
                 "unqualified name" );
-        return pkRet( yoke, pkPairName( first, second ) );
+        return pkRet( yoke, pkThen, pkPairName( first, second ) );
     } );
     defTag( "qualified-name", "name" );
-    defFunc( "qualified-name", 1, function ( yoke, name ) {
+    defFunc( "qualified-name", 1, function ( yoke, pkThen, name ) {
         if ( !isUnqualifiedName( name ) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called qualified-name with a value that wasn't an " +
                 "unqualified name" );
-        return pkRet( yoke, pkQualifiedName( name ) );
+        return pkRet( yoke, pkThen, pkQualifiedName( name ) );
     } );
     defTag( "nonlinear-as-linear",
         "inner-value", "duplicator", "unwrapper" );
     defFunc( "nonlinear-as-linear", 3,
-        function ( yoke, innerValue, duplicator, unwrapper ) {
+        function ( yoke, pkThen, innerValue, duplicator, unwrapper ) {
         
         if ( innerValue.isLinear() )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called nonlinear-as-linear with an inner value  " +
                 "that was itself linear" );
         if ( duplicator.isLinear() )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called nonlinear-as-linear with a duplicator " +
                 "function that was itself linear" );
         if ( unwrapper.isLinear() )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called nonlinear-as-linear with an unwrapper " +
                 "function that was itself linear" );
-        return pkRet( yoke,
+        return pkRet( yoke, pkThen,
             pkNonlinearAsLinear(
                 innerValue, duplicator, unwrapper ) );
     } );
     defTag( "linear-as-nonlinear", "inner-value" );
-    defFunc( "linear-as-nonlinear", 1, function ( yoke, innerValue ) {
-        return pkRet( yoke, pkLinearAsNonlinear( innerValue ) );
+    defFunc( "linear-as-nonlinear", 1,
+        function ( yoke, pkThen, innerValue ) {
+        
+        return pkRet( yoke, pkThen,
+            pkLinearAsNonlinear( innerValue ) );
     } );
     defTag( "fn" );
-    defVal( "fn", pkfn( function ( yoke, args ) {
-        return pkErr( yoke, "The fn function has no behavior" );
+    defVal( "fn", pkfn( function ( yoke, args, pkThen ) {
+        return pkErr( yoke, pkThen,
+            "The fn function has no behavior" );
     } ) );
     defMethod( "call", "self", "args" );
-    setStrictImpl( "call", "fn", function ( yoke, args ) {
+    setStrictImpl( "call", "fn", function ( yoke, args, pkThen ) {
         var fn = listGet( args, 0 );
         var fnArgs = listGet( args, 1 );
         if ( !isList( fnArgs ) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called call with a non-list args list" );
         // TODO: See if we should respect linearity some more by
         // double-checking that the captured values haven't already
         // been spent.
-        return fn.special.call( yoke, fn.special.captures, fnArgs );
+        return fn.special.call( yoke,
+            fn.special.captures, fnArgs, pkThen );
     } );
     
     defTag( "pure-yoke" );
     defTag( "definer-yoke", "definer-token" );
     defMethod( "yoke-get-definer-token", "yoke" );
     setStrictImpl( "yoke-get-definer-token", "pure-yoke",
-        function ( yoke, args ) {
+        function ( yoke, args, pkThen ) {
         
-        return pkRet( yoke, pkNil );
+        return pkRet( yoke, pkThen, pkNil );
     } );
     setStrictImpl( "yoke-get-definer-token", "definer-yoke",
-        function ( yoke, args ) {
+        function ( yoke, args, pkThen ) {
         
-        return pkRet( yoke, pkYep( listGet( args, 0 ).ind( 0 ) ) );
+        return pkRet( yoke, pkThen,
+            pkYep( listGet( args, 0 ).ind( 0 ) ) );
     } );
     
     defTag( "getmac-fork", "get-tine", "maybe-macro" );
     defFunc( "getmac-fork", 2,
-        function ( yoke, getTine, maybeMacro ) {
+        function ( yoke, pkThen, getTine, maybeMacro ) {
         
         return isEnoughGetTineDeep( yoke, getTine,
             function ( yoke, valid ) {
             
             if ( !valid )
-                return pkErr( yoke,
+                return pkErr( yoke, pkThen,
                     "Called getmac-fork with an invalid get-tine" );
-            return pkRet( yoke,
+            return pkRet( yoke, pkThen,
                 pk( "getmac-fork", getTine, maybeMacro ) );
         } );
     } );
     defMethod( "fork-to-getmac", "fork" );
     setStrictImpl( "fork-to-getmac", "getmac-fork",
-        function ( yoke, args ) {
+        function ( yoke, args, pkThen ) {
         
         var fork = listGet( args, 0 );
-        return pkRet( yoke, pkList( fork.ind( 0 ), fork.ind( 1 ) ) );
+        return pkRet( yoke, pkThen,
+            pkList( fork.ind( 0 ), fork.ind( 1 ) ) );
     } );
     
     defTag( "literal-essence", "literal-val" );
     defTag( "main-essence", "name" );
-    defFunc( "main-essence", 1, function ( yoke, name ) {
+    defFunc( "main-essence", 1, function ( yoke, pkThen, name ) {
         if ( !isQualifiedName( name ) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called main-essence with a value that wasn't a " +
                 "qualified name" );
-        return pkRet( yoke, pk( "main-essence", name ) );
+        return pkRet( yoke, pkThen, pk( "main-essence", name ) );
     } );
     defTag( "call-essence", "op", "args" );
-    defFunc( "call-essence", 2, function ( yoke, op, args ) {
+    defFunc( "call-essence", 2, function ( yoke, pkThen, op, args ) {
         if ( !isList( args ) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called call-essence with a non-list args list" );
-        return pkRet( yoke, pk( "call-essence", op, args ) );
+        return pkRet( yoke, pkThen, pk( "call-essence", op, args ) );
     } );
     defTag( "param-essence", "index" );
-    defFunc( "param-essence", 1, function ( yoke, index ) {
+    defFunc( "param-essence", 1, function ( yoke, pkThen, index ) {
         if ( !isNat( index ) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called param-essence with a non-nat index" );
-        return pkRet( yoke, pk( "param-essence", index ) );
+        return pkRet( yoke, pkThen, pk( "param-essence", index ) );
     } );
     defTag( "fn-essence",
         "captures", "args-dup-count", "body-essence" );
     defFunc( "fn-essence", 3,
-        function ( yoke, captures, argsDupCount, bodyEssence ) {
+        function ( yoke, pkThen,
+            captures, argsDupCount, bodyEssence ) {
         
         if ( !isList( captures ) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called fn-essence with a non-list capture list" );
         if ( !isNat( argsDupCount ) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called fn-essence with a non-nat number of " +
                 "parameter duplicates" );
-        return pkRet( yoke,
+        return pkRet( yoke, pkThen,
             pk( "fn-essence", captures, argsDupCount, bodyEssence ) );
     } );
     defTag( "essence-for-if", "cond-essence",
         "essences-and-counts", "then-essence", "else-essence" );
     defFunc( "essence-for-if", 4,
-        function ( yoke, condEssence,
+        function ( yoke, pkThen, condEssence,
             essencesAndCounts, thenEssence, elseEssence ) {
         
         // NOTE: The overall structure of a `essence-for-if` is like
@@ -1823,18 +1769,18 @@ function makePkRuntime() {
                 isNat( listGet( essenceAndCounts, 2 ) );
         }, function ( yoke, valid ) {
             if ( !valid )
-                return pkErr( yoke,
+                return pkErr( yoke, pkThen,
                     "Called essence-for-if with an invalid " +
                     "essences-and-counts" );
             if ( thenEssence.isLinear() )
-                return pkErr( yoke,
+                return pkErr( yoke, pkThen,
                     "Called essence-for-if with a linear " +
                     "then-essence" );
             if ( elseEssence.isLinear() )
-                return pkErr( yoke,
+                return pkErr( yoke, pkThen,
                     "Called essence-for-if with a linear " +
                     "else-essence" );
-            return pkRet( yoke,
+            return pkRet( yoke, pkThen,
                 pk( "essence-for-if", condEssence,
                     essencesAndCounts, thenEssence, elseEssence ) );
         } );
@@ -1845,15 +1791,15 @@ function makePkRuntime() {
         "numbers-of-dups",
         "body-essence" );
     defFunc( "let-list-essence", 4,
-        function ( yoke,
+        function ( yoke, pkThen,
             sourceEssence, captures, numbersOfDups, bodyEssence ) {
         
         if ( !isList( captures ) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called len-list-essence with a non-list list of " +
                 "captures" );
         if ( !isList( numbersOfDups ) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called len-list-essence with a non-list list of " +
                 "numbers of duplicates" );
         return listAll( yoke, numbersOfDups,
@@ -1862,10 +1808,10 @@ function makePkRuntime() {
             return isNat( numberOfDups );
         }, function ( yoke, valid ) {
             if ( !valid )
-                return pkErr( yoke,
+                return pkErr( yoke, pkThen,
                     "Called len-list-essence with a non-nat number " +
                     "of duplicates" );
-            return pkRet( yoke,
+            return pkRet( yoke, pkThen,
                 pk( "let-list-essence",
                     sourceEssence,
                     captures,
@@ -1890,86 +1836,89 @@ function makePkRuntime() {
     defMethod( "essence-interpret", "self", "list-of-captured-vals" );
     function defEssenceInterpret( tag, body ) {
         setStrictImpl( "essence-interpret", tag,
-            function ( yoke, args ) {
+            function ( yoke, args, pkThen ) {
             
             var essence = listGet( args, 0 );
             var captures = listGet( args, 1 );
             if ( !isList( listGet( args, 1 ) ) )
-                return pkErr( yoke,
+                return pkErr( yoke, pkThen,
                     "Called essence-interpret with a non-list list " +
                     "of captured values" );
             if ( listGet( args, 1 ).isLinear() )
-                return pkErr( yoke,
+                return pkErr( yoke, pkThen,
                     "Called essence-interpret with a linear list " +
                     "of captured values" );
-            return body( yoke, essence, captures );
+            return body( yoke, essence, captures, pkThen );
         } );
     }
     defEssenceInterpret( "literal-essence",
-        function ( yoke, essence, captures ) {
+        function ( yoke, essence, captures, pkThen ) {
         
-        return pkRet( yoke, essence.ind( 0 ) );
+        return pkRet( yoke, pkThen, essence.ind( 0 ) );
     } );
     defEssenceInterpret( "main-essence",
-        function ( yoke, essence, captures ) {
+        function ( yoke, essence, captures, pkThen ) {
         
         // NOTE: This reads definitions. We maintain the metaphor that
         // we work with an immutable snapshot of the definitions, so
         // we may want to refactor this to be closer to that metaphor
         // someday.
-        return runRet( yoke,
-            yoke.pkRuntime.getVal( essence.ind( 0 ) ) );
+        return yoke.rider.pkRuntime.getVal( yoke,
+            essence.ind( 0 ), pkThen );
     } );
     defEssenceInterpret( "call-essence",
-        function ( yoke, essence, captures ) {
+        function ( yoke, essence, captures, pkThen ) {
         
-        return runWaitTry( yoke, function ( yoke ) {
-            return callMethod( yoke, "essence-interpret",
-                pkList( essence.ind( 0 ), captures ) );
-        }, function ( yoke, op ) {
+        return callMethod( yoke, "essence-interpret",
+            pkList( essence.ind( 0 ), captures ),
+            pkBubble( pkThen, function ( yoke, op ) {
+            
             return listMap( yoke, essence.ind( 1 ),
-                function ( yoke, essence ) {
+                function ( yoke, essence, pkThen ) {
                 
                 return callMethod( yoke, "essence-interpret",
-                    pkList( essence, captures ) );
-            }, function ( yoke, args ) {
-                return callMethod( yoke, "call", pkList( op, args ) );
-            } );
-        } );
+                    pkList( essence, captures ),
+                    pkThen );
+            }, pkBubble( pkThen, function ( yoke, args ) {
+                return callMethod( yoke, "call",
+                    pkList( op, args ),
+                    pkThen );
+            } ) );
+        } ) );
     } );
     defEssenceInterpret( "param-essence",
-        function ( yoke, essence, captures ) {
+        function ( yoke, essence, captures, pkThen ) {
         
         return listGetNat( yoke, captures, essence.ind( 0 ),
             function ( yoke, maybeNonlinearValue ) {
             
             if ( maybeNonlinearValue.tag !== "yep" )
-                return pkErr( yoke,
+                return pkErr( yoke, pkThen,
                     "Tried to interpret a param-essence that fell " +
                     "off the end of the list of captured values" );
             var nonlinearValue = maybeNonlinearValue.ind( 0 );
             if ( nonlinearValue.tag !== "linear-as-nonlinear" )
-                return pkErr( yoke,
+                return pkErr( yoke, pkThen,
                     "Tried to interpret a param-essence, but the " +
                     "captured value turned out not to be wrapped " +
                     "up as a linear-as-nonlinear value" );
             var value = nonlinearValue.ind( 0 );
-            return pkRet( yoke, value );
+            return pkRet( yoke, pkThen, value );
         } );
     } );
     defEssenceInterpret( "fn-essence",
-        function ( yoke, essence, nonlocalCaptures ) {
+        function ( yoke, essence, nonlocalCaptures, pkThen ) {
         
         return listMap( yoke, nonlocalCaptures,
-            function ( yoke, nonlocalCapture ) {
+            function ( yoke, nonlocalCapture, pkThen ) {
             
             if ( nonlocalCapture.tag !== "linear-as-nonlinear" )
-                return pkErr( yoke,
+                return pkErr( yoke, pkThen,
                     "Tried to interpret a fn-essence, but one of " +
                     "the captured values turned out not to be " +
                     "wrapped up as a linear-as-nonlinear value" );
-            return pkRet( yoke, nonlocalCapture.ind( 0 ) );
-        }, function ( yoke, nonlocalCaptures ) {
+            return pkRet( yoke, pkThen, nonlocalCapture.ind( 0 ) );
+        }, pkBubble( pkThen, function ( yoke, nonlocalCaptures ) {
         return listLen( yoke, nonlocalCaptures,
             function ( yoke, numNlcs ) {
         return getGs( yoke, startGensymIndex(),
@@ -1997,7 +1946,7 @@ function makePkRuntime() {
             resultVar: compiled.val.resultVar
         }, function ( yoke, code ) {
         
-        return Function( "yoke", nlcsVar, "cch", "then",
+        return Function( "yoke", nlcsVar, "cch", "pkThen",
             // TODO: This first commented-out line may help when
             // debugging compiled code, but it uses the hackish
             // Pk#toString(). See if we should make it a debug option
@@ -2008,11 +1957,7 @@ function makePkRuntime() {
             compiledCodeHelperInit + "\n" +
             "\n" +
             code
-        )( yoke, nonlocalCaptures, compiledCodeHelper,
-            function ( yoke, result ) {
-                return pkRet( yoke, result );
-            }
-        );
+        )( yoke, nonlocalCaptures, compiledCodeHelper, pkThen );
         
         } );
         } );
@@ -2022,7 +1967,7 @@ function makePkRuntime() {
         } );
         } );
         } );
-        } );
+        } ) );
         
         
         // TODO: Test Penknife with various AOT compilers:
@@ -2058,50 +2003,54 @@ function makePkRuntime() {
         var captures = essence.ind( 0 );
         var argsDupCount = essence.ind( 1 );
         var bodyEssence = essence.ind( 2 );
-        return listMap( yoke, captures, function ( yoke, capture ) {
+        return listMap( yoke, captures,
+            function ( yoke, capture, pkThen ) {
+            
             return callMethod( yoke, "essence-interpret",
-                pkList( capture, nonlocalCaptures ) );
-        }, function ( yoke, captures ) {
-            return pkRet( yoke, pkfnLinear(
+                pkList( capture, nonlocalCaptures ),
+                pkThen );
+        }, pkBubble( pkThen, function ( yoke, captures ) {
+            return pkRet( yoke, pkThen, pkfnLinear(
                 pkCons( bodyEssence, captures ),
-                function ( yoke, bodyEssenceAndCaptures, args ) {
+                function ( yoke,
+                    bodyEssenceAndCaptures, args, pkThen ) {
                 
                 var bodyEssence = bodyEssenceAndCaptures.ind( 0 );
                 var captures = bodyEssenceAndCaptures.ind( 1 );
                 
                 return pkDup( yoke, args, argsDupCount,
-                    function ( yoke, argsDuplicates ) {
+                    pkBubble( pkThen,
+                        function ( yoke, argsDuplicates ) {
+                return listAppend( yoke, captures, argsDuplicates,
+                    pkBubble( pkTten, function ( yoke, captures ) {
+                return listMap( yoke, captures,
+                    function ( yoke, capture, pkThen ) {
                     
-                    return listAppend( yoke, captures, argsDuplicates,
-                        function ( yoke, captures ) {
-                        
-                        return listMap( yoke, captures,
-                            function ( yoke, capture ) {
-                            
-                            return pkRet( yoke,
-                                pkLinearAsNonlinear( capture ) );
-                        }, function ( yoke, captures ) {
-                            
-                            return callMethod( yoke,
-                                "essence-interpret",
-                                pkList( bodyEssence, captures ) );
-                        } );
-                    } );
-                } );
+                    return pkRet( yoke, pkThen,
+                        pkLinearAsNonlinear( capture ) );
+                }, pkBubble( pkThen, function ( yoke, captures ) {
+                
+                return callMethod( yoke, "essence-interpret",
+                    pkList( bodyEssence, captures ),
+                    pkThen );
+                
+                } ) );
+                } ) );
+                } ) );
             } ) );
-        } );
+        } ) );
     } );
     defEssenceInterpret( "essence-for-if",
-        function ( yoke, essence, outerCaptures ) {
+        function ( yoke, essence, outerCaptures, pkThen ) {
         
         var condEssence = essence.ind( 0 );
         var essencesAndCounts = essence.ind( 1 );
         var thenEssence = essence.ind( 2 );
         var elseEssence = essence.ind( 3 );
-        return runWaitTry( yoke, function ( yoke ) {
-            return callMethod( yoke, "essence-interpret",
-                pkList( condEssence, outerCaptures ) );
-        }, function ( yoke, condValue ) {
+        return callMethod( yoke, "essence-interpret",
+            pkList( condEssence, outerCaptures ),
+            pkBubble( pkThen, function ( yoke, condValue ) {
+            
             // TODO: See if there's a better way for us to respect
             // linearity here. Maybe we should explicitly drop
             // condValue. One graceful option would be to bind a
@@ -2109,7 +2058,7 @@ function makePkRuntime() {
             // exactly one reference to it, but that would complicate
             // this code (not to mention breaking its symmetry).
             if ( condValue.isLinear() )
-                return pkErr( yoke,
+                return pkErr( yoke, pkThen,
                     "Used essence-for-if to branch on a condition " +
                     "that was linear" );
             if ( condValue.tag !== "nil" ) {
@@ -2123,113 +2072,111 @@ function makePkRuntime() {
                     return listGet( essenceAndCounts, 2 );
                 };
             }
+            
             return listMap( yoke, essencesAndCounts,
-                function ( yoke, essenceAndCounts ) {
+                function ( yoke, essenceAndCounts, pkThen ) {
                 
                 var essence = listGet( essenceAndCounts, 0 );
                 var count = getCount( essenceAndCounts );
-                return runWaitTry( yoke, function ( yoke ) {
-                    return callMethod( yoke, "essence-interpret",
-                        pkList( essence, outerCaptures ) );
-                }, function ( yoke, value ) {
-                    return pkRet( yoke, pkList( value, count ) );
-                } );
-            }, function ( yoke, valuesAndCounts ) {
-                return listMappend( yoke, valuesAndCounts,
-                    function ( yoke, valueAndCount ) {
+                return callMethod( yoke, "essence-interpret",
+                    pkList( essence, outerCaptures ),
+                    pkBubble( pkThen, function ( yoke, value ) {
                     
-                    var value = listGet( valueAndCount, 0 );
-                    var count = listGet( valueAndCount, 1 );
-                    return pkDup( yoke, value, count,
-                        function ( yoke, values ) {
-                        
-                        return pkRet( yoke, values );
-                    } );
-                }, function ( yoke, innerCaptures ) {
-                    return listMap( yoke, innerCaptures,
-                        function ( yoke, innerCapture ) {
-                        
-                        return pkRet( yoke,
-                            pkLinearAsNonlinear( innerCapture ) );
-                    }, function ( yoke, wrappedInnerCaptures ) {
-                        return callMethod( yoke, "essence-interpret",
-                            pkList(
-                                branchEssence,
-                                wrappedInnerCaptures ) );
-                    } );
-                } );
-            } );
-        } );
+                    return pkRet( yoke, pkThen,
+                        pkList( value, count ) );
+                } ) );
+            }, pkBubble( pkThen, function ( yoke, valuesAndCounts ) {
+            return listMappend( yoke, valuesAndCounts,
+                function ( yoke, valueAndCount, pkThen ) {
+                
+                var value = listGet( valueAndCount, 0 );
+                var count = listGet( valueAndCount, 1 );
+                return pkDup( yoke, value, count, pkThen );
+            }, pkBubble( pkThen, function ( yoke, innerCaptures ) {
+            return listMap( yoke, innerCaptures,
+                function ( yoke, innerCapture, pkThen ) {
+                
+                return pkRet( yoke, pkThen,
+                    pkLinearAsNonlinear( innerCapture ) );
+            }, pkBubble( pkThen,
+                function ( yoke, wrappedInnerCaptures ) {
+            
+            return callMethod( yoke, "essence-interpret",
+                pkList( branchEssence, wrappedInnerCaptures ),
+                pkThen );
+            
+            } ) );
+            } ) );
+            } ) );
+        } ) );
     } );
     defEssenceInterpret( "let-list-essence",
-        function ( yoke, essence, outerCaptures ) {
+        function ( yoke, essence, outerCaptures, pkThen ) {
         
         var sourceEssence = essence.ind( 0 );
         var captureEssences = essence.ind( 1 );
         var numbersOfDups = essence.ind( 2 );
         var bodyEssence = essence.ind( 3 );
-        return runWaitTry( yoke, function ( yoke ) {
-            return callMethod( yoke, "essence-interpret",
-                pkList( sourceEssence, outerCaptures ) );
-        }, function ( yoke, sourceValue ) {
+        return callMethod( yoke, "essence-interpret",
+            pkList( sourceEssence, outerCaptures ),
+            pkBubble( pkThen, function ( yoke, sourceValue ) {
         return pkAssertLetList( yoke, sourceValue, numbersOfDups,
-            function ( yoke, ignored ) {
+            pkBubble( pkThen, function ( yoke, ignored ) {
         return listMap( yoke, captureEssences,
-            function ( yoke, essence ) {
+            function ( yoke, essence, pkThen ) {
             
             return callMethod( yoke, "essence-interpret",
-                pkList( essence, outerCaptures ) );
-        }, function ( yoke, evaluatedOuterCaptures ) {
+                pkList( essence, outerCaptures ),
+                pkThen );
+        }, pkBubble( pkThen,
+            function ( yoke, evaluatedOuterCaptures ) {
         return listMapTwo( yoke, sourceValue, numbersOfDups,
-            function ( yoke, sourceElem, numberOfDups ) {
+            function ( yoke, sourceElem, numberOfDups, pkThen ) {
             
-            return pkDup( yoke, sourceElem, numberOfDups,
-                function ( yoke, elemDups ) {
-                
-                return pkRet( yoke, elemDups );
-            } );
-        }, function ( yoke, dupsPerElem ) {
+            return pkDup( yoke, sourceElem, numberOfDups, pkThen );
+        }, pkBubble( pkThen, function ( yoke, dupsPerElem ) {
         return listFlattenOnce( yoke, dupsPerElem,
-            function ( yoke, dups ) {
+            pkBubble( pkThen, function ( yoke, dups ) {
         
         return listAppend( yoke, evaluatedOuterCaptures, dups,
-            function ( yoke, innerCaptures ) {
+            pkBubble( pkThen, function ( yoke, innerCaptures ) {
         return listMap( yoke, innerCaptures,
-            function ( yoke, capture ) {
+            function ( yoke, capture, pkThen ) {
             
-            return pkRet( yoke, pkLinearAsNonlinear( capture ) );
-        }, function ( yoke, innerCaptures ) {
-            
+            return pkRet( yoke, pkThen,
+                pkLinearAsNonlinear( capture ) );
+        }, pkBubble( pkThen, function ( yoke, innerCaptures ) {
             return callMethod( yoke, "essence-interpret",
-                pkList( bodyEssence, innerCaptures ) );
-        } );
-        } );
+                pkList( bodyEssence, innerCaptures ),
+                pkThen );
+        } ) );
+        } ) );
         
-        } );
-        } );
-        } );
-        } );
-        } );
+        } ) );
+        } ) );
+        } ) );
+        } ) );
+        } ) );
     } );
     
     defMethod( "macroexpand-to-fork",
         "self", "get-fork", "gensym-base" );
     function defMacroexpandToFork( tag, body ) {
         setStrictImpl( "macroexpand-to-fork", tag,
-            function ( yoke, args ) {
+            function ( yoke, args, pkThen ) {
             
             var expr = listGet( args, 0 );
             var getFork = listGet( args, 1 );
             var gensymBase = listGet( args, 2 );
             if ( getFork.isLinear() )
-                return pkErr( yoke,
+                return pkErr( yoke, pkThen,
                     "Called macroexpand-to-fork with a linear " +
                     "get-fork" );
             if ( !isUnqualifiedName( gensymBase ) )
-                return pkErr( yoke,
+                return pkErr( yoke, pkThen,
                     "Called macroexpand-to-fork with a gensym base " +
                     "that wasn't an unqualified name" );
-            return body( yoke, expr, getFork, gensymBase );
+            return body( yoke, expr, getFork, gensymBase, pkThen );
         } );
     }
     arrEach( [
@@ -2244,29 +2191,31 @@ function makePkRuntime() {
         "qualified-name"
     ], function ( nameTag ) {
         defMacroexpandToFork( nameTag,
-            function ( yoke, expr, getFork, gensymBase ) {
+            function ( yoke, expr, getFork, gensymBase, pkThen ) {
             
             return runWaitOne( yoke, function ( yoke ) {
                 return callMethod( yoke, "call",
-                    pkList( getFork, pkList( expr ) ) );
+                    pkList( getFork, pkList( expr ) ),
+                    pkThen );
             } );
         } );
     } );
     defMacroexpandToFork( "cons",
-        function ( yoke, expr, getFork, gensymBase ) {
+        function ( yoke, expr, getFork, gensymBase, pkThen ) {
         
-        return runWaitTry( yoke, function ( yoke ) {
-            return callMethod( yoke, "macroexpand-to-fork",
-                pkList( expr.ind( 0 ), getFork, gensymBase ) );
-        }, function ( yoke, opFork ) {
+        return callMethod( yoke, "macroexpand-to-fork",
+            pkList( expr.ind( 0 ), getFork, gensymBase ),
+            pkBubble( pkThen, function ( yoke, opFork ) {
+            
             if ( opFork.isLinear() )
-                return pkErr( yoke,
+                return pkErr( yoke, pkThen,
                     "Got a linear fork for the operator when doing " +
                     "macroexpand-to-fork for a cons" );
-            return runWaitTryGetmacFork( yoke, "macroexpand-to-fork",
-                function ( yoke ) {
+            return runWaitTryGetmacFork( yoke, pkThen,
+                "macroexpand-to-fork",
+                function ( yoke, pkThen ) {
                 
-                return pkRet( yoke, opFork );
+                return pkRet( yoke, pkThen, opFork );
             }, function ( yoke, getTine, maybeMacro ) {
                 var macroexpander = maybeMacro.tag === "yep" ?
                     maybeMacro.ind( 0 ) : nonMacroMacroexpander;
@@ -2274,29 +2223,31 @@ function makePkRuntime() {
                     macroexpander,
                     pkList(
                         opFork, expr.ind( 1 ), getFork, gensymBase )
-                ) );
+                ), pkThen );
             } );
-        } );
+        } ) );
     } );
     
     defMacro( "fn",
-        function ( yoke, fork, body, nonlocalGetFork, gensymBase ) {
+        function ( yoke,
+            fork, body, nonlocalGetFork, gensymBase, pkThen ) {
         
         if ( !listLenIs( body, 2 ) )
-            return pkErrLen( yoke, body, "Expanded fn" );
+            return pkErrLen( yoke, pkThen, body, "Expanded fn" );
         
         return toUnqualifiedName( yoke, listGet( body, 0 ),
-            function ( yoke, paramName ) {
+            pkBubble( pkThen, function ( yoke, paramName ) {
         
         function isParamName( name ) {
             return paramName.special.unqualifiedNameJson ===
                 name.special.unqualifiedNameJson;
         }
         
-        return pkDrop( yoke, fork, function ( yoke ) {
+        return pkDrop( yoke, fork, pkThen, function ( yoke ) {
         
-        return runWaitTryGetmacFork( yoke, "macroexpand-to-fork",
-            function ( yoke ) {
+        return runWaitTryGetmacFork( yoke, pkThen,
+            "macroexpand-to-fork",
+            function ( yoke, pkThen ) {
             
             return callMethod( yoke, "macroexpand-to-fork", pkList(
                 listGet( body, 1 ),
@@ -2306,89 +2257,88 @@ function makePkRuntime() {
                     return then( yoke, isParamName( name ) );
                 } ),
                 gensymBase
-            ) );
+            ), pkThen );
         }, function ( yoke, bodyGetTine, maybeMacro ) {
         
         var bodyNames = listGet( bodyGetTine, 0 );
         return listKeep( yoke, bodyNames, function ( name ) {
             return !isParamName( name );
-        }, function ( yoke, fnNames ) {
+        }, pkBubble( pkThen, function ( yoke, fnNames ) {
         return listLen( yoke, fnNames, function ( yoke, numFnNames ) {
         return listCount( yoke, bodyNames, function ( name ) {
             return isParamName( name );
-        }, function ( yoke, numArgDups ) {
+        }, pkBubble( pkThen, function ( yoke, numArgDups ) {
         
-        return pkRet( yoke, pk( "getmac-fork",
-            pkGetTine( fnNames, function ( yoke, fnInEssences ) {
+        return pkRet( yoke, pkThen, pk( "getmac-fork",
+            pkGetTine( fnNames,
+                function ( yoke, fnInEssences, pkThen ) {
+                
                 return listFoldl( yoke,
                     pkList( pkNil, pkNil, numFnNames ),
                     bodyNames,
-                    function ( yoke, frame, outerName ) {
+                    function ( yoke, frame, outerName, pkThen ) {
                     
                     var revBodyInEssences = listGet( frame, 0 );
                     var captureI = listGet( frame, 1 );
                     var paramI = listGet( frame, 2 );
                     
                     if ( isParamName( outerName ) )
-                        return pkRet( yoke, pkList(
+                        return pkRet( yoke, pkThen, pkList(
                             pkCons( pk( "param-essence", paramI ),
                                 revBodyInEssences ),
                             captureI,
                             pk( "succ", paramI )
                         ) );
                     else
-                        return pkRet( yoke, pkList(
+                        return pkRet( yoke, pkThen, pkList(
                             pkCons( pk( "param-essence", captureI ),
                                 revBodyInEssences ),
                             pk( "succ", captureI ),
                             paramI
                         ) );
-                }, function ( yoke, frame ) {
-                
+                }, pkBubble( pkThen, function ( yoke, frame ) {
                 return listRev( yoke, listGet( frame, 0 ),
-                    function ( yoke, bodyInEssences ) {
+                    pkBubble( pkThen,
+                        function ( yoke, bodyInEssences ) {
+                return callMethod( yoke, "call", pkList(
+                    listGet( bodyGetTine, 1 ),
+                    pkList( bodyInEssences )
+                ), pkBubble( pkThen, function ( yoke, bodyEssence ) {
                 
-                return runWaitTry( yoke, function ( yoke ) {
-                    return callMethod( yoke, "call", pkList(
-                        listGet( bodyGetTine, 1 ),
-                        pkList( bodyInEssences )
-                    ) );
-                }, function ( yoke, bodyEssence ) {
-                    return pkRet( yoke,
-                        pk( "fn-essence",
-                            fnInEssences, numArgDups, bodyEssence ) );
-                } );
+                return pkRet( yoke, pkThen,
+                    pk( "fn-essence",
+                        fnInEssences, numArgDups, bodyEssence ) );
                 
-                } );
-                
-                } );
+                } ) );
+                } ) );
+                } ) );
             } ),
             pkNil
         ) );
         
+        } ) );
         } );
-        } );
-        } );
+        } ) );
         
         } );
         
         } );
         
-        } );
+        } ) );
     } );
     
     defMacro( "quote",
-        function ( yoke, fork, body, getFork, gensymBase ) {
+        function ( yoke, fork, body, getFork, gensymBase, pkThen ) {
         
         if ( !listLenIs( body, 1 ) )
-            return pkErrLen( yoke, body, "Expanded quote" );
-        return pkDrop( yoke, fork, function ( yoke ) {
-            return pkRet( yoke, pk( "getmac-fork",
+            return pkErrLen( yoke, pkThen, body, "Expanded quote" );
+        return pkDrop( yoke, fork, pkThen, function ( yoke ) {
+            return pkRet( yoke, pkThen, pk( "getmac-fork",
                 pkGetTineLinear( pkNil,
                     pkList( pkYep( listGet( body, 0 ) ) ),
-                    function ( yoke, captures, essences ) {
+                    function ( yoke, captures, essences, pkThen ) {
                     
-                    return pkRet( yoke,
+                    return pkRet( yoke, pkThen,
                         pk( "literal-essence",
                             listGet( captures, 0 ).ind( 0 ) ) );
                 } ),
@@ -2397,69 +2347,70 @@ function makePkRuntime() {
         } );
     } );
     defMacro( "qname",
-        function ( yoke, fork, body, getFork, gensymBase ) {
+        function ( yoke, fork, body, getFork, gensymBase, pkThen ) {
         
         if ( !listLenIs( body, 1 ) )
-            return pkErrLen( yoke, body, "Expanded qname" );
+            return pkErrLen( yoke, pkThen, body, "Expanded qname" );
         
         return toUnqualifiedName( yoke, listGet( body, 0 ),
-            function ( yoke, name ) {
-        return runWaitTry( yoke, function ( yoke ) {
-            return runRet( yoke, yoke.pkRuntime.qualifyName( name ) );
-        }, function ( yoke, name ) {
-        return pkDrop( yoke, fork, function ( yoke ) {
+            pkBubble( pkThen, function ( yoke, name ) {
+        return yoke.rider.pkRuntime.qualifyName( yoke, name,
+            pkBubble( pkThen, function ( yoke, name ) {
+        return pkDrop( yoke, fork, pkThen, function ( yoke ) {
         
-        return pkRet( yoke, pk( "getmac-fork",
-            pkGetTine( pkNil, function ( yoke, essences ) {
-                return pkRet( yoke,
+        return pkRet( yoke, pkThen, pk( "getmac-fork",
+            pkGetTine( pkNil, function ( yoke, essences, pkThen ) {
+                return pkRet( yoke, pkThen,
                     pk( "literal-essence", name ) );
             } ),
             pkNil
         ) );
         
         } );
-        } );
-        } );
+        } ) );
+        } ) );
     } );
     defMacro( "uqname",
-        function ( yoke, fork, body, getFork, gensymBase ) {
+        function ( yoke, fork, body, getFork, gensymBase, pkThen ) {
         
         if ( !listLenIs( body, 1 ) )
-            return pkErrLen( yoke, body, "Expanded uqname" );
+            return pkErrLen( yoke, pkThen, body, "Expanded uqname" );
         
         return toUnqualifiedName( yoke, listGet( body, 0 ),
-            function ( yoke, name ) {
-        return pkDrop( yoke, fork, function ( yoke ) {
+            pkBubble( pkThen, function ( yoke, name ) {
+        return pkDrop( yoke, fork, pkThen, function ( yoke ) {
         
-        return pkRet( yoke, pk( "getmac-fork",
-            pkGetTine( pkNil, function ( yoke, essences ) {
-                return pkRet( yoke,
+        return pkRet( yoke, pkThen, pk( "getmac-fork",
+            pkGetTine( pkNil, function ( yoke, essences, pkThen ) {
+                return pkRet( yoke, pkThen,
                     pk( "literal-essence", name ) );
             } ),
             pkNil
         ) );
         
         } );
-        } );
+        } ) );
     } );
     
     defMacro( "if",
-        function ( yoke, fork, body, getFork, gensymBase ) {
+        function ( yoke, fork, body, getFork, gensymBase, pkThen ) {
         
         if ( !listLenIs( body, 3 ) )
-            return pkErrLen( yoke, body, "Expanded if" );
+            return pkErrLen( yoke, pkThen, body, "Expanded if" );
         var condExpr = listGet( body, 0 );
         var thenExpr = listGet( body, 1 );
         var elseExpr = listGet( body, 2 );
         
-        return pkDrop( yoke, fork, function ( yoke ) {
+        return pkDrop( yoke, fork, pkThen, function ( yoke ) {
         
         function tryGetFork( yoke, expr, then ) {
-            return runWaitTryGetmacFork( yoke, "macroexpand-to-fork",
-                function ( yoke ) {
+            return runWaitTryGetmacFork( yoke, pkThen,
+                "macroexpand-to-fork",
+                function ( yoke, pkThen ) {
                 
                 return callMethod( yoke, "macroexpand-to-fork",
-                    pkList( expr, getFork, gensymBase ) );
+                    pkList( expr, getFork, gensymBase ),
+                    pkThen );
             }, function ( yoke, getTine, maybeMacro ) {
                 return then( yoke, getTine, listGet( getTine, 0 ) );
             } );
@@ -2491,7 +2442,7 @@ function makePkRuntime() {
         // which prohibit these operations.
         
         return listAppend( yoke, thenCaptures, elseCaptures,
-            function ( yoke, branchCaptures ) {
+            pkBubble( pkThen, function ( yoke, branchCaptures ) {
         
         return listFoldlJsAsync( yoke,
             { bcDedupMap: strMap(), revBcDedup: pkNil },
@@ -2509,11 +2460,11 @@ function makePkRuntime() {
             } );
         }, function ( yoke, bcDedupState ) {
         return listRev( yoke, bcDedupState.revBcDedup,
-            function ( yoke, bcDedup ) {
+            pkBubble( pkThen, function ( yoke, bcDedup ) {
         
         function fulfill( getTine, then ) {
             return makeSubEssenceUnderMappendedArgs( yoke,
-                getTine, null, gensymBase, bcDedup,
+                getTine, null, gensymBase, bcDedup, pkThen,
                 function ( yoke, captures, dupsList, outEssence ) {
                 
                 if ( !listLenIs( captures, 0 ) )
@@ -2526,7 +2477,7 @@ function makePkRuntime() {
             function ( yoke, thenDupsList, thenOutEssence ) {
         
         if ( thenOutEssence.isLinear() )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Got a linear then-essence for essence-for-if " +
                 "during if's macroexpander" );
         
@@ -2534,48 +2485,53 @@ function makePkRuntime() {
             function ( yoke, elseDupsList, elseOutEssence ) {
         
         if ( thenOutEssence.isLinear() )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Got a linear else-essence for essence-for-if " +
                 "during if's macroexpander" );
         
         return listAppend( yoke, condCaptures, bcDedup,
-            function ( yoke, outerCaptures ) {
-        return pkRet( yoke, pk( "getmac-fork",
+            pkBubble( pkThen, function ( yoke, outerCaptures ) {
+        
+        return pkRet( yoke, pkThen, pk( "getmac-fork",
             pkGetTine( outerCaptures,
-                function ( yoke, outerEssences ) {
+                function ( yoke, outerEssences, pkThen ) {
                 
                 return fulfillGetTine( yoke,
-                    condGetTine, outerEssences,
+                    condGetTine, outerEssences, pkThen,
                     function ( yoke, condEssence, outerEssences ) {
                     
                     return listMapMulti( yoke, pkList(
                         outerEssences,
                         thenDupsList,
                         elseDupsList
-                    ), function ( yoke, elems ) {
-                        return pkRet( yoke, elems );
-                    }, function ( yoke, outerEssencesAndCounts ) {
-                        return pkRet( yoke, pk( "essence-for-if",
-                            condEssence,
-                            outerEssencesAndCounts,
-                            thenOutEssence,
-                            elseOutEssence
-                        ) );
-                    } );
+                    ), function ( yoke, elems, pkThen ) {
+                        return pkRet( yoke, pkThen, elems );
+                    }, pkBubble( pkThen,
+                        function ( yoke, outerEssencesAndCounts ) {
+                        
+                        return pkRet( yoke, pkThen,
+                            pk( "essence-for-if",
+                                condEssence,
+                                outerEssencesAndCounts,
+                                thenOutEssence,
+                                elseOutEssence
+                            ) );
+                    } ) );
                 } );
             } ),
             pkNil
         ) );
-        } );
+        
+        } ) );
         
         } );
         
         } );
         
-        } );
+        } ) );
         } );
         
-        } );
+        } ) );
         
         } );
         } );
@@ -2588,56 +2544,59 @@ function makePkRuntime() {
     // an error if it doesn't match. By doing this, it doesn't need to
     // use condition-guarded aliasing like the `if` macro does.
     defMacro( "let-list",
-        function ( yoke, fork, body, nonlocalGetFork, gensymBase ) {
+        function ( yoke,
+            fork, body, nonlocalGetFork, gensymBase, pkThen ) {
         
         if ( !listLenIs( body, 3 ) )
-            return pkErrLen( yoke, body, "Expanded let-list" );
+            return pkErrLen( yoke, pkThen, body,
+                "Expanded let-list" );
         var varNames = listGet( body, 0 );
         var sourceExpr = listGet( body, 1 );
         var bodyExpr = listGet( body, 2 );
         
         if ( !isList( varNames ) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Expanded let-list with a non-list list of element " +
                 "variables" );
         
-        return listMap( yoke, varNames, function ( yoke, varName ) {
-            return toUnqualifiedName( yoke, varName,
-                function ( yoke, name ) {
-                
-                return pkRet( yoke, name );
-            } );
-        }, function ( yoke, varNames ) {
-        return pkDrop( yoke, fork, function ( yoke ) {
-        return runWaitTryGetmacFork( yoke, "macroexpand-to-fork",
-            function ( yoke ) {
+        return listMap( yoke, varNames,
+            function ( yoke, varName, pkThen ) {
+            
+            return toUnqualifiedName( yoke, varName, pkThen );
+        }, pkBubble( pkThen, function ( yoke, varNames ) {
+        return pkDrop( yoke, fork, pkThen, function ( yoke ) {
+        return runWaitTryGetmacFork( yoke, pkThen,
+            "macroexpand-to-fork",
+            function ( yoke, pkThen ) {
             
             return callMethod( yoke, "macroexpand-to-fork",
-                pkList( sourceExpr, nonlocalGetFork, gensymBase ) );
+                pkList( sourceExpr, nonlocalGetFork, gensymBase ),
+                pkThen );
         }, function ( yoke, sourceGetTine, maybeMacro ) {
         
         var sourceCaptures = listGet( sourceGetTine, 0 );
         
         return makeSubEssenceUnderMappendedArgs( yoke,
-            bodyExpr, nonlocalGetFork, gensymBase, varNames,
+            bodyExpr, nonlocalGetFork, gensymBase, varNames, pkThen,
             function ( yoke,
                 bodyCaptures, bodyDupsList, bodyEssence ) {
         
         return listAppend( yoke, sourceCaptures, bodyCaptures,
-            function ( yoke, outerCaptures ) {
-        return pkRet( yoke, pk( "getmac-fork",
+            pkBubble( pkThen, function ( yoke, outerCaptures ) {
+        
+        return pkRet( yoke, pkThen, pk( "getmac-fork",
             pkGetTineLinear( outerCaptures, pkList(
                 pkYep( sourceGetTine )
-            ), function ( yoke, captures, outerEssences ) {
+            ), function ( yoke, captures, outerEssences, pkThen ) {
                 var sourceGetTine = listGet( captures, 0 ).ind( 0 );
                 
                 return fulfillGetTine( yoke,
-                    sourceGetTine, outerEssences,
+                    sourceGetTine, outerEssences, pkThen,
                     function ( yoke, sourceEssence, outerEssences ) {
                     
                     var bodyCaptureEssences = outerEssences;
                     
-                    return pkRet( yoke,
+                    return pkRet( yoke, pkThen,
                         pk( "let-list-essence",
                             sourceEssence,
                             bodyCaptureEssences,
@@ -2647,159 +2606,184 @@ function makePkRuntime() {
             } ),
             pkNil
         ) );
-        } );
+        
+        } ) );
         
         } );
         
         } );
         } );
-        } );
+        } ) );
     } );
     
     // This takes an explicit input and installs it as the implicit
     // yoke. It also takes the old implicit yoke and returns it as the
     // explicit output.
-    defFunc( "yoke-trade", 1, function ( yoke, newYokeRider ) {
-        var newYoke = yokeWithRider( yoke, newYokeRider );
-        return pkRet( newYoke, yoke.yokeRider );
+    defFunc( "yoke-trade", 1,
+        function ( yoke, pkThen, newYokeRider ) {
+        
+        var newYoke = yokeWithPkRider( yoke, newYokeRider );
+        return pkRet( newYoke, pkThen, yoke.rider.pkRider );
     } );
     
-    defFunc( "defval", 2, function ( yoke, name, val ) {
+    defFunc( "defval", 2, function ( yoke, pkThen, name, val ) {
         if ( !isQualifiedName( name ) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called defval with a value that wasn't a " +
                 "qualified name" );
         if ( val.isLinear() )
-            return pkErr( yoke, "Called defval with a linear value" );
-        return hasDefinerToken( yoke, function ( yoke, canDefine ) {
+            return pkErr( yoke, pkThen,
+                "Called defval with a linear value" );
+        return hasDefinerToken( yoke, pkThen,
+            function ( yoke, canDefine ) {
+            
             if ( !canDefine )
-                return pkErr( yoke,
+                return pkErr( yoke, pkThen,
                     "Called defval without access to top-level " +
                     "definition side effects" );
-            return yoke.pkRuntime.enqueueDef_( yoke, function () {
-                return yoke.pkRuntime.defVal( name, val );
+            return yoke.rider.pkRuntime.enqueueDef_( yoke, pkThen,
+                function () {
+                
+                return yoke.rider.pkRuntime.defVal( name, val );
             } );
         } );
     } );
-    defFunc( "defmacro", 2, function ( yoke, name, macro ) {
+    defFunc( "defmacro", 2, function ( yoke, pkThen, name, macro ) {
         if ( !isQualifiedName( name ) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called defmacro with a value that wasn't a " +
                 "qualified name" );
         if ( macro.isLinear() )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called defmacro with a linear macro" );
-        return hasDefinerToken( yoke, function ( yoke, canDefine ) {
+        return hasDefinerToken( yoke, pkThen,
+            function ( yoke, canDefine ) {
+            
             if ( !canDefine )
-                return pkErr( yoke,
+                return pkErr( yoke, pkThen,
                     "Called defmacro without access to top-level " +
                     "definition side effects" );
-            return yoke.pkRuntime.enqueueDef_( yoke, function () {
-                return yoke.pkRuntime.defMacro( name, macro );
+            return yoke.rider.pkRuntime.enqueueDef_( yoke, pkThen,
+                function () {
+                
+                return yoke.rider.pkRuntime.defMacro( name, macro );
             } );
         } );
     } );
-    defFunc( "deftag", 2, function ( yoke, name, argNames ) {
+    defFunc( "deftag", 2, function ( yoke, pkThen, name, argNames ) {
         if ( !isQualifiedName( name ) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called deftag with a value that wasn't a " +
                 "qualified name" );
         if ( !isList( argNames ) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called deftag with a non-list list of argument " +
                 "names" );
         return listAll( yoke, argNames, function ( argName ) {
             return isUnqualifiedName( argName );
         }, function ( yoke, valid ) {
             if ( !valid )
-                return pkErr( yoke,
+                return pkErr( yoke, pkThen,
                     "Called deftag with an argument name that " +
                     "wasn't an unqualified name" );
             if ( keys.isLinear() )
-                return pkErr( yoke,
+                return pkErr( yoke, pkThen,
                     "Called deftag with a linear args list" );
-            return hasDefinerToken( yoke,
+            return hasDefinerToken( yoke, pkThen,
                 function ( yoke, canDefine ) {
                 
                 if ( !canDefine )
-                    return pkErr( yoke,
+                    return pkErr( yoke, pkThen,
                         "Called deftag without access to top-level " +
                         "definition side effects" );
-                return yoke.pkRuntime.enqueueDef_( yoke, function () {
-                    return yoke.pkRuntime.defTag( name, argNames );
+                return yoke.rider.pkRuntime.enqueueDef_( yoke, pkThen,
+                    function () {
+                    
+                    return yoke.rider.pkRuntime.defTag(
+                        name, argNames );
                 } );
             } );
         } );
     } );
-    defFunc( "defmethod", 2, function ( yoke, name, argNames ) {
+    defFunc( "defmethod", 2,
+        function ( yoke, pkThen, name, argNames ) {
+        
         if ( !isQualifiedName( name ) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called defmethod with a value that wasn't a " +
                 "qualified name" );
         if ( !isList( argNames ) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called defmethod with a non-list list of argument " +
                 "names" );
         return listAll( yoke, argNames, function ( argName ) {
             return isUnqualifiedName( argName );
         }, function ( yoke, valid ) {
             if ( !valid )
-                return pkErr( yoke,
+                return pkErr( yoke, pkThen,
                     "Called defmethod with an argument name that " +
                     "wasn't an unqualified name" );
             if ( argNames.isLinear() )
-                return pkErr( yoke,
+                return pkErr( yoke, pkThen,
                     "Called defmethod with a linear args list" );
-            return hasDefinerToken( yoke,
+            return hasDefinerToken( yoke, pkThen,
                 function ( yoke, canDefine ) {
                 
                 if ( !canDefine )
-                    return pkErr( yoke,
+                    return pkErr( yoke, pkThen,
                         "Called defmethod without access to " +
                         "top-level definition side effects" );
-                return yoke.pkRuntime.enqueueDef_( yoke, function () {
-                    return yoke.pkRuntime.defMethod( name, argNames );
+                return yoke.rider.pkRuntime.enqueueDef_( yoke, pkThen,
+                    function () {
+                    
+                    return yoke.rider.pkRuntime.defMethod(
+                        name, argNames );
                 } );
             } );
         } );
     } );
     defFunc( "set-impl", 3,
-        function ( yoke, methodName, tagName, impl ) {
+        function ( yoke, pkThen, methodName, tagName, impl ) {
         
         if ( !isQualifiedName( methodName ) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called set-impl with a method name that wasn't a " +
                 "qualified name" );
         if ( !isQualifiedName( tagName ) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called set-impl with a tag name that wasn't a " +
                 "qualified name" );
         if ( impl.isLinear() )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called set-impl with a linear function" );
-        return hasDefinerToken( yoke, function ( yoke, canDefine ) {
+        return hasDefinerToken( yoke, pkThen,
+            function ( yoke, canDefine ) {
+            
             if ( !canDefine )
-                return pkErr( yoke,
+                return pkErr( yoke, pkThen,
                     "Called set-impl without access to top-level " +
                     "definition side effects" );
-            return yoke.pkRuntime.enqueueDef_( yoke, function () {
-                return yoke.pkRuntime.setImpl( methodName, tagName,
-                    function ( yoke, args ) {
+            return yoke.rider.pkRuntime.enqueueDef_( yoke, pkThen,
+                function () {
+                
+                return yoke.rider.pkRuntime.setImpl(
+                    methodName,
+                    tagName,
+                    function ( yoke, args, pkThen ) {
                         return callMethod( yoke, "call",
-                            pkList( impl, args ) );
+                            pkList( impl, args ),
+                            pkThen );
                     } );
             } );
         } );
     } );
     
-    defFunc( "raise", 1, function ( yoke, error ) {
-        return runRet( yoke, pk( "nope", error ) );
+    defFunc( "raise", 1, function ( yoke, pkThen, error ) {
+        return pkErrVal( yoke, pkThen, error );
     } );
     
-    defFunc( "unwrap", 1, function ( yoke, wrapped ) {
-        return pkUnwrap( yoke, wrapped, function ( yoke, unwrapped ) {
-            return pkRet( yoke, unwrapped );
-        } );
+    defFunc( "unwrap", 1, function ( yoke, pkThen, wrapped ) {
+        return pkUnwrap( yoke, wrapped, pkThen );
     } );
     
     // TODO: See if this utility should be at the top level.
@@ -2819,7 +2803,9 @@ function makePkRuntime() {
     // - Read from a mutable box in a valid environment.
     // - TODO: Add coroutine operations to this list.
     //
-    defFunc( "call-with-mbox-env", 1, function ( yoke, body ) {
+    defFunc( "call-with-mbox-env", 1,
+        function ( yoke, pkThen, body ) {
+        
         var mboxEnvContents;
         var mboxEnv = pkToken( mboxEnvContents = {
             stringRep: "env",
@@ -2832,30 +2818,32 @@ function makePkRuntime() {
             canYield: false,
             coroutineNext: null
         } );
-        return runWait( yoke, function ( yoke ) {
-            return callMethod( yoke, "call",
-                pkList( body, pkList( mboxEnv ) ) );
-        }, function ( yoke, result ) {
+        return callMethod( yoke, "call",
+            pkList( body, pkList( mboxEnv ) ),
+            pkBubbleFinally( pkThen, function ( yoke, then ) {
+            
             // NOTE: We invalidate the environment even if there's an
             // error.
             // TODO: Test this to make sure we can't obtain a
             // top-level reference to a valid mutable environment by
             // using an error.
             mboxEnvContents.isValidMutableEnvironment = false;
-            return runRet( yoke, result );
-        } );
+            return then( yoke );
+        } ) );
     } );
-    defFunc( "mbox-new", 2, function ( yoke, mboxEnv, initState ) {
+    defFunc( "mbox-new", 2,
+        function ( yoke, pkThen, mboxEnv, initState ) {
+        
         if ( mboxEnv.tag !== "token" )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called mbox-new with a non-token environment" );
         if ( initState.isLinear() )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called mbox-new with a linear assigned value" );
         if ( !mboxEnv.special.jsPayload.isValidMutableEnvironment )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called mbox-new with an invalid environment" );
-        return pkRet( yoke, pkToken( {
+        return pkRet( yoke, pkThen, pkToken( {
             stringRep: "mbox",
             comparable: false,
             isMutableBox: true,
@@ -2867,21 +2855,23 @@ function makePkRuntime() {
             coroutineNext: null
         } ) );
     } );
-    defFunc( "mbox-eq", 3, function ( yoke, mboxEnv, mboxA, mboxB ) {
+    defFunc( "mbox-eq", 3,
+        function ( yoke, pkThen, mboxEnv, mboxA, mboxB ) {
+        
         if ( mboxEnv.tag !== "token" )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called mbox-eq with a non-token environment" );
         if ( !(mboxA.tag === "token" && mboxB.tag === "token") )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called mbox-eq with a non-token box" );
         if ( !mboxEnv.special.jsPayload.isValidMutableEnvironment )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called mbox-eq with an invalid environment" );
         if ( !(true
             && mboxA.special.jsPayload.isMutableBox
             && mboxB.special.jsPayload.isMutableBox
         ) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called mbox-eq with a non-box token" );
         if ( !(true
             && tokenEq( mboxEnv,
@@ -2889,67 +2879,71 @@ function makePkRuntime() {
             && tokenEq( mboxEnv,
                 mboxB.special.jsPayload.mutableBoxEnvironment )
         ) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called mbox-eq with an incorrect environment" );
-        return pkRet( yoke, pkBoolean( tokenEq( mboxA, mboxB ) ) );
+        return pkRet( yoke, pkThen,
+            pkBoolean( tokenEq( mboxA, mboxB ) ) );
     } );
-    defFunc( "mbox-get", 2, function ( yoke, mboxEnv, mbox ) {
+    defFunc( "mbox-get", 2, function ( yoke, pkThen, mboxEnv, mbox ) {
         if ( mboxEnv.tag !== "token" )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called mbox-get with a non-token environment" );
         if ( mbox.tag !== "token" )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called mbox-get with a non-token box" );
         if ( !mboxEnv.special.jsPayload.isValidMutableEnvironment )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called mbox-get with an invalid environment" );
         if ( !mbox.special.jsPayload.isMutableBox )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called mbox-get with a non-box token" );
         if ( !tokenEq( mboxEnv,
             mbox.special.jsPayload.mutableBoxEnvironment ) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called mbox-get with an incorrect environment" );
-        return pkRet( yoke, mbox.special.jsPayload.mutableBoxState );
+        return pkRet( yoke, pkThen,
+            mbox.special.jsPayload.mutableBoxState );
     } );
     defFunc( "mbox-set", 3,
-        function ( yoke, mboxEnv, mbox, newState ) {
+        function ( yoke, pkThen, mboxEnv, mbox, newState ) {
         
         if ( mboxEnv.tag !== "token" )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called mbox-set with a non-token environment" );
         if ( mbox.tag !== "token" )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called mbox-set with a non-token box" );
         if ( newState.isLinear() )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called mbox-set with a linear assigned value" );
         if ( !mboxEnv.special.jsPayload.isValidMutableEnvironment )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called mbox-set with an invalid environment" );
         if ( !mbox.special.jsPayload.isMutableBox )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called mbox-get with a non-box token" );
         if ( !tokenEq( mboxEnv,
             mbox.special.jsPayload.mutableBoxEnvironment ) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called mbox-set with an incorrect environment" );
         mbox.special.jsPayload.mutableBoxState = newState;
-        return pkRet( yoke, pkNil );
+        return pkRet( yoke, pkThen, pkNil );
     } );
     // TODO: Test `coroutine-new`, `yield-into`, and `yield-out`. If
     // they work, reimplement mutable boxes operations in terms of
     // them, and see if the speed is comparable. If speed is an issue,
     // it's acceptable to have both coroutines and mutable boxes.
-    defFunc( "coroutine-new", 2, function ( yoke, mboxEnv, body ) {
+    defFunc( "coroutine-new", 2,
+        function ( yoke, pkThen, mboxEnv, body ) {
+        
         if ( mboxEnv.tag !== "token" )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called coroutine-new with a non-token environment" );
         if ( body.isLinear() )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called coroutine-new with a linear implementation" );
         if ( !mboxEnv.special.jsPayload.isValidMutableEnvironment )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called mbox-new with an invalid environment" );
         var yielderTokenContents;
         var yielderToken = pkToken( yielderTokenContents = {
@@ -2964,7 +2958,7 @@ function makePkRuntime() {
             coroutineNext: null
         } );
         var coroutineContents;
-        return pkRet( yoke, pkToken( coroutineContents = {
+        return pkRet( yoke, pkThen, pkToken( coroutineContents = {
             stringRep: "mbox",
             comparable: false,
             isMutableBox: false,
@@ -2973,49 +2967,49 @@ function makePkRuntime() {
             isValidMutableEnvironment: false,
             canDefine: false,
             canYield: false,
-            coroutineNext: function ( yoke, input ) {
+            coroutineNext: function ( yoke, input, pkThen ) {
                 if ( input.isLinear() )
-                    return pkErr( yoke,
+                    return pkErr( yoke, pkThen,
                         "Yielded to a coroutine with a linear value"
                         );
-                var clientYokeRider = yoke.yokeRider;
+                var clientYokeRider = yoke.rider.pkRider;
                 var coroutineYoke =
-                    yokeWithRider( yoke, pk( "pure-yoke" ) );
+                    yokeWithPkRider( yoke, pk( "pure-yoke" ) );
                 
                 // Prevent resuming the coroutine while it's running.
                 coroutineContents.coroutineNext = null;
                 
-                return coroutineYoke.runWaitLinear(
-                    function ( coroutineYoke ) {
+                return callMethod( coroutineYoke, "call",
+                    pkList( body, pkList( yielderToken, input ) ),
+                    pkNoBubble( function ( yoke, result ) {
                     
-                    return callMethod( coroutineYoke, "call",
-                        pkList(
-                            body, pkList( yielderToken, input ) ) );
-                }, function ( yokeAndResult ) {
-                    return go( clientYokeRider, yokeAndResult );
-                } );
-                function go( clientYokeRider, yokeAndResult ) {
+                    return go( yoke, pkThen,
+                        clientYokeRider, result );
+                } ) );
+                function go( yoke, pkThen, clientYokeRider, result ) {
+                    
                     // NOTE: We invalidate the yielder even if there's
                     // an error.
                     // TODO: Test this to make sure we can't obtain a
                     // top-level reference to a valid yielder token by
                     // using an error.
                     yielderToken.special.jsPayload.canYield = false;
-                    var clientYoke = yokeWithRider(
-                        yokeAndResult.yoke, coroutineYokeRider );
-                    if ( yokeAndResult.type === "yield" ) {
-                        if ( yokeAndResult.out.isLinear() )
+                    var clientYoke =
+                        yokeWithPkRider( yoke, clientYokeRider );
+                    if ( result.type === "err" ) {
+                        return pkErrVal( yoke, pkThen, result.msg );
+                    } else if ( result.type === "yield" ) {
+                        if ( result.out.isLinear() )
                             return pkErr( clientYoke,
                                 "Yielded from a coroutine with a " +
                                 "linear value" );
-                        var coroutineYokeRider =
-                            yokeAndResult.yoke.yokeRider;
-                        var coroutineThen = yokeAndResult.then;
+                        var coroutineYokeRider = yoke.rider.pkRider;
+                        var coroutineThen = result.then;
                         coroutineContents.coroutineNext =
-                            function ( yoke, input ) {
+                            function ( yoke, input, pkThen ) {
                             
-                            var clientYokeRider = yoke.yokeRider;
-                            var coroutineYoke = yokeWithRider(
+                            var clientYokeRider = yoke.rider.pkRider;
+                            var coroutineYoke = yokeWithPkRider(
                                 yoke, coroutineYokeRider );
                             yielderToken.special.jsPayload.canYield =
                                 true;
@@ -3024,30 +3018,31 @@ function makePkRuntime() {
                             // it's running.
                             coroutineContents.coroutineNext = null;
                             
-                            return coroutineYoke.runWaitLinear(
-                                function ( coroutineYoke ) {
+                            return coroutineThen(
+                                coroutineYoke, input, pkThen,
+                                pkNoBubble(
+                                    function ( yoke, result ) {
                                 
-                                return coroutineThen(
-                                    coroutineYoke, input );
-                            }, function ( yokeAndResult ) {
-                                return go(
-                                    clientYokeRider, yokeAndResult );
-                            } );
+                                return go( yoke, pkThen,
+                                    clientYokeRider, result );
+                            } ) );
                         };
-                        return pkRet( clientYoke, yokeAndResult.out );
-                    } else {  // yokeAndResult.type === "done"
-                        if ( yokeAndResult.yoke.yokeRider.tag !==
-                            "pure-yoke" )
+                        return pkRet( clientYoke, pkThen,
+                            result.out );
+                    } else if ( result.type === "ret" ) {
+                        if ( yoke.rider.pkRider.tag !== "pure-yoke" )
                             return pkErr( clientYoke,
                                 "Returned from a coroutine with a " +
                                 "yoke that wasn't a pure-yoke" );
-                        if ( yokeAndResult.result.isLinear() )
+                        if ( result.val.isLinear() )
                             return pkErr( clientYoke,
                                 "Returned from a coroutine with a " +
                                 "linear return value" );
                         coroutineContents.coroutineNext = null;
-                        return pkRet( clientYoke,
-                            yokeAndResult.result );
+                        return pkRet( clientYoke, pkThen,
+                            result.val );
+                    } else {
+                        throw new Error();
                     }
                 }
             }
@@ -3081,75 +3076,75 @@ function makePkRuntime() {
     // to model.
     //
     defFunc( "yield-into", 3,
-        function ( yoke, mboxEnv, coroutine, input ) {
+        function ( yoke, pkThen, mboxEnv, coroutine, input ) {
         
         if ( mboxEnv.tag !== "token" )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called yield-into with a non-token environment" );
         if ( coroutine.tag !== "token" )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called yield-into with a non-token coroutine" );
         if ( input.isLinear() )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called yield-into with a linear input value" );
         if ( !mboxEnv.special.jsPayload.isValidMutableEnvironment )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called yield-into with an invalid environment" );
         if ( !tokenEq( mboxEnv,
             coroutine.special.jsPayload.mutableBoxEnvironment ) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called yield-into with an incorrect environment" );
         var coroutineNext = coroutine.special.jsPayload.coroutineNext;
         if ( coroutineNext === null )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called yield-into with a token that didn't " +
                 "represent a currently suspended coroutine" );
-        return coroutineNext( yoke, input );
+        return coroutineNext( yoke, input, pkThen );
     } );
-    defFunc( "yield-out", 2, function ( yoke, yielderToken, output ) {
+    defFunc( "yield-out", 2,
+        function ( yoke, pkThen, yielderToken, output ) {
+        
         if ( yielderToken.tag !== "token" )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called yield-out with a non-token yielder token" );
         if ( yielderToken.special.jsPayload.canYield )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called yield-out with a token other than the " +
                 "current yielder token" );
-        return runYield( yoke, output, function ( yoke, input ) {
-            return pkRet( yoke, input );
-        } );
+        return pkYield( yoke, pkThen, output );
     } );
     
-    defFunc( "nl-get-linear", 1, function ( yoke, nl ) {
+    defFunc( "nl-get-linear", 1, function ( yoke, pkThen, nl ) {
         if ( nl.tag !== "linear-as-nonlinear" )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called nl-get-linear with a value that wasn't a " +
                 "linear-as-nonlinear" );
-        return pkRet( yoke, nl.ind( 0 ) );
+        return pkRet( yoke, pkThen, nl.ind( 0 ) );
     } );
     
-    defFunc( "nl-get-tag-name", 1, function ( yoke, nl ) {
+    defFunc( "nl-get-tag-name", 1, function ( yoke, pkThen, nl ) {
         if ( nl.tag !== "linear-as-nonlinear" )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called nl-get-tag-name with a value that wasn't a " +
                 "linear-as-nonlinear" );
         var x = nl.ind( 0 );
-        return pkRet( yoke, x.getTagName() );
+        return pkRet( yoke, pkThen, x.getTagName() );
     } );
     
-    defFunc( "nl-is-a-struct", 1, function ( yoke, nl ) {
+    defFunc( "nl-is-a-struct", 1, function ( yoke, pkThen, nl ) {
         if ( nl.tag !== "linear-as-nonlinear" )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called nl-is-a-struct with a value that wasn't a " +
                 "linear-as-nonlinear" );
         var x = nl.ind( 0 );
-        return pkRet( yoke, pkBoolean( pkIsStruct( x ) ) );
+        return pkRet( yoke, pkThen, pkBoolean( pkIsStruct( x ) ) );
     } );
     
-    defFunc( "struct-get-args", 1, function ( yoke, struct ) {
+    defFunc( "struct-get-args", 1, function ( yoke, pkThen, struct ) {
         if ( !pkIsStruct( struct ) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called struct-get-args with a non-struct" );
-        return pkRet( yoke, pkGetArgs( struct ) );
+        return pkRet( yoke, pkThen, pkGetArgs( struct ) );
     } );
     
     defMethod( "to-unqualified-name", "x" );
@@ -3160,63 +3155,75 @@ function makePkRuntime() {
         "qualified-name"
     ], function ( nameTag ) {
         setStrictImpl( "to-unqualified-name", nameTag,
-            function ( yoke, args ) {
+            function ( yoke, args, pkThen ) {
             
-            return pkRet( yoke, listGet( args, 0 ) );
+            return pkRet( yoke, pkThen, listGet( args, 0 ) );
         } );
     } );
     setStrictImpl( "to-unqualified-name", "string",
-        function ( yoke, args ) {
+        function ( yoke, args, pkThen ) {
         
-        return pkRet( yoke, pkStrNameRaw( listGet( args, 0 ) ) );
+        return pkRet( yoke, pkThen,
+            pkStrNameRaw( listGet( args, 0 ) ) );
     } );
     
-    defFunc( "is-an-unqualified-name", 1, function ( yoke, x ) {
-        return pkDrop( yoke, x, function ( yoke ) {
-            return pkRet( yoke, pkBoolean( isUnqualifiedName( x ) ) );
+    defFunc( "is-an-unqualified-name", 1,
+        function ( yoke, pkThen, x ) {
+        
+        return pkDrop( yoke, x, pkThen, function ( yoke ) {
+            return pkRet( yoke, pkThen,
+                pkBoolean( isUnqualifiedName( x ) ) );
         } );
     } );
     
-    defFunc( "is-a-qualified-name", 1, function ( yoke, x ) {
-        return pkDrop( yoke, x, function ( yoke ) {
-            return pkRet( yoke, pkBoolean( isQualifiedName( x ) ) );
+    defFunc( "is-a-qualified-name", 1, function ( yoke, pkThen, x ) {
+        return pkDrop( yoke, x, pkThen, function ( yoke ) {
+            return pkRet( yoke, pkThen,
+                pkBoolean( isQualifiedName( x ) ) );
         } );
     } );
     
-    defFunc( "unqualified-name-eq", 2, function ( yoke, a, b ) {
+    defFunc( "unqualified-name-eq", 2,
+        function ( yoke, pkThen, a, b ) {
+        
         if ( !(isUnqualifiedName( a ) && isUnqualifiedName( b )) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called unqualified-name-eq with a value that " +
                 "wasn't an unqualified name" );
-        return pkRet( yoke,
+        return pkRet( yoke, pkThen,
             pkBoolean(
                 a.special.unqualifiedNameJson ===
                     b.special.unqualifiedNameJson ) );
     } );
     
-    defFunc( "qualified-name-eq", 2, function ( yoke, a, b ) {
+    defFunc( "qualified-name-eq", 2, function ( yoke, pkThen, a, b ) {
         if ( !(isQualifiedName( a ) && isQualifiedName( b )) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called qualified-name-eq with a value that wasn't " +
                 "a qualified name" );
-        return pkRet( yoke,
+        return pkRet( yoke, pkThen,
             pkBoolean(
                 a.special.qualifiedNameJson ===
                     b.special.qualifiedNameJson ) );
     } );
     
-    defFunc( "is-a-comparable-token", 1, function ( yoke, x ) {
-        return pkDrop( yoke, x, function ( yoke ) {
-            return pkRet( yoke, pkBoolean( isComparableToken( x ) ) );
+    defFunc( "is-a-comparable-token", 1,
+        function ( yoke, pkThen, x ) {
+        
+        return pkDrop( yoke, x, pkThen, function ( yoke ) {
+            return pkRet( yoke, pkThen,
+                pkBoolean( isComparableToken( x ) ) );
         } );
     } );
     
-    defFunc( "comparable-token-eq", 2, function ( yoke, a, b ) {
+    defFunc( "comparable-token-eq", 2,
+        function ( yoke, pkThen, a, b ) {
+        
         if ( !(isComparableToken( a ) && isComparableToken( b )) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called comparable-token-eq with a value that " +
                 "wasn't a comparable token" );
-        return pkRet( yoke, pkBoolean( tokenEq( a, b ) ) );
+        return pkRet( yoke, pkThen, pkBoolean( tokenEq( a, b ) ) );
     } );
     
     // TODO: Take a closer look at how to design these string
@@ -3227,25 +3234,27 @@ function makePkRuntime() {
     // points, not the number of UTF-16 code units.
     // TODO: See if we should just remove `string-len` and
     // `string-cut` since we no longer actually use them.
-    defFunc( "string-len", 1, function ( yoke, string ) {
+    defFunc( "string-len", 1, function ( yoke, pkThen, string ) {
         if ( string.tag !== "string" )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called string-len with a non-string" );
         var result = pkNil;
         // TODO: Figure out if this long loop is acceptable.
         for ( var i = 0, n = string.special.jsStr.length; i < n; i++ )
             result = pk( "succ", result );
-        return pkRet( yoke, result );
+        return pkRet( yoke, pkThen, result );
     } );
-    defFunc( "string-cut", 3, function ( yoke, string, start, stop ) {
+    defFunc( "string-cut", 3,
+        function ( yoke, pkThen, string, start, stop ) {
+        
         if ( string.tag !== "string" )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called string-cut with a non-string" );
         if ( !isNat( start ) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called string-cut with a non-nat start" );
         if ( !isNat( stop ) )
-            return pkErr( yoke,
+            return pkErr( yoke, pkThen,
                 "Called string-cut with a non-nat stop" );
         var jsStr = string.special.jsStr;
         var jsLen = jsStr.length;
@@ -3253,7 +3262,7 @@ function makePkRuntime() {
         var jsStop = natToJsBounded( stop, jsLen );
         if ( jsLen < jsStop )
             jsStop = jsLen;
-        return pkRet( yoke,
+        return pkRet( yoke, pkThen,
             pkStr( jsStop <= jsStart ? "" :
                 jsStr.substring( jsStart, jsStop ) ) );
     } );
@@ -3291,11 +3300,11 @@ PkRuntime.prototype.prepareMeta_ = function (
     }
     return meta;
 };
-PkRuntime.prototype.enqueueDef_ = function ( yoke, body ) {
+PkRuntime.prototype.enqueueDef_ = function ( yoke, pkThen, body ) {
     this.revDefs_ = { first: body, rest: this.revDefs_ };
-    return pkRet( yoke, pkNil );
+    return pkRet( yoke, pkThen, pkNil );
 };
-PkRuntime.prototype.runDefinitions = function ( yoke ) {
+PkRuntime.prototype.runDefinitions = function ( yoke, pkThen ) {
     var revDefs = this.revDefs_;
     this.revDefs_ = null;
     
@@ -3303,10 +3312,11 @@ PkRuntime.prototype.runDefinitions = function ( yoke ) {
         return go( yoke, defs );
         function go( yoke, defs ) {
             if ( defs === null )
-                return pkRet( yoke, pkNil );
-            return runWaitTry( yoke, function ( yoke ) {
-                return runRet( yoke, defs.first.call( {} ) );
-            }, function ( yoke, ignored ) {
+                return pkRet( yoke, pkThen, pkNil );
+            var msg = defs.first.call( {} );
+            if ( msg !== null )
+                return pkErr( yoke, pkThen, msg );
+            return runWaitOne( yoke, function ( yoke ) {
                 return go( yoke, defs.rest );
             } );
         }
@@ -3315,42 +3325,42 @@ PkRuntime.prototype.runDefinitions = function ( yoke ) {
 PkRuntime.prototype.defVal = function ( name, val ) {
     var meta = this.prepareMeta_( name, "val" );
     if ( meta === null )
-        return pkRawErr(
+        return "" +
             "Called defval with a name that was already bound to a " +
-            "method" );
+            "method";
     meta.val = val;
-    return pkYep( pkNil );
+    return null;
 };
 PkRuntime.prototype.defMacro = function ( name, macro ) {
     var meta = this.prepareMeta_( name );
     meta.macro = macro;
-    return pkYep( pkNil );
+    return null;
 };
 PkRuntime.prototype.defTag = function ( name, keys ) {
     var meta = this.prepareMeta_( name );
     if ( meta.tagKeys !== void 0 )
-        return pkRawErr(
+        return "" +
             "Called deftag with a name that was already bound to a " +
-            "tag" );
+            "tag";
     meta.tagKeys = keys;
-    return pkYep( pkNil );
+    return null;
 };
 PkRuntime.prototype.defMethod = function ( name, args ) {
     var meta = this.prepareMeta_( name, "method" );
     if ( meta === null )
-        return pkRawErr(
+        return "" +
             "Called defmethod with a name that was already bound " +
-            "to a value" );
+            "to a value";
     if ( meta.methodArgs !== void 0 )
-        return pkRawErr(
+        return "" +
             "Called defmethod with a name that was already bound " +
-            "to a method" );
+            "to a method";
     meta.methodArgs = args;
     meta.methodImplsByTag = strMap();
-    return pkYep( pkNil );
+    return null;
 };
 PkRuntime.prototype.callMethodRaw = function (
-    yoke, methodName, args ) {
+    yoke, methodName, args, pkThen ) {
     
     // NOTE: This doesn't use `this`, but it does access the private
     // method getMeta_(), which is why it's a method.
@@ -3362,16 +3372,17 @@ PkRuntime.prototype.callMethodRaw = function (
     // work with an immutable snapshot of the definitions, so we may
     // want to refactor this to be closer to that metaphor someday.
     if ( listLenIs( args, 0 ) )
-        return pkErrLen( yoke, args, "Called method " + methodName );
-    var meta = yoke.pkRuntime.getMeta_( methodName );
+        return pkErrLen( yoke, pkThen, args,
+            "Called method " + methodName );
+    var meta = yoke.rider.pkRuntime.getMeta_( methodName );
     var tagName = listGet( args, 0 ).getTagName();
     var impl = meta && meta.methodImplsByTag.get(
         tagName.special.qualifiedNameJson );
     if ( impl === void 0 )
-        return pkErr( yoke,
+        return pkErr( yoke, pkThen,
             "No implementation for method " + methodName + " tag " +
             tagName );
-    return impl.call( yoke, args );
+    return impl.call( yoke, args, pkThen );
 };
 PkRuntime.prototype.setImpl = function ( methodName, tagName, impl ) {
     // TODO: These error messages implicitly use Pk#toString(), which
@@ -3379,24 +3390,24 @@ PkRuntime.prototype.setImpl = function ( methodName, tagName, impl ) {
     // we really want here.
     var methodMeta = this.getMeta_( methodName );
     if ( methodMeta.methodOrVal !== "method" )
-        return pkRawErr(
+        return "" +
             "Can't implement non-method " + methodName + " for tag " +
-            tagName );
+            tagName;
     var tagMeta = this.getMeta_( tagName );
     if ( tagMeta.tagKeys === void 0 )
-        return pkRawErr(
+        return "" +
             "Can't implement method " + methodName + " for non-tag " +
-            tagName );
+            tagName;
     methodMeta.methodImplsByTag.set(
         tagName.special.qualifiedNameJson, { call: impl } );
-    return pkYep( pkNil );
+    return null;
 };
 PkRuntime.prototype.setStrictImpl = function (
     methodName, tagName, call ) {
     
     var methodMeta = this.getMeta_( methodName );
     return this.setImpl( methodName, tagName,
-        function ( yoke, args ) {
+        function ( yoke, args, pkThen ) {
         
         return listLenEq( yoke, args, methodMeta.methodArgs,
             function ( yoke, areEq ) {
@@ -3405,27 +3416,32 @@ PkRuntime.prototype.setStrictImpl = function (
             // which is hackishly designed. Figure out what kind of
             // externalization we really want here.
             if ( !areEq )
-                return pkErrLen( yoke, args, "Called " + methodName );
-            return call( yoke, args );
+                return pkErrLen( yoke, pkThen, args,
+                    "Called " + methodName );
+            return call( yoke, args, pkThen );
         } );
     } );
 };
-PkRuntime.prototype.getVal = function ( name ) {
+PkRuntime.prototype.getVal = function ( yoke, name, pkThen ) {
     var self = this;
     var meta = self.getMeta_( name );
     if ( meta === void 0 )
-        return pkRawErr( "Unbound variable " + name );
+        return pkErr( yoke, pkThen, "Unbound variable " + name );
     if ( meta.methodOrVal === "val" )
-        return pkYep( meta.val );
+        return pkRet( yoke, pkThen, meta.val );
     if ( meta.methodOrVal === "method" )
-        return pkYep( pkfn( function ( yoke, args ) {
+        return pkRet( yoke, pkThen,
+            pkfn( function ( yoke, args, pkThen ) {
+            
             return runWaitOne( yoke, function ( yoke ) {
-                return yoke.pkRuntime.callMethodRaw( yoke,
-                    name, args );
+                return yoke.rider.pkRuntime.callMethodRaw( yoke,
+                    name, args, pkThen );
             } );
         } ) );
     if ( meta.tagKeys !== void 0 )
-        return pkYep( pkfn( function ( yoke, args ) {
+        return pkRet( yoke, pkThen,
+            pkfn( function ( yoke, args, pkThen ) {
+            
             return listLenEq( yoke, args, meta.tagKeys,
                 function ( yoke, areEq ) {
                 
@@ -3434,9 +3450,9 @@ PkRuntime.prototype.getVal = function ( name ) {
                 // out what kind of externalization we really want
                 // here.
                 if ( !areEq )
-                    return pkErrLen( yoke, args,
+                    return pkErrLen( yoke, pkThen, args,
                         "Can't make " + name );
-                return pkRet( yoke,
+                return pkRet( yoke, pkThen,
                     new Pk().init_(
                         name,
                         name.ind( 0 ).tag === "string-name" ?
@@ -3449,106 +3465,33 @@ PkRuntime.prototype.getVal = function ( name ) {
             } );
         } ) );
     // NOTE: If (meta.macro !== void 0), we don't do anything special.
-    return pkRawErr( "Unbound variable " + name );
+    return pkErr( yoke, pkThen, "Unbound variable " + name );
 };
-PkRuntime.prototype.qualifyName = function ( name ) {
+PkRuntime.prototype.qualifyName = function ( yoke, name, pkThen ) {
     // TODO: If we ever implement namespaces, complicate this method
     // to handle them.
-    return pkYep( pkQualifiedName( name ) );
+    return pkRet( yoke, pkThen, pkQualifiedName( name ) );
 };
-PkRuntime.prototype.getMacro = function ( name ) {
+PkRuntime.prototype.getMacro = function ( yoke, name, pkThen ) {
     var meta = this.getMeta_( name );
     if ( meta === void 0 )
-        return pkRawErr( "Unbound variable " + name );
+        return pkErr( yoke, pkThen, "Unbound variable " + name );
     
     // If the name is specifically bound to macro behavior, use that.
     if ( meta.macro !== void 0 )
-        return pkYep( pkYep( meta.macro ) );
+        return pkRet( yoke, pkThen, pkYep( meta.macro ) );
     
     if ( meta.methodOrVal === "val"
         || meta.methodOrVal === "method"
         || meta.tagKeys !== void 0 )
-        return pkYep( pkNil );
+        return pkRet( yoke, pkThen, pkNil );
     
-    return pkRawErr( "Unbound variable " + name );
-};
-PkRuntime.prototype.conveniences_debuggableSyncYoke = function () {
-    return {
-        pkRuntime: this,
-        yokeRider: pk( "pure-yoke" ),
-        internal: null,
-        runWaitLinear: function ( step, then ) {
-            return then( step( this ) );
-        }
-    };
-};
-PkRuntime.prototype.conveniences_syncYoke = function () {
-    return {
-        pkRuntime: this,
-        yokeRider: pk( "pure-yoke" ),
-        internal: 0,
-        runWaitLinear: function ( step, then ) {
-            var self = this;
-            
-            // TODO: Test to see what value is best for all browsers.
-            // TODO: Put this constant somewhere more configurable.
-            // NOTE: Firefox 28 breaks in the reader demo if this
-            // value exceeds 217. Chrome 34 can handle 1236 sometimes,
-            // but it's inconsistent, and its sweet spot seems to be
-            // around 500-1000. IE 11 can handle 367 sometimes, but
-            // it's inconsistent.
-            var maxStack = 100;
-            
-            if ( self.internal < maxStack ) {
-                var maybeYokeAndResult = step( {
-                    pkRuntime: self.pkRuntime,
-                    yokeRider: self.yokeRider,
-                    internal: self.internal + 1,
-                    runWaitLinear: self.runWaitLinear
-                } );
-                if ( maybeYokeAndResult.type !== "deferrer" )
-                    return then( maybeYokeAndResult );
-                return { type: "deferrer", go:
-                    function ( defer, then2 ) {
-                    
-                    syncYokeCall( maybeYokeAndResult, defer,
-                        function ( yokeAndResult ) {
-                        
-                        var yoke = yokeAndResult.yoke;
-                        syncYokeCall(
-                            then( runRet( {
-                                pkRuntime: yoke.pkRuntime,
-                                yokeRider: yoke.yokeRider,
-                                internal: 0,
-                                runWaitLinear: yoke.runWaitLinear
-                            }, yokeAndResult.result ) ),
-                            defer, then2 );
-                    } );
-                } };
-            } else {
-                return { type: "deferrer", go:
-                    function ( defer, then2 ) {
-                    
-                    syncYokeCall( step( {
-                        pkRuntime: self.pkRuntime,
-                        yokeRider: self.yokeRider,
-                        internal: 0,
-                        runWaitLinear: self.runWaitLinear
-                    } ), defer, function ( yokeAndResult ) {
-                        syncYokeCall(
-                            then( yokeAndResult ), defer, then2 );
-                    } );
-                } };
-            }
-        }
-    };
+    return pkErr( yoke, pkThen, "Unbound variable " + name );
 };
 
-function pkGetVal( yoke, name, then ) {
+function pkGetVal( yoke, name, pkThen ) {
     // NOTE: This is only used for compiled Penknife code.
-    return runWaitTry( yoke, function ( yoke ) {
-        return runRet( yoke, yoke.pkRuntime.getVal( name ) );
-    }, then );
+    return yoke.rider.pkRuntime.getVal( yoke, name, pkThen );
 }
 
 // TODO: Define a staged conditional, preferably from the Penknife

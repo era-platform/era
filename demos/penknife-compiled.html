@@ -49,17 +49,23 @@ you must create penknife-compiled.js in one of two ways:</p>
 window.onload = function () {
     function generateOutput() {
         var startMillis = new Date().getTime();
-        var pkRuntime = makePkRuntime();
-        var yoke = pkRuntime.conveniences_syncYoke();
         
-        var maybeYokeAndResult = invokeFileTopLevel( yoke, myFile,
+        var displays = runSyncYoke( {
+            pkRuntime: makePkRuntime(),
+            pkRider: pk( "pure-yoke" )
+        }, function ( yoke, then ) {
+        return invokeFileTopLevel( yoke, myFile,
             function ( yoke, compiledDisplays ) {
         
-        var displays = [].concat(
+        return then( yoke, [].concat(
             arrMap( compiledDisplays, function ( display ) {
                 return { display: display, displayThisResult: true };
             } )
-        );
+        ) );
+        
+        } );
+        } ).result;
+        
         
         var displayStrings = [];
         var hasError = false;
@@ -82,12 +88,6 @@ window.onload = function () {
         var runMillis = new Date().getTime() - startMillis;
         // TODO: Either remove this or display it more prominently.
         console.log( "Ran for " + runMillis / 1000 + " seconds." );
-        
-        return pkRet( yoke, pkNil );
-        
-        } );
-        
-        runSyncYoke( maybeYokeAndResult );
     }
     document.getElementById( "go" ).onclick = generateOutput;
     generateOutput();

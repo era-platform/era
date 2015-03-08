@@ -1071,7 +1071,7 @@ function readSexpOrInfixOp( yoke, s,
                                 qqStack.uq, esc.suffix );
                         } );
                     } else if ( esc.name === "wq" ) {
-                        return parseQqLabelEsc( esc,
+                        return parseQqLabelEsc( esc, qqStack,
                             function ( yoke, result ) {
                             
                             if ( !result.ok )
@@ -1085,7 +1085,7 @@ function readSexpOrInfixOp( yoke, s,
                             }, esc.suffix.second );
                         } );
                     } else if ( esc.name === "rq" ) {
-                        return parseQqLabelEsc( esc,
+                        return parseQqLabelEsc( esc, qqStack,
                             function ( yoke, result ) {
                             
                             if ( !result.ok )
@@ -1168,7 +1168,7 @@ function readSexpOrInfixOp( yoke, s,
                     throw new Error();
                 }
             };
-            var parseQqLabelEsc = function ( esc, then ) {
+            var parseQqLabelEsc = function ( esc, qqStack, then ) {
                 
                 if ( esc.suffix.type !== "pair" )
                     return then( yoke, { ok: false, msg:
@@ -1518,7 +1518,7 @@ function readSexpOrInfixOp( yoke, s,
                                         return then( yoke, { ok: false, msg:
                                             "Encountered -wq inside a quasiquotation label" } );
                                     
-                                    return parseQqLabelEsc( esc, function ( yoke, result ) {
+                                    return parseQqLabelEsc( esc, qqStack, function ( yoke, result ) {
                                         
                                         if ( !result.ok )
                                             return then( yoke, s, result );
@@ -1549,7 +1549,7 @@ function readSexpOrInfixOp( yoke, s,
                                         return then( yoke, { ok: false, msg:
                                             "Encountered -rq inside a quasiquotation label" } );
                                     
-                                    return parseQqLabelEsc( esc, function ( yoke, result ) {
+                                    return parseQqLabelEsc( esc, qqStack, function ( yoke, result ) {
                                         
                                         if ( !result.ok )
                                             return then( yoke, s, result );
@@ -2222,9 +2222,8 @@ function readSexp( yoke, s, heedCommandEnds, then ) {
 }
 
 function readAll( string ) {
-    return runSyncYoke( exhaustStream(
-        new PkRuntime().conveniences_syncYoke(),
-        customStream(
+    return runSyncYoke( null, function ( yoke, then ) {
+        return exhaustStream( yoke, customStream(
             customStream(
                 customStream(
                     stringToStream( string ),
@@ -2243,30 +2242,24 @@ function readAll( string ) {
                 return readSexp( yoke, s,
                     !!"heedCommandEnds", then );
             }
-        ),
-        function ( yoke, emptyStream, result ) {
-        
-        
-        return jsListRev( yoke, result.val,
-            function ( yoke, revVals ) {
-            
-            return loop( yoke, revVals,
-                result.ok ? [] : [ { ok: false, msg: result.msg } ] );
-            function loop( yoke, revVals, arr ) {
-                return runWaitOne( yoke, function ( yoke ) {
-                    if ( revVals === null )
-                        return runRet( yoke, arr );
-                    else
-                        return loop( yoke, revVals.rest,
-                            [ { ok: true, val: revVals.first }
-                                ].concat( arr ) );
-                } );
-            }
+        ), function ( yoke, emptyStream, result ) {
+            return jsListRev( yoke, result.val,
+                function ( yoke, revVals ) {
+                
+                return loop( yoke, revVals,
+                    result.ok ? [] :
+                        [ { ok: false, msg: result.msg } ] );
+                function loop( yoke, revVals, arr ) {
+                    return runWaitOne( yoke, function ( yoke ) {
+                        if ( revVals === null )
+                            return then( yoke, arr );
+                        else
+                            return loop( yoke, revVals.rest,
+                                [ { ok: true, val: revVals.first }
+                                    ].concat( arr ) );
+                    } );
+                }
+            } );
         } );
-    } ) ).result;
+    } ).result;
 }
-
-// TODO: Put any dependencies of the above implementation into
-// era-misc.js, including jsListFlattenOnce(), jsListToArrBounded(),
-// PkRuntime(), etc. Okay, don't actually put PkRuntime() itself in
-// there.
