@@ -11,6 +11,10 @@ function stcAddYesDef( var_args ) {
     stcDefs = stcDefs.concat(
         desugarDefExpr( stcYesDef.apply( {}, arguments ) ) );
 }
+function stcAddYesDefAny( var_args ) {
+    stcDefs = stcDefs.concat(
+        desugarDefExpr( stcYesDefAny.apply( {}, arguments ) ) );
+}
 
 function stcErr( msg ) {
     // We return a value whose frame name is the given error message.
@@ -23,33 +27,34 @@ var stcYep = stcType( "yep", "val" );
 var stcNope = stcType( "nope", "val" );
 var stcNil = stcType( "nil" );
 
-stcAddYesDef( "pass-to", "arg", "func",
+stcAddYesDefAny( "pass-to", "arg", "func",
     jsList( "call", stcv( "func" ), stcv( "arg" ) ) );
 
-stcAddYesDef( "foldl-short-iter", "list", "combiner", "state",
-    stcCons.cond( "first", "rest", stcv( "list" ),
-        stcYep.cond( "result",
-            stcSave( "combiner-result",
-                "foldl-short-with-combiner-result",
-                stcCallFrame( "pass-to", "arg", stcv( "first" ),
-                    jsList( "call", stcv( "combiner" ),
-                        stcv( "state" ) ) ) ),
-            stcv( "combiner-result" ),
-            stcNope.cond( "result", stcv( "combiner-result" ),
-                stcCallFrame( "foldl-short-iter",
-                    "list", stcv( "rest" ),
-                    "combiner", stcv( "combiner" ),
-                    stcv( "result" ) ),
-                stcErr(
-                    "Expected a combiner-result of type yep or " +
-                    "nope" ) ) ),
+stcAddYesDefAny( "foldl-short-iter", "list", "combiner", "state",
+    stcCons.cond( "foldl-short-iter-case1", "first", "rest",
+        stcv( "list" ),
+        stcCase( "foldl-short-iter-case2", "combiner-result",
+            stcCallFrame( "pass-to", "arg", stcv( "first" ),
+                jsList( "call", stcv( "combiner" ),
+                    stcv( "state" ) ) ),
+            
+            stcYep, "result", stcv( "combiner-result" ),
+            
+            stcNope, "result",
+            stcCallFrame( "foldl-short-iter",
+                "list", stcv( "rest" ),
+                "combiner", stcv( "combiner" ),
+                stcv( "result" ) ),
+            
+            stcErr(
+                "Expected a combiner-result of type yep or nope" ) ),
         stcNope.make( stcv( "state" ) ) ) );
 
 // TODO: Choose just one of these implementations of `foldl-iter`.
 
 // This implements `foldl-iter` independently.
-stcAddYesDef( "foldl-iter", "list", "combiner", "state",
-    stcCons.cond( "first", "rest", stcv( "list" ),
+stcAddYesDefAny( "foldl-iter", "list", "combiner", "state",
+    stcCons.cond( "foldl-iter-case", "first", "rest", stcv( "list" ),
         stcCallFrame( "foldl-iter", "list", stcv( "rest" ),
             "combiner", stcv( "combiner" ),
             stcCallFrame( "pass-to", "arg", stcv( "first" ),
@@ -58,21 +63,20 @@ stcAddYesDef( "foldl-iter", "list", "combiner", "state",
         stcv( "state" ) ) );
 
 // This implements `foldl-iter` in terms of `foldl-short-iter`.
-stcAddYesDef( "foldl-iter", "list", "combiner", "state",
-    stcNope.cond( "result",
-        stcSave( "short-result", "foldl-iter-inner-1",
-            stcCallFrame( "foldl-short-iter", "list", stcv( "list" ),
-                "combiner",
-                stcFn( "foldl-iter-adapter-1", "state",
-                    stcFn( "foldl-iter-adapter-2", "elem",
-                        stcNope.make(
-                            stcSave( "combiner-result",
-                                "foldl-iter-adapter-3",
-                                stcCallFrame( "pass-to",
-                                    "arg", stcv( "elem" ),
-                                    jsList( "call", stcv( "combiner" ),
-                                        stcv( "state" ) ) ) ) ) ) ),
-                stcv( "state" ) ) ),
+stcAddYesDefAny( "foldl-iter", "list", "combiner", "state",
+    stcNope.cond( "foldl-iter-case", "result",
+        stcCallFrame( "foldl-short-iter", "list", stcv( "list" ),
+            "combiner",
+            stcFnAny( "foldl-iter-adapter-1", "state",
+                stcFnAny( "foldl-iter-adapter-2", "elem",
+                    stcNope.make(
+                        stcSave( "combiner-result",
+                            "foldl-iter-adapter-3",
+                            stcCallFrame( "pass-to",
+                                "arg", stcv( "elem" ),
+                                jsList( "call", stcv( "combiner" ),
+                                    stcv( "state" ) ) ) ) ) ) ),
+            stcv( "state" ) ),
         stcv( "result" ),
         stcErr( "Internal error" ) ) );
 
@@ -80,77 +84,95 @@ stcAddYesDef( "foldl-iter", "list", "combiner", "state",
 // `foldl-double-short-iter`.
 
 // This implements `foldl-double-short-iter` independently.
-stcAddYesDef( "foldl-double-short-iter",
+stcAddYesDefAny( "foldl-double-short-iter",
     "list-a", "list-b", "combiner", "state",
-    stcCons.cond( "first-a", "rest-a", stcv( "list-a" ),
-        stcCons.cond( "first-b", "rest-b", stcv( "list-b" ),
-            stcYep.cond( "result",
-                stcSave( "combiner-result",
-                    "foldl-double-short-with-combiner-result",
-                    stcCallFrame( "pass-to", "arg", stcv( "first-b" ),
-                        stcCallFrame( "pass-to",
-                            "arg", stcv( "first-a" ),
-                            jsList( "call", stcv( "combiner" ),
-                                stcv( "state" ) ) ) ) ),
-                stcv( "combiner-result" ),
-                stcNope.cond( "result", stcv( "combiner-result" ),
-                    stcCallFrame( "foldl-double-short-iter",
-                        "list-a", stcv( "rest-a" ),
-                        "list-b", stcv( "rest-b" ),
-                        "combiner", stcv( "combiner" ),
-                        stcv( "result" ) ),
-                    stcErr(
-                        "Expected a combiner-result of type yep or " +
-                        "nope" ) ) ),
+    stcCons.cond( "foldl-double-short-iter-case1",
+        "first-a", "rest-a",
+        stcv( "list-a" ),
+        stcCons.cond( "foldl-double-short-iter-case2",
+            "first-b", "rest-b",
+            stcv( "list-b" ),
+            stcCase( "foldl-double-short-iter-case3",
+                "combiner-result",
+                stcCallFrame( "pass-to", "arg", stcv( "first-b" ),
+                    stcCallFrame( "pass-to", "arg", stcv( "first-a" ),
+                        jsList( "call", stcv( "combiner" ),
+                            stcv( "state" ) ) ) ),
+                
+                stcYep, "result", stcv( "combiner-result" ),
+                
+                stcNope, "result",
+                stcCallFrame( "foldl-double-short-iter",
+                    "list-a", stcv( "rest-a" ),
+                    "list-b", stcv( "rest-b" ),
+                    "combiner", stcv( "combiner" ),
+                    stcv( "result" ) ),
+                
+                stcErr(
+                    "Expected a combiner-result of type yep or nope"
+                    ) ),
             stcNope.make( stcv( "state" ) ) ),
         stcNope.make( stcv( "state" ) ) ) );
 
 // This implements `foldl-double-short-iter` in terms of
 // `foldl-short-iter`.
-stcAddYesDef( "foldl-double-short-iter",
+stcAddYesDefAny( "foldl-double-short-iter",
     "list-a", "list-b", "combiner", "state",
-    stcYep.cond( "result",
-        stcSave( "short-result", "foldl-double-short-iter-inner-1",
-            stcCallFrame( "foldl-short-iter",
-                "list", stcv( "list-a" ),
-                "combiner",
-                stcFn( "foldl-double-short-iter-adapter-1", "state",
-                    stcFn( "foldl-double-short-iter-adapter-2",
-                        "elem-a",
-                        stcCons.cond( "rest-b", "state",
-                            stcv( "state" ),
-                            stcCons.cond( "elem-b", "rest-b",
-                                stcv( "rest-b" ),
-                                stcYep.cond( "result",
-                                    stcSave( "combiner-result", "foldl-double-short-iter-adapter-3",
-                                        stcCallFrame( "pass-to", "arg", stcv( "elem-b" ),
-                                            stcCallFrame( "pass-to", "arg", stcv( "elem-a" ),
-                                                jsList( "call", stcv( "combiner" ),
-                                                    stcv( "state" ) ) ) ) ),
-                                    stcYep.make( stcv( "combiner-result" ) ),
-                                    stcNope.cond( "result", stcv( "combiner-result" ),
-                                        stcNope.make(
-                                            stcCons.make( stcv( "rest-b" ), stcv( "result" ) ) ),
-                                        stcErr( "Expected a combiner-result of type yep or nope" ) ) ),
-                                stcYep.make(
-                                    stcNope.make( stcv( "state" ) ) ) ),
-                            stcErr( "Internal error" ) ) ) ),
-                stcCons.make( stcv( "list-b" ), stcv( "state" ) ) ) ),
-        stcv( "result" ),
-        stcNope.cond( "result", stcv( "short-result" ),
-            stcCons.cond( "rest-b", "state", stcv( "result" ),
-                stcNope.make( stcv( "state" ) ),
-                stcErr( "Internal error" ) ),
-            stcErr( "Internal error" ) ) ) );
+    stcCase( "foldl-double-short-iter-case1", "short-result",
+        stcCallFrame( "foldl-short-iter",
+            "list", stcv( "list-a" ),
+            "combiner",
+            stcFnAny( "foldl-double-short-iter-adapter-1", "state",
+                stcFnAny( "foldl-double-short-iter-adapter-2",
+                    "elem-a",
+                    stcCons.cond( "foldl-double-short-iter-case2",
+                        "rest-b", "state",
+                        stcv( "state" ),
+                        stcCons.cond(
+                            "foldl-double-short-iter-case4",
+                            "elem-b", "rest-b",
+                            stcv( "rest-b" ),
+                            stcCase( "foldl-double-short-iter-case5",
+                                "combiner-result",
+                                stcCallFrame( "pass-to",
+                                    "arg", stcv( "elem-b" ),
+                                    stcCallFrame( "pass-to", "arg", stcv( "elem-a" ),
+                                        jsList( "call", stcv( "combiner" ), stcv( "state" ) ) ) ),
+                                
+                                stcYep, "result", stcYep.make( stcv( "combiner-result" ) ),
+                                
+                                stcNope, "result",
+                                stcNope.make(
+                                    stcCons.make( stcv( "rest-b" ), stcv( "result" ) ) ),
+                                
+                                stcErr(
+                                    "Expected a combiner-result of type yep or nope" ) ),
+                            stcYep.make(
+                                stcNope.make( stcv( "state" ) ) ) ),
+                        stcErr( "Internal error" ) ) ) ),
+            stcCons.make( stcv( "list-b" ), stcv( "state" ) ) ),
+        
+        stcYep, "result", stcv( "result" ),
+        
+        stcNope, "result",
+        stcCons.cond( "foldl-double-short-iter-case6",
+            "rest-b", "state",
+            stcv( "result" ),
+            stcNope.make( stcv( "state" ) ),
+            stcErr( "Internal error" ) ),
+        
+        stcErr( "Internal error" ) ) );
 
 // TODO: Choose just one of these implementations of
 // `foldl-double-iter`.
 
 // This implements `foldl-double-iter` independently.
-stcAddYesDef( "foldl-double-iter",
+stcAddYesDefAny( "foldl-double-iter",
     "list-a", "list-b", "combiner", "state",
-    stcCons.cond( "first-a", "rest-a", stcv( "list-a" ),
-        stcCons.cond( "first-b", "rest-b", stcv( "list-b" ),
+    stcCons.cond( "foldl-double-iter-case1", "first-a", "rest-a",
+        stcv( "list-a" ),
+        stcCons.cond( "foldl-double-iter-case2", "first-b", "rest-b",
+            stcv( "list-b" ),
             stcCallFrame( "foldl-double-iter",
                 "list-a", stcv( "rest-a" ),
                 "list-b", stcv( "rest-b" ),
@@ -165,52 +187,52 @@ stcAddYesDef( "foldl-double-iter",
 
 // This implements `foldl-double-iter` in terms of
 // `foldl-double-short-iter`.
-stcAddYesDef( "foldl-double-iter",
+stcAddYesDefAny( "foldl-double-iter",
     "list-a", "list-b", "combiner", "state",
-    stcNope.cond( "result",
-        stcSave( "short-result", "foldl-double-iter-inner-1",
-            stcCallFrame( "foldl-double-short-iter",
-                "list-a", stcv( "list-a" ),
-                "list-b", stcv( "list-b" ),
-                "combiner",
-                stcFn( "foldl-double-iter-adapter-1", "state",
-                    stcFn( "foldl-double-iter-adapter-2", "elem-a",
-                        stcFn( "foldl-double-iter-adapter-3", "elem-b",
-                            stcNope.make(
-                                stcSave( "combiner-result",
-                                    "foldl-double-iter-adapter-4",
-                                    stcCallFrame( "pass-to", "arg", stcv( "elem-b" ),
-                                        stcCallFrame( "pass-to", "arg", stcv( "elem-a" ),
-                                            jsList( "call", stcv( "combiner" ),
-                                                stcv( "state" ) ) ) ) ) ) ) ) ),
-                stcv( "state" ) ) ),
+    stcNope.cond( "foldl-double-iter-case", "result",
+        stcCallFrame( "foldl-double-short-iter",
+            "list-a", stcv( "list-a" ),
+            "list-b", stcv( "list-b" ),
+            "combiner",
+            stcFnAny( "foldl-double-iter-adapter-1", "state",
+                stcFnAny( "foldl-double-iter-adapter-2", "elem-a",
+                    stcFnAny( "foldl-double-iter-adapter-3", "elem-b",
+                        stcNope.make(
+                            stcSave( "combiner-result",
+                                "foldl-double-iter-adapter-4",
+                                stcCallFrame( "pass-to",
+                                    "arg", stcv( "elem-b" ),
+                                    stcCallFrame( "pass-to", "arg", stcv( "elem-a" ),
+                                        jsList( "call", stcv( "combiner" ),
+                                            stcv( "state" ) ) ) ) ) ) ) ) ),
+            stcv( "state" ) ),
         stcv( "result" ),
         stcErr( "Internal error" ) ) );
 
 // TODO: Choose just one of these implementations of `rev-onto`.
 
 // This implements `rev-onto` independently.
-stcAddYesDef( "rev-onto", "target", "source",
-    stcCons.cond( "first", "rest", stcv( "source" ),
+stcAddYesDef( "rev-onto", "target",
+    stcCons.match( "first", "rest",
         stcCallFrame( "rev-onto", "target",
             stcCons.make( stcv( "first" ), stcv( "target" ) ),
             stcv( "rest" ) ),
-        stcv( "target" ) ) );
+        jsList( "any", stcv( "target" ) ) ) );
 
 // This implements `rev-onto` in terms of `foldl-iter`.
-stcAddYesDef( "rev-onto", "target", "source",
+stcAddYesDefAny( "rev-onto", "target", "source",
     stcCallFrame( "foldl-iter", "list", stcv( "source" ),
         "combiner",
-        stcFn( "rev-onto-adapter-1", "state",
-            stcFn( "rev-onto-adapter-2", "elem",
+        stcFnAny( "rev-onto-adapter-1", "state",
+            stcFnAny( "rev-onto-adapter-2", "elem",
                 stcCons.make( stcv( "elem" ), stcv( "state" ) ) ) ),
         stcv( "target" ) ) );
 
-stcAddYesDef( "rev", "source",
+stcAddYesDefAny( "rev", "source",
     stcCallFrame( "rev-onto", "target", stcNil.make(),
         stcv( "source" ) ) );
 
-stcAddYesDef( "append", "past", "rest",
+stcAddYesDefAny( "append", "past", "rest",
     stcCallFrame( "rev-onto", "target", stcv( "rest" ),
         stcCallFrame( "rev", stcv( "past" ) ) ) );
 
@@ -218,33 +240,33 @@ stcAddYesDef( "append", "past", "rest",
 
 // This implements `map-iter` independently assuming unbounded stack
 // size. (If we had a `foldr` of some sort, this could use that.)
-stcAddYesDef( "map-iter", "func", "list",
-    stcCons.cond( "elem", "rest", stcv( "list" ),
+stcAddYesDef( "map-iter", "func",
+    stcCons.match( "elem", "rest",
         stcCons.make(
-            stcSave( "combiner-result", "map-iter-inner-1",
+            stcSave( "func-result", "map-iter-inner-1",
                 jsList( "call", stcv( "func" ), stcv( "elem" ) ) ),
-            stcSave( "combiner-result", "map-iter-inner-2",
+            stcSave( "rest-result", "map-iter-inner-2",
                 stcCallFrame( "map-iter", "func", stcv( "func" ),
                     stcv( "rest" ) ) ) ),
-        stcNil.make() ) );
+        jsList( "any", stcNil.make() ) ) );
 
 // This implements `map-iter` independently and with bounded stack
 // size.
-stcAddYesDef( "map-iter", "func", "list",
+stcAddYesDefAny( "map-iter", "func", "list",
     jsList( "let-def",
-        stcYesDef( "rev-onto-map-iter", "func", "target", "source",
-            stcCons.cond( "elem", "rest", stcv( "source" ),
+        stcYesDef( "rev-onto-map-iter", "func", "target",
+            stcCons.match( "elem", "rest",
                 stcCallFrame( "rev-onto-map-iter",
                     "func", stcv( "func" ),
                     "target",
                     stcCons.make(
-                        stcSave( "combiner-result",
+                        stcSave( "func-result",
                             "rev-onto-map-iter-inner-1",
                             jsList( "call", stcv( "func" ),
                                 stcv( "elem" ) ) ),
                         stcv( "target" ) ),
-                    stcv( "source" ) ),
-                stcv( "target" ) ) ),
+                    stcv( "rest" ) ),
+                jsList( "any", stcv( "target" ) ) ) ),
         stcCallFrame( "rev",
             stcCallFrame( "rev-onto-map-iter", "func", stcv( "func" ),
                 "target", stcNil.make(),
@@ -252,14 +274,14 @@ stcAddYesDef( "map-iter", "func", "list",
 
 // This implements `map-iter` in terms of `foldl-iter` and with
 // bounded stack size.
-stcAddYesDef( "map-iter", "func", "list",
+stcAddYesDefAny( "map-iter", "func", "list",
     stcCallFrame( "rev",
         stcCallFrame( "foldl-iter", "list", stcv( "list" ),
             "combiner",
-            stcFn( "map-iter-adapter-1", "state",
-                stcFn( "map-iter-adapter-2", "elem",
+            stcFnAny( "map-iter-adapter-1", "state",
+                stcFnAny( "map-iter-adapter-2", "elem",
                     stcCons.make(
-                        stcSave( "combiner-result",
+                        stcSave( "func-result",
                             "map-iter-adapter-3",
                             jsList( "call", stcv( "func" ),
                                 stcv( "elem" ) ) ),
@@ -269,110 +291,116 @@ stcAddYesDef( "map-iter", "func", "list",
 // TODO: Choose just one of these implementations of `any-iter`.
 
 // This implements `any-iter` independently.
-stcAddYesDef( "any-iter", "func", "list",
-    stcCons.cond( "first", "rest", stcv( "list" ),
-        stcYep.cond( "result",
-            stcSave( "func-result", "any-iter-inner-1",
-                jsList( "call", stcv( "func" ), stcv( "first" ) ) ),
-            stcv( "func-result" ),
-            stcNope.cond( "result", stcv( "func-result" ),
-                stcCallFrame( "any-iter", "func", stcv( "func" ),
-                    stcv( "rest" ) ),
-                stcErr(
-                    "Expected a func-result of type yep or " +
-                    "nope" ) ) ),
-        stcNope.make( stcNil.make() ) ) );
+stcAddYesDef( "any-iter", "func",
+    stcCons.match( "first", "rest",
+        stcCase( "any-iter-case", "func-result",
+            jsList( "call", stcv( "func" ), stcv( "first" ) ),
+            
+            stcYep, "result", stcv( "func-result" ),
+            
+            stcNope, "result",
+            stcCallFrame( "any-iter", "func", stcv( "func" ),
+                stcv( "rest" ) ),
+            
+            stcErr( "Expected a func-result of type yep or nope" ) ),
+        jsList( "any", stcNope.make( stcNil.make() ) ) ) );
 
 // This implements `any-iter` in terms of `foldl-short-iter`.
-stcAddYesDef( "any-iter", "func", "list",
+stcAddYesDefAny( "any-iter", "func", "list",
     stcCallFrame( "foldl-short-iter", "list", stcv( "list" ),
         "combiner",
-        stcFn( "any-iter-adapter-1", "state",
-            stcFn( "any-iter-adapter-2", "elem",
-                stcYep.cond( "result",
-                    stcSave( "func-result", "any-iter-adapter-3",
-                        jsList( "call", stcv( "func" ),
-                            stcv( "elem" ) ) ),
-                    stcv( "func-result" ),
-                    stcNope.cond( "result", stcv( "func-result" ),
-                        stcNope.make( stcNil.make() ),
-                        stcErr(
-                            "Expected a func-result of type yep or " +
-                            "nope" ) ) ) ) ),
+        stcFnAny( "any-iter-adapter-1", "state",
+            stcFnAny( "any-iter-adapter-2", "elem",
+                stcCase( "any-iter-case", "func-result",
+                    jsList( "call", stcv( "func" ), stcv( "elem" ) ),
+                    
+                    stcYep, "result", stcv( "func-result" ),
+                    
+                    stcNope, "result", stcNope.make( stcNil.make() ),
+                    
+                    stcErr(
+                        "Expected a func-result of type yep or nope"
+                        ) ) ) ),
         stcNil.make() ) );
 
 // TODO: Choose just one of these implementations of `any-double`.
 
 // This implements `any-double` independently.
-stcAddYesDef( "any-double", "list-a", "list-b", "func",
-    stcCons.cond( "first-a", "rest-a", stcv( "list-a" ),
-        stcCons.cond( "first-b", "rest-b", stcv( "list-b" ),
-            stcYep.cond( "result",
-                stcSave( "func-result", "any-double-inner-1",
-                    stcCallFrame( "pass-to", "arg", stcv( "first-b" ),
-                        jsList( "call", stcv( "func" ),
-                            stcv( "first-a" ) ) ) ),
-                stcv( "func-result" ),
-                stcNope.cond( "result", stcv( "func-result" ),
-                    stcCallFrame( "any-double",
-                        "list-a", stcv( "rest-a" ),
-                        "list-b", stcv( "rest-b" ),
-                        stcv( "func" ) ),
-                    stcErr(
-                        "Expected a func-result of type yep or " +
-                        "nope" ) ) ),
+stcAddYesDefAny( "any-double", "list-a", "list-b", "func",
+    stcCons.cond( "any-double-case1", "first-a", "rest-a",
+        stcv( "list-a" ),
+        stcCons.cond( "any-double-case2", "first-b", "rest-b",
+            stcv( "list-b" ),
+            stcCase( "any-double-case3", "func-result",
+                stcCallFrame( "pass-to", "arg", stcv( "first-b" ),
+                    jsList( "call", stcv( "func" ),
+                        stcv( "first-a" ) ) ),
+                
+                stcYep, "result", stcv( "func-result" ),
+                
+                stcNope, "result",
+                stcCallFrame( "any-double",
+                    "list-a", stcv( "rest-a" ),
+                    "list-b", stcv( "rest-b" ),
+                    stcv( "func" ) ),
+                
+                stcErr(
+                    "Expected a func-result of type yep or nope" ) ),
             stcNope.make( stcNil.make() ) ),
         stcNope.make( stcNil.make() ) ) );
 
 // This implements `any-double` in terms of `foldl-double-short-iter`.
-stcAddYesDef( "any-double", "list-a", "list-b", "func",
+stcAddYesDefAny( "any-double", "list-a", "list-b", "func",
     stcCallFrame( "foldl-double-short-iter",
         "list-a", stcv( "list-a" ),
         "list-b", stcv( "list-b" ),
         "combiner",
-        stcFn( "any-double-adapter-1", "state",
-            stcFn( "any-double-adapter-2", "elem-a",
-                stcFn( "any-double-adapter-3", "elem-b",
-                    stcYep.cond( "result",
-                        stcSave( "func-result",
-                            "any-double-adapter-4",
-                            stcCallFrame( "pass-to",
-                                "arg", stcv( "elem-b" ),
-                                jsList( "call", stcv( "func" ),
-                                    stcv( "elem-a" ) ) ) ),
-                        stcv( "func-result" ),
-                        stcNope.cond( "result",
-                            stcv( "func-result" ),
-                            stcNope.make( stcNil.make() ),
-                            stcErr(
-                                "Expected a func-result of type " +
-                                "yep or nope" ) ) ) ) ) ),
+        stcFnAny( "any-double-adapter-1", "state",
+            stcFnAny( "any-double-adapter-2", "elem-a",
+                stcFnAny( "any-double-adapter-3", "elem-b",
+                    stcCase( "any-double-case", "func-result",
+                        stcCallFrame( "pass-to",
+                            "arg", stcv( "elem-b" ),
+                            jsList( "call", stcv( "func" ),
+                                stcv( "elem-a" ) ) ),
+                        
+                        stcYep, "result", stcv( "func-result" ),
+                        
+                        stcNope, "result",
+                        stcNope.make( stcNil.make() ),
+                        
+                        stcErr(
+                            "Expected a func-result of type yep or " +
+                            "nope" ) ) ) ) ),
         stcNil.make() ) );
 
-stcAddYesDef( "not-yep-nope", "yep-nope",
-    stcYep.cond( "val", stcv( "yep-nope" ),
-        stcNope.make( stcv( "val" ) ),
-        stcNope.cond( "val", stcv( "yep-nope" ),
-            stcYep.make( stcv( "val" ) ),
-            stcErr( "Expected a yep-nope of type yep or nope" ) ) ) );
+stcAddYesDef( "not-yep-nope",
+    stcYep.match( "val", stcNope.make( stcv( "val" ) ),
+        stcNope.match( "val", stcYep.make( stcv( "val" ) ),
+            jsList( "any",
+                stcErr(
+                    "Expected a yep-nope of type yep or nope"
+                    ) ) ) ) );
 
-stcAddYesDef( "all-iter", "func", "list",
+stcAddYesDefAny( "all-iter", "func", "list",
     stcCallFrame( "not-yep-nope",
         stcCallFrame( "any-iter",
             "func",
-            stcFn( "all-iter-adapter-1", "elem",
+            stcFnAny( "all-iter-adapter-1", "elem",
                 stcCallFrame( "not-yep-nope",
                     jsList( "call", stcv( "func" ),
                         stcv( "elem" ) ) ) ),
             stcv( "list" ) ) ) );
 
-stcAddYesDef( "cut", "list-to-measure-by", "list-to-cut",
+stcAddYesDefAny( "cut", "list-to-measure-by", "list-to-cut",
     stcCallFrame( "foldl-iter", "list", stcv( "list-to-measure-by" ),
         "combiner",
-        stcFn( "cut-adapter-1", "state",
-            stcFn( "cut-adapter-2", "ignored-elem",
-                stcCons.cond( "rev-before", "after", stcv( "state" ),
-                    stcCons.cond( "first", "after", stcv( "after" ),
+        stcFnAny( "cut-adapter-1", "state",
+            stcFnAny( "cut-adapter-2", "ignored-elem",
+                stcCons.cond( "cut-case1", "rev-before", "after",
+                    stcv( "state" ),
+                    stcCons.cond( "cut-case2", "first", "after",
+                        stcv( "after" ),
                         stcCons.make(
                             stcCons.make( stcv( "first" ),
                                 stcv( "rev-before" ) ),
@@ -383,16 +411,22 @@ stcAddYesDef( "cut", "list-to-measure-by", "list-to-cut",
                     stcErr( "Internal error" ) ) ) ),
         stcCons.make( stcNil.make(), stcv( "list-to-cut" ) ) ) );
 
-stcAddYesDef( "tails", "lists",
-    stcCons.cond( "list-a", "list-b", stcv( "lists" ),
-        stcCons.cond( "elem-a", "list-a", stcv( "list-a" ),
-            stcCons.cond( "elem-b", "list-b", stcv( "list-b" ),
-                stcCallFrame( "tails",
-                    stcCons.make(
-                        stcv( "list-a" ), stcv( "list-b" ) ) ),
+stcAddYesDef( "tails",
+    jsList( "let-case", "lists",
+        stcCons.match( "list-a", "list-b",
+            stcCons.cond( "tails-case1", "elem-a", "list-a",
+                stcv( "list-a" ),
+                stcCons.cond( "tails-case2", "elem-b", "list-b",
+                    stcv( "list-b" ),
+                    stcCallFrame( "tails",
+                        stcCons.make(
+                            stcv( "list-a" ),
+                            stcv( "list-b" ) ) ),
+                    stcv( "lists" ) ),
                 stcv( "lists" ) ),
-            stcv( "lists" ) ),
-        stcErr( "Expected a lists value of type cons" ) ) );
+            jsList( "any",
+                stcErr(
+                    "Expected a lists value of type cons" ) ) ) ) );
 
 
 // TODO: Move this testing code somewhere better.
