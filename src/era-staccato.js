@@ -264,10 +264,11 @@ function run( stack, rules ) {
 //   (env-pattern-cons var var env-pattern)
 
 // NOTE: We implement these methods on every corresponding syntax:
-// def/caseList/getExpr/envExpr _mapWithIsFinal( isFinal, writer )
-// def/caseList/getExpr/envExpr desugarSave( isFinal )
+// def/caseList/getExpr/envExpr visit( writer )
+// def/caseList/getExpr/envExpr hasProperScope()
+// envExpr isProperForSet( varSet )
+// def/caseList/getExpr/envExpr desugarSave()
 // def/caseList/getExpr/envExpr desugarVarLists()
-// def/caseList/getExpr/envExpr hasProperScope( isFinal )
 // def/caseList/getExpr/envExpr desugarFnAndCase()
 // def desugarDefIncludingSelf()
 // caseList/getExpr/envExpr desugarDef()
@@ -282,9 +283,6 @@ function run( stack, rules ) {
 // envPattern valsToKeys()
 // envPattern keysToVals()
 // envPattern isProperForSets( keySet, varSet )
-//
-// TODO: Since _mapWithIsFinal is in this list, it probably shouldn't
-// be named with an underscore.
 
 // NOTE: Certain parts of the implementation are marked "INTERESTING".
 // These parts are tricky enough to be the motivators for the way the
@@ -400,6 +398,15 @@ JsnMap.prototype.keep = function ( body ) {
     this.each( function ( k, v ) {
         if ( body( v, k ) )
             result.set( k, v );
+    } );
+    return result;
+};
+// TODO: Add something corresponding to this to StrMap.
+// NOTE: This body takes its args as ( k ).
+JsnMap.prototype.mapKeys = function ( func ) {
+    var result = jsnMap();
+    this.each( function ( k, v ) {
+        result.set( func( k ), v );
     } );
     return result;
 };
@@ -539,14 +546,82 @@ function parseSyntax( nontermName, expr ) {
 }
 
 function freeVarsWriter() {
+    // INTERESTING
+    
     var result = jsnMap();
     
     var writer = {};
-    writer.consume = function ( part, shadowedVars, isFinal ) {
-        if ( shadowedVars === null )
+    writer.consume = function ( part, inheritedAttrs ) {
+        if ( inheritedAttrs.shadow === null )
             return;
-        result =
-            result.plus( getFreeVars( part ).minus( shadowedVars ) );
+        
+        var shadowed = getFreeVars( part );
+        
+        if ( inheritedAttrs.shadow === null ) {
+            if ( shadowed.any( function ( truth, va ) {
+                return va[ 0 ] !== "va:scopeError";
+            } ) ) {
+                // TODO: Use this error message: Encountered a use of
+                // (def ...) with free variables
+                shadowed = jsnMap().plusTruth( [ "va:scopeError" ] );
+            }
+        } else {
+            shadowed = shadowed.minus( inheritedAttrs.shadow );
+        }
+        
+        if ( shadowed.any( function ( truth, va ) {
+            return va[ 0 ] === "va:savedInputVar" &&
+                !shadowed.has( [ "va:va", va[ 1 ] ] );
+        } ) ) {
+            // TODO: Use this error message: Encountered a use of
+            // (save ...) where the saved value's variable name was
+            // locally bound somewhere between the parent root
+            // expression's root and the saved location
+            shadowed.add( [ "va:scopeError" ] );
+        }
+        
+        if ( inheritedAttrs.finalPolicy === "root" ) {
+            if ( shadowed.any( function ( truth, va ) {
+                return va[ 0 ] === "va:savedInputVar" &&
+                    shadowed.has( [ "va:va", va[ 1 ] ] );
+            } ) ) {
+                // TODO: Use this error message: Encountered a use of
+                // (save ...) where the saved value's variable name
+                // was used somewhere in the parent root expression
+                shadowed.add( [ "va:scopeError" ] );
+            }
+            
+            shadowed = shadowed.keep( function ( truth, va ) {
+                return va[ 0 ] !== "va:savedInputVar" &&
+                    va[ 0 ] !== "va:final";
+            } ).mapKeys( function ( va ) {
+                return va[ 0 ] === "va:savedFreeVar" ?
+                    [ "va:va", va[ 1 ] ] : va;
+            } );
+        } else if ( inheritedAttrs.finalPolicy === "notFinal" ) {
+            if ( shadowed.has( [ "va:final" ] ) ) {
+                // TODO: Use this error message: Encountered a use of
+                // (call ...) or (case ...) not in a final position
+                shadowed.add( [ "va:scopeError" ] );
+            }
+            
+            shadowed.del( [ "va:final" ] );
+        } else if ( inheritedAttrs.finalPolicy === "inherit" ) {
+            // Do nothing.
+        } else if ( inheritedAttrs.finalPolicy ===
+            "doesNotMatter" ) {
+            
+            if ( shadowed.any( function ( truth, va ) {
+                return va[ 0 ] === "va:savedInputVar" ||
+                    va[ 0 ] === "va:savedFreeVar" ||
+                    va[ 0 ] === "va:final";
+            } ) )
+                throw new Error();
+        } else {
+            throw new Error();
+        }
+        
+        result = result.plus( shadowed );
         return part.expr;
     };
     writer.redecorate = function ( extraVars, whole ) {
@@ -555,54 +630,16 @@ function freeVarsWriter() {
     return writer;
 }
 function getFreeVars( exprObj ) {
-    // TODO: We actually don't have a true or false `isFinal` value to
-    // pass in here. Change this so we call _map and _map deals with
-    // shadowedVars and extraVars.
-    return exprObj._mapWithIsFinal( !"isFinal", freeVarsWriter() );
+    return exprObj.visit( freeVarsWriter() );
 }
 
 function processSaveRoot( exprObj ) {
     // INTERESTING
     
-    var desugared = exprObj.desugarSave( !!"isFinal" );
+    var desugared = exprObj.desugarSave();
     if ( desugared.type === "expr" ) {
         return desugared.expr;
     } else if ( desugared.type === "save" ) {
-        
-        // TODO: When the parent root expression contains other uses
-        // of (save ...), they're currently treated as though they're
-        // under that location's lexical scope. This ends up meaning
-        // that we report this particular error if and only if we're
-        // in a case we want to prevent: The only remaining
-        // occurrences of (save ...) will be after the current one,
-        // and there are no syntaxes to mask their free variables in
-        // between, so they will indeed end up using this binding if
-        // we don't stop them. Even if this error is reported
-        // properly, we should make it work in a more straightforward
-        // way.
-        if ( desugared.otherFreeVars.has(
-            [ "va", desugared.va.expr ] ) )
-            throw new Error(
-                "Encountered a use of (save ...) where the saved " +
-                "value's variable name was used elsewhere in the " +
-                "parent root expression" );
-        
-        // NOTE: This can never actually happen, since there are no
-        // syntaxes to establish local variables without establishing
-        // a new parent root scope. Nevertheless, just in case such a
-        // syntax ever exists, we make this check.
-        //
-        // TODO: See if we should remove it.
-        //
-        if ( !getFreeVars(
-            parseSyntax( "getExpr", desugared.frameBodyExpr )
-        ).has( [ "va", desugared.va.expr ] ) )
-            throw new Error(
-                "Encountered a use of (save ...) where the saved " +
-                "value's variable name was locally bound somewhere " +
-                "between the parent root expression's root and the " +
-                "saved location" );
-        
         return processSaveRoot( parseSyntax( "getExpr",
             jsList( "call",
                 jsList( "fn",
@@ -616,13 +653,13 @@ function processSaveRoot( exprObj ) {
     }
 }
 
-function idWriter( i, recur ) {
+function idWriter( recur ) {
     var writer = {};
-    writer.consume = function ( var_args ) {
-        return recur.apply( {}, arguments );
+    writer.consume = function ( part, inheritedAttrs ) {
+        return recur( part, inheritedAttrs );
     };
-    writer.redecorate = function ( var_args ) {
-        return arguments[ i ];
+    writer.redecorate = function ( extraVars, whole ) {
+        return whole;
     };
     return writer;
 }
@@ -631,12 +668,12 @@ function desugarDefWriter() {
     var defs = [];
     
     var writer = {};
-    writer.consume = function ( part ) {
+    writer.consume = function ( part, inheritedAttrs ) {
         var desugared = part.desugarDef();
         defs = defs.concat( desugared.defs );
         return desugared.expr;
     };
-    writer.redecorate = function ( whole ) {
+    writer.redecorate = function ( extraVars, whole ) {
         return { defs: defs, expr: whole };
     };
     return writer;
@@ -646,36 +683,20 @@ function desugarSaveWriter() {
     // INTERESTING
     
     // NOTE: The `state` variable is mutated a maximum of one time.
-    var otherFreeVars = jsnMap();
     var state = { type: "exprState" };
     
     var writer = {};
-    writer.consume = function ( part, shadowedVars, isFinal ) {
-        
-        function addSpecificOtherFreeVars( vars ) {
-            otherFreeVars = otherFreeVars.plus( vars );
-        }
-        function addOtherFreeVars() {
-            if ( shadowedVars === null )
-                return;
-            addSpecificOtherFreeVars(
-                getFreeVars( part ).minus( shadowedVars ) );
-        }
-        
+    writer.consume = function ( part, inheritedAttrs ) {
         // NOTE: We only desugar `part` some of the time!
         if ( state.type === "exprState" ) {
             
-            if ( isFinal ) {
-                addOtherFreeVars();
+            if ( inheritedAttrs.finalPolicy === "root" )
                 return processSaveRoot( part );
-            }
             
-            var desugared = part.desugarSave( isFinal );
+            var desugared = part.desugarSave();
             if ( desugared.type === "expr" ) {
-                addOtherFreeVars();
                 return desugared.expr;
             } else if ( desugared.type === "save" ) {
-                addSpecificOtherFreeVars( desugared.otherFreeVars );
                 state = {
                     type: "saveState",
                     frameName: desugared.frameName,
@@ -688,7 +709,6 @@ function desugarSaveWriter() {
                 throw new Error();
             }
         } else if ( state.type === "saveState" ) {
-            addOtherFreeVars();
             return part.expr;
         } else {
             throw new Error();
@@ -704,7 +724,6 @@ function desugarSaveWriter() {
                 optVarList: state.optVarList,
                 va: state.va,
                 arg: state.arg,
-                otherFreeVars: otherFreeVars.plus( extraVars ),
                 frameBodyExpr: whole
             };
         } else {
@@ -723,72 +742,43 @@ function makeFrameVars( varSet ) {
     return frameVars;
 }
 
+function optVarListIsProper( inferredVars, declaredVarsExprObj ) {
+    var declaredVars = declaredVarsExprObj.set();
+    return declaredVars === null ||
+        (declaredVarsExprObj.isProvidedProperlyForSet( strMap() ) &&
+            !inferredVars.any( function ( truth, va ) {
+                return va[ 0 ] === "va:va" && !declaredVars.has( va );
+            } ));
+}
+
 var defaults = {
-    map: function ( args, writer ) {
-        return writer.redecorate( args.self.expr );
-    },
-    mapWithIsFinal_last: function ( args, isFinal, writer ) {
-        var parts = [];
-        args.self._map( idWriter( 0, function ( part ) {
-            parts.push( part );
-            return part.expr;
-        } ) );
-        var isFinalMid = isFinal;
-        var isFinalMidList = [];
-        for ( var i = parts.length - 1; 0 <= i; i-- ) {
-            isFinalMidList.unshift( isFinalMid );
-            isFinalMid = false;
-        }
-        
-        var delegateWriter = {};
-        delegateWriter.consume = function ( part ) {
-            return writer.consume( part, jsnMap(),
-                isFinalMidList.shift() );
-        };
-        delegateWriter.redecorate = function ( whole ) {
-            return writer.redecorate( jsnMap(), whole );
-        };
-        
-        return args.self._map( delegateWriter );
-    },
-    mapWithIsFinal_none: function ( args, isFinal, writer ) {
-        var delegateWriter = {};
-        delegateWriter.consume = function ( part ) {
-            return writer.consume( part, jsnMap(), !"isFinal" );
-        };
-        delegateWriter.redecorate = function ( whole ) {
-            return writer.redecorate( jsnMap(), whole );
-        };
-        
-        return args.self._map( delegateWriter );
-    },
-    
-    desugarSave: function ( args, isFinal ) {
-        return args.self._mapWithIsFinal(
-            isFinal, desugarSaveWriter() );
-    },
-    desugarVarLists: function ( args ) {
-        return args.self._map( idWriter( 0, function ( arg ) {
-            return arg.desugarVarLists();
-        } ) );
-    },
-    hasProperScope: function ( args, isFinal ) {
+    hasProperScope: function ( args ) {
         var proper = true;
-        args.self._mapWithIsFinal( isFinal,
-            idWriter( 1, function ( part, isFinal ) {
-            
-            proper = proper && part.hasProperScope( isFinal );
+        args.self.visit( idWriter( function ( part, inheritedAttrs ) {
+            proper = proper && part.hasProperScope();
             return part.expr;
         } ) );
         return proper;
     },
+    desugarSave: function ( args ) {
+        return args.self.visit( desugarSaveWriter() );
+    },
+    desugarVarLists: function ( args ) {
+        return args.self.visit(
+            idWriter( function ( part, inheritedAttrs ) {
+            
+            return part.desugarVarLists();
+        } ) );
+    },
     desugarFnAndCase: function ( args ) {
-        return args.self._map( idWriter( 0, function ( arg ) {
-            return arg.desugarFnAndCase();
+        return args.self.visit(
+            idWriter( function ( part, inheritedAttrs ) {
+            
+            return part.desugarFnAndCase();
         } ) );
     },
     desugarDef: function ( args ) {
-        return args.self._map( desugarDefWriter() );
+        return args.self.visit( desugarDefWriter() );
     }
 };
 
@@ -797,19 +787,20 @@ addStringSyntax( "frameName" );
 addSyntax( "def", "def", "frameName optVarList caseList", {
     // INTERESTING
     
-    _map: function ( args, writer ) {
-        return writer.redecorate( jsList( "def",
-            args.frameName.expr,
-            args.optVarList.expr,
-            writer.consume( args.caseList ) ) );
-    },
-    _mapWithIsFinal: function ( args, isFinal, writer ) {
+    visit: function ( args, writer ) {
         return writer.redecorate( jsnMap(), jsList( "def",
             args.frameName.expr,
             args.optVarList.expr,
-            writer.consume( args.caseList, null, !!"isFinal" ) ) );
+            writer.consume( args.caseList, {
+                shadow: null,
+                finalPolicy: "doesNotMatter"
+            } ) ) );
     },
-    
+    hasProperScope: function ( args ) {
+        return optVarListIsProper( getFreeVars( args.caseList ),
+                args.optVarList ) &&
+            args.caseList.hasProperScope();
+    },
     desugarSave: defaults.desugarSave,
     desugarVarLists: function ( args ) {
         var innerFreeVars = getFreeVars( args.caseList );
@@ -817,15 +808,6 @@ addSyntax( "def", "def", "frameName optVarList caseList", {
             args.frameName.expr,
             args.optVarList.or( innerFreeVars ),
             args.caseList.desugarVarLists() );
-    },
-    hasProperScope: function ( args, isFinal ) {
-        var innerFreeVars = getFreeVars( args.caseList );
-        var declaredInnerFreeVars = args.optVarList.set();
-        if ( declaredInnerFreeVars === null )
-            throw new Error();
-        return args.optVarList.isProvidedProperlyForSet( strMap() ) &&
-            innerFreeVars.subset( declaredInnerFreeVars ) &&
-            args.caseList.hasProperScope( !!"isFinal" );
     },
     desugarFnAndCase: defaults.desugarFnAndCase,
     desugarDefIncludingSelf: function ( args ) {
@@ -844,7 +826,7 @@ addSyntax( "def", "def", "frameName optVarList caseList", {
         
         var frameVarSet = strMap();
         args.optVarList.set().each( function ( va, truth ) {
-            if ( va[ 0 ] !== "va" )
+            if ( va[ 0 ] !== "va:va" )
                 throw new Error();
             frameVarSet.add( va[ 1 ] );
         } );
@@ -875,22 +857,18 @@ addSyntax( "def", "def", "frameName optVarList caseList", {
     }
 } );
 addSyntax( "let-case", "caseList", "va caseList", {
-    _map: function ( args, writer ) {
-        return writer.redecorate( jsList( "let-case",
-            args.va.expr,
-            writer.consume( args.caseList ) ) );
-    },
-    _mapWithIsFinal: function ( args, isFinal, writer ) {
+    visit: function ( args, writer ) {
         return writer.redecorate( jsnMap(), jsList( "let-case",
             args.va.expr,
-            writer.consume( args.caseList,
-                jsnMap().plusTruth( [ "va", args.va.expr ] ),
-                isFinal ) ) );
+            writer.consume( args.caseList, {
+                shadow:
+                    jsnMap().plusTruth( [ "va:va", args.va.expr ] ),
+                finalPolicy: "doesNotMatter"
+            } ) ) );
     },
-    
+    hasProperScope: defaults.hasProperScope,
     desugarSave: defaults.desugarSave,
     desugarVarLists: defaults.desugarVarLists,
-    hasProperScope: defaults.hasProperScope,
     desugarFnAndCase: defaults.desugarFnAndCase,
     desugarDef: defaults.desugarDef,
     compileToNaiveJs: function ( args, options, locals ) {
@@ -905,30 +883,27 @@ addSyntax( "match", "caseList",
     "frameName envPattern getExpr caseList", {
     // INTERESTING
     
-    _map: function ( args, writer ) {
-        return writer.redecorate( jsList( "match",
-            args.frameName.expr,
-            args.envPattern.expr,
-            writer.consume( args.getExpr ),
-            writer.consume( args.caseList ) ) );
-    },
-    _mapWithIsFinal: function ( args, isFinal, writer ) {
+    visit: function ( args, writer ) {
         return writer.redecorate( jsnMap(), jsList( "match",
             args.frameName.expr,
             args.envPattern.expr,
-            writer.consume( args.getExpr,
-                args.envPattern.valsToKeys(), !!"isFinal" ),
-            writer.consume( args.caseList, jsnMap(), isFinal ) ) );
+            writer.consume( args.getExpr, {
+                shadow: args.envPattern.valsToKeys(),
+                finalPolicy: "root"
+            } ),
+            writer.consume( args.caseList, {
+                shadow: jsnMap(),
+                finalPolicy: "doesNotMatter"
+            } ) ) );
     },
-    
-    desugarSave: defaults.desugarSave,
-    desugarVarLists: defaults.desugarVarLists,
-    hasProperScope: function ( args, isFinal ) {
+    hasProperScope: function ( args ) {
         return args.envPattern.isProperForSets(
                 strMap(), strMap() ) &&
-            args.getExpr.hasProperScope( !!"isFinal" ) &&
-            args.caseList.hasProperScope( isFinal );
+            args.getExpr.hasProperScope() &&
+            args.caseList.hasProperScope();
     },
+    desugarSave: defaults.desugarSave,
+    desugarVarLists: defaults.desugarVarLists,
     desugarFnAndCase: defaults.desugarFnAndCase,
     desugarDef: defaults.desugarDef,
     compileToNaiveJs: function ( args, options, locals ) {
@@ -945,7 +920,7 @@ addSyntax( "match", "caseList",
                 "var " + gs + " = " +
                     "matchSubject.frameVars[ " + i + " ];\n";
             var local = entries.get( va );
-            if ( local[ 0 ] !== "va" )
+            if ( local[ 0 ] !== "va:va" )
                 throw new Error();
             thenLocals.set( local[ 1 ], gs );
         } );
@@ -965,15 +940,16 @@ addSyntax( "match", "caseList",
     }
 } );
 addSyntax( "any", "caseList", "getExpr", {
-    _map: function ( args, writer ) {
-        return writer.redecorate( jsList( "any",
-            writer.consume( args.getExpr ) ) );
+    visit: function ( args, writer ) {
+        return writer.redecorate( jsnMap(), jsList( "any",
+            writer.consume( args.getExpr, {
+                shadow: jsnMap(),
+                finalPolicy: "root"
+            } ) ) );
     },
-    _mapWithIsFinal: defaults.mapWithIsFinal_last,
-    
+    hasProperScope: defaults.hasProperScope,
     desugarSave: defaults.desugarSave,
     desugarVarLists: defaults.desugarVarLists,
-    hasProperScope: defaults.hasProperScope,
     desugarFnAndCase: defaults.desugarFnAndCase,
     desugarDef: defaults.desugarDef,
     compileToNaiveJs: function ( args, options, locals ) {
@@ -985,12 +961,15 @@ addSyntax( "any", "caseList", "getExpr", {
     }
 } );
 addSyntax( "env-nil", "envExpr", "", {
-    _map: defaults.map,
-    _mapWithIsFinal: defaults.mapWithIsFinal_last,
-    
+    visit: function ( args, writer ) {
+        return writer.redecorate( jsnMap(), args.self.expr );
+    },
+    hasProperScope: defaults.hasProperScope,
+    isProperForSet: function ( args, varSet ) {
+        return true;
+    },
     desugarSave: defaults.desugarSave,
     desugarVarLists: defaults.desugarVarLists,
-    hasProperScope: defaults.hasProperScope,
     desugarFnAndCase: defaults.desugarFnAndCase,
     desugarDef: defaults.desugarDef,
     keys: function ( args ) {
@@ -1001,18 +980,26 @@ addSyntax( "env-nil", "envExpr", "", {
     }
 } );
 addSyntax( "env-cons", "envExpr", "va getExpr envExpr", {
-    _map: function ( args, writer ) {
-        return writer.redecorate( jsList( "env-cons",
+    visit: function ( args, writer ) {
+        return writer.redecorate( jsnMap(), jsList( "env-cons",
             args.va.expr,
-            writer.consume( args.getExpr ),
-            writer.consume( args.envExpr ) ) );
+            writer.consume( args.getExpr, {
+                shadow: jsnMap(),
+                finalPolicy: "notFinal"
+            } ),
+            writer.consume( args.envExpr, {
+                shadow: jsnMap(),
+                finalPolicy: "notFinal"
+            } ) ) );
     },
-    _mapWithIsFinal: defaults.mapWithIsFinal_none,
-    
+    hasProperScope: defaults.hasProperScope,
+    isProperForSet: function ( args, varSet ) {
+        return !varSet.has( args.va.expr ) &&
+            args.envExpr.isProperForSet(
+                varSet.plusTruth( args.va.expr ) );
+    },
     desugarSave: defaults.desugarSave,
     desugarVarLists: defaults.desugarVarLists,
-    // TODO: In hasProperScope, check for duplicates.
-    hasProperScope: defaults.hasProperScope,
     desugarFnAndCase: defaults.desugarFnAndCase,
     desugarDef: defaults.desugarDef,
     keys: function ( args ) {
@@ -1030,16 +1017,20 @@ addSyntax( "env-cons", "envExpr", "va getExpr envExpr", {
     }
 } );
 addSyntax( "let-def", "getExpr", "def getExpr", {
-    _map: function ( args, writer ) {
-        return writer.redecorate( jsList( "let-def",
-            writer.consume( args.def ),
-            writer.consume( args.getExpr ) ) );
+    visit: function ( args, writer ) {
+        return writer.redecorate( jsnMap(), jsList( "let-def",
+            writer.consume( args.def, {
+                shadow: jsnMap(),
+                finalPolicy: "doesNotMatter"
+            } ),
+            writer.consume( args.getExpr, {
+                shadow: jsnMap(),
+                finalPolicy: "inherit"
+            } ) ) );
     },
-    _mapWithIsFinal: defaults.mapWithIsFinal_last,
-    
+    hasProperScope: defaults.hasProperScope,
     desugarSave: defaults.desugarSave,
     desugarVarLists: defaults.desugarVarLists,
-    hasProperScope: defaults.hasProperScope,
     desugarFnAndCase: defaults.desugarFnAndCase,
     desugarDef: function ( args ) {
         var desugaredDef = args.def.desugarDefIncludingSelf();
@@ -1056,20 +1047,22 @@ addSyntax( "let-def", "getExpr", "def getExpr", {
 addSyntax( "call", "getExpr", "getExpr getExpr", {
     // INTERESTING
     
-    _map: function ( args, writer ) {
-        return writer.redecorate( jsList( "call",
-            writer.consume( args[ 0 ] ),
-            writer.consume( args[ 1 ] ) ) );
+    visit: function ( args, writer ) {
+        return writer.redecorate(
+            jsnMap().plusTruth( [ "va:final" ] ),
+            jsList( "call",
+                writer.consume( args[ 0 ], {
+                    shadow: jsnMap(),
+                    finalPolicy: "notFinal"
+                } ),
+                writer.consume( args[ 1 ], {
+                    shadow: jsnMap(),
+                    finalPolicy: "root"
+                } ) ) );
     },
-    _mapWithIsFinal: defaults.mapWithIsFinal_last,
-    
+    hasProperScope: defaults.hasProperScope,
     desugarSave: defaults.desugarSave,
     desugarVarLists: defaults.desugarVarLists,
-    hasProperScope: function ( args, isFinal ) {
-        return isFinal &&
-            args[ 0 ].hasProperScope( !"isFinal" ) &&
-            args[ 1 ].hasProperScope( isFinal );
-    },
     desugarFnAndCase: defaults.desugarFnAndCase,
     desugarDef: defaults.desugarDef,
     compileToNaiveJs: function ( args, options, locals ) {
@@ -1081,16 +1074,14 @@ addSyntax( "call", "getExpr", "getExpr getExpr", {
     }
 } );
 addSyntax( "local", "getExpr", "va", {
-    _map: defaults.map,
-    _mapWithIsFinal: function ( args, isFinal, writer ) {
+    visit: function ( args, writer ) {
         return writer.redecorate(
-            jsnMap().plusTruth( [ "va", args.va.expr ] ),
+            jsnMap().plusTruth( [ "va:va", args.va.expr ] ),
             args.self.expr );
     },
-    
+    hasProperScope: defaults.hasProperScope,
     desugarSave: defaults.desugarSave,
     desugarVarLists: defaults.desugarVarLists,
-    hasProperScope: defaults.hasProperScope,
     desugarFnAndCase: defaults.desugarFnAndCase,
     desugarDef: defaults.desugarDef,
     compileToNaiveJs: function ( args, options, locals ) {
@@ -1100,16 +1091,20 @@ addSyntax( "local", "getExpr", "va", {
     }
 } );
 addSyntax( "frame", "getExpr", "frameName envExpr", {
-    _map: function ( args, writer ) {
-        return writer.redecorate( jsList( "frame",
+    visit: function ( args, writer ) {
+        return writer.redecorate( jsnMap(), jsList( "frame",
             args.frameName.expr,
-            writer.consume( args.envExpr ) ) );
+            writer.consume( args.envExpr, {
+                shadow: jsnMap(),
+                finalPolicy: "notFinal"
+            } ) ) );
     },
-    _mapWithIsFinal: defaults.mapWithIsFinal_none,
-    
+    hasProperScope: function ( args ) {
+        return args.envExpr.isProperForSet( strMap() ) &&
+            args.envExpr.hasProperScope();
+    },
     desugarSave: defaults.desugarSave,
     desugarVarLists: defaults.desugarVarLists,
-    hasProperScope: defaults.hasProperScope,
     desugarFnAndCase: defaults.desugarFnAndCase,
     desugarDef: defaults.desugarDef,
     compileToNaiveJs: function ( args, options, locals ) {
@@ -1136,30 +1131,37 @@ addSyntax( "frame", "getExpr", "frameName envExpr", {
 addSyntax( "save", "getExpr", "frameName optVarList va getExpr", {
     // INTERESTING
     
-    _map: function ( args, writer ) {
-        return writer.redecorate( jsList( "save",
-            args.frameName.expr,
-            args.optVarList.expr,
-            args.va.expr,
-            writer.consume( args.getExpr ) ) );
+    visit: function ( args, writer ) {
+        var vars = args.optVarList.set();
+        if ( vars === null )
+            vars = jsnMap();
+        return writer.redecorate(
+            vars.mapKeys( function ( va ) {
+                if ( va[ 0 ] !== "va:va" )
+                    throw new Error();
+                return [ "savedFreeVar", va[ 1 ] ];
+            } ).plusTruth( [ "savedInputVar", args.va.expr ] ),
+            jsList( "save",
+                args.frameName.expr,
+                args.optVarList.expr,
+                args.va.expr,
+                writer.consume( args.getExpr, {
+                    shadow: jsnMap(),
+                    finalPolicy: "root"
+                } ) ) );
     },
-    _mapWithIsFinal: defaults.mapWithIsFinal_last,
-    
-    desugarSave: function ( args, isFinal ) {
+    hasProperScope: defaults.hasProperScope,
+    desugarSave: function ( args ) {
         return {
             type: "save",
             frameName: args.frameName,
             optVarList: args.optVarList,
             va: args.va,
             arg: args.getExpr,
-            otherFreeVars: jsnMap(),
             frameBodyExpr: jsList( "local", args.va.expr )
         };
     },
     desugarVarLists: function ( args ) {
-        throw new Error();
-    },
-    hasProperScope: function ( args, isFinal ) {
         throw new Error();
     },
     desugarFnAndCase: function ( args ) {
@@ -1175,33 +1177,25 @@ addSyntax( "save", "getExpr", "frameName optVarList va getExpr", {
 addSyntax( "fn", "getExpr", "frameName optVarList caseList", {
     // INTERESTING
     
-    // NOTE: Since we specify _mapWithIsFinal, desugarVarLists,
-    // desugarFnAndCase, and desugarDef, we don't actually need _map.
-//    _map: function ( args, writer ) {
-//        return writer.redecorate( jsList( "fn",
-//            args.frameName.expr,
-//            args.optVarList.expr,
-//            writer.consume( args.caseList ) ) );
-//    },
-    _mapWithIsFinal: function ( args, isFinal, writer ) {
+    visit: function ( args, writer ) {
         var declaredInnerFreeVars = args.optVarList.set();
         
-        if ( declaredInnerFreeVars === null )
-            return writer.redecorate( jsnMap(),
-                jsList( "fn",
-                    args.frameName.expr,
-                    args.optVarList.expr,
-                    writer.consume( args.caseList, jsnMap(),
-                        !!"isFinal" ) ) );
-        else
-            return writer.redecorate( declaredInnerFreeVars,
-                jsList( "fn",
-                    args.frameName.expr,
-                    args.optVarList.expr,
-                    writer.consume( args.caseList, null,
-                        !!"isFinal" ) ) );
+        return writer.redecorate(
+            declaredInnerFreeVars === null ?
+                jsnMap() : declaredInnerFreeVars,
+            jsList( "fn",
+                args.frameName.expr,
+                args.optVarList.expr,
+                writer.consume( args.caseList, {
+                    shadow: jsnMap(),
+                    finalPolicy: "root"
+                } ) ) );
     },
-    
+    hasProperScope: function ( args ) {
+        return optVarListIsProper( getFreeVars( args.caseList ),
+                args.optVarList ) &&
+            args.caseList.hasProperScope();
+    },
     desugarSave: defaults.desugarSave,
     desugarVarLists: function ( args ) {
         var innerFreeVars = getFreeVars( args.caseList );
@@ -1209,15 +1203,6 @@ addSyntax( "fn", "getExpr", "frameName optVarList caseList", {
             args.frameName.expr,
             args.optVarList.or( innerFreeVars ),
             args.caseList.desugarVarLists() );
-    },
-    hasProperScope: function ( args, isFinal ) {
-        var innerFreeVars = getFreeVars( args.caseList );
-        var declaredInnerFreeVars = args.optVarList.set();
-        if ( declaredInnerFreeVars === null )
-            throw new Error();
-        return args.optVarList.isProvidedProperlyForSet( strMap() ) &&
-            innerFreeVars.subset( declaredInnerFreeVars ) &&
-            args.caseList.hasProperScope( !!"isFinal" );
     },
     desugarFnAndCase: function ( args ) {
         return jsList( "let-def",
@@ -1237,38 +1222,30 @@ addSyntax( "case", "getExpr",
     "frameName optVarList getExpr caseList", {
     // INTERESTING
     
-    // NOTE: Since we specify _mapWithIsFinal, desugarVarLists,
-    // desugarFnAndCase, and desugarDef, we don't actually need _map.
-//    _map: function ( args, writer ) {
-//        return writer.redecorate( jsList( "case",
-//            args.frameName.expr,
-//            args.optVarList.expr,
-//            writer.consume( args.getExpr ),
-//            writer.consume( args.getExpr ) ) );
-//    },
-    _mapWithIsFinal: function ( args, isFinal, writer ) {
+    visit: function ( args, writer ) {
         var declaredInnerFreeVars = args.optVarList.set();
         
-        if ( declaredInnerFreeVars === null )
-            return writer.redecorate( jsnMap(),
-                jsList( "case",
-                    args.frameName.expr,
-                    args.optVarList.expr,
-                    writer.consume( args.getExpr, jsnMap(),
-                        !!"isFinal" ),
-                    writer.consume( args.caseList, jsnMap(),
-                        !!"isFinal" ) ) );
-        else
-            return writer.redecorate( declaredInnerFreeVars,
-                jsList( "case",
-                    args.frameName.expr,
-                    args.optVarList.expr,
-                    writer.consume( args.getExpr, jsnMap(),
-                        !!"isFinal" ),
-                    writer.consume( args.caseList, null,
-                        !!"isFinal" ) ) );
+        return writer.redecorate(
+            declaredInnerFreeVars === null ?
+                jsnMap() : declaredInnerFreeVars,
+            jsList( "case",
+                args.frameName.expr,
+                args.optVarList.expr,
+                writer.consume( args.getExpr, {
+                    shadow: jsnMap(),
+                    finalPolicy: "root"
+                } ),
+                writer.consume( args.caseList, {
+                    shadow: jsnMap(),
+                    finalPolicy: "doesNotMatter"
+                } ) ) );
     },
-    
+    hasProperScope: function ( args ) {
+        return optVarListIsProper( getFreeVars( args.caseList ),
+                args.optVarList ) &&
+            args.getExpr.hasProperScope() &&
+            args.caseList.hasProperScope();
+    },
     desugarSave: defaults.desugarSave,
     desugarVarLists: function ( args ) {
         var innerFreeVars = getFreeVars( args.caseList );
@@ -1277,16 +1254,6 @@ addSyntax( "case", "getExpr",
             args.optVarList.or( innerFreeVars ),
             args.getExpr.desugarVarLists(),
             args.caseList.desugarVarLists() );
-    },
-    hasProperScope: function ( args, isFinal ) {
-        var innerFreeVars = getFreeVars( args.caseList );
-        var declaredInnerFreeVars = args.optVarList.set();
-        if ( declaredInnerFreeVars === null )
-            throw new Error();
-        return args.optVarList.isProvidedProperlyForSet( strMap() ) &&
-            innerFreeVars.subset( declaredInnerFreeVars ) &&
-            args.getExpr.hasProperScope( !!"isFinal" ) &&
-            args.caseList.hasProperScope( !!"isFinal" );
     },
     desugarFnAndCase: function ( args ) {
         return jsList( "let-def",
@@ -1311,7 +1278,7 @@ addSyntax( "var-list-omitted", "optVarList", "", {
     or: function ( args, varSet ) {
         var varSetExpr = jsList( "var-list-nil" );
         varSet.each( function ( va, truth ) {
-            if ( va[ 0 ] !== "va" )
+            if ( va[ 0 ] !== "va:va" )
                 throw new Error();
             varSetExpr =
                 jsList( "var-list-cons", va[ 1 ], varSetExpr );
@@ -1352,7 +1319,8 @@ addSyntax( "var-list-nil", "varList", "", {
 } );
 addSyntax( "var-list-cons", "varList", "va varList", {
     set: function ( args ) {
-        return args.varList.set().plusTruth( [ "va", args.va.expr ] );
+        return args.varList.set().
+            plusTruth( [ "va:va", args.va.expr ] );
     },
     isProvidedProperlyForSet: function ( args, varSet ) {
         return !varSet.has( args.va.expr ) &&
@@ -1380,11 +1348,11 @@ addSyntax( "env-pattern-nil", "envPattern", "", {
 addSyntax( "env-pattern-cons", "envPattern", "va va envPattern", {
     valsToKeys: function ( args ) {
         return args.envPattern.valsToKeys().
-            plusEntry( [ "va", args[ 1 ].expr ], args[ 0 ].expr );
+            plusEntry( [ "va:va", args[ 1 ].expr ], args[ 0 ].expr );
     },
     keysToVals: function ( args ) {
         return args.envPattern.keysToVals().
-            plusEntry( args[ 0 ].expr, [ "va", args[ 1 ].expr ] );
+            plusEntry( args[ 0 ].expr, [ "va:va", args[ 1 ].expr ] );
     },
     isProperForSets: function ( args, keySet, varSet ) {
         var k = args[ 0 ].expr;
@@ -1396,14 +1364,15 @@ addSyntax( "env-pattern-cons", "envPattern", "va va envPattern", {
 } );
 
 function desugarDefExpr( expr ) {
-    var noSavesResult =
-        parseSyntax( "def", expr ).desugarSave( !"isFinal" );
+    var parsed = parseSyntax( "def", expr );
+    if ( !parsed.hasProperScope()
+        || getFreeVars( parsed ).has( [ "va:scopeError" ] ) )
+        throw new Error();
+    var noSavesResult = parsed.desugarSave();
     if ( noSavesResult.type !== "expr" )
         throw new Error();
     var noSaves = parseSyntax( "def", noSavesResult.expr );
     var noVarLists = parseSyntax( "def", noSaves.desugarVarLists() );
-    if ( !noVarLists.hasProperScope( !"isFinal" ) )
-        throw new Error();
     var noFns = parseSyntax( "def", noVarLists.desugarFnAndCase() );
     return noFns.desugarDefIncludingSelf();
 }
