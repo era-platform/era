@@ -145,20 +145,25 @@ function run( stack, rules ) {
 //
 // get-expr ::=
 //   // Sugar.
+//   //
+//   // If this expression is a root parent expression, then get-expr
+//   // counts as a new root parent expression.
+//   //
 //   (let-def def get-expr)
 //
-//   // TODO: See if we should add this. This would be the only syntax
-//   // that allowed changing the lexical scope in between a Staccato
-//   // operation's case-list branch being selected and the end of the
-//   // operation. More concretely, this would be the only syntax that
-//   // could change the lexical scope in between a (save ...) and its
-//   // root parent expression, potentially complicating the detection
-//   // of scope errors.
+//   // TODO: Implement this.
 //   //
 //   // This executes the env-expr and proceeds as the get-expr with
 //   // those bindings in scope.
 //   //
-//   //(let env-expr get-expr)
+//   // NOTE: This is the only syntax that allows changing the lexical
+//   // scope in between a Staccato operation's case-list branch being
+//   // selected and the end of the operation. More concretely, this
+//   // is the only syntax that can change the lexical scope in
+//   // between a (save ...) and its root parent expression, which
+//   // makes a certain kind of scope error possible.
+//   //
+//   (let env-expr get-expr)
 //
 //   // To use this, the expression must be the last computation that
 //   // happens under the root parent expression.
@@ -196,21 +201,26 @@ function run( stack, rules ) {
 //   // expression, but without an entry for the given variable. The
 //   // given variable is used for the incoming return value instead.
 //   // This then calls the frame with an environment captured from
-//   // the surrounding lexical scope, providing the result of the
-//   // given get-expr as the incoming return value. The defined frame
-//   // proceeds by doing the remainder of what the root parent
-//   // expression would have done.
+//   // the lexical scope at the *base* of the root parent expression
+//   // (not at the position (save ...) occupied within the root
+//   // parent expression), providing the result of the given get-expr
+//   // as the incoming return value. The defined frame proceeds by
+//   // doing the remainder of what the root parent expression would
+//   // have done.
+//   //
+//   // The opt-var-list specifies the free variables of the defined
+//   // frame. Reiterating, these variables refer to the lexical scope
+//   // at the *base* of the root parent expression, not the position
+//   // (save ...) occupies within that expression.
 //   //
 //   // It's an error to access any variable by the given variable
 //   // name in the remainder of the root parent expression, since
 //   // those accesses would be clobbered by the desugaring of this
 //   // syntax.
 //   //
-//   // (NOTE: It would also be an error to surround this expression
-//   // with a local variable binding that would shadow the binding
-//   // created during desugaring, except there are no syntaxes that
-//   // could do that. Every way to establish a local variable binding
-//   // also establishes a new parent root expression.)
+//   // It's also an error to surround this expression with a local
+//   // variable binding that would shadow the binding created during
+//   // desugaring. The only way to cause this error is (let ...).
 //   //
 //   // The get-expr counts as a new root parent expression.
 //   //
@@ -267,7 +277,7 @@ function run( stack, rules ) {
 // def/caseList/getExpr/envExpr visit( writer )
 // def/caseList/getExpr/envExpr hasProperScope()
 // envExpr isProperForSet( varSet )
-// def/caseList/getExpr/envExpr desugarSave()
+// def/caseList/getExpr/envExpr desugarSave( isFinal )
 // def/caseList/getExpr/envExpr desugarVarLists()
 // def/caseList/getExpr/envExpr desugarFnAndCase()
 // def desugarDefIncludingSelf()
@@ -636,7 +646,7 @@ function getFreeVars( exprObj ) {
 function processSaveRoot( exprObj ) {
     // INTERESTING
     
-    var desugared = exprObj.desugarSave();
+    var desugared = exprObj.desugarSave( !!"isFinal" );
     if ( desugared.type === "expr" ) {
         return desugared.expr;
     } else if ( desugared.type === "save" ) {
@@ -679,7 +689,7 @@ function desugarDefWriter() {
     return writer;
 }
 
-function desugarSaveWriter() {
+function desugarSaveWriter( isFinal ) {
     // INTERESTING
     
     // NOTE: The `state` variable is mutated a maximum of one time.
@@ -690,10 +700,12 @@ function desugarSaveWriter() {
         // NOTE: We only desugar `part` some of the time!
         if ( state.type === "exprState" ) {
             
-            if ( inheritedAttrs.finalPolicy === "root" )
+            if ( inheritedAttrs.finalPolicy === "root"
+                || (inheritedAttrs.finalPolicy === "inherit"
+                    && isFinal) )
                 return processSaveRoot( part );
             
-            var desugared = part.desugarSave();
+            var desugared = part.desugarSave( !"isFinal" );
             if ( desugared.type === "expr" ) {
                 return desugared.expr;
             } else if ( desugared.type === "save" ) {
@@ -760,8 +772,8 @@ var defaults = {
         } ) );
         return proper;
     },
-    desugarSave: function ( args ) {
-        return args.self.visit( desugarSaveWriter() );
+    desugarSave: function ( args, isFinal ) {
+        return args.self.visit( desugarSaveWriter( isFinal ) );
     },
     desugarVarLists: function ( args ) {
         return args.self.visit(
@@ -1151,7 +1163,7 @@ addSyntax( "save", "getExpr", "frameName optVarList va getExpr", {
                 } ) ) );
     },
     hasProperScope: defaults.hasProperScope,
-    desugarSave: function ( args ) {
+    desugarSave: function ( args, isFinal ) {
         return {
             type: "save",
             frameName: args.frameName,
@@ -1368,7 +1380,7 @@ function desugarDefExpr( expr ) {
     if ( !parsed.hasProperScope()
         || getFreeVars( parsed ).has( [ "va:scopeError" ] ) )
         throw new Error();
-    var noSavesResult = parsed.desugarSave();
+    var noSavesResult = parsed.desugarSave( !!"isFinal" );
     if ( noSavesResult.type !== "expr" )
         throw new Error();
     var noSaves = parseSyntax( "def", noSavesResult.expr );
