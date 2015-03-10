@@ -146,7 +146,19 @@ function run( stack, rules ) {
 // get-expr ::=
 //   // Sugar.
 //   (let-def def get-expr)
-//   (let get-expr get-expr)
+//
+//   // TODO: See if we should add this. This would be the only syntax
+//   // that allowed changing the lexical scope in between a Staccato
+//   // operation's case-list branch being selected and the end of the
+//   // operation. More concretely, this would be the only syntax that
+//   // could change the lexical scope in between a (save ...) and its
+//   // root parent expression, potentially complicating the detection
+//   // of scope errors.
+//   //
+//   // This executes the env-expr and proceeds as the get-expr with
+//   // those bindings in scope.
+//   //
+//   //(let env-expr get-expr)
 //
 //   // To use this, the expression must be the last computation that
 //   // happens under the root parent expression.
@@ -259,7 +271,6 @@ function run( stack, rules ) {
 // def/caseList/getExpr/envExpr desugarFnAndCase()
 // def desugarDefIncludingSelf()
 // caseList/getExpr/envExpr desugarDef()
-// def/caseList/getExpr/envExpr desugarLet()
 // def compileToNaiveJs( options )
 // caseList/getExpr compileToNaiveJs( options, locals )
 // envExpr keys()
@@ -778,11 +789,6 @@ var defaults = {
     },
     desugarDef: function ( args ) {
         return args.self._map( desugarDefWriter() );
-    },
-    desugarLet: function ( args ) {
-        return args.self._map( idWriter( 0, function ( arg ) {
-            return arg.desugarLet();
-        } ) );
     }
 };
 
@@ -830,7 +836,6 @@ addSyntax( "def", "def", "frameName optVarList caseList", {
             desugared.expr
         ) ] );
     },
-    desugarLet: defaults.desugarLet,
     compileToNaiveJs: function ( args, options ) {
         var nextGensymI = 0;
         function gensym() {
@@ -888,7 +893,6 @@ addSyntax( "let-case", "caseList", "va caseList", {
     hasProperScope: defaults.hasProperScope,
     desugarFnAndCase: defaults.desugarFnAndCase,
     desugarDef: defaults.desugarDef,
-    desugarLet: defaults.desugarLet,
     compileToNaiveJs: function ( args, options, locals ) {
         var innerLocals =
             locals.plusEntry( args.va.expr, "matchSubject" );
@@ -927,7 +931,6 @@ addSyntax( "match", "caseList",
     },
     desugarFnAndCase: defaults.desugarFnAndCase,
     desugarDef: defaults.desugarDef,
-    desugarLet: defaults.desugarLet,
     compileToNaiveJs: function ( args, options, locals ) {
         var entries = args.envPattern.keysToVals();
         var frameVars = makeFrameVars( entries );
@@ -973,7 +976,6 @@ addSyntax( "any", "caseList", "getExpr", {
     hasProperScope: defaults.hasProperScope,
     desugarFnAndCase: defaults.desugarFnAndCase,
     desugarDef: defaults.desugarDef,
-    desugarLet: defaults.desugarLet,
     compileToNaiveJs: function ( args, options, locals ) {
         return (
             "return " +
@@ -991,7 +993,6 @@ addSyntax( "env-nil", "envExpr", "", {
     hasProperScope: defaults.hasProperScope,
     desugarFnAndCase: defaults.desugarFnAndCase,
     desugarDef: defaults.desugarDef,
-    desugarLet: defaults.desugarLet,
     keys: function ( args ) {
         return strMap();
     },
@@ -1010,10 +1011,10 @@ addSyntax( "env-cons", "envExpr", "va getExpr envExpr", {
     
     desugarSave: defaults.desugarSave,
     desugarVarLists: defaults.desugarVarLists,
+    // TODO: In hasProperScope, check for duplicates.
     hasProperScope: defaults.hasProperScope,
     desugarFnAndCase: defaults.desugarFnAndCase,
     desugarDef: defaults.desugarDef,
-    desugarLet: defaults.desugarLet,
     keys: function ( args ) {
         return args.envExpr.keys().plusTruth( args.va.expr );
     },
@@ -1048,29 +1049,6 @@ addSyntax( "let-def", "getExpr", "def getExpr", {
             expr: desugaredExpr.expr
         };
     },
-    desugarLet: function ( args ) {
-        throw new Error();
-    },
-    compileToNaiveJs: function ( args, options, locals ) {
-        throw new Error();
-    }
-} );
-addSyntax( "let", "getExpr", "getExpr getExpr", {
-    _map: function ( args, writer ) {
-        return writer.redecorate( jsList( "let",
-            writer.consume( args[ 0 ] ),
-            writer.consume( args[ 1 ] ) ) );
-    },
-    _mapWithIsFinal: defaults.mapWithIsFinal_last,
-    
-    desugarSave: defaults.desugarSave,
-    desugarVarLists: defaults.desugarVarLists,
-    hasProperScope: defaults.hasProperScope,
-    desugarFnAndCase: defaults.desugarFnAndCase,
-    desugarDef: defaults.desugarDef,
-    desugarLet: function ( args ) {
-        return args[ 1 ].expr;
-    },
     compileToNaiveJs: function ( args, options, locals ) {
         throw new Error();
     }
@@ -1094,7 +1072,6 @@ addSyntax( "call", "getExpr", "getExpr getExpr", {
     },
     desugarFnAndCase: defaults.desugarFnAndCase,
     desugarDef: defaults.desugarDef,
-    desugarLet: defaults.desugarLet,
     compileToNaiveJs: function ( args, options, locals ) {
         var func = args[ 0 ].compileToNaiveJs( options, locals );
         var arg = args[ 1 ].compileToNaiveJs( options, locals );
@@ -1116,7 +1093,6 @@ addSyntax( "local", "getExpr", "va", {
     hasProperScope: defaults.hasProperScope,
     desugarFnAndCase: defaults.desugarFnAndCase,
     desugarDef: defaults.desugarDef,
-    desugarLet: defaults.desugarLet,
     compileToNaiveJs: function ( args, options, locals ) {
         if ( !locals.has( args.va.expr ) )
             throw new Error();
@@ -1136,7 +1112,6 @@ addSyntax( "frame", "getExpr", "frameName envExpr", {
     hasProperScope: defaults.hasProperScope,
     desugarFnAndCase: defaults.desugarFnAndCase,
     desugarDef: defaults.desugarDef,
-    desugarLet: defaults.desugarLet,
     compileToNaiveJs: function ( args, options, locals ) {
         var frameVars = makeFrameVars( args.envExpr.keys() );
         var frameTag =
@@ -1193,9 +1168,6 @@ addSyntax( "save", "getExpr", "frameName optVarList va getExpr", {
     desugarDef: function ( args ) {
         throw new Error();
     },
-    desugarLet: function ( args ) {
-        throw new Error();
-    },
     compileToNaiveJs: function ( args, options, locals ) {
         throw new Error();
     }
@@ -1204,8 +1176,7 @@ addSyntax( "fn", "getExpr", "frameName optVarList caseList", {
     // INTERESTING
     
     // NOTE: Since we specify _mapWithIsFinal, desugarVarLists,
-    // desugarFnAndCase, desugarDef, and desugarLet, we don't actually
-    // need _map.
+    // desugarFnAndCase, and desugarDef, we don't actually need _map.
 //    _map: function ( args, writer ) {
 //        return writer.redecorate( jsList( "fn",
 //            args.frameName.expr,
@@ -1258,9 +1229,6 @@ addSyntax( "fn", "getExpr", "frameName optVarList caseList", {
     desugarDef: function ( args ) {
         throw new Error();
     },
-    desugarLet: function ( args ) {
-        throw new Error();
-    },
     compileToNaiveJs: function ( args, options, locals ) {
         throw new Error();
     }
@@ -1270,8 +1238,7 @@ addSyntax( "case", "getExpr",
     // INTERESTING
     
     // NOTE: Since we specify _mapWithIsFinal, desugarVarLists,
-    // desugarFnAndCase, desugarDef, and desugarLet, we don't actually
-    // need _map.
+    // desugarFnAndCase, and desugarDef, we don't actually need _map.
 //    _map: function ( args, writer ) {
 //        return writer.redecorate( jsList( "case",
 //            args.frameName.expr,
@@ -1287,17 +1254,19 @@ addSyntax( "case", "getExpr",
                 jsList( "case",
                     args.frameName.expr,
                     args.optVarList.expr,
-                    writer.consume( args.getExpr, jsnMap(), isFinal ),
+                    writer.consume( args.getExpr, jsnMap(),
+                        !!"isFinal" ),
                     writer.consume( args.caseList, jsnMap(),
-                        isFinal ) ) );
+                        !!"isFinal" ) ) );
         else
             return writer.redecorate( declaredInnerFreeVars,
                 jsList( "case",
                     args.frameName.expr,
                     args.optVarList.expr,
-                    writer.consume( args.getExpr, jsnMap(), isFinal ),
+                    writer.consume( args.getExpr, jsnMap(),
+                        !!"isFinal" ),
                     writer.consume( args.caseList, null,
-                        isFinal ) ) );
+                        !!"isFinal" ) ) );
     },
     
     desugarSave: defaults.desugarSave,
@@ -1329,9 +1298,6 @@ addSyntax( "case", "getExpr",
                 args.getExpr.desugarFnAndCase() ) );
     },
     desugarDef: function ( args ) {
-        throw new Error();
-    },
-    desugarLet: function ( args ) {
         throw new Error();
     },
     compileToNaiveJs: function ( args, options, locals ) {
@@ -1439,7 +1405,5 @@ function desugarDefExpr( expr ) {
     if ( !noVarLists.hasProperScope( !"isFinal" ) )
         throw new Error();
     var noFns = parseSyntax( "def", noVarLists.desugarFnAndCase() );
-    return arrMap( noFns.desugarDefIncludingSelf(), function ( def ) {
-        return parseSyntax( "def", def ).desugarLet();
-    } );
+    return noFns.desugarDefIncludingSelf();
 }
