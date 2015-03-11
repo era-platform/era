@@ -151,17 +151,24 @@ function run( stack, rules ) {
 //   //
 //   (let-def def get-expr)
 //
-//   // TODO: Implement this.
-//   //
 //   // This executes the env-expr and proceeds as the get-expr with
 //   // those bindings in scope.
+//   //
+//   // NOTE: This is not a recursive let where a binding is in scope
+//   // during its own expression. It's not a sequential let where a
+//   // binding is in scope during later bindings. For example, if x
+//   // and y are in scope, then (let (env-cons x x (env-nil)) ...)
+//   // has no effect, and
+//   // (let (env-cons x y (env-cons y x (env-nil))) ...) has the
+//   // effect of swapping x and y.
 //   //
 //   // NOTE: This is the only syntax that allows changing the lexical
 //   // scope in between a Staccato operation's case-list branch being
 //   // selected and the end of the operation. More concretely, this
 //   // is the only syntax that can change the lexical scope in
-//   // between a (save ...) and its root parent expression, which
-//   // makes a certain kind of scope error possible.
+//   // between a (save ...) and its root parent expression, which can
+//   // cause a scope error if it would get in the way of (save ...)
+//   // desugaring.
 //   //
 //   (let env-expr get-expr)
 //
@@ -285,7 +292,8 @@ function run( stack, rules ) {
 // def compileToNaiveJs( options )
 // caseList/getExpr compileToNaiveJs( options, locals )
 // envExpr keys()
-// envExpr compileToNaiveJs( options, locals, keyToI )
+// envExpr compileToNaiveJsForFrame( options, locals, keyToI )
+// envExpr compileToNaiveJsForLet( options, locals )
 // optVarList/varList set()
 // optVarList or( varSet )
 // optVarList/varList isProvidedProperlyForSet( varSet )
@@ -748,7 +756,9 @@ function desugarSaveWriter( isFinal ) {
 function makeFrameVars( varSet ) {
     var frameVars = [];
     varSet.each( function ( va, truth ) {
-        frameVars.push( va );
+        if ( va[ 0 ] !== "va:va" )
+            throw new Error();
+        frameVars.push( va[ 1 ] );
     } );
     frameVars.sort();
     return frameVars;
@@ -836,13 +846,7 @@ addSyntax( "def", "def", "frameName optVarList caseList", {
             return "v" + nextGensymI++;
         }
         
-        var frameVarSet = strMap();
-        args.optVarList.set().each( function ( va, truth ) {
-            if ( va[ 0 ] !== "va:va" )
-                throw new Error();
-            frameVarSet.add( va[ 1 ] );
-        } );
-        var frameVars = makeFrameVars( frameVarSet );
+        var frameVars = makeFrameVars( args.optVarList.set() );
         var frameTag =
             JSON.stringify( [ args.frameName.expr, frameVars ] );
         
@@ -931,7 +935,7 @@ addSyntax( "match", "caseList",
             varStatements +=
                 "var " + gs + " = " +
                     "matchSubject.frameVars[ " + i + " ];\n";
-            var local = entries.get( va );
+            var local = entries.get( [ "va:va", va ] );
             if ( local[ 0 ] !== "va:va" )
                 throw new Error();
             thenLocals.set( local[ 1 ], gs );
@@ -985,10 +989,20 @@ addSyntax( "env-nil", "envExpr", "", {
     desugarFnAndCase: defaults.desugarFnAndCase,
     desugarDef: defaults.desugarDef,
     keys: function ( args ) {
-        return strMap();
+        return jsnMap();
     },
-    compileToNaiveJs: function ( args, options, locals, keyToI ) {
+    compileToNaiveJsForFrame: function ( args,
+        options, locals, keyToI ) {
+        
         return "";
+    },
+    compileToNaiveJsForLet: function ( args,
+        options, locals, pendingLocals, bodyExprObj ) {
+        
+        return "return " +
+            bodyExprObj.compileToNaiveJs(
+                options, locals.plus( pendingLocals ) ) +
+            ";\n";
     }
 } );
 addSyntax( "env-cons", "envExpr", "va getExpr envExpr", {
@@ -1015,16 +1029,35 @@ addSyntax( "env-cons", "envExpr", "va getExpr envExpr", {
     desugarFnAndCase: defaults.desugarFnAndCase,
     desugarDef: defaults.desugarDef,
     keys: function ( args ) {
-        return args.envExpr.keys().plusTruth( args.va.expr );
+        return args.envExpr.keys().
+            plusTruth( [ "va:va", args.va.expr ] );
     },
-    compileToNaiveJs: function ( args, options, locals, keyToI ) {
+    compileToNaiveJsForFrame: function ( args,
+        options, locals, keyToI ) {
+        
         if ( !keyToI.has( args.va.expr ) )
             throw new Error();
         return (
             "x.frameVars[ " + keyToI.get( args.va.expr ) + " ] = " +
                 args.getExpr.compileToNaiveJs( options, locals ) +
                 ";\n" +
-            args.envExpr.compileToNaiveJs( options, locals, keyToI )
+            args.envExpr.compileToNaiveJsForFrame(
+                options, locals, keyToI )
+        );
+    },
+    compileToNaiveJsForLet: function ( args,
+        options, locals, pendingLocals, bodyExprObj ) {
+        
+        var gs = options.gensym();
+        return (
+            "var " + gs + " = " +
+                args.getExpr.compileToNaiveJs( options, locals ) +
+                ";\n" +
+            args.envExpr.compileToNaiveJsForLet(
+                options,
+                locals,
+                pendingLocals.plusEntry( args.va.expr, gs ),
+                bodyExprObj )
         );
     }
 } );
@@ -1054,6 +1087,38 @@ addSyntax( "let-def", "getExpr", "def getExpr", {
     },
     compileToNaiveJs: function ( args, options, locals ) {
         throw new Error();
+    }
+} );
+addSyntax( "let", "getExpr", "envExpr getExpr", {
+    visit: function ( args, writer ) {
+        return writer.redecorate( jsnMap(), jsList( "let",
+            writer.consume( args.envExpr, {
+                shadow: jsnMap(),
+                finalPolicy: "notFinal"
+            } ),
+            writer.consume( args.getExpr, {
+                shadow: args.envExpr.keys(),
+                finalPolicy: "inherit"
+            } ) ) );
+    },
+    hasProperScope: function ( args ) {
+        return args.envExpr.isProperForSet( strMap() ) &&
+            args.envExpr.hasProperScope() &&
+            args.getExpr.hasProperScope();
+    },
+    desugarSave: defaults.desugarSave,
+    desugarVarLists: defaults.desugarVarLists,
+    desugarFnAndCase: defaults.desugarFnAndCase,
+    desugarDef: defaults.desugarDef,
+    compileToNaiveJs: function ( args, options, locals ) {
+        return (
+            "(function () {\n" +
+            "\n" +
+            args.envExpr.compileToNaiveJsForLet(
+                options, locals, strMap(), args.getExpr ) +
+            "\n" +
+            "})()"
+        );
     }
 } );
 addSyntax( "call", "getExpr", "getExpr getExpr", {
@@ -1132,7 +1197,8 @@ addSyntax( "frame", "getExpr", "frameName envExpr", {
             "\n" +
             "var x = new Stc( " + jsStr( frameTag ) + " );\n" +
             "\n" +
-            args.envExpr.compileToNaiveJs( options, locals, keyToI ) +
+            args.envExpr.compileToNaiveJsForFrame(
+                options, locals, keyToI ) +
             "\n" +
             "return x;\n" +
             "\n" +
@@ -1351,7 +1417,7 @@ addSyntax( "env-pattern-nil", "envPattern", "", {
         return jsnMap();
     },
     keysToVals: function ( args ) {
-        return strMap();
+        return jsnMap();
     },
     isProperForSets: function ( args, keySet, varSet ) {
         return true;
@@ -1363,8 +1429,9 @@ addSyntax( "env-pattern-cons", "envPattern", "va va envPattern", {
             plusEntry( [ "va:va", args[ 1 ].expr ], args[ 0 ].expr );
     },
     keysToVals: function ( args ) {
-        return args.envPattern.keysToVals().
-            plusEntry( args[ 0 ].expr, [ "va:va", args[ 1 ].expr ] );
+        return args.envPattern.keysToVals().plusEntry(
+            [ "va:va", args[ 0 ].expr ],
+            [ "va:va", args[ 1 ].expr ] );
     },
     isProperForSets: function ( args, keySet, varSet ) {
         var k = args[ 0 ].expr;

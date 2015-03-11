@@ -431,6 +431,14 @@ stcAddYesDef( "tails",
 
 // TODO: Move this testing code somewhere better.
 
+stcAddYesDef( "test-let",
+    jsList( "any",
+        stcLet(
+            "x", stcNope.make( stcNil.make() ),
+            "y", stcYep.make( stcNil.make() ),
+            stcLet( "x", stcv( "y" ), "y", stcv( "x" ),
+                stcCons.make( stcv( "x" ), stcv( "y" ) ) ) ) ) );
+
 function staccatoPretty( expr ) {
     if ( expr === null ) {
         return "()";
@@ -535,3 +543,6 @@ testStcDef( JSON.stringify( [ "rev", [] ] ), [], stcNil.makeStc() );
 
 testStcDef( JSON.stringify( [ "not-yep-nope", [] ] ), [],
     stcYep.makeStc( stcNil.makeStc() ) );
+
+testStcDef( JSON.stringify( [ "test-let", [] ] ), [],
+    stcNil.makeStc() );

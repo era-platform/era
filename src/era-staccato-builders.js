@@ -119,6 +119,15 @@ function stcYesDefAny( frameName, var_args ) {
         jsList( "let-case", input, jsList( "any", body ) ) );
 }
 
+function stcLet( var_args ) {
+    var n = arguments.length;
+    if ( n < 1 )
+        throw new Error();
+    var bindings = [].slice.call( arguments, 0, n - 1 );
+    var body = arguments[ n - 1 ];
+    return jsList( "let", stcEnvArr( bindings ), body );
+}
+
 function stcFnAny( frameName, va, body ) {
     return jsList( "fn", frameName, stcNoVars(),
         jsList( "let-case", va, jsList( "any", body ) ) );
