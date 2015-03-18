@@ -1,0 +1,98 @@
+~~Tenerezza design direction~~
+
+(TODO: Copy my notes here. They're not stored in this repo yet.)
+
+~~Tenerezza technical details~~
+
+(TODO: Copy my notes here. They're not stored in this repo yet.)
+
+All first-class values are sets. We have something like a named data
+constructor, but it can also be described as a named containment
+relation; we never handle the wrapped value, just a set containing it.
+
+~~Tenerezza syntax~~
+
+(TODO: Parts of this are just like Staccato syntax, so we don't
+describe them. Update this so Staccato isn't required reading.)
+
+(TODO: Update Staccato by replacing its frame-name with the kind of
+frame-tag used here. In fact, everything here is just like Staccato.
+Just add (minus ...), (empty ...), and (union ...) to Staccato and
+call it a day.)
+
+<def> ::=
+  (def <frame-tag> <opt-var-list>
+    <case-list>)
+
+<case-list> ::=
+  (any <get-expr>)
+  (let-case <var> <case-list>)
+
+  // Loop through each matching element of the set, and process the
+  // remaining elements using a different case-list.
+  //
+  // This requires permission to (match ...) the tag.
+  //
+  (match <frame-tag>
+    <env-pattern> <get-expr>  // Process one element as its own value.
+    <case-list>  // Process the rest of the elements as a subset.
+    )
+
+<get-expr> ::=
+  (local <var>)
+  (let <var> <get-expr>
+    <get-expr>)
+  // Sugar.
+  (let-def <def>
+    <get-expr>)
+
+  // TODO: This is a little troublesome because it breaks through all
+  // encapsulation to check equality. It's also special in that it's
+  // the only operator here that wouldn't make sense under the open
+  // world assumption (OWA), but that in itself isn't bad. See if
+  // there's a better design that achieves the same benefits as this
+  // does.
+  (minus <get-expr> <get-expr>)
+
+  (empty)
+
+  // NOTE: When this is final, both of the subexpressions are
+  // considered to be final.
+  (union <get-expr> <get-expr>)
+
+  // Make a single-element set.
+  //
+  // This requires permission to (frame ...) the tag.
+  //
+  (frame <frame-tag> <env-expr>)
+
+  // Call all elements of the first get-expr, using the second
+  // get-expr as the argument each time. Take the union of the
+  // results.
+  (call <get-expr> <get-expr>)
+
+  // Sugar.
+  (save <frame-tag> <opt-var-list> <get-expr>)
+  (fn <frame-tag> <opt-var-list>
+    <case-list>)
+  (case <frame-tag> <opt-var-list> <get-expr> <case-list>)
+
+// A tag includes a global name, a <var-list> of identifiers
+// corresponding to values contained by the tag, and any permission
+// requirements people need to satisfy to use (frame ...) and
+// (match ...).
+<frame-tag> ::= ...
+
+<var> ::= ...  // Any identifier.
+<opt-var-list> ::=
+  (var-list-omitted)
+  (var-list <var-list>)
+<var-list> ::=
+  (var-list-cons <var> <var-list>)
+  (var-list-nil)
+<env-pattern> ::=
+  (env-pattern-cons <var> <var> <env-pattern>)
+  (env-pattern-nil)
+<env-expr> ::=
+  (env-expr-cons <var> <get-expr> <env-expr>)
+  (env-expr-nil)
