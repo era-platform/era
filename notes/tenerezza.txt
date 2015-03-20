@@ -3,18 +3,14 @@
 Every first-class value is a communication channel between people. It
 can carry knowledge and extension modules back and forth. Aliasing a
 channel simply means its incoming modules go to more than one place
-and all those places' outgoing values go to the original channel.
-
-(TODO: See if we want to accomplish that continuation-capable design.
-Right now we do half: First-class values only carry incoming modules.
-However, we sometimes use these incoming modules as functions, so we
-can potentially say the function inputs count as outgoing modules.)
+and all those places' outgoing modules get collected.
 
 Along every communication channel, both sides can continuously
 negotiate the allocation of extra state meant to be distributed
 somewhere along that channel. As long as it has been allocated, this
 extra state has associated communication channels it communicates
-over. (TODO: Design the tech.)
+over. (TODO: Design the technical details of this state allocation
+feature.)
 
 Every computation has access to several channels:
 
@@ -23,15 +19,17 @@ Every computation has access to several channels:
   to the computation's source code and even full extra-semantic
   control over the computation hardware, so asking them for advice is
   really only a courtesy. (TODO: Design the tech. We could almost say
-  the return value of a function is the conscience channel, so it
-  might be a matter of picking idioms.)
+  the continuation is the conscience channel, so it might be a matter
+  of picking idioms.)
 
 - A channel representing a snapshot state of the state resource in
   which the computation is running. Even a constant-time,
   constant-space computation has a small amount of space allocated
   somewhere and a small amount of time to manipulate it, so this idiom
   can accommodate computation platforms of various computational
-  complexity tolerances. (TODO: Design the tech.)
+  complexity tolerances. (TODO: Design the tech. Again, we could
+  almost say the continuation is the state channel. This will probably
+  be designed hand-in-hand with the state allocation feature.)
 
 - Channels that represent this computation's ad hoc environment, its
   parameters, and/or its continuation.
@@ -58,18 +56,24 @@ restrictions on who can construct them and who can deconstruct them.
 "Tenerezza" is a term sometimes used in musical notation like
 "Staccato," and it's Italian for "tenderness." This may suggest a lack
 of hard technological obstacles getting in the way of person-to-person
-communication, and it reflects the sweetness I want for those people.
+communication, and it reflects the feeling I have bringing this to the
+world.
 
 ~~ Tenerezza technical details ~~
 
-A channel is a set of incoming modules and a set of outgoing modules.
-Even if it's a mix of data and codata, it's like a set; the data and
-codata have the nature of quantifiers like "for all producers" and
-"for all consumers" surrounding the set. (At least, I suspect this is
-so. If not, I may resort to modeling the incoming and outgoing sets as
-separate first-class values.) (TODO: Design the tech. Right now we're
-only modeling incoming sets, unless we count function call arguments
-as outgoing values.)
+A channel carries a set of incoming modules and a set of outgoing
+modules. Even if it's a mix of data and codata, it's like a set: Any
+kind of data or codata that isn't easy to express this way can be
+approached as though the set is surrounded by universal and
+existential quantifiers over producers and consumers. Under this
+context, the data or codata is like an expression with free variables
+from those quantifiers. Then we don't actually need the quantifiers
+because we can use a verbose De Bruijn format for the variables, so
+really we're only reliant on an extensible sum to use as identifiers
+to describe those quanitifiers. In other words, as long as we have
+sets and extensible sums, we can probably come up with ways to
+represent anything else. (TODO: It might be nice to prove some theorem
+about this. Figure out what that theorem would be.)
 
 Rudimentary set functions, safe recursive set functions, and primitive
 recursive set functions are outlined here:
@@ -78,8 +82,8 @@ http://www.cl.eps.manchester.ac.uk/medialand/maths/archived-events/workshops/www
 
 We're aiming for a system simultaneously weaker and stronger than any
 of those. General recursion is okay as long as we give a name to every
-constant-time step, and otherwise only constant-time computation is
-okay.
+constant-time step, and in a single step we only want constant-time
+computation.
 
 A basic takeaway from those systems is that they use three special
 operations:
@@ -90,42 +94,33 @@ operations:
 - Diff: Take the difference of one set and another.
 
 - Union: Loop over the elements of a set, produce a new set based on
-  each element, and take the union of all the results.
+  each element in a given way, and take the union of all the results.
 
 Besides these basic set operations, we'll be dealing with
 cryptographic restrictions on who can construct and deconstruct
-information. These privilege tags will define various kinds of
-containment relation. Our operations will look like this:
-
-(TODO: The designs have significantly warped since they were described
-here, but these descriptions may come in handy if we bring back
-two-way rather than one-way channels. Figure out what to do.)
+information. This accomplishes that extensible sum we needed by
+cryptographic force. These privilege tags will define various kinds of
+containment relation. Our versions of these operations would look like
+this:
 
 - Pair: Given two containment relations we can construct and two
-  channels, A and B, create a channel whose incoming set is a
-  two-element (or one-element, if they're equal) set containing the
-  input sets of A and B along the given relations, and whose outgoing
-  set is ignored.
+  channels, A and B, send the continuation channel a two-element (or
+  one-element, if they're equal) set containing the incoming sets of A
+  and B along the given relations, and ignore the set arriving from
+  the continuation.
 
-- Empty: Make a channel whose incoming set is empty, and whose
-  outgoing set is ignored.
+- Empty: Send the continuation channel an empty set, and ignore the
+  set arriving from it.
 
-- Diff: Given two channels, A and B, partition the incoming set of A
-  among three new channels depending on whether the element is
-  contained by that relation in both A and B, is contained by that
-  relation in A but not B, or is contained by some other relation in
-  A. The outgoing sets of the three channels are forwarded to the
-  outgoing set of A.
+- Diff: Given two channels, A and B, send the continuation channel the
+  incoming set of A minus the incoming set of B, and ignore the set
+  arriving from the continuation. (TODO: See if we'd rather forward
+  the continuation's arrivals to A or something.)
 
-- Union: Loop over the elements of a given channel's incoming set
-  contained on a given containment relation we can deconstruct, and
-  process them in a given way. Create two channels, A and B:
-  Channel A's incoming set is the union of all incoming sets from the
-  loop's iteration results, and its outgoing set forwards to all of
-  the outgoing sets from the loop's iteration results. Channel B's
-  incoming set is the subset of the original channel's incoming set
-  that couldn't be deconstructed, and its outgoing set forwards to
-  that channel's outgoing set.
+- Union: Loop over the incoming set of a channel, produce a new
+  channel based on each element in a given way, and send the
+  continuation channel the union of the results. Forward the set
+  arriving from the continuation to each of those result channels.
 
 ~~ Tenerezza differences from Staccato ~~
 
@@ -140,6 +135,7 @@ Only in Tenerezza:
 (minus ...)
 (empty ...)
 (union ...)
+(swap-continuation ...)
 (each ...)
 (any-element ...)
 (let-element-case ...)
@@ -149,8 +145,8 @@ Most of these differences are a bit idiosyncratic.
 In order to give a name to the control flow block of (each ...),
 Tenerezza syntactically distinguishes three steps for each
 user-defined Tenerezza operation: <case-list> which can loop,
-<element-case-list> which can destructure, and <get-expr> which can do
-everything else. Staccato only needed <case-list> to destructure and
+<element-case-list> which can branch, and <get-expr> which can do
+everything else. Staccato only needed <case-list> to branch and
 <get-expr> to do everything else. This difference is what gives
 Tenerezza (any-element ...) and (let-element-case), and it's the
 reason Tenerezza has (match-element ...) instead of (match ...).
@@ -162,11 +158,12 @@ equality check for (frame ...).
 
 The remaining, not-so-idiosyncratic difference is the addition of
 certain operations to Tenerezza, making it possible to compute on
-sets:
+sets flowing in two directions:
 
 (minus ...)
 (empty ...)
 (union ...)
+(swap-continuation ...)
 (each ...)
 
 
@@ -226,9 +223,33 @@ describe them. Update this so Staccato isn't required reading.)
   //
   (singleton <frame-name> <env-expr>)
 
+  // This binds the given variable to the current continuation, and it
+  // executes the two given get-exprs so that each of their results is
+  // the other's continuation. Outgoing values on one result become
+  // incoming values on the other.
+  //
+  // NOTE: Without this, Tenerezza's flow of sets would only go one
+  // way.
+  //
+  // NOTE: By manipulating continuations this way, a program can
+  // construct a channel that contains an incoming continuation whose
+  // outgoing values add more incoming values to the channel! Then a
+  // single Tenerezza operation can loop over the elements, give
+  // additional outgoing values to that continuation, and therefore
+  // give itself more elements to loop over. However, this is okay;
+  // that loop goes back and forth across the transition between two
+  // Tenerezza operations. Each operation individually takes constant
+  // time still. It's just a little weird that we only need a finite
+  // number of Tenerezza operations for an infinite loop. (TODO: Is
+  // that too weird?)
+  //
+  (swap-continuation <var> <get-expr>
+    <get-expr>)
+
   // Call all elements of the first get-expr, using the second
-  // get-expr as the argument each time. Take the union of the
-  // results.
+  // get-expr as the argument and the current continuation as the
+  // continuation each time. (This means we end up taking the union of
+  // the results.)
   (call <get-expr> <get-expr>)
 
   // Sugar.
@@ -239,20 +260,24 @@ describe them. Update this so Staccato isn't required reading.)
 
 // A <frame-name> is a global name, and it will always be accompanied
 // by an <opt-var-list>, <var-list>, <env-pattern>, or <env-expr>
-// where the identifiers correspond to the values that have been
-// wrapped in a dynamic tag. The actual content of the dynamic tag is
-// this <frame-name> as well as the unordered set of those
-// identifiers, and that overall combination will tend to be a
-// compile-time constant.
+// where the identifiers correspond to the channels that have been
+// wrapped in a dynamic tag.
 //
-// Every dynamic tag is associated with a definition to invoke when
-// it's used with (call ...).
+// Every <frame-name> is associated with a definition to invoke when
+// it's used with (call ...). (However, we may allow programs to run
+// when not all definitions are known.)
 //
-// Every dynamic tag is associated with permission requirements that
+// Every <frame-name> is associated with permission requirements that
 // clients must meet if they use it with (singleton ...) and similar
 // requirements for (match-element ...). In fact, the overall
 // combination of these requirements must be unique, and the fact that
 // the <frame-name> is a global name is just a syntactic convenience.
+//
+// The actual content of the dynamic tag is the permission
+// requirements, along with enough information about the unordered set
+// of identifiers that we know which contained channels are which.
+// There is currently no dynamic way to construct this tag, so it may
+// be described as a compile-time constant.
 //
 <frame-name> ::= ...
 
