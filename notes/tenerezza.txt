@@ -179,6 +179,49 @@ describe them. Update this so Staccato isn't required reading.)
 <case-list> ::=
   (any <get-expr>)
   (let-case <var> <case-list>)
+
+  // This trades the input channel for the current continuation. By
+  // using this, we have the flexibility to get input and give output
+  // along both the continuation and the input channel.
+  //
+  // NOTE: Without this, Tenerezza's flow of sets would only go one
+  // way.
+  //
+  // NOTE: We can't just add
+  // "<get-expr> ::= (swap-continuation <var> <get-expr> <get-expr>)"
+  // because it can cause a paradoxical feedback loop in the span of a
+  // single Tenerezza operation. Feedback loops are something we'll
+  // accept in this language design, but we'll at least want to step
+  // through them, so there has to be a Tenerezza operation boundary
+  // somewhere in there. Here's a case where a single Tenerezza
+  // operation could have caused a loop:
+  //
+  // (swap-continuation original
+  //   \ We could do the same thing as we do on the other side, but we
+  //   \ do something simpler. We just send the back-and-forth
+  //   \ continuation back to itself. This also demonstrates that we
+  //   \ don't need `original` to be in scope here to produce the
+  //   \ paradox (though it would be trivial to surround this whole
+  //   \ thing with two more (swap-continuation ...) forms to get
+  //   \ `original` in scope).
+  //   (swap-continuation back-and-forth (empty)
+  //     (swap-continuation ignored back-and-forth
+  //       back-and-forth))
+  //   
+  //   (swap-continuation back-and-forth original
+  //     (union
+  //       \ Send this back-and-forth to the original continuation.
+  //       \ This makes it so we actually care what it contains.
+  //       back-and-forth
+  //       
+  //       (swap-continuation original back-and-forth
+  //         \ Send this back-and-forth everything it already has plus
+  //         \ a wrapped-up version of itself. This goes infinite.
+  //         (union back-and-forth
+  //           (make foo /env-cons foo back-and-forth /env-nil))))))
+  //
+  (swap-continuation <case-list>)
+
   (each <element-case-list>)
 
 <element-case-list> ::=
@@ -222,29 +265,6 @@ describe them. Update this so Staccato isn't required reading.)
   // This requires permission to (singleton ...) the tag.
   //
   (singleton <frame-name> <env-expr>)
-
-  // This binds the given variable to the current continuation, and it
-  // executes the two given get-exprs so that each of their results is
-  // the other's continuation. Outgoing values on one result become
-  // incoming values on the other.
-  //
-  // NOTE: Without this, Tenerezza's flow of sets would only go one
-  // way.
-  //
-  // NOTE: By manipulating continuations this way, a program can
-  // construct a channel that contains an incoming continuation whose
-  // outgoing values add more incoming values to the channel! Then a
-  // single Tenerezza operation can loop over the elements, give
-  // additional outgoing values to that continuation, and therefore
-  // give itself more elements to loop over. However, this is okay;
-  // that loop goes back and forth across the transition between two
-  // Tenerezza operations. Each operation individually takes constant
-  // time still. It's just a little weird that we only need a finite
-  // number of Tenerezza operations for an infinite loop. (TODO: Is
-  // that too weird?)
-  //
-  (swap-continuation <var> <get-expr>
-    <get-expr>)
 
   // Call all elements of the first get-expr, using the second
   // get-expr as the argument and the current continuation as the
