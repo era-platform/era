@@ -222,6 +222,37 @@ describe them. Update this so Staccato isn't required reading.)
   //
   (swap-continuation <case-list>)
 
+  // This binds the given variable to a communication channel that
+  // represents explicit communication with whatever is running the
+  // code. That is, it communicates with whatever external system
+  // doesn't actually need an explicit comunication channel to
+  // interact. For instance, this would be used to interact with the
+  // programmers themselves in a live coding session, because those
+  // programmers could interact via modifying the code or using
+  // invasive debugger tools anyway.
+  //
+  // By design, this interaction is always a mere courtesy. But it's a
+  // good idiom for error handling: Look into your heart.
+  //
+  // From the point of view of the conscience itself, the conscience
+  // receives connections like these from all over the program. There
+  // is one connection per stack frame definition. There may be
+  // multiple instances of that stack frame in progress at a given
+  // time, but they all use the same connection.
+  //
+  // TODO: See if we should make it so there's one conscience
+  // connection per active frame. These all go to the same place
+  // anyway; it's just a question of whether the conscience will want
+  // to manipulate different substacks in different ways.
+  //
+  // NOTE: If we had a (conscience) <get-expr>, we would have the
+  // additional conundrum of whether multiple occurrences of those in
+  // a single Tenerezza operation should be independent connections,
+  // and if so, how to differentiate them for the conscience to make
+  // sense of the situation.
+  //
+  (let-conscience <var> <case-list>)
+
   (each <element-case-list>)
 
 <element-case-list> ::=
