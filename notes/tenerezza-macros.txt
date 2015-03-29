@@ -1,0 +1,39 @@
+== Tenerezza macros ==
+
+Tenerezza is a verbose language to use directly, so here we outline a design for a simple Lisp-like macro layer to bootstrap a more convenient language syntax.
+
+Most kinds of value follow a method call convention: If a value is called with some kind of method value, it returns a maybe of some kind of method result value. The maybe is (nil) if the method is not supported.
+
+To load a file:
+  - Start with a given environment.
+  - For each s-expression in the file:
+    - Do top-level macroexpansion of the s-expression in the following way:
+      - If the s-expression is not a (cons first rest), terminate with an error.
+      - If its "first" is not a string, terminate with an error.
+      - Invoke the environment with method (get-macro macro-name) using "first" as the "macro-name". If the method is not implemented, terminate with an error.
+      - Invoke the resulting macro fork with method (fork-to-op args) using "rest" as the "args". If the method is not implemented, terminate with an error.
+    - Desugar and compile the resulting Tenerezza expression as Tenerezza code, and if the Tenerezza syntax is incorrect, terminate with an error.
+    - Invoke the resulting Tenerezza value on the current environment, and use the result as the next environment.
+  - The result is the final environment.
+
+An environment supports a method (get-macro macro-name) whose content is a single string. The method result is a maybe of a macro.
+
+A macro supports a method (macro-invocation env gensym-root) whose "env" is an environment and whose "gensym-root" is a gensym root. The method result is a macro fork.
+
+A gensym root supports a method (gensym-root-publish). The method result is a string.
+
+A gensym root supports a method (gensym-root-append string) whose content is a single string. The method result is a gensym root.
+
+A macro fork supports a method (fork-to-op args) whose content is a list of s-expressions. The method result is a macro fork.
+
+A macro fork supports a method (fork-to-get). The method result is a Tenerezza expression.
+
+A maybe of a given kind of value is a single element of either tag (nil) or tag (yep val) whose content is the given kind of value.
+
+A list of a given kind of value is a single element of either tag (nil) or tag (cons first rest) whose "first" is the given kind of value and whose "rest" is a list of the given kind of value.
+
+An interpolated string of a given kind of value is a single element of either tag (string-nil string) whose content is a single string or tag (string-cons string first rest) whose "string" is a single string, whose "first" is the given kind of value, and whose "rest" is an interpolated string of the given kind of value.
+
+An s-expression is a list of s-expressions or an interpolated string of s-expressions.
+
+A Tenerezza expression is an s-expression that conforms to the Tenerezza syntax.
