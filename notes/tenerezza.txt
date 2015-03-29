@@ -173,6 +173,11 @@ sets flowing in two directions:
 describe them. Update this so Staccato isn't required reading.)
 
 <def> ::=
+  // This defines the given frame name to have the given
+  // implementation.
+  //
+  // This requires permission to eliminate the tag.
+  //
   (def <frame-name> <opt-var-list>
     <case-list>)
 
@@ -259,7 +264,7 @@ describe them. Update this so Staccato isn't required reading.)
   (any-element <get-expr>)
   (let-element-case <var> <element-case-list>)
 
-  // This requires permission to (match-element ...) the tag.
+  // This requires permission to eliminate the tag.
   //
   (match-element <frame-name> <env-pattern>
     <get-expr>
@@ -293,7 +298,7 @@ describe them. Update this so Staccato isn't required reading.)
   // tag, but it does expose the ability to check it for equality with
   // other elements by way of (minus ...).
   //
-  // This requires permission to (singleton ...) the tag.
+  // This requires permission to introduce the tag.
   //
   (singleton <frame-name> <env-expr>)
 
@@ -314,21 +319,15 @@ describe them. Update this so Staccato isn't required reading.)
 // where the identifiers correspond to the channels that have been
 // wrapped in a dynamic tag.
 //
-// Every <frame-name> is associated with a definition to invoke when
-// it's used with (call ...). (However, we may allow programs to run
-// when not all definitions are known.)
-//
 // Every <frame-name> is associated with permission requirements that
-// clients must meet if they use it with (singleton ...) and similar
-// requirements for (match-element ...). In fact, the overall
-// combination of these requirements must be unique, and the fact that
-// the <frame-name> is a global name is just a syntactic convenience.
+// clients must meet to introduce or eliminate the tag. The actual
+// content of the dynamic tag is the permission requirements, along
+// with enough information about the unordered set of identifiers that
+// we know which contained channels are which.
 //
-// The actual content of the dynamic tag is the permission
-// requirements, along with enough information about the unordered set
-// of identifiers that we know which contained channels are which.
-// There is currently no dynamic way to construct this tag, so it may
-// be described as a compile-time constant.
+// The permission requirements are associated with a definition to
+// invoke when the tag is used with (call ...). (However, we may allow
+// programs to run when not all definitions are known.)
 //
 <frame-name> ::= ...
 
