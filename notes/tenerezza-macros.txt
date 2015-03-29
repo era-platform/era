@@ -20,9 +20,9 @@ An environment supports a method (get-macro macro-name) whose content is a singl
 
 A macro supports a method (macro-invocation env gensym-root) whose "env" is an environment and whose "gensym-root" is a gensym root. The method result is a macro fork.
 
-A gensym root supports a method (gensym-root-publish). The method result is a string.
+A gensym root supports a method (gensym-root-publish). The method result is a string beginning with "gs".
 
-A gensym root supports a method (gensym-root-append string) whose content is a single string. The method result is a gensym root.
+A gensym root supports a method (gensym-root-append string) whose content is a single string. The method result is a gensym root whose descendants will not collide with the original gensym root or its (gensym-root-append string) descendants with other "string" values.
 
 A macro fork supports a method (fork-to-op args) whose content is a list of s-expressions. The method result is a macro fork.
 
