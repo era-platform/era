@@ -289,8 +289,6 @@ describe them. Update this so Staccato isn't required reading.)
 
   (empty)
 
-  // NOTE: When this is final, both of the subexpressions are
-  // considered to be final.
   (union <get-expr> <get-expr>)
 
   // Make a single-element set. The element is mostly encapsulated to
@@ -302,14 +300,44 @@ describe them. Update this so Staccato isn't required reading.)
   //
   (singleton <frame-name> <env-expr>)
 
-  // Call all elements of the first get-expr, using the second
-  // get-expr as the argument and the current continuation as the
-  // continuation each time. (This means we end up taking the union of
-  // the results.)
-  (call <get-expr> <get-expr>)
+  // Sugar.
+  //
+  // Establish the current continuation as a save root. Occurrences of
+  // (save ...) inside will desugar by transforming all the code
+  // under this (save-root ...) up to the location of that (save ...).
+  //
+  (save-root <save-root> <get-expr>)
 
   // Sugar.
-  (save <frame-name> <opt-var-list> <get-expr>)
+  //
+  // When this desugars, it slices out the subtree at the nearest
+  // (save-root ...) ancestor get-expr with the given save-root label,
+  // and it reinserts a get-expr that does the following:
+  //
+  // First, it defines a function with the second given frame-name and
+  // the given opt-var-list, which executes the extracted subtree on
+  // an argument named by the third given var.
+  //
+  // Second, it constructs a frame with the first given frame-name and
+  // the first and second given vars. The first var is bound to a
+  // frame with the defined function's frame-name and opt-var-list,
+  // and the bindings of that frame are taken from the current lexical
+  // scope. The second var is bound to the result of the given
+  // get-expr.
+  //
+  // That sounds complicated, but usually this means we're building a
+  // frame whose meaning is a request to execute the given function on
+  // the given value. Since Tenerezza does not directly have access to
+  // Turing-complete computation or side effects, these requests may
+  // be common. Thanks to this syntax, code that makes these requests
+  // will be structured just like code that doesn't need to; results
+  // flow from subexpressions to parent expressions.
+  //
+  (save <save-root> <frame-name>
+    <var> <frame-name> <opt-var-list>
+    <var> <var>
+    <get-expr>)
+
   (fn <frame-name> <opt-var-list>
     <case-list>)
   (case <frame-name> <opt-var-list> <get-expr> <case-list>)
@@ -332,6 +360,7 @@ describe them. Update this so Staccato isn't required reading.)
 <frame-name> ::= ...
 
 <var> ::= ...  // Any identifier.
+<save-root> ::= ...  // Any identifier.
 <opt-var-list> ::=
   (var-list-omitted)
   (var-list <var-list>)
@@ -344,3 +373,21 @@ describe them. Update this so Staccato isn't required reading.)
 <env-expr> ::=
   (env-expr-cons <var> <get-expr> <env-expr>)
   (env-expr-nil)
+
+~~ Tenerezza Turing-complete computation ~~~
+
+The core language semantics doesn't specify a particular way to do
+Turing-complete computation, or even a particular way to call
+functions. Nevertheless, implementations of Tenerezza are very likely
+to provide a trampoline so those computations can be represented.
+Computations using this trampoline should return one of two kinds of
+value, and sets of more than one of these values will work too:
+
+// Wrap the given cheaply computed value as a computation. (This is
+// monadic return, not a nonlocal exit.)
+(singleton return /env-cons val _ /env-nil)
+
+// Call all elements of the `func`, using the `arg` as the argument
+// and the current continuation as the continuation each time. (This
+// means we end up taking the union of the results.)
+(singleton call /env-cons func _ /env-cons arg _ /env-nil)
