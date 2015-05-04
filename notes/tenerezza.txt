@@ -301,46 +301,13 @@ describe them. Update this so Staccato isn't required reading.)
   (singleton <frame-name> <env-expr>)
 
   // Sugar.
-  //
-  // Establish the current continuation as a save root. Occurrences of
-  // (save ...) inside will desugar by transforming all the code
-  // under this (save-root ...) up to the location of that (save ...).
-  //
   (save-root <save-root> <get-expr>)
-
-  // Sugar.
-  //
-  // When this desugars, it slices out the subtree at the nearest
-  // (save-root ...) ancestor get-expr with the given save-root label,
-  // and it reinserts a get-expr that does the following:
-  //
-  // First, it defines a function with the second given frame-name and
-  // the given opt-var-list, which executes the extracted subtree on
-  // an argument named by the third given var.
-  //
-  // Second, it constructs a frame with the first given frame-name and
-  // the first and second given vars. The first var is bound to a
-  // frame with the defined function's frame-name and opt-var-list,
-  // and the bindings of that frame are taken from the current lexical
-  // scope. The second var is bound to the result of the given
-  // get-expr.
-  //
-  // That sounds complicated, but usually this means we're building a
-  // frame whose meaning is a request to execute the given function on
-  // the given value. Since Tenerezza does not directly have access to
-  // Turing-complete computation or side effects, these requests may
-  // be common. Thanks to this syntax, code that makes these requests
-  // will be structured just like code that doesn't need to; results
-  // flow from subexpressions to parent expressions.
-  //
   (save <save-root> <frame-name>
     <var> <frame-name> <opt-var-list>
     <var> <var>
     <get-expr>)
-
   (fn <frame-name> <opt-var-list>
     <case-list>)
-  (case <frame-name> <opt-var-list> <get-expr> <case-list>)
 
 // A <frame-name> is a global name, and it will always be accompanied
 // by an <opt-var-list>, <var-list>, <env-pattern>, or <env-expr>

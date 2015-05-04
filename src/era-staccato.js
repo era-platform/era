@@ -126,17 +126,11 @@ function run( stack, rules ) {
 //   // given frame name and environment pattern, this proceeds as the
 //   // get-expr with the pattern's variables in scope. Otherwise, it
 //   // proceeds as the case-list.
-//   //
-//   // The get-expr counts as a new root parent expression.
-//   //
 //   (match frame-name env-pattern
 //     get-expr
 //     case-list)
 //
 //   // This proceeds as the get-expr.
-//   //
-//   // The get-expr counts as a new root parent expression.
-//   //
 //   (any get-expr)
 //
 // env-expr ::=
@@ -145,10 +139,6 @@ function run( stack, rules ) {
 //
 // get-expr ::=
 //   // Sugar.
-//   //
-//   // If this expression is a root parent expression, then get-expr
-//   // counts as a new root parent expression.
-//   //
 //   (let-def def get-expr)
 //
 //   // This executes the env-expr and proceeds as the get-expr with
@@ -166,27 +156,11 @@ function run( stack, rules ) {
 //   // scope in between a Staccato operation's case-list branch being
 //   // selected and the end of the operation. More concretely, this
 //   // is the only syntax that can change the lexical scope in
-//   // between a (save ...) and its root parent expression, which can
-//   // cause a scope error if it would get in the way of (save ...)
-//   // desugaring.
+//   // between a (save ...) and its surrounding (save-root ...) or
+//   // (save ...), which can cause a scope error if it would get in
+//   // the way of the inner (save ...) desugaring.
 //   //
 //   (let env-expr get-expr)
-//
-//   // To use this, the expression must be the last computation that
-//   // happens under the root parent expression.
-//   //
-//   // This calls the first given get-expr's result as a function
-//   // closure with the second given get-expr's result as its
-//   // argument.
-//   //
-//   // The second get-expr counts as a new root parent expression.
-//   //
-//   // When implementing this operation on a target platform, it may
-//   // be a good optimization to special-case
-//   // (call (frame frame-name env-expr) get-expr) so that an
-//   // allocation can be avoided.
-//   //
-//   (call get-expr get-expr)
 //
 //   (local var)
 //
@@ -197,41 +171,59 @@ function run( stack, rules ) {
 //
 //   // Sugar.
 //   //
-//   // When this is used, it replaces the entire behavior of the root
-//   // parent expression at desugaring time. If multiple uses occur
-//   // in the same root parent expression, the earliest one applies
-//   // first. (Once it's done, the second one will be in position to
-//   // be applied, and so on.)
+//   // For desugaring purposes, establish the current continuation as
+//   // a save root. Occurrences of (save ...) inside will desugar by
+//   // transforming all the code under this (save-root ...) up to the
+//   // location of that (save ...).
 //   //
-//   // This defines a frame that takes an environment with entries
-//   // for the variables needed in the remainder of the parent
-//   // expression, but without an entry for the given variable. The
-//   // given variable is used for the incoming return value instead.
-//   // This then calls the frame with an environment captured from
-//   // the lexical scope at the *base* of the root parent expression
-//   // (not at the position (save ...) occupied within the root
-//   // parent expression), providing the result of the given get-expr
-//   // as the incoming return value. The defined frame proceeds by
-//   // doing the remainder of what the root parent expression would
-//   // have done.
+//   (save-root save-root get-expr)
+//
+//   // Sugar.
 //   //
-//   // The opt-var-list specifies the free variables of the defined
-//   // frame. Reiterating, these variables refer to the lexical scope
-//   // at the *base* of the root parent expression, not the position
-//   // (save ...) occupies within that expression.
+//   // When this desugars, it slices out the subtree at the nearest
+//   // (save-root ...) or (save ...) ancestor get-expr with the given
+//   // save-root label, and it reinserts a get-expr that does the
+//   // following:
 //   //
-//   // It's an error to access any variable by the given variable
-//   // name in the remainder of the root parent expression, since
-//   // those accesses would be clobbered by the desugaring of this
-//   // syntax.
+//   // It defines a function with the second given frame-name and
+//   // the given opt-var-list, which executes the extracted subtree
+//   // on an argument named by the third given var.
+//   //
+//   // It constructs a frame with the first given frame-name and the
+//   // first and second given vars. The first var is bound to a frame
+//   // with the defined function's frame-name and opt-var-list, and
+//   // the bindings of that frame are taken from the current lexical
+//   // scope. The second var is bound to the result of the given
+//   // get-expr.
+//   //
+//   // That sounds complicated, but usually this means we're building
+//   // a frame whose meaning is a request to call a certain function
+//   // (the sliced-out ancestors) with a certain argument (the result
+//   // of the given expression). Staccato does not directly have
+//   // access to Turing-complete computation, but this syntax lets us
+//   // represent requests to perform Turing-complete computation
+//   // while letting us structure our code in a full-powered lambda
+//   // calculus style.
+//   //
+//   // It's worth noting that the variables in the opt-var-list will,
+//   // after desugaring, refer to the lexical scope at the *base* of
+//   // the sliced-out subtree. Nothing is done with them before
+//   // desugaring, so they actually have nothing to do with the
+//   // lexical scope this (save ...) itself appears in.
+//   //
+//   // It's an error to access a variable by the third given variable
+//   // name anywhere under the sliced-out subtree, since those
+//   // accesses would be clobbered by the desugaring of this syntax.
 //   //
 //   // It's also an error to surround this expression with a local
-//   // variable binding that would shadow the binding created during
-//   // desugaring. The only way to cause this error is (let ...).
+//   // variable binding that would shadow the third given variable
+//   // name, since that would interfere with the proper desugaring of
+//   // this syntax. The only way to cause this error is (let ...).
 //   //
-//   // The get-expr counts as a new root parent expression.
-//   //
-//   (save frame-name opt-var-list var get-expr)
+//   (save save-root frame-name
+//     var frame-name opt-var-list
+//     var var
+//     get-expr)
 //
 //   // Sugar.
 //   //
@@ -242,22 +234,6 @@ function run( stack, rules ) {
 //   // incoming return value against the case-list under that scope.
 //   //
 //   (fn frame-name opt-var-list case-list)
-//
-//   // Sugar.
-//   //
-//   // To use this, the expression must be the last computation that
-//   // happens under the root parent expression.
-//   //
-//   // This defines and calls a frame that takes an environment with
-//   // the variables needed in the case-list, which (in this call) is
-//   // captured from the surrounding lexical scope. It proceeds by
-//   // matching the incoming return value, which (in this call) is
-//   // the result of the given get-expr, against the case-list under
-//   // that scope.
-//   //
-//   // The get-expr counts as a new root parent expression.
-//   //
-//   (case frame-name opt-var-list get-expr case-list)
 //
 // // When an opt-var-list is not omitted, it overrides the usual
 // // behavior for inferring the variables required by a frame
@@ -279,14 +255,32 @@ function run( stack, rules ) {
 //   // NOTE: The first var is the key in the environment, and the
 //   // second var is the local variable to bind it to.
 //   (env-pattern-cons var var env-pattern)
+//
+//
+// ~~ Staccato Turing-complete computation ~~~
+//
+// The core language semantics doesn't specify a particular way to do
+// Turing-complete computation, or even a particular way to call
+// functions. Nevertheless, implementations of Staccato are very
+// likely to provide a trampoline so those computations can be
+// represented. Computations using this trampoline should return one
+// of two kinds of value:
+//
+// // Wrap the given cheaply computed value as a computation. (This
+// // meaning of "return" is monadic return, not a nonlocal exit.)
+// (frame return /env-cons val _ /env-nil)
+//
+// // Call `func` with `arg` as the argument.
+// (frame call /env-cons func _ /env-cons arg _ /env-nil)
+
 
 // NOTE: We implement these methods on every corresponding syntax:
 // def/caseList/getExpr/envExpr visit( writer )
 // def/caseList/getExpr/envExpr hasProperScope()
 // envExpr isProperForSet( varSet )
-// def/caseList/getExpr/envExpr desugarSave( isFinal )
+// def/caseList/getExpr/envExpr desugarSave()
 // def/caseList/getExpr/envExpr desugarVarLists()
-// def/caseList/getExpr/envExpr desugarFnAndCase()
+// def/caseList/getExpr/envExpr desugarFn()
 // def desugarDefIncludingSelf()
 // caseList/getExpr/envExpr desugarDef()
 // def compileToNaiveJs( options )
@@ -589,50 +583,45 @@ function freeVarsWriter() {
         
         if ( shadowed.any( function ( truth, va ) {
             return va[ 0 ] === "va:savedInputVar" &&
-                !shadowed.has( [ "va:va", va[ 1 ] ] );
+                !shadowed.has( [ "va:va", va[ 2 ] ] );
         } ) ) {
             // TODO: Use this error message: Encountered a use of
             // (save ...) where the saved value's variable name was
-            // locally bound somewhere between the parent root
-            // expression's root and the saved location
+            // locally bound somewhere between the save root and the
+            // saved location
             shadowed.add( [ "va:scopeError" ] );
         }
         
-        if ( inheritedAttrs.finalPolicy === "root" ) {
+        if ( inheritedAttrs.scopePolicy.type === "saveRoot" ) {
+            var label = inheritedAttrs.scopePolicy.label;
+            
             if ( shadowed.any( function ( truth, va ) {
                 return va[ 0 ] === "va:savedInputVar" &&
-                    shadowed.has( [ "va:va", va[ 1 ] ] );
+                    va[ 1 ] === label &&
+                    shadowed.has( [ "va:va", va[ 2 ] ] );
             } ) ) {
                 // TODO: Use this error message: Encountered a use of
                 // (save ...) where the saved value's variable name
-                // was used somewhere in the parent root expression
+                // was used somewhere under the save root
                 shadowed.add( [ "va:scopeError" ] );
             }
             
             shadowed = shadowed.keep( function ( truth, va ) {
-                return va[ 0 ] !== "va:savedInputVar" &&
-                    va[ 0 ] !== "va:final";
+                return !(va[ 0 ] === "va:savedInputVar"
+                    && va[ 1 ] === label);
             } ).mapKeys( function ( va ) {
-                return va[ 0 ] === "va:savedFreeVar" ?
-                    [ "va:va", va[ 1 ] ] : va;
+                return va[ 0 ] === "va:savedFreeVar" &&
+                    va[ 1 ] === label ?
+                    [ "va:va", va[ 2 ] ] : va;
             } );
-        } else if ( inheritedAttrs.finalPolicy === "notFinal" ) {
-            if ( shadowed.has( [ "va:final" ] ) ) {
-                // TODO: Use this error message: Encountered a use of
-                // (call ...) or (case ...) not in a final position
-                shadowed.add( [ "va:scopeError" ] );
-            }
-            
-            shadowed.del( [ "va:final" ] );
-        } else if ( inheritedAttrs.finalPolicy === "inherit" ) {
+        } else if ( inheritedAttrs.scopePolicy.type === "notRoot" ) {
             // Do nothing.
-        } else if ( inheritedAttrs.finalPolicy ===
+        } else if ( inheritedAttrs.scopePolicy.type ===
             "doesNotMatter" ) {
             
             if ( shadowed.any( function ( truth, va ) {
                 return va[ 0 ] === "va:savedInputVar" ||
-                    va[ 0 ] === "va:savedFreeVar" ||
-                    va[ 0 ] === "va:final";
+                    va[ 0 ] === "va:savedFreeVar";
             } ) )
                 throw new Error();
         } else {
@@ -649,26 +638,6 @@ function freeVarsWriter() {
 }
 function getFreeVars( exprObj ) {
     return exprObj.visit( freeVarsWriter() );
-}
-
-function processSaveRoot( exprObj ) {
-    // INTERESTING
-    
-    var desugared = exprObj.desugarSave( !!"isFinal" );
-    if ( desugared.type === "expr" ) {
-        return desugared.expr;
-    } else if ( desugared.type === "save" ) {
-        return processSaveRoot( parseSyntax( "getExpr",
-            jsList( "call",
-                jsList( "fn",
-                    desugared.frameName.expr,
-                    desugared.optVarList.expr,
-                    jsList( "let-case", desugared.va.expr,
-                        jsList( "any", desugared.frameBodyExpr ) ) ),
-                desugared.arg.expr ) ) );
-    } else {
-        throw new Error();
-    }
 }
 
 function idWriter( recur ) {
@@ -697,7 +666,7 @@ function desugarDefWriter() {
     return writer;
 }
 
-function desugarSaveWriter( isFinal ) {
+function desugarSaveWriter() {
     // INTERESTING
     
     // NOTE: The `state` variable is mutated a maximum of one time.
@@ -707,20 +676,18 @@ function desugarSaveWriter( isFinal ) {
     writer.consume = function ( part, inheritedAttrs ) {
         // NOTE: We only desugar `part` some of the time!
         if ( state.type === "exprState" ) {
-            
-            if ( inheritedAttrs.finalPolicy === "root"
-                || (inheritedAttrs.finalPolicy === "inherit"
-                    && isFinal) )
-                return processSaveRoot( part );
-            
-            var desugared = part.desugarSave( !"isFinal" );
+            var desugared = part.desugarSave();
             if ( desugared.type === "expr" ) {
                 return desugared.expr;
             } else if ( desugared.type === "save" ) {
                 state = {
                     type: "saveState",
+                    saveRoot: desugared.saveRoot,
+                    callFrameName: desugared.callFrameName,
+                    callFunc: desugared.callFunc,
                     frameName: desugared.frameName,
                     optVarList: desugared.optVarList,
+                    callArg: desugared.callArg,
                     va: desugared.va,
                     arg: desugared.arg
                 };
@@ -740,8 +707,12 @@ function desugarSaveWriter( isFinal ) {
         } else if ( state.type === "saveState" ) {
             return {
                 type: "save",
+                saveRoot: state.saveRoot,
+                callFrameName: state.callFrameName,
+                callFunc: state.callFunc,
                 frameName: state.frameName,
                 optVarList: state.optVarList,
+                callArg: state.callArg,
                 va: state.va,
                 arg: state.arg,
                 frameBodyExpr: whole
@@ -782,8 +753,8 @@ var defaults = {
         } ) );
         return proper;
     },
-    desugarSave: function ( args, isFinal ) {
-        return args.self.visit( desugarSaveWriter( isFinal ) );
+    desugarSave: function ( args ) {
+        return args.self.visit( desugarSaveWriter() );
     },
     desugarVarLists: function ( args ) {
         return args.self.visit(
@@ -792,11 +763,11 @@ var defaults = {
             return part.desugarVarLists();
         } ) );
     },
-    desugarFnAndCase: function ( args ) {
+    desugarFn: function ( args ) {
         return args.self.visit(
             idWriter( function ( part, inheritedAttrs ) {
             
-            return part.desugarFnAndCase();
+            return part.desugarFn();
         } ) );
     },
     desugarDef: function ( args ) {
@@ -806,6 +777,7 @@ var defaults = {
 
 addStringSyntax( "va" );
 addStringSyntax( "frameName" );
+addStringSyntax( "saveRoot" );
 addSyntax( "def", "def", "frameName optVarList caseList", {
     // INTERESTING
     
@@ -815,7 +787,7 @@ addSyntax( "def", "def", "frameName optVarList caseList", {
             args.optVarList.expr,
             writer.consume( args.caseList, {
                 shadow: null,
-                finalPolicy: "doesNotMatter"
+                scopePolicy: { type: "doesNotMatter" }
             } ) ) );
     },
     hasProperScope: function ( args ) {
@@ -831,7 +803,7 @@ addSyntax( "def", "def", "frameName optVarList caseList", {
             args.optVarList.or( innerFreeVars ),
             args.caseList.desugarVarLists() );
     },
-    desugarFnAndCase: defaults.desugarFnAndCase,
+    desugarFn: defaults.desugarFn,
     desugarDefIncludingSelf: function ( args ) {
         var desugared = args.caseList.desugarDef();
         return desugared.defs.concat( [ jsList( "def",
@@ -879,13 +851,13 @@ addSyntax( "let-case", "caseList", "va caseList", {
             writer.consume( args.caseList, {
                 shadow:
                     jsnMap().plusTruth( [ "va:va", args.va.expr ] ),
-                finalPolicy: "doesNotMatter"
+                scopePolicy: { type: "doesNotMatter" }
             } ) ) );
     },
     hasProperScope: defaults.hasProperScope,
     desugarSave: defaults.desugarSave,
     desugarVarLists: defaults.desugarVarLists,
-    desugarFnAndCase: defaults.desugarFnAndCase,
+    desugarFn: defaults.desugarFn,
     desugarDef: defaults.desugarDef,
     compileToNaiveJs: function ( args, options, locals ) {
         var innerLocals =
@@ -905,11 +877,11 @@ addSyntax( "match", "caseList",
             args.envPattern.expr,
             writer.consume( args.getExpr, {
                 shadow: args.envPattern.valsToKeys(),
-                finalPolicy: "root"
+                scopePolicy: { type: "notRoot" }
             } ),
             writer.consume( args.caseList, {
                 shadow: jsnMap(),
-                finalPolicy: "doesNotMatter"
+                scopePolicy: { type: "notRoot" }
             } ) ) );
     },
     hasProperScope: function ( args ) {
@@ -920,7 +892,7 @@ addSyntax( "match", "caseList",
     },
     desugarSave: defaults.desugarSave,
     desugarVarLists: defaults.desugarVarLists,
-    desugarFnAndCase: defaults.desugarFnAndCase,
+    desugarFn: defaults.desugarFn,
     desugarDef: defaults.desugarDef,
     compileToNaiveJs: function ( args, options, locals ) {
         var entries = args.envPattern.keysToVals();
@@ -960,13 +932,13 @@ addSyntax( "any", "caseList", "getExpr", {
         return writer.redecorate( jsnMap(), jsList( "any",
             writer.consume( args.getExpr, {
                 shadow: jsnMap(),
-                finalPolicy: "root"
+                scopePolicy: { type: "notRoot" }
             } ) ) );
     },
     hasProperScope: defaults.hasProperScope,
     desugarSave: defaults.desugarSave,
     desugarVarLists: defaults.desugarVarLists,
-    desugarFnAndCase: defaults.desugarFnAndCase,
+    desugarFn: defaults.desugarFn,
     desugarDef: defaults.desugarDef,
     compileToNaiveJs: function ( args, options, locals ) {
         return (
@@ -986,7 +958,7 @@ addSyntax( "env-nil", "envExpr", "", {
     },
     desugarSave: defaults.desugarSave,
     desugarVarLists: defaults.desugarVarLists,
-    desugarFnAndCase: defaults.desugarFnAndCase,
+    desugarFn: defaults.desugarFn,
     desugarDef: defaults.desugarDef,
     keys: function ( args ) {
         return jsnMap();
@@ -1011,11 +983,11 @@ addSyntax( "env-cons", "envExpr", "va getExpr envExpr", {
             args.va.expr,
             writer.consume( args.getExpr, {
                 shadow: jsnMap(),
-                finalPolicy: "notFinal"
+                scopePolicy: { type: "notRoot" }
             } ),
             writer.consume( args.envExpr, {
                 shadow: jsnMap(),
-                finalPolicy: "notFinal"
+                scopePolicy: { type: "notRoot" }
             } ) ) );
     },
     hasProperScope: defaults.hasProperScope,
@@ -1026,7 +998,7 @@ addSyntax( "env-cons", "envExpr", "va getExpr envExpr", {
     },
     desugarSave: defaults.desugarSave,
     desugarVarLists: defaults.desugarVarLists,
-    desugarFnAndCase: defaults.desugarFnAndCase,
+    desugarFn: defaults.desugarFn,
     desugarDef: defaults.desugarDef,
     keys: function ( args ) {
         return args.envExpr.keys().
@@ -1066,17 +1038,17 @@ addSyntax( "let-def", "getExpr", "def getExpr", {
         return writer.redecorate( jsnMap(), jsList( "let-def",
             writer.consume( args.def, {
                 shadow: jsnMap(),
-                finalPolicy: "doesNotMatter"
+                scopePolicy: { type: "doesNotMatter" }
             } ),
             writer.consume( args.getExpr, {
                 shadow: jsnMap(),
-                finalPolicy: "inherit"
+                scopePolicy: { type: "notRoot" }
             } ) ) );
     },
     hasProperScope: defaults.hasProperScope,
     desugarSave: defaults.desugarSave,
     desugarVarLists: defaults.desugarVarLists,
-    desugarFnAndCase: defaults.desugarFnAndCase,
+    desugarFn: defaults.desugarFn,
     desugarDef: function ( args ) {
         var desugaredDef = args.def.desugarDefIncludingSelf();
         var desugaredExpr = args.getExpr.desugarDef();
@@ -1094,11 +1066,11 @@ addSyntax( "let", "getExpr", "envExpr getExpr", {
         return writer.redecorate( jsnMap(), jsList( "let",
             writer.consume( args.envExpr, {
                 shadow: jsnMap(),
-                finalPolicy: "notFinal"
+                scopePolicy: { type: "notRoot" }
             } ),
             writer.consume( args.getExpr, {
                 shadow: args.envExpr.keys(),
-                finalPolicy: "inherit"
+                scopePolicy: { type: "notRoot" }
             } ) ) );
     },
     hasProperScope: function ( args ) {
@@ -1108,7 +1080,7 @@ addSyntax( "let", "getExpr", "envExpr getExpr", {
     },
     desugarSave: defaults.desugarSave,
     desugarVarLists: defaults.desugarVarLists,
-    desugarFnAndCase: defaults.desugarFnAndCase,
+    desugarFn: defaults.desugarFn,
     desugarDef: defaults.desugarDef,
     compileToNaiveJs: function ( args, options, locals ) {
         return (
@@ -1121,35 +1093,6 @@ addSyntax( "let", "getExpr", "envExpr getExpr", {
         );
     }
 } );
-addSyntax( "call", "getExpr", "getExpr getExpr", {
-    // INTERESTING
-    
-    visit: function ( args, writer ) {
-        return writer.redecorate(
-            jsnMap().plusTruth( [ "va:final" ] ),
-            jsList( "call",
-                writer.consume( args[ 0 ], {
-                    shadow: jsnMap(),
-                    finalPolicy: "notFinal"
-                } ),
-                writer.consume( args[ 1 ], {
-                    shadow: jsnMap(),
-                    finalPolicy: "root"
-                } ) ) );
-    },
-    hasProperScope: defaults.hasProperScope,
-    desugarSave: defaults.desugarSave,
-    desugarVarLists: defaults.desugarVarLists,
-    desugarFnAndCase: defaults.desugarFnAndCase,
-    desugarDef: defaults.desugarDef,
-    compileToNaiveJs: function ( args, options, locals ) {
-        var func = args[ 0 ].compileToNaiveJs( options, locals );
-        var arg = args[ 1 ].compileToNaiveJs( options, locals );
-        return options.savable ?
-            "new StcPendingFrame( " + func + ", " + arg + " )" :
-            "" + func + ".call( " + arg + " )";
-    }
-} );
 addSyntax( "local", "getExpr", "va", {
     visit: function ( args, writer ) {
         return writer.redecorate(
@@ -1159,7 +1102,7 @@ addSyntax( "local", "getExpr", "va", {
     hasProperScope: defaults.hasProperScope,
     desugarSave: defaults.desugarSave,
     desugarVarLists: defaults.desugarVarLists,
-    desugarFnAndCase: defaults.desugarFnAndCase,
+    desugarFn: defaults.desugarFn,
     desugarDef: defaults.desugarDef,
     compileToNaiveJs: function ( args, options, locals ) {
         if ( !locals.has( args.va.expr ) )
@@ -1173,7 +1116,7 @@ addSyntax( "frame", "getExpr", "frameName envExpr", {
             args.frameName.expr,
             writer.consume( args.envExpr, {
                 shadow: jsnMap(),
-                finalPolicy: "notFinal"
+                scopePolicy: { type: "notRoot" }
             } ) ) );
     },
     hasProperScope: function ( args ) {
@@ -1182,7 +1125,7 @@ addSyntax( "frame", "getExpr", "frameName envExpr", {
     },
     desugarSave: defaults.desugarSave,
     desugarVarLists: defaults.desugarVarLists,
-    desugarFnAndCase: defaults.desugarFnAndCase,
+    desugarFn: defaults.desugarFn,
     desugarDef: defaults.desugarDef,
     compileToNaiveJs: function ( args, options, locals ) {
         var frameVars = makeFrameVars( args.envExpr.keys() );
@@ -1206,7 +1149,63 @@ addSyntax( "frame", "getExpr", "frameName envExpr", {
         );
     }
 } );
-addSyntax( "save", "getExpr", "frameName optVarList va getExpr", {
+addSyntax( "save-root", "getExpr", "saveRoot getExpr", {
+    // INTERESTING
+    
+    visit: function ( args, writer ) {
+        return writer.redecorate( jsnMap(),
+            jsList( "save-root",
+                args.saveRoot.expr,
+                writer.consume( args.getExpr, {
+                    shadow: jsnMap(),
+                    scopePolicy: { type: "saveRoot",
+                        label: args.saveRoot.expr }
+                } ) ) );
+    },
+    hasProperScope: defaults.hasProperScope,
+    desugarSave: function ( args ) {
+        var exprObj = args.getExpr;
+        while ( true ) {
+            var desugared = exprObj.desugarSave();
+            if ( desugared.type === "expr" ) {
+                return desugared;
+            } else if ( desugared.type === "save" ) {
+                if ( desugared.saveRoot.expr !== args.saveRoot.expr )
+                    return desugared;
+                exprObj = parseSyntax( "getExpr",
+                    jsList( "save-root", args.saveRoot.expr,
+                        jsList( "frame", desugared.callFrameName.expr,
+                            jsList( "env-cons",
+                                desugared.callFunc.expr,
+                                jsList( "fn",
+                                    desugared.frameName.expr,
+                                    desugared.optVarList.expr,
+                                    jsList( "let-case", desugared.va.expr,
+                                        jsList( "any", desugared.frameBodyExpr ) ) ),
+                                jsList( "env-cons",
+                                    desugared.callArg.expr,
+                                    desugared.arg.expr,
+                                    jsList( "env-nil" ) ) ) ) ) );
+            } else {
+                throw new Error();
+            }
+        }
+    },
+    desugarVarLists: function ( args ) {
+        throw new Error();
+    },
+    desugarFn: function ( args ) {
+        throw new Error();
+    },
+    desugarDef: function ( args ) {
+        throw new Error();
+    },
+    compileToNaiveJs: function ( args, options, locals ) {
+        throw new Error();
+    }
+} );
+addSyntax( "save", "getExpr",
+    "saveRoot frameName va frameName optVarList va va getExpr", {
     // INTERESTING
     
     visit: function ( args, writer ) {
@@ -1217,32 +1216,44 @@ addSyntax( "save", "getExpr", "frameName optVarList va getExpr", {
             vars.mapKeys( function ( va ) {
                 if ( va[ 0 ] !== "va:va" )
                     throw new Error();
-                return [ "savedFreeVar", va[ 1 ] ];
-            } ).plusTruth( [ "savedInputVar", args.va.expr ] ),
+                return [ "va:savedFreeVar", args.saveRoot.expr,
+                    va[ 1 ] ];
+            } ).plusTruth(
+                [ "va:savedInputVar", args.saveRoot.expr,
+                    args[ 6 ].expr ] ),
             jsList( "save",
-                args.frameName.expr,
+                args.saveRoot.expr,
+                args[ 1 ].expr,
+                args[ 2 ].expr,
+                args[ 3 ].expr,
                 args.optVarList.expr,
-                args.va.expr,
+                args[ 5 ].expr,
+                args[ 6 ].expr,
                 writer.consume( args.getExpr, {
                     shadow: jsnMap(),
-                    finalPolicy: "root"
+                    scopePolicy: { type: "saveRoot",
+                        label: args.saveRoot.expr }
                 } ) ) );
     },
     hasProperScope: defaults.hasProperScope,
-    desugarSave: function ( args, isFinal ) {
+    desugarSave: function ( args ) {
         return {
             type: "save",
-            frameName: args.frameName,
+            saveRoot: args.saveRoot,
+            callFrameName: args[ 1 ],
+            callFunc: args[ 2 ],
+            frameName: args[ 3 ],
             optVarList: args.optVarList,
-            va: args.va,
+            callArg: args[ 5 ],
+            va: args[ 6 ],
             arg: args.getExpr,
-            frameBodyExpr: jsList( "local", args.va.expr )
+            frameBodyExpr: jsList( "local", args[ 6 ].expr )
         };
     },
     desugarVarLists: function ( args ) {
         throw new Error();
     },
-    desugarFnAndCase: function ( args ) {
+    desugarFn: function ( args ) {
         throw new Error();
     },
     desugarDef: function ( args ) {
@@ -1266,7 +1277,7 @@ addSyntax( "fn", "getExpr", "frameName optVarList caseList", {
                 args.optVarList.expr,
                 writer.consume( args.caseList, {
                     shadow: jsnMap(),
-                    finalPolicy: "root"
+                    scopePolicy: { type: "notRoot" }
                 } ) ) );
     },
     hasProperScope: function ( args ) {
@@ -1282,65 +1293,12 @@ addSyntax( "fn", "getExpr", "frameName optVarList caseList", {
             args.optVarList.or( innerFreeVars ),
             args.caseList.desugarVarLists() );
     },
-    desugarFnAndCase: function ( args ) {
+    desugarFn: function ( args ) {
         return jsList( "let-def",
             jsList( "def", args.frameName.expr, args.optVarList.expr,
-                args.caseList.desugarFnAndCase() ),
+                args.caseList.desugarFn() ),
             jsList( "frame", args.frameName.expr,
                 args.optVarList.capture() ) );
-    },
-    desugarDef: function ( args ) {
-        throw new Error();
-    },
-    compileToNaiveJs: function ( args, options, locals ) {
-        throw new Error();
-    }
-} );
-addSyntax( "case", "getExpr",
-    "frameName optVarList getExpr caseList", {
-    // INTERESTING
-    
-    visit: function ( args, writer ) {
-        var declaredInnerFreeVars = args.optVarList.set();
-        
-        return writer.redecorate(
-            declaredInnerFreeVars === null ?
-                jsnMap() : declaredInnerFreeVars,
-            jsList( "case",
-                args.frameName.expr,
-                args.optVarList.expr,
-                writer.consume( args.getExpr, {
-                    shadow: jsnMap(),
-                    finalPolicy: "root"
-                } ),
-                writer.consume( args.caseList, {
-                    shadow: jsnMap(),
-                    finalPolicy: "doesNotMatter"
-                } ) ) );
-    },
-    hasProperScope: function ( args ) {
-        return optVarListIsProper( getFreeVars( args.caseList ),
-                args.optVarList ) &&
-            args.getExpr.hasProperScope() &&
-            args.caseList.hasProperScope();
-    },
-    desugarSave: defaults.desugarSave,
-    desugarVarLists: function ( args ) {
-        var innerFreeVars = getFreeVars( args.caseList );
-        return jsList( "case",
-            args.frameName.expr,
-            args.optVarList.or( innerFreeVars ),
-            args.getExpr.desugarVarLists(),
-            args.caseList.desugarVarLists() );
-    },
-    desugarFnAndCase: function ( args ) {
-        return jsList( "let-def",
-            jsList( "def", args.frameName.expr, args.optVarList.expr,
-                args.caseList.desugarFnAndCase() ),
-            jsList( "call",
-                jsList( "frame", args.frameName.expr,
-                    args.optVarList.capture() ),
-                args.getExpr.desugarFnAndCase() ) );
     },
     desugarDef: function ( args ) {
         throw new Error();
@@ -1447,11 +1405,11 @@ function desugarDefExpr( expr ) {
     if ( !parsed.hasProperScope()
         || getFreeVars( parsed ).has( [ "va:scopeError" ] ) )
         throw new Error();
-    var noSavesResult = parsed.desugarSave( !!"isFinal" );
+    var noSavesResult = parsed.desugarSave();
     if ( noSavesResult.type !== "expr" )
         throw new Error();
     var noSaves = parseSyntax( "def", noSavesResult.expr );
     var noVarLists = parseSyntax( "def", noSaves.desugarVarLists() );
-    var noFns = parseSyntax( "def", noVarLists.desugarFnAndCase() );
+    var noFns = parseSyntax( "def", noVarLists.desugarFn() );
     return noFns.desugarDefIncludingSelf();
 }

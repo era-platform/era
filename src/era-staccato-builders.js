@@ -87,13 +87,22 @@ function stcMatch( frameName, var_args ) {
         els );
 }
 
+function stcRet( val ) {
+    return jsList( "frame", "return", stcEnv( "val", val ) );
+}
+
+function stcCall( func, arg ) {
+    return jsList( "frame", "call",
+        stcEnv( "func", func, "arg", arg ) );
+}
+
 function stcCallFrame( frameName, var_args ) {
     var n = arguments.length;
     if ( n < 2 )
         throw new Error();
     var entries = [].slice.call( arguments, 1, n - 1 );
     var input = arguments[ n - 1 ];
-    return jsList( "call",
+    return stcCall(
         jsList( "frame", frameName, stcEnvArr( entries ) ),
         input );
 }
@@ -133,8 +142,15 @@ function stcFnAny( frameName, va, body ) {
         jsList( "let-case", va, jsList( "any", body ) ) );
 }
 
+function stcSaveRoot( expr ) {
+    return jsList( "save-root", "sr", expr );
+}
+
 function stcSave( va, frameName, expr ) {
-    return jsList( "save", frameName, stcNoVars(), va, expr );
+    return jsList( "save", "sr", "call",
+        "func", frameName, stcNoVars(),
+        "arg", va,
+        expr );
 }
 
 function stcType( frameName, var_args ) {
@@ -172,14 +188,15 @@ function stcType( frameName, var_args ) {
         var matchSubject = arguments[ n + 1 ];
         var then = arguments[ n + 2 ];
         var els = arguments[ n + 3 ];
-        return jsList( "case", caseFrameName, stcNoVars(),
-            matchSubject,
-            jsList( "match", frameName,
-                stcEntriesPairMacro(
-                    "env-pattern-cons", "env-pattern-nil",
-                    frameVars, localVars ),
-                then,
-                jsList( "any", els ) ) );
+        return stcCall(
+            jsList( "fn", caseFrameName, stcNoVars(),
+                jsList( "match", frameName,
+                    stcEntriesPairMacro(
+                        "env-pattern-cons", "env-pattern-nil",
+                        frameVars, localVars ),
+                    then,
+                    jsList( "any", els ) ) ),
+            matchSubject );
     };
     // TODO: See if we should leave this in. If so, optimize it.
     result.makeStc = function ( var_args ) {
@@ -221,6 +238,8 @@ function stcCase( frameName, va, matchSubject, var_args ) {
     }
     
     var body = [].slice.call( arguments, 3 );
-    return jsList( "case", frameName, stcNoVars(), matchSubject,
-        jsList( "let-case", va, processTail( body ) ) );
+    return stcCall(
+        jsList( "fn", frameName, stcNoVars(),
+            jsList( "let-case", va, processTail( body ) ) ),
+        matchSubject );
 }
