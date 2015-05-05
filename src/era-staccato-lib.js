@@ -32,7 +32,7 @@ var stcNope = stcType( "nope", "val" );
 var stcNil = stcType( "nil" );
 
 stcAddYesDefAny( "pass-to", "arg", "func",
-    stcCall( stcv( "func" ), stcv( "arg" ) ) );
+    stcCall( stcv( "func" ), stcRet( stcv( "arg" ) ) ) );
 
 stcAddYesDefAny( "foldl-short-iter", "list", "combiner", "state",
     stcCons.cond( "foldl-short-iter-case1", "first", "rest",
@@ -266,8 +266,6 @@ stcAddYesDef( "map-iter", "func",
                             stcRet( stcv( "rest" ) ) ) ) ) ) ),
         jsList( "any", stcRet( stcNil.make() ) ) ) );
 
-// TODO: Add calls to stcRet( _ ) wherever appropriate from here down.
-
 // This implements `map-iter` independently and with bounded stack
 // size.
 stcAddYesDefAny( "map-iter", "func", "list",
@@ -282,14 +280,14 @@ stcAddYesDefAny( "map-iter", "func", "list",
                             stcSave( "func-result",
                                 "rev-onto-map-iter-inner-1",
                                 stcCall( stcv( "func" ),
-                                    stcv( "elem" ) ) ),
+                                    stcRet( stcv( "elem" ) ) ) ),
                             stcv( "target" ) ),
-                        stcv( "rest" ) ) ),
-                jsList( "any", stcv( "target" ) ) ) ),
+                        stcRet( stcv( "rest" ) ) ) ),
+                jsList( "any", stcRet( stcv( "target" ) ) ) ) ),
         stcCallFrame( "rev",
             stcCallFrame( "rev-onto-map-iter", "func", stcv( "func" ),
                 "target", stcNil.make(),
-                stcv( "list" ) ) ) ) );
+                stcRet( stcv( "list" ) ) ) ) ) );
 
 // This implements `map-iter` in terms of `foldl-iter` and with
 // bounded stack size.
@@ -298,15 +296,15 @@ stcAddYesDefAny( "map-iter", "func", "list",
         stcCallFrame( "foldl-iter", "list", stcv( "list" ),
             "combiner",
             stcFnAny( "map-iter-adapter-1", "state",
-                stcFnAny( "map-iter-adapter-2", "elem",
+                stcRetFnAny( "map-iter-adapter-2", "elem",
                     stcSaveRoot(
-                        stcCons.make(
-                            stcSave( "func-result",
-                                "map-iter-adapter-3",
-                                stcCall( stcv( "func" ),
-                                    stcv( "elem" ) ) ),
-                            stcv( "state" ) ) ) ) ),
-            stcNil.make() ) ) );
+                        stcRet(
+                            stcCons.make(
+                                stcSave( "func-result",
+                                    "map-iter-adapter-3",
+                                    stcCall( stcv( "func" ), stcRet( stcv( "elem" ) ) ) ),
+                                stcv( "state" ) ) ) ) ) ),
+            stcRet( stcNil.make() ) ) ) );
 
 // TODO: Choose just one of these implementations of `any-iter`.
 
@@ -314,59 +312,63 @@ stcAddYesDefAny( "map-iter", "func", "list",
 stcAddYesDef( "any-iter", "func",
     stcCons.match( "first", "rest",
         stcCase( "any-iter-case", "func-result",
-            stcCall( stcv( "func" ), stcv( "first" ) ),
+            stcCall( stcv( "func" ), stcRet( stcv( "first" ) ) ),
             
-            stcYep, "result", stcv( "func-result" ),
+            stcYep, "result", stcRet( stcv( "func-result" ) ),
             
             stcNope, "result",
             stcCallFrame( "any-iter", "func", stcv( "func" ),
-                stcv( "rest" ) ),
+                stcRet( stcv( "rest" ) ) ),
             
-            stcErr( "Expected a func-result of type yep or nope" ) ),
-        jsList( "any", stcNope.make( stcNil.make() ) ) ) );
+            stcRetErr(
+                "Expected a func-result of type yep or nope" ) ),
+        jsList( "any", stcRet( stcNope.make( stcNil.make() ) ) ) ) );
 
 // This implements `any-iter` in terms of `foldl-short-iter`.
 stcAddYesDefAny( "any-iter", "func", "list",
     stcCallFrame( "foldl-short-iter", "list", stcv( "list" ),
         "combiner",
         stcFnAny( "any-iter-adapter-1", "state",
-            stcFnAny( "any-iter-adapter-2", "elem",
+            stcRetFnAny( "any-iter-adapter-2", "elem",
                 stcCase( "any-iter-case", "func-result",
-                    stcCall( stcv( "func" ), stcv( "elem" ) ),
+                    stcCall( stcv( "func" ),
+                        stcRet( stcv( "elem" ) ) ),
                     
-                    stcYep, "result", stcv( "func-result" ),
+                    stcYep, "result", stcRet( stcv( "func-result" ) ),
                     
-                    stcNope, "result", stcNope.make( stcNil.make() ),
+                    stcNope, "result",
+                    stcRet( stcNope.make( stcNil.make() ) ),
                     
-                    stcErr(
+                    stcRetErr(
                         "Expected a func-result of type yep or nope"
                         ) ) ) ),
-        stcNil.make() ) );
+        stcRet( stcNil.make() ) ) );
 
 // TODO: Choose just one of these implementations of `any-double`.
 
 // This implements `any-double` independently.
 stcAddYesDefAny( "any-double", "list-a", "list-b", "func",
     stcCons.cond( "any-double-case1", "first-a", "rest-a",
-        stcv( "list-a" ),
+        stcRet( stcv( "list-a" ) ),
         stcCons.cond( "any-double-case2", "first-b", "rest-b",
-            stcv( "list-b" ),
+            stcRet( stcv( "list-b" ) ),
             stcCase( "any-double-case3", "func-result",
                 stcCallFrame( "pass-to", "arg", stcv( "first-b" ),
-                    stcCall( stcv( "func" ), stcv( "first-a" ) ) ),
+                    stcCall( stcv( "func" ),
+                        stcRet( stcv( "first-a" ) ) ) ),
                 
-                stcYep, "result", stcv( "func-result" ),
+                stcYep, "result", stcRet( stcv( "func-result" ) ),
                 
                 stcNope, "result",
                 stcCallFrame( "any-double",
                     "list-a", stcv( "rest-a" ),
                     "list-b", stcv( "rest-b" ),
-                    stcv( "func" ) ),
+                    stcRet( stcv( "func" ) ) ),
                 
-                stcErr(
+                stcRetErr(
                     "Expected a func-result of type yep or nope" ) ),
-            stcNope.make( stcNil.make() ) ),
-        stcNope.make( stcNil.make() ) ) );
+            stcRet( stcNope.make( stcNil.make() ) ) ),
+        stcRet( stcNope.make( stcNil.make() ) ) ) );
 
 // This implements `any-double` in terms of `foldl-double-short-iter`.
 stcAddYesDefAny( "any-double", "list-a", "list-b", "func",
@@ -375,29 +377,30 @@ stcAddYesDefAny( "any-double", "list-a", "list-b", "func",
         "list-b", stcv( "list-b" ),
         "combiner",
         stcFnAny( "any-double-adapter-1", "state",
-            stcFnAny( "any-double-adapter-2", "elem-a",
-                stcFnAny( "any-double-adapter-3", "elem-b",
+            stcRetFnAny( "any-double-adapter-2", "elem-a",
+                stcRetFnAny( "any-double-adapter-3", "elem-b",
                     stcCase( "any-double-case", "func-result",
                         stcCallFrame( "pass-to",
                             "arg", stcv( "elem-b" ),
                             stcCall( stcv( "func" ),
-                                stcv( "elem-a" ) ) ),
+                                stcRet( stcv( "elem-a" ) ) ) ),
                         
-                        stcYep, "result", stcv( "func-result" ),
+                        stcYep, "result",
+                        stcRet( stcv( "func-result" ) ),
                         
                         stcNope, "result",
-                        stcNope.make( stcNil.make() ),
+                        stcRet( stcNope.make( stcNil.make() ) ),
                         
-                        stcErr(
+                        stcRetErr(
                             "Expected a func-result of type yep or " +
                             "nope" ) ) ) ) ),
-        stcNil.make() ) );
+        stcRet( stcNil.make() ) ) );
 
 stcAddYesDef( "not-yep-nope",
-    stcYep.match( "val", stcNope.make( stcv( "val" ) ),
-        stcNope.match( "val", stcYep.make( stcv( "val" ) ),
+    stcYep.match( "val", stcRet( stcNope.make( stcv( "val" ) ) ),
+        stcNope.match( "val", stcRet( stcYep.make( stcv( "val" ) ) ),
             jsList( "any",
-                stcErr(
+                stcRetErr(
                     "Expected a yep-nope of type yep or nope"
                     ) ) ) ) );
 
@@ -407,43 +410,48 @@ stcAddYesDefAny( "all-iter", "func", "list",
             "func",
             stcFnAny( "all-iter-adapter-1", "elem",
                 stcCallFrame( "not-yep-nope",
-                    stcCall( stcv( "func" ), stcv( "elem" ) ) ) ),
-            stcv( "list" ) ) ) );
+                    stcCall( stcv( "func" ),
+                        stcRet( stcv( "elem" ) ) ) ) ),
+            stcRet( stcv( "list" ) ) ) ) );
 
 stcAddYesDefAny( "cut", "list-to-measure-by", "list-to-cut",
     stcCallFrame( "foldl-iter", "list", stcv( "list-to-measure-by" ),
         "combiner",
         stcFnAny( "cut-adapter-1", "state",
-            stcFnAny( "cut-adapter-2", "ignored-elem",
+            stcRetFnAny( "cut-adapter-2", "ignored-elem",
                 stcCons.cond( "cut-case1", "rev-before", "after",
-                    stcv( "state" ),
+                    stcRet( stcv( "state" ) ),
                     stcCons.cond( "cut-case2", "first", "after",
-                        stcv( "after" ),
-                        stcCons.make(
-                            stcCons.make( stcv( "first" ),
-                                stcv( "rev-before" ) ),
-                            stcv( "after" ) ),
-                        stcErr(
+                        stcRet( stcv( "after" ) ),
+                        stcRet(
+                            stcCons.make(
+                                stcCons.make( stcv( "first" ),
+                                    stcv( "rev-before" ) ),
+                                stcv( "after" ) ) ),
+                        stcRetErr(
                             "Expected a list-to-measure-by no " +
                             "longer than the list-to-cut" ) ),
-                    stcErr( "Internal error" ) ) ) ),
-        stcCons.make( stcNil.make(), stcv( "list-to-cut" ) ) ) );
+                    stcRetErr( "Internal error" ) ) ) ),
+        stcRet(
+            stcCons.make( stcNil.make(),
+                stcv( "list-to-cut" ) ) ) ) );
 
 stcAddYesDef( "tails",
     jsList( "let-case", "lists",
         stcCons.match( "list-a", "list-b",
             stcCons.cond( "tails-case1", "elem-a", "list-a",
-                stcv( "list-a" ),
+                stcRet( stcv( "list-a" ) ),
                 stcCons.cond( "tails-case2", "elem-b", "list-b",
-                    stcv( "list-b" ),
+                    stcRet( stcv( "list-b" ) ),
                     stcCallFrame( "tails",
-                        stcCons.make(
-                            stcv( "list-a" ),
-                            stcv( "list-b" ) ) ),
-                    stcv( "lists" ) ),
-                stcv( "lists" ) ),
+                        stcRet(
+                            stcCons.make(
+                                stcv( "list-a" ),
+                                stcv( "list-b" ) ) ) ),
+                    stcRet( stcv( "lists" ) ) ),
+                stcRet( stcv( "lists" ) ) ),
             jsList( "any",
-                stcErr(
+                stcRetErr(
                     "Expected a lists value of type cons" ) ) ) ) );
 
 
@@ -529,7 +537,7 @@ function testStcDef( frameTag, frameVars, arg ) {
     var calls = 0;
     
     var stack = [ new Stc( frameTag, frameVars ) ];
-    var comp = arg;
+    var comp = new Stc( returnFrameTag, [ arg ] );
     while ( true ) {
         if ( !(comp instanceof Stc) )
             throw new Error();
@@ -539,12 +547,8 @@ function testStcDef( frameTag, frameVars, arg ) {
             if ( !(comp instanceof Stc) )
                 throw new Error();
         }
-        if ( comp.frameTag !== returnFrameTag ) {
-            // TODO: Once we've finished inserting stcRet() all over
-            // the place, stop being so forgiving.
-            comp = new Stc( returnFrameTag, [ comp ] );
-//            throw new Error();
-        }
+        if ( comp.frameTag !== returnFrameTag )
+            throw new Error();
         var result = comp.frameVars[ returnFrameValI ];
         var n = stack.length;
         if ( n === 0 )
