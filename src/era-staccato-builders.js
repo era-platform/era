@@ -142,6 +142,10 @@ function stcFnAny( frameName, va, body ) {
         jsList( "let-case", va, jsList( "any", body ) ) );
 }
 
+function stcRetFnAny( frameName, va, body ) {
+    return stcRet( stcFnAny( frameName, va, body ) );
+}
+
 function stcSaveRoot( expr ) {
     return jsList( "save-root", "sr", expr );
 }
