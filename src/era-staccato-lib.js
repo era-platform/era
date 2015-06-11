@@ -6,6 +6,12 @@
 //
 // See era-staccato.js for more information about what Staccato is.
 
+var stcNextGensymI = 0;
+function stcGensym() {
+    return "gs-" + stcNextGensymI++;
+}
+
+
 var stcDefs = [];
 function stcAddYesDef( var_args ) {
     stcDefs = stcDefs.concat(
@@ -457,16 +463,6 @@ stcAddYesDef( "tails",
 
 // TODO: Move this testing code somewhere better.
 
-stcAddYesDef( "test-let",
-    jsList( "any",
-        stcLet(
-            "x", stcNope.make( stcNil.make() ),
-            "y", stcYep.make( stcNil.make() ),
-            stcLet( "x", stcv( "y" ), "y", stcv( "x" ),
-                stcRet(
-                    stcCons.make( stcv( "x" ),
-                        stcv( "y" ) ) ) ) ) ) );
-
 function staccatoPretty( expr ) {
     if ( expr === null ) {
         return "()";
@@ -513,14 +509,26 @@ Stc.prototype.pretty = function () {
         } ).join( "" ) + ")";
 };
 
-arrEach( stcDefs, function ( def ) {
-    Function( "defs", "Stc",
-        parseSyntax( "def", def ).compileToNaiveJs( {} )
-    )( defs, Stc );
-} );
+function runDefs( newDefs ) {
+    arrEach( newDefs, function ( def ) {
+        Function( "defs", "Stc",
+            parseSyntax( "def", def ).compileToNaiveJs( {} )
+        )( defs, Stc );
+    } );
+}
 
-function testStcDef( frameTag, frameVars, arg ) {
+runDefs( stcDefs );
 
+function testStcDef( expr ) {
+    
+    var testName = stcGensym();
+    var stcTest = stcType( testName );
+    
+    var testDefs = desugarDefExpr(
+        stcYesDef( testName, jsList( "any", expr ) ) );
+    stcDefs = stcDefs.concat( testDefs );
+    runDefs( testDefs );
+    
     var callFrameVars = makeFrameVars( strMap().plusArrTruth( [
         [ "va:va", "func" ],
         [ "va:va", "arg" ]
@@ -536,8 +544,8 @@ function testStcDef( frameTag, frameVars, arg ) {
     var maxStackDepth = 0;
     var calls = 0;
     
-    var stack = [ new Stc( frameTag, frameVars ) ];
-    var comp = new Stc( returnFrameTag, [ arg ] );
+    var stack = [ stcTest.makeStc() ];
+    var comp = new Stc( returnFrameTag, [ stcNil.makeStc() ] );
     while ( true ) {
         if ( !(comp instanceof Stc) )
             throw new Error();
@@ -566,15 +574,22 @@ function testStcDef( frameTag, frameVars, arg ) {
         "with a maximum stack depth of " + maxStackDepth );
 }
 
-testStcDef( JSON.stringify( [ "rev", [] ] ), [],
-    stcCons.makeStc( stcYep.makeStc( stcNil.makeStc() ),
-        stcCons.makeStc( stcNope.makeStc( stcNil.makeStc() ),
-            stcNil.makeStc() ) ) );
+testStcDef(
+    stcCallFrame( "rev",
+        stcRet(
+            stcCons.make( stcYep.make( stcNil.make() ),
+                stcCons.make( stcNope.make( stcNil.make() ),
+                    stcNil.make() ) ) ) ) );
 
-testStcDef( JSON.stringify( [ "rev", [] ] ), [], stcNil.makeStc() );
+testStcDef( stcCallFrame( "rev", stcRet( stcNil.make() ) ) );
 
-testStcDef( JSON.stringify( [ "not-yep-nope", [] ] ), [],
-    stcYep.makeStc( stcNil.makeStc() ) );
+testStcDef(
+    stcCallFrame( "not-yep-nope",
+        stcRet( stcYep.make( stcNil.make() ) ) ) );
 
-testStcDef( JSON.stringify( [ "test-let", [] ] ), [],
-    stcNil.makeStc() );
+testStcDef(
+    stcLet(
+        "x", stcNope.make( stcNil.make() ),
+        "y", stcYep.make( stcNil.make() ),
+        stcLet( "x", stcv( "y" ), "y", stcv( "x" ),
+            stcRet( stcCons.make( stcv( "x" ), stcv( "y" ) ) ) ) ) );

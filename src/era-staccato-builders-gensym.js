@@ -243,10 +243,12 @@ function stcDefun( frameName, var_args ) {
     var frameVars = [].slice.call( arguments, 1, n - 2 );
     var input = arguments[ n - 2 ];
     var body = arguments[ n - 1 ];
-    var result = {};
-    result.def = jsList( "def", frameName, stcYesVarsArr( frameVars ),
+    var overallDef = jsList( "def", frameName,
+        stcYesVarsArr( frameVars ),
         jsList( "let-case", input,
             jsList( "any", stcSaveRoot( body ) ) ) );
+    var result = {};
+    result.defs = desugarDefExpr( overallDef );
     result.type = stcTypeArr( frameName, frameVars );
     return result;
 }
