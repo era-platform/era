@@ -1280,60 +1280,57 @@ function processCommands( yoke, commands, processCommand, then ) {
 
 function compileAndDefineFromString( yoke, pkCodeString, then ) {
     var tryExprs = readAll( pkCodeString );
-    // TODO: Reindent this.
-        return processCommands( yoke, jsListFromArr( tryExprs ),
-            function ( yoke, tryExpr, reportError, then ) {
-            
-            function okToPkErr( yoke, maybeOk, then ) {
-                if ( maybeOk.ok )
-                    return pkRet( yoke, pkNoBubble( then ), pkNil );
-                else
-                    return pkErr( yoke, pkNoBubble( then ),
-                        maybeOk.msg );
-            }
-            
-            return okToPkErr( yoke, tryExpr,
-                function ( yoke, tryExprAsPkErr ) {
-            return reportError( yoke, tryExprAsPkErr, "Parse",
-                function ( yoke, tryExprAsPkErr ) {
-            return macroexpandReaderExpr( yoke, tryExpr.val,
-                pkNoBubble( function ( yoke, macroexpanded ) {
-            return reportError( yoke, macroexpanded, "Macroexpansion",
-                function ( yoke, macroexpanded ) {
-            return pkDup( yoke, macroexpanded, pkNil,
-                pkNoBubble( function ( yoke, macroexpandedDrop ) {
-            return reportError( yoke, macroexpandedDrop,
-                "Macroexpansion result drop",
-                function ( yoke, macroexpandedDrop ) {
-            return compileTopLevel( yoke, macroexpanded,
-                function ( yoke, jsFuncCode ) {
-            return okToPkErr( yoke, jsFuncCode,
-                function ( yoke, jsFuncCodeAsPkErr ) {
-            return reportError( yoke, jsFuncCodeAsPkErr,
-                "Compilation",
-                function ( yoke, jsFuncCodeAsPkErr ) {
-            return invokeTopLevel( yoke,
-                Function( "return " + jsFuncCode.val + ";" )(),
-                pkNoBubble( function ( yoke, commandResult ) {
-            
-            return then( yoke, commandResult, jsFuncCode.val );
-            
-            } ) );
-            } );
-            } );
-            } );
-            } );
-            } ) );
-            } );
-            } ) );
-            } );
-            } );
-        }, function ( yoke, displaysList ) {
-            var displaysArr = [];
-            for ( var d = displaysList; d !== null; d = d.rest )
-                displaysArr.push( d.first );
-            return then( yoke, displaysArr );
+    return processCommands( yoke, jsListFromArr( tryExprs ),
+        function ( yoke, tryExpr, reportError, then ) {
+        
+        function okToPkErr( yoke, maybeOk, then ) {
+            if ( maybeOk.ok )
+                return pkRet( yoke, pkNoBubble( then ), pkNil );
+            else
+                return pkErr( yoke, pkNoBubble( then ), maybeOk.msg );
+        }
+        
+        return okToPkErr( yoke, tryExpr,
+            function ( yoke, tryExprAsPkErr ) {
+        return reportError( yoke, tryExprAsPkErr, "Parse",
+            function ( yoke, tryExprAsPkErr ) {
+        return macroexpandReaderExpr( yoke, tryExpr.val,
+            pkNoBubble( function ( yoke, macroexpanded ) {
+        return reportError( yoke, macroexpanded, "Macroexpansion",
+            function ( yoke, macroexpanded ) {
+        return pkDup( yoke, macroexpanded, pkNil,
+            pkNoBubble( function ( yoke, macroexpandedDrop ) {
+        return reportError( yoke, macroexpandedDrop,
+            "Macroexpansion result drop",
+            function ( yoke, macroexpandedDrop ) {
+        return compileTopLevel( yoke, macroexpanded,
+            function ( yoke, jsFuncCode ) {
+        return okToPkErr( yoke, jsFuncCode,
+            function ( yoke, jsFuncCodeAsPkErr ) {
+        return reportError( yoke, jsFuncCodeAsPkErr, "Compilation",
+            function ( yoke, jsFuncCodeAsPkErr ) {
+        return invokeTopLevel( yoke,
+            Function( "return " + jsFuncCode.val + ";" )(),
+            pkNoBubble( function ( yoke, commandResult ) {
+        
+        return then( yoke, commandResult, jsFuncCode.val );
+        
+        } ) );
         } );
+        } );
+        } );
+        } );
+        } ) );
+        } );
+        } ) );
+        } );
+        } );
+    }, function ( yoke, displaysList ) {
+        var displaysArr = [];
+        for ( var d = displaysList; d !== null; d = d.rest )
+            displaysArr.push( d.first );
+        return then( yoke, displaysArr );
+    } );
 }
 
 function compileTopLevel( yoke, essence, then ) {

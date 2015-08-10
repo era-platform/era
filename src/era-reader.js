@@ -887,8 +887,6 @@ function readUnsophisticatedEscapeSequenceSuffix( yoke, s, then ) {
         return s.read( yoke, function ( yoke, s, result ) {
             if ( !result.ok )
                 return then( yoke, s, result );
-            
-            // TODO: Reindent this.
         
         var c = result.val.val;
         if ( /^[)\]]$/.test( c ) )
