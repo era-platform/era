@@ -9,7 +9,7 @@
 \ See era-staccato.js for more information about what Staccato is.
 
 \ TODO: Implement these macros:
-\ def-type defun case caselet c c-new err fn let
+\ def-type defun case caselet c c-new err fn test let
 
 (def-type cons car cdr)
 (def-type yep val)
