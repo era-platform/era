@@ -1,0 +1,155 @@
+\ era-staccato-lib.stc
+\ Copyright 2015 Ross Angle. Released under the MIT License.
+\
+\ These are utilities written in a hypothetical macro layer over
+\ Staccato. For now, I'm porting the utilities from era-avl.js.
+\ (Actually, for now, these are ports of the utilities in
+\ era-staccato-lib.js that were ported from era-avl.js.)
+\
+\ See era-staccato.js for more information about what Staccato is.
+
+\ TODO: Implement these macros:
+\ def-type defun case caselet c c-new err fn let
+
+(def-type cons car cdr)
+(def-type yep val)
+(def-type nope val)
+(def-type nil)
+
+(defun foldl-short state list combiner
+  (case list cons first rest
+    (caselet combiner-result (c combiner state first)
+      yep result combiner-result
+      nope result (c-new foldl-short result rest combiner)
+      err.\-qq[Expected a combiner-result of type yep or nope])
+    nope.state))
+
+(defn foldl state list combiner
+  (case list cons first rest
+    (c-new foldl (c combiner state first) rest combiner)
+    state))
+
+\ TODO: Choose just one of these implementations of
+\ `foldl-double-short`.
+
+\ This implements `foldl-double-short` independently.
+(defn foldl-double-short state list-a list-b combiner
+  (case list-a cons first-a rest-a
+    (case list-b cons first-b rest-b
+      (caselet combiner-result (c combiner state first-a first-b)
+        
+        yep result combiner-result
+        
+        nope result
+        (c-new foldl-double-short result list-a list-b combiner)
+        
+        err.\-qq[Expected a combiner-result of type yep or nope])
+      nope.state)
+    nope.state))
+
+\ This implements `foldl-double-short` in terms of `foldl-short`.
+(defn foldl-double-short state list-a list-b combiner
+  (case
+    (foldl-short (cons list-b state) list-a /fn state elem-a
+      (case state cons rest-b state
+        (case rest-b cons elem-b rest-b
+          (caselet combiner-result (c combiner state elem-a elem-b)
+            yep result combiner-result
+            nope result (nope/cons rest-b result)
+            err.\-qq[Expected a combiner-result of type yep or nope])
+          (yep nope.state))
+        err.\-qq[Internal error]))
+    
+    yep result result
+    
+    nope result
+    (case result cons rest-b state
+      nope.state
+      err.\-qq[Internal error])
+    
+    err.\-qq[Internal error]))
+
+\ TODO: Choose just one of these implementations of `foldl-double`.
+
+\ This implements `foldl-double` independently.
+(defn foldl-double state list-a list-b combiner
+  (case list-a cons first-a rest-a
+    (case list-b cons first-b rest-b
+      (c-new foldl-double (c combiner state first-a rest-a)
+        rest-a rest-b combiner)
+      state)
+    state))
+
+\ This implements `foldl-double` in terms of `foldl-double-short`.
+(defn foldl-double state list-a list-b combiner
+  (case
+    (foldl-double-short state list-a list-b /fn state elem-a elem-b
+      (nope/c combiner state elem-a elem-b))
+    nope result result
+    err.\-qq[Internal error]))
+
+(defn rev-onto target source
+  (foldl target source /fn state elem /cons elem state))
+
+(defn rev source
+  (rev-onto (nil) source))
+
+(defn append past rest
+  (rev-onto rest rev.past))
+
+(defn map list func
+  (rev/foldl (nil) list /fn state elem /cons (c func elem) state))
+
+(defn any list func
+  (foldl-short (nil) list /fn state elem
+    (caselet func-result (c func elem)
+      yep result func-result
+      nope result (nope/nil)
+      err.\-qq[Expected a func-result of type yep or nope])))
+
+(defn any-double list-a list-b func
+  (foldl-double-short (nil) list-a list-b /fn state elem-a elem-b
+    (caselet func-result (c func elem-a elem-b)
+      yep result func-result
+      nope result (nope/nil)
+      err.\-qq[Expected a func-result of type yep or nope])))
+
+(defn not-yep-nope yep-nope
+  (case yep-nope
+    yep val nope.val
+    nope val yep.val
+    err.\-qq[Expected a yep-nope of type yep or nope]))
+
+(defn all func list
+  (not-yep-nope/any list /fn elem /not-yep-nope/c func elem))
+
+(defn cut list-to-measure-by list-to-cut
+  (foldl (cons (nil) list-to-cut) list-to-measure-by
+  /fn state ignored-elem
+    (case state cons rev-before after
+      (case after cons first after
+        (cons (cons first before) after)
+        err.\-qq[
+          Expected a list-to-measure-by no longer than the list-to-cut
+          ])
+      err.\-qq[Internal error])))
+
+(defn tails lists
+  (case lists list-a list-b
+    (case list-a elem-a list-a
+      (case list-b elem-b list-b
+        (c-new tails /cons list-a list-b)
+        lists)
+      lists)
+    err.\-qq[Expected a lists value of type cons]))
+
+(test/rev/cons (yep/nil) /cons (nope/nil) /nil)
+
+(test/rev/nil)
+
+(test/not-yep-nope/yep/nil)
+
+(test
+  (let x (nope/nil) y (yep-nil)
+  /let x y y x
+  /cons x y))
