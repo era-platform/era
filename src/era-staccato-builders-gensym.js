@@ -103,16 +103,19 @@ function stcFrame( frameName, var_args ) {
     return stcFrameArr( frameName, [].slice.call( arguments, 1 ) );
 }
 
-function stcCall( func, var_args ) {
-    var args = [].slice.call( arguments, 1 );
+function stcCallArr( func, argsArr ) {
     var result = func;
-    arrEach( args, function ( arg ) {
+    arrEach( argsArr, function ( arg ) {
         result = jsList( "frame", "call",
             jsList( "env-cons", "func", stcBasicSave( result ),
                 jsList( "env-cons", "arg", stcBasicRetLocal( arg ),
                     jsList( "env-nil" ) ) ) );
     } );
     return result;
+}
+
+function stcCall( func, var_args ) {
+    return stcCallArr( func, [].slice.call( arguments, 1 ) );
 }
 
 function stcCallFrame( frameName, var_args ) {

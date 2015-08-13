@@ -4,7 +4,8 @@
 \ These are utilities written in a hypothetical macro layer over
 \ Staccato. For now, I'm porting the utilities from era-avl.js.
 \ (Actually, for now, these are ports of the utilities in
-\ era-staccato-lib.js that were ported from era-avl.js.)
+\ era-staccato-lib.js and era-staccato-lib-gensym.js that were ported
+\ from era-avl.js.)
 \
 \ See era-staccato.js for more information about what Staccato is.
 
@@ -135,9 +136,9 @@
       err.\-qq[Internal error])))
 
 (defn tails lists
-  (case lists list-a list-b
-    (case list-a elem-a list-a
-      (case list-b elem-b list-b
+  (case lists cons list-a list-b
+    (case list-a cons elem-a list-a
+      (case list-b cons elem-b list-b
         (c-new tails /cons list-a list-b)
         lists)
       lists)
