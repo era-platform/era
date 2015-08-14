@@ -1,3 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<!--
+staccato-runner.html (part of Era)
+Copyright 2015 Ross Angle. Released under the MIT License.
+-->
+<title>Era Staccato demo</title>
+<style type="text/css">
+textarea { display: block; }
+</style>
+</head>
+<body>
+<p><a href="https://github.com/rocketnia/era"
+    >View the Era project on GitHub.</a></p>
+
+<p>This file merely loads Staccato without actually using it for
+much. Check the console to see if there are errors. If there aren't,
+great! Nothing to see here.</p>
+
+<script type="text/plain" id="stc-prelude">
+
 \ era-staccato-lib.stc
 \ Copyright 2015 Ross Angle. Released under the MIT License.
 \
@@ -160,3 +183,45 @@
   (let x (nope/nil) y (yep/nil)
   /let x y y x
   /cons x y))
+
+</script>
+
+<script type="text/javascript" src="../src/era-misc-strmap-avl.js">
+    </script>
+<script type="text/javascript" src="../src/era-misc.js"></script>
+<script type="text/javascript" src="../src/era-reader.js"></script>
+<script type="text/javascript" src="../src/era-staccato.js"></script>
+<script type="text/javascript"
+    src="../src/era-staccato-builders-gensym.js"></script>
+<script type="text/javascript"
+    src="../src/era-staccato-lib-runner.js"></script>
+<script type="text/javascript">"use strict";
+
+window.onload = function () {
+    function generateOutput() {
+        var startMillis = new Date().getTime();
+        
+        var code = readAll(
+            document.getElementById( "stc-prelude" ).firstChild.data
+            );
+        
+        arrAny( code, function ( tryExpr ) {
+            if ( !tryExpr.ok ) {
+                console.err( tryExpr.msg );
+                return true;
+            }
+            
+            processTopLevelReaderExpr( tryExpr.val );
+            return false;
+        } );
+        
+        
+        var runMillis = new Date().getTime() - startMillis;
+        // TODO: Either remove this or display it more prominently.
+        console.log( "Ran for " + runMillis / 1000 + " seconds." );
+    }
+    generateOutput();
+};
+</script>
+</body>
+</html>

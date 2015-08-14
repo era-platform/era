@@ -16,6 +16,15 @@ function arrEach( arr, func ) {
         func( arr[ i ], i );
 }
 // NOTE: This body takes its args as ( v, k ).
+function arrAny( arr, func ) {
+    for ( var i = 0, n = arr.length; i < n; i++ ) {
+        var result = func( arr[ i ], i );
+        if ( result )
+            return result;
+    }
+    return false;
+}
+// NOTE: This body takes its args as ( v, k ).
 function arrAll( arr, func ) {
     for ( var i = 0, n = arr.length; i < n; i++ ) {
         var result = func( arr[ i ], i );

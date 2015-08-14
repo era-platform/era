@@ -57,10 +57,6 @@ function staccatoPretty( expr ) {
     }
 }
 
-console.log( arrMap( stcDefs, function ( def ) {
-    return staccatoPretty( def );
-} ) );
-
 var defs = {};
 function Stc( frameTag, opt_frameVars ) {
     this.frameTag = frameTag;
@@ -84,6 +80,8 @@ function runDefs( newDefs ) {
         )( defs, Stc );
     } );
 }
+
+var stcNil = stcType( "nil" );
 
 function testStcDef( expr ) {
     
@@ -143,7 +141,15 @@ function testStcDef( expr ) {
 var staccatoDeclarationState = {};
 staccatoDeclarationState.types = strMap();
 staccatoDeclarationState.macros = strMap();
+staccatoDeclarationState.hasRunDefs = false;
 
+function readerStringNilToString( stringNil ) {
+    var result = "";
+    var rest = stringNil.string;
+    for ( ; rest !== null; rest = rest.rest )
+        result += rest.first;
+    return result;
+}
 function stcCaseletForRunner( maybeVa, matchSubject, body ) {
     function processTail( body ) {
         if ( body.type !== "cons" )
@@ -151,21 +157,22 @@ function stcCaseletForRunner( maybeVa, matchSubject, body ) {
         if ( body.rest.type !== "cons" )
             return jsList( "any",
                 stcSaveRoot( processReaderExpr( body.first ) ) );
-        var frameName = body.first;
-        if ( frameName.type !== "stringNil" )
+        var frameNameExpr = body.first;
+        if ( frameNameExpr.type !== "stringNil" )
             throw new Error();
-        if ( !staccatoDeclarationState.types.has( frameName.string ) )
+        var frameName = readerStringNilToString( frameNameExpr );
+        if ( !staccatoDeclarationState.types.has( frameName ) )
             throw new Error();
-        var type =
-            staccatoDeclarationState.types.get( frameName.string );
-        var remainingBody = body;
+        var type = staccatoDeclarationState.types.get( frameName );
+        var remainingBody = body.rest;
         var localVars = [];
         for ( var i = 0, n = type.frameVars.length; i < n; i++ ) {
             if ( remainingBody.type !== "cons" )
                 throw new Error();
             if ( remainingBody.first.type !== "stringNil" )
                 throw new Error();
-            localVars.push( remainingBody.first.string );
+            localVars.push(
+                readerStringNilToString( remainingBody.first ) );
             remainingBody = remainingBody.rest;
         }
         if ( remainingBody.type !== "cons" )
@@ -193,28 +200,31 @@ function stcCaseletForRunner( maybeVa, matchSubject, body ) {
 
 function processFn( body ) {
     if ( body.type !== "cons" )
+        throw new Error();
+    if ( body.rest.type !== "cons" )
         return processReaderExpr( body.first );
     if ( body.first.type !== "stringNil" )
         throw new Error();
-    return stcFn( body.first.string, processFn( body.rest ) );
+    return stcFn( readerStringNilToString( body.first ),
+        processFn( body.rest ) );
 }
 
 function mapReaderExprToArr( readerExpr, func ) {
     var result = [];
-    while ( var e = readerExpr; e.type === "cons"; e = e.rest )
+    for ( var e = readerExpr; e.type === "cons"; e = e.rest )
         result.push( func( e.first ) );
     if ( e.type !== "nil" )
         throw new Error();
     return result;
 }
 
-staccatoDeclarationState.macros.put( "case", function ( body ) {
+staccatoDeclarationState.macros.set( "case", function ( body ) {
     if ( body.type !== "cons" )
         throw new Error();
     return stcCaseletForRunner( null, body.first, body.rest );
 } );
 
-staccatoDeclarationState.macros.put( "caselet", function ( body ) {
+staccatoDeclarationState.macros.set( "caselet", function ( body ) {
     if ( body.type !== "cons" )
         throw new Error();
     if ( body.rest.type !== "cons" )
@@ -222,12 +232,13 @@ staccatoDeclarationState.macros.put( "caselet", function ( body ) {
     if ( body.first.type !== "stringNil" )
         throw new Error();
     
-    return stcCaseletForRunner( { val: body.first.string },
+    return stcCaseletForRunner(
+        { val: readerStringNilToString( body.first ) },
         body.rest.first,
         body.rest.rest );
 } );
 
-staccatoDeclarationState.macros.put( "c", function ( body ) {
+staccatoDeclarationState.macros.set( "c", function ( body ) {
     if ( body.type !== "cons" )
         throw new Error();
     return stcCallArr( processReaderExpr( body.first ),
@@ -236,34 +247,35 @@ staccatoDeclarationState.macros.put( "c", function ( body ) {
         } ) );
 } );
 
-staccatoDeclarationState.macros.put( "c-new", function ( body ) {
+staccatoDeclarationState.macros.set( "c-new", function ( body ) {
     if ( body.type !== "cons" )
         throw new Error();
     if ( body.first.type !== "stringNil" )
         throw new Error();
-    return stcCallArr( stcFrame( body.first ),
+    return stcCallArr(
+        stcFrame( readerStringNilToString( body.first ) ),
         mapReaderExprToArr( body.rest, function ( expr ) {
             return processReaderExpr( expr );
         } ) );
 } );
 
-staccatoDeclarationState.macros.put( "err", function ( body ) {
+staccatoDeclarationState.macros.set( "err", function ( body ) {
     if ( body.type !== "cons" )
         throw new Error();
     if ( body.rest.type === "cons" )
         throw new Error();
     if ( body.first.type !== "stringNil" )
         throw new Error();
-    return stcErr( body.first.string );
+    return stcErr( readerStringNilToString( body.first ) );
 } );
 
-staccatoDeclarationState.macros.put( "fn", function ( body ) {
+staccatoDeclarationState.macros.set( "fn", function ( body ) {
     if ( body.type !== "cons" )
         throw new Error();
     return processFn( body );
 } );
 
-staccatoDeclarationState.macros.put( "let", function ( body ) {
+staccatoDeclarationState.macros.set( "let", function ( body ) {
     var remainingBody = body;
     var envArrThunks = [];
     while ( true ) {
@@ -276,7 +288,8 @@ staccatoDeclarationState.macros.put( "let", function ( body ) {
         (function () {
             var thisRemainingBody = remainingBody;
             envArrThunks.push( function () {
-                return thisRemainingBody.first.string;
+                return readerStringNilToString(
+                    thisRemainingBody.first );
             }, function () {
                 return stcBasicSave(
                     processReaderExpr( thisRemainingBody.rest.first ) );
@@ -294,24 +307,25 @@ staccatoDeclarationState.macros.put( "let", function ( body ) {
 } );
 
 function processReaderExpr( readerExpr ) {
+    if ( readerExpr.type === "stringNil" )
+        return readerStringNilToString( readerExpr );
     if ( readerExpr.type !== "cons" )
         throw new Error();
     if ( readerExpr.first.type !== "stringNil" )
         throw new Error();
-    if ( !staccatoDeclarationState.macros.has(
-        readerExpr.first.string ) )
+    var macroName = readerStringNilToString( readerExpr.first );
+    if ( !staccatoDeclarationState.macros.has( macroName ) )
         throw new Error();
     
-    return staccatoDeclarationState.macros.get(
-        readerExpr.first.string
-    )( readerExpr.rest );
+    return staccatoDeclarationState.macros.get( macroName )(
+        readerExpr.rest );
 }
 
 function processDefType( frameName, frameVars ) {
     var n = frameVars.length;
-    staccatoDeclarationState.types.put( frameName,
+    staccatoDeclarationState.types.set( frameName,
         stcTypeArr( frameName, frameVars ) );
-    staccatoDeclarationState.macros.put( frameName,
+    staccatoDeclarationState.macros.set( frameName,
         function ( body ) {
         
         var frameVals = [];
@@ -342,13 +356,15 @@ function processTopLevelReaderExpr( readerExpr ) {
     if ( readerExpr.first.type !== "stringNil" )
         throw new Error();
     
-    if ( readerExpr.first.string === "def-type" ) {
+    var macroName = readerStringNilToString( readerExpr.first );
+    if ( macroName === "def-type" ) {
         if ( readerExpr.rest.type !== "cons" )
             throw new Error();
         if ( readerExpr.rest.first.type !== "stringNil" )
             throw new Error();
         
-        var frameName = readerExpr.rest.first.string;
+        var frameName =
+            readerStringNilToString( readerExpr.rest.first );
         if ( staccatoDeclarationState.macros.has( frameName ) )
             throw new Error();
         
@@ -356,10 +372,10 @@ function processTopLevelReaderExpr( readerExpr ) {
             function ( frameVar ) {
                 if ( frameVar.type !== "stringNil" )
                     throw new Error();
-                return frameVar.string;
+                return readerStringNilToString( frameVar );
             } );
         processDefType( frameName, frameVars );
-    } else if ( readerExpr.first.string === "defn" ) {
+    } else if ( macroName === "defn" ) {
         if ( readerExpr.rest.type !== "cons" )
             throw new Error();
         if ( readerExpr.rest.first.type !== "stringNil" )
@@ -368,17 +384,32 @@ function processTopLevelReaderExpr( readerExpr ) {
             throw new Error();
         if ( readerExpr.rest.rest.first.type !== "stringNil" )
             throw new Error();
+        if ( staccatoDeclarationState.hasRunDefs )
+            throw new Error();
         
-        var name = readerExpr.rest.first.string;
-        var firstArg = readerExpr.rest.rest.first.string;
+        var name = readerStringNilToString( readerExpr.rest.first );
+        var firstArg =
+            readerStringNilToString( readerExpr.rest.rest.first );
         stcAddDefun( name, firstArg,
-            stcCall( processFn( readerExpr.rest.rest.rest ),
-                firstArg ) );
+            stcCall( processFn( readerExpr.rest.rest ), firstArg ) );
         processDefType( name, [] );
-    } else if ( readerExpr.first.string === "test" ) {
+    } else if ( macroName === "run-defs" ) {
+        if ( readerExpr.rest.type === "cons" )
+            throw new Error();
+        if ( staccatoDeclarationState.hasRunDefs )
+            throw new Error();
+        
+        console.log( arrMap( stcDefs, function ( def ) {
+            return staccatoPretty( def );
+        } ) );
+        runDefs( stcDefs );
+        staccatoDeclarationState.hasRunDefs = true;
+    } else if ( macroName === "test" ) {
         if ( readerExpr.rest.type !== "cons" )
             throw new Error();
         if ( readerExpr.rest.rest.type === "cons" )
+            throw new Error();
+        if ( !staccatoDeclarationState.hasRunDefs )
             throw new Error();
         
         testStcDef( processReaderExpr( readerExpr.rest.first ) );
