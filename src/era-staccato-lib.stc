@@ -159,201 +159,121 @@
     err.\-qq[Expected a lists value of type cons]))
 
 
-(def-type fixops zero one complement compare plus minus times div)
-(def-type big-int-leaf fixops fixnum)
-(def-type big-int-part zero-leaf zero-digit depth bdig ldig is-zero)
+(def-type
+  fixops zero one complement compare plus minus times dual-div)
+(def-type digpair fixops is-zero bdig ldig)
 (def-type carried main carry)
 
 (defn fixops-zero fixops
-  (case fixops fixops zero one complement compare plus minus times div
+  (case fixops
+    fixops zero one complement compare plus minus times dual-div
     zero
     err.\-qq[Expected a fixops value of type fixops]))
 
 (defn fixops-one fixops
-  (case fixops fixops zero one complement compare plus minus times div
+  (case fixops
+    fixops zero one complement compare plus minus times dual-div
     one
     err.\-qq[Expected a fixops value of type fixops]))
 
 (defn fixops-complement fixops
-  (case fixops fixops zero one complement compare plus minus times div
+  (case fixops
+    fixops zero one complement compare plus minus times dual-div
     complement
     err.\-qq[Expected a fixops value of type fixops]))
 
 (defn fixops-compare fixops
-  (case fixops fixops zero one complement compare plus minus times div
+  (case fixops
+    fixops zero one complement compare plus minus times dual-div
     compare
     err.\-qq[Expected a fixops value of type fixops]))
 
 (defn fixops-plus fixops
-  (case fixops fixops zero one complement compare plus minus times div
+  (case fixops
+    fixops zero one complement compare plus minus times dual-div
     plus
     err.\-qq[Expected a fixops value of type fixops]))
 
 (defn fixops-minus fixops
-  (case fixops fixops zero one complement compare plus minus times div
+  (case fixops
+    fixops zero one complement compare plus minus times dual-div
     minus
     err.\-qq[Expected a fixops value of type fixops]))
 
 (defn fixops-times fixops
-  (case fixops fixops zero one complement compare plus minus times div
+  (case fixops
+    fixops zero one complement compare plus minus times dual-div
     times
     err.\-qq[Expected a fixops value of type fixops]))
 
-(defn fixops-div fixops
-  (case fixops fixops zero one complement compare plus minus times div
-    div
+(defn fixops-dual-div fixops
+  (case fixops
+    fixops zero one complement compare plus minus times dual-div
+    dual-div
     err.\-qq[Expected a fixops value of type fixops]))
 
-(defn big-int-leaf-fixops n
-  (case n big-int-leaf fixops fixnum
-    fixops
-    err.\-qq[Expected an n value of type big-int-leaf]))
+(defn fixops-is-zero fixops n
+  (case (fixops-compare fixops fixops-zero.fixops n) nil
+    (yep/nil)
+    (nope/nil)))
 
-(defn big-int-leaf-fixnum n
-  (case n big-int-leaf fixops fixnum
-    fixnum
-    err.\-qq[Expected an n value of type big-int-leaf]))
+(defn make-digpair fixops bdig ldig
+  (let is-zero
+    (and-yep-nope
+      (fixops-is-zero fixops bdig)
+      (fixops-is-zero fixops ldig))
+  /digpair fixops is-zero bdig ldig))
 
-(defn big-int-maybe-promote-self-with-carry n carry
-  (case (c-new big-int-is-zero carry) yep - n
-  /c-new make-big-int-part (c-new big-int-as-zero n) carry n))
+(defn digpair-with-digits n bdig ldig
+  (case n digpair fixops is-zero orig-bdig orig-ldig
+    (make-digpair fixops bdig ldig)
+    err.\-qq[Expected an n value of type digpair]))
 
-(defn big-int-promote-self n
-  (let zero-digit (c-new big-int-as-zero n)
-  /c-new make-big-int-part zero-digit zero-digit n))
+(defn digpair-promote-sub n digit
+  (case n digpair fixops is-zero bdig ldig
+    (digpair-with-digits n fixops-zero.fixops digit)
+    err.\-qq[Expected an n value of type digpair]))
 
-(defn big-int-get-depth-plus-one n
-  (case n big-int-leaf fixops fixnum
-    (c-new big-int-zero fixops)
-  /case n big-int-part zero-leaf zero-digit depth bdig ldig is-zero
-    (c-new big-int-plus-one depth)
-    err.\-qq[Expected an n value of type big-int-leaf or big-int-part]
-    ))
+(defn digpair-carried-promote carried
+  (case carried carried n carry
+    (case n digpair fixops is-zero bdig ldig
+      (let zero fixops-zero.fixops
+      /let promoted-fixops
+        (fixops
+          (make-digpair fixops zero zero)
+          (make-digpair fixops zero fixops-one.fixops)
+          c-new.digpair-complement
+          c-new.digpair-compare
+          c-new.digpair-plus
+          c-new.digpair-minus
+          c-new.digpair-times
+          c-new.digpair-dual-div)
+      /make-digpair promoted-fixops carry n)
+      err.\-qq[Expected an n value of type digpair])
+    err.\-qq[Expected a carried value of type carried]))
 
-(defn big-int-complement n
-  (case n big-int-leaf fixops fixnum
-    (big-int-leaf fixops /fixops-complement fixops fixnum)
-  /case n big-int-part zero-leaf zero-digit depth bdig ldig is-zero
-    (c-new big-int-part-with-digits n
-      (c-new big-int-complement bdig)
-      (c-new big-int-complement ldig))
-    err.\-qq[Expected an n value of type big-int-leaf or big-int-part]
-    ))
-
-(defn big-int-leaf-map-carried n m-carried func-over-fixnums
-  (case n big-int-leaf fixops fixnum-n
-    (case m-carried carried m carry
-      (case
-        (c func-over-fixnums fixops fixnum-n
-        /carried big-int-leaf-fixnum.m big-int-leaf-fixnum.carry)
-        
-        carried fixnum-result fixnum-carry
-        (carried (big-int-leaf fixops fixnum-result)
-        /big-int-leaf fixops fixnum-carry)
-        
-        err.\-qq[
-          Expected a fixops plus result to be a value of type carried
-          ])
-      err.\-qq[Expected an m-carried value of type carried])
-    err.\-qq[Expected an n value of type big-int-leaf]))
-
-(defn big-int-plus n m-carried
-  (case n big-int-leaf fixops fixnum
-    (big-int-leaf-map-carried n m-carried fixops-plus)
-  /case n big-int-part - - - n-bdig n-ldig n-is-zero
-    (case m-carried carried m carry
-      (case m big-int-part - - - m-bdig m-ldig m-is-zero
-        (let carry-is-zero (c-new big-int-is-zero carry)
-        
-        \ Optimization: If this segment of the bigint is just full of
-        \ zeros and the carry is also zero, we can just skip over the
-        \ whole segment.
-        /case (and-yep-nope n-is-zero carry-is-zero) yep -
-          (carried m carry)
-        
-        \ Optimization: If both things to add to this are zero, we can
-        \ just skip the addition.
-        /case (and-yep-nope m-is-zero carry-is-zero) yep -
-          (carried n carry)
-        
-        /case (c-new big-int-plus n-ldig /carried m-ldig carry)
-          
-          carried r-ldig carry
-          (case (c-new big-int-plus n-bdig /carried m-bdig carry)
-            
-            carried r-bdig carry
-            (carried (c-new big-int-part-with-digits n r-bdig r-ldig)
-              carry)
-            
-            err.\-qq[Internal error])
-          
-          err.\-qq[Internal error])
-        err.\-qq[Expected an m value of type big-int-part to match n])
-      err.\-qq[Expected an m-carried value of type carried])
-    err.\-qq[Expected an n value of type big-int-leaf or big-int-part]
-    ))
-
-(defn big-int-minus n m-carried
-  (case n big-int-leaf fixops fixnum
-    (big-int-leaf-map-carried n m-carried fixops-minus)
-  /case n big-int-part - - - n-bdig n-ldig n-is-zero
-    (case m-carried carried m carry
-      (case m big-int-part - - - m-bdig m-ldig m-is-zero
-        (let carry-is-zero (c-new big-int-is-zero carry)
-        
-        \ Optimization: If both things to subtract from this are zero,
-        \ we can just skip the subtraction.
-        /case (and-yep-nope m-is-zero carry-is-zero) yep -
-          (carried n carry)
-        
-        /case (c-new big-int-minus n-ldig /carried m-ldig carry)
-          
-          carried r-ldig carry
-          (case (c-new big-int-minus n-bdig /carried m-bdig carry)
-            
-            carried r-bdig carry
-            (carried (c-new big-int-part-with-digits n r-bdig r-ldig)
-              carry)
-            
-            err.\-qq[Internal error])
-          
-          err.\-qq[Internal error])
-        err.\-qq[Expected an m value of type big-int-part to match n])
-      err.\-qq[Expected an m-carried value of type carried])
-    err.\-qq[Expected an n value of type big-int-leaf or big-int-part]
-    ))
-
-(defn big-int-is-zero n
-  (case n big-int-leaf fixops fixnum
-    (case (fixops-compare fixops fixops-zero.fixops fixnum) nil
-      (yep/nil)
-      (nope/nil))
-  /case n big-int-part zero-leaf zero-digit depth bdig ldig is-zero
+(defn digpair-is-zero n
+  (case n digpair fixops is-zero bdig ldig
     is-zero
-    err.\-qq[Expected an n value of type big-int-leaf or big-int-part]
-    ))
+    err.\-qq[Expected an n value of type digpair]))
 
-(defn big-int-as-zero n
-  (case n big-int-leaf fixops fixnum
-    (big-int-leaf fixops fixops-zero.fixops)
-  /case n big-int-part zero-leaf zero-digit depth bdig ldig is-zero
-    (big-int-part-with-digits n zero-digit zero-digit)
-    err.\-qq[Expected an n value of type big-int-leaf or big-int-part]
-    ))
+(defn digpair-as-zero n
+  (case n digpair fixops is-zero bdig ldig
+    (case is-zero yep - n
+    /let zero-digit fixops-zero.fixops
+    /digpair-with-digits n zero-digit zero-digit)
+    err.\-qq[Expected an n value of type digpair]))
 
-(defn big-int-zero-leaf n
-  (case n big-int-leaf fixops fixnum
-    big-int-as-zero.n
-  /case n big-int-part zero-leaf zero-digit depth bdig ldig is-zero
-    zero-leaf
-    err.\-qq[Expected an n value of type big-int-leaf or big-int-part]
-    ))
+(defn digpair-complement n
+  (case n digpair fixops is-zero bdig ldig
+    (digpair-with-digits n
+      (fixops-complement fixops bdig)
+      (fixops-complement fixops ldig))
+    err.\-qq[Expected an n value of type digpair]))
 
-(defn big-int-compare n m
-  (case n big-int-leaf fixops fixnum
-    (fixops-compare fixops n big-int-leaf-fixnum.m)
-  /case n big-int-part - - - n-bdig n-ldig n-is-zero
-    (case m big-int-part - - - m-bdig m-ldig m-is-zero
+(defn digpair-compare n m
+  (case n digpair fixops n-is-zero n-bdig n-ldig
+    (case m digpair - m-is-zero m-bdig m-ldig
       \ Optimization: If either thing to compare is zero, we can avoid
       \ iterating over the digits.
       (case n-is-zero yep -
@@ -362,132 +282,120 @@
           (yep/nil))
       /case m-is-zero yep -
         (nope/nil)
-      /caselet bcompare (c-new big-int-compare n-bdig m-bdig) nil
-        (c-new big-int-compare n-ldig n-bdig)
+      /caselet bcompare (fixops-compare fixops n-bdig m-bdig) nil
+        (fixops compare n-ldig n-bdig)
         bcompare)
-      err.\-qq[Expected an m value of type big-int-part to match n])
-    err.\-qq[Expected an n value of type big-int-leaf or big-int-part]
-    ))
+      err.\-qq[Expected an m value of type digpair])
+    err.\-qq[Expected an n value of type digpair]))
 
-(defn big-int-div-small n m-carried
-  (case n big-int-leaf fixops fixnum
-    (big-int-leaf-map-carried n m-carried fixops-div)
-  /case n big-int-part - - - n-bdig n-ldig n-is-zero
+(defn digpair-plus n m-carried
+  (case n digpair fixops n-is-zero n-bdig n-ldig
     (case m-carried carried m carry
-      (case big-int-is-zero.m yep -
-        err.\-qq[Called big-int-div-small with a zero divisor]
-      /let carry-is-zero big-int-is-zero.carry
-      
-      \ Optimization: If this segment of the bigint is just full of
-      \ zeros and the carry is also zero, we can just skip over the
-      \ whole segment.
-      /case (and-yep-nope n-is-zero carry-is-zero) yep -
-        (carried n carry)
-      
-      /case (c-new big-int-div-small n-bdig /carried m carry)
-        
-        carried r-bdig carry
-        (case (c-new big-int-div-small n-ldig /carried m carry)
-          
-          carried r-ldig carry
-          (carried (c-new big-int-part-with-digits n r-bdig r-ldig)
-            carry)
-          
-          err.\-qq[Internal error])
-        
-        err.\-qq[Internal error])
-      err.\-qq[Expected an m-carried value of type carried])
-    err.\-qq[Expected an n value of type big-int-leaf or big-int-part]
-    ))
-
-(defn big-int-div n m-carried
-  (case n big-int-leaf fixops fixnum
-    (big-int-div-small n m-carried)
-  /case n big-int-part zero-leaf zero-digit - n-bdig n-ldig n-is-zero
-    \ TODO: See if this can be more efficient.
-    (case m-carried carried m carry
-      (case m big-int-part - - - m-bdig m-ldig m-is-zero
-        (case m-is-zero yep -
-          err.\-qq[Called big-int-div with a zero divisor]
-        /case carry
-          big-int-part - - - carry-bdig carry-ldig carry-is-zero
-          
-          \ Optimization: If this segment of the bigint is just full
-          \ of zeros and the carry is also zero, we can just skip over
-          \ the whole segment.
+      (case m digpair - m-is-zero m-bdig m-ldig
+        (case carry digpair - carry-is-zero - cdig
+          \ Optimization: If either summand is zero and the carry is
+          \ also zero, we can just use the other as the result.
           (case (and-yep-nope n-is-zero carry-is-zero) yep -
+            (carried m carry)
+          /case (and-yep-nope m-is-zero carry-is-zero) yep -
             (carried n carry)
           
-          \ TODO: Finish porting this part.
-          )
-          
-          err.\-qq[
-            Expected an carry value of type big-int-part to match n])
-        err.\-qq[Expected an m value of type big-int-part to match n])
+          /case (fixops-plus fixops n-ldig /carried m-ldig cdig)
+            
+            carried r-ldig cdig
+            (case (fixops-plus fixops n-bdig /carried m-bdig cdig)
+              
+              carried r-bdig cdig
+              (carried (digpair-with-digits n r-bdig r-ldig)
+              /digpair-promote-sub n cdig)
+              
+              err.\-qq[Internal error])
+            
+            err.\-qq[Internal error])
+          err.\-qq[Expected a carry value of type digpair])
+        err.\-qq[Expected an m value of type digpair])
       err.\-qq[Expected an m-carried value of type carried])
-    err.\-qq[Expected an n value of type big-int-leaf or big-int-part]
-    ))
+    err.\-qq[Expected an n value of type digpair]))
 
-(defn big-int-times-small n m-carried
-  (case n big-int-leaf fixops fixnum
-    (big-int-leaf-map-carried n m-carried fixops-times)
-  /case n big-int-part - - - n-bdig n-ldig n-is-zero
+(defn digpair-minus n m-carried
+  (case n digpair fixops n-is-zero n-bdig n-ldig
     (case m-carried carried m carry
-      (let carry-is-zero (c-new big-int-is-zero carry)
+      (case m digpair - m-is-zero m-bdig m-ldig
+        (case carry digpair - carry-is-zero - cdig
+          \ Optimization: If both things to subtract from this are
+          \ zero, we can just skip the subtraction.
+          (case (and-yep-nope m-is-zero carry-is-zero) yep -
+            (carried n carry)
+          
+          /case (fixops-minus fixops n-ldig /carried m-ldig cdig)
+            
+            carried r-ldig cdig
+            (case (fixops-minus fixops n-bdig /carried m-bdig cdig)
+              
+              carried r-bdig cdig
+              (carried (digpair-with-digits n r-bdig r-ldig)
+              /digpair-promote-sub n cdig)
+              
+              err.\-qq[Internal error])
+            
+            err.\-qq[Internal error])
+          err.\-qq[Expected a carry value of type digpair])
+        err.\-qq[Expected an m value of type digpair])
+      err.\-qq[Expected an m-carried value of type carried])
+    err.\-qq[Expected an n value of type digpair]))
+
+(defn digpair-times-small n m-carried
+  (case n digpair fixops n-is-zero n-bdig n-ldig
+    (case m-carried carried m carry
+      (let carry-is-zero (fixops-is-zero fixops carry)
       
-      \ Optimization: If this segment of the bigint is just full of
-      \ zeros and the carry is also zero, we can just skip over the
-      \ whole segment.
+      \ Optimization: If either factor is zero and the carry is also
+      \ zero, we can just use a result of zero.
       /case (and-yep-nope n-is-zero carry-is-zero) yep -
         (carried n carry)
+      /case (and-yep-nope (fixops-is-zero fixops m) carry-is-zero)
+        yep -
+        (carried digpair-as-zero.n carry)
       
-      \ Optimization: If the factor is zero and the carry is also
-      \ zero, we can just use a result of zero.
-      /case (and-yep-nope big-int-is-zero.m carry-is-zero) yep -
-        (carried big-int-as-zero.n carry)
-      
-      /case (c-new big-int-times-small n-ldig /carried m carry)
+      /case (fixops-times fixops n-ldig /carried m carry)
         
         carried r-ldig carry
-        (case (c-new big-int-times-small n-bdig /carried m carry)
+        (case (fixops-times fixops n-bdig /carried m carry)
           
           carried r-bdig carry
-          (carried (c-new big-int-part-with-digits n r-bdig r-ldig)
-            carry)
+          (carried (digpair-with-digits n r-bdig r-ldig) carry)
           
           err.\-qq[Internal error])
         
         err.\-qq[Internal error])
       err.\-qq[Expected an m-carried value of type carried])
-    err.\-qq[Expected an n value of type big-int-leaf or big-int-part]
-    ))
+    err.\-qq[Expected an n value of type digpair]))
 
-(defn big-int-times n m-carried
-  (case n big-int-leaf fixops fixnum
-    (big-int-times-small n m-carried)
-  /case n big-int-part zero-leaf zero-digit - n-bdig n-ldig n-is-zero
+(defn digpair-times n m-carried
+  (case n digpair fixops n-is-zero n-bdig n-ldig
     \ TODO: See if this can be more efficient.
     (case m-carried carried m carry
-      (case m big-int-part - - - m-bdig m-ldig m-is-zero
+      (case m digpair - m-is-zero m-bdig m-ldig
         \ Optimization: If either factor is zero, we can just use the
         \ carry as the result value.
         (case n-is-zero yep - (carried carry n)
         /case m-is-zero yep - (carried carry m)
         
-        /let zero big-int-as-zero.carry
-        /let big-carry (make-big-int-part zero zero carry)
+        /let zero digpair-as-zero.carry
+        /let zero-digit fixops-zero.fixops
+        /let big-carry (make-digpair zero zero carry)
         /let digit-times
-          (fn a b /c-new big-int-times a /carried b zero-digit)
+          (fn a b /fixops-times fixops a /carried b zero-digit)
         /let plus-no-carry
           (fn a b
-            (case (c-new big-int-plus a /carried b zero-leaf)
+            (case (fixops-plus fixops a /carried b zero-digit)
               carried sum carry sum
               err.\-qq[Internal error]))
         /let four-digit
           (fn a b c d
-            (make-big-int-part zero
-              (make-big-int-part zero-digit a b)
-              (make-big-int-part zero-digit c d)))
+            (make-digpair zero
+              (make-digpair zero-digit a b)
+              (make-digpair zero-digit c d)))
         /let r-ll
           (case (c digit-times n-ldig m-ldig) carried dig carry
             (c four-digit zero-digit zero-digit carry dig)
@@ -514,36 +422,372 @@
           /plus-no-carry r-lb
           /plus-no-carry r-bl
           /plus-no-carry r-bb
-          /make-big-int-part zero zero carry)
+          /make-digpair zero zero carry)
           
-          big-int-part zero-leaf zero-digit depth bdig ldig is-zero
+          digpair fixops is-zero bdig ldig
           (carried ldig bdig)
           
           err.\-qq[Internal error])
-        err.\-qq[Expected an m value of type big-int-part to match n])
+        err.\-qq[Expected an m value of type digpair])
       err.\-qq[Expected an m-carried value of type carried])
-    err.\-qq[Expected an n value of type big-int-leaf or big-int-part]
-    ))
+    err.\-qq[Expected an n value of type digpair]))
 
-(defn make-big-int-part-with-depth zero-digit depth bdig ldig
-  (let zero-leaf big-int-zero-leaf.zero-digit
-  /let is-zero
-    (and-yep-nope big-int-is-zero.bdig big-int-is-zero.ldig)
-  /big-int-part zero-leaf zero-digit depth n carry is-zero))
+(defn digpair-div-small n m-carried
+  (case n digpair fixops n-is-zero n-bdig n-ldig
+    (case m-carried carried m carry
+      (case (fixops-is-zero fixops m) yep -
+        err.\-qq[Called digpair-div-small with a zero divisor]
+      /let carry-is-zero (fixops-is-zero fixops carry)
+      
+      \ Optimization: If the dividend is zero and the carry is also
+      \ zero, we can just use a result of zero.
+      /case (and-yep-nope n-is-zero carry-is-zero) yep -
+        (carried n carry)
+      
+      /case (fixops-div fixops n-bdig /carried m carry)
+        
+        carried r-bdig carry
+        (case (fixops-div fixops n-ldig /carried m carry)
+          
+          carried r-ldig carry
+          (carried (digpair-with-digits n r-bdig r-ldig) carry)
+          
+          err.\-qq[Internal error])
+        
+        err.\-qq[Internal error])
+      err.\-qq[Expected an m-carried value of type carried])
+    err.\-qq[Expected an n value of type digpair]))
 
-(defn make-big-int-part zero-digit bdig ldig
-  (let depth big-int-get-depth-plus-one.zero-digit
-  /make-big-int-part-with-depth zero-digit depth n carry))
+\-rm[
+00001111
+00010000
 
-(defn big-int-part-with-digits n bdig ldig
-  (case n big-int-part zero-leaf zero-digit depth bdig ldig is-zero
-    (make-big-int-part-with-depth zero-digit depth bdig ldig)
-    err.\-qq[Expected an n value of type big-int-part]))
+11110000
+00010000
+00100000
+00000111
+10000000
+00000100
+01000000
+00000010
+00100000
+00000001
+00010000
+00000001
 
-(defn big-int-part-promote-sub n digit
-  (case n big-int-part zero-leaf zero-digit depth bdig ldig is-zero
-    (big-int-part-with-digits n zero-digit digit)
-    err.\-qq[Expected an n value of type big-int-part]))
+11111100
+00000100
+00001000
+00011111
+10000000
+00010000
+01000000
+00001000
+00100000
+00000100
+00010000
+00000010
+
+
++1111 +0000
+   00010001
+   00001111
++0000 -1111
+   00000001
++0000 +0010
+
+
+n 11110000
+d 00011111
+q 00001111
+-111010010
+=-11100010
+q-00001110
++111000011
+= 11100000
+q 00001110
+
+10
+10
+01 00
+
+10
+11
+00 10
+
+11
+10
+01 01
+
+11
+11
+01 00
+
+
+11111100
+00010000
+00010100
+00001100 11
+
+10000000
+00010000
+00010100
+00000110
+01100000
+00100000
+
+
+
+  11111100
+  00111100
+  01000000
+
+00111111
+00010000
+00010100
+
+  1111
+  0101
+  0111
+
+ 0111
+ 0011
+ =
+ 0010 1
+
+  0010
+  1010
+  0101
+  
+  0101
+  0101
+  
+ 0010
+ 0010
+ =
+ 0001 0
+  
+  0001
+  0101
+  0000
+  =
+  0011 0
+  
+00000010
+00101000
+00010111
+
+00010111
+00010100
+
+  0101
+  0101
+ 
+ 0010
+ 0010
+ =
+ 0001 0
+  
+  0001
+  0101
+  0000
+  =
+  0001 0
+
+00000001
+00010100
+00000011
+=
+00000011 11
+
+  00000011
+  10110100
+  01001000
+  
+  01001000
+  00111100
+
+00010010
+00001111
+=
+00000001 11
+
+  00000001
+  00111100
+  00001100
+  =
+  00000100 1100
+
+
+
+11
+01
+
+
+11110000
+00010001
+00100001
+00000111
+10001001
+00000100
+01000111
+00000010
+00000101
+
+
+00010100
+00001100
+00110000
+00010000
+00001000
+00001000
+01110000
+00000100
+]
+
+
+(defn digpair-dual-div-no-carry n3210 m3210
+  (let long-zero digpair-as-zero.n3210
+  /case long-zero digpair long-fixops - - short-zero
+    (let make-short (fn a b /digpair-with-digits short-zero a b)
+    /let long-one
+      (digpair-with-digits long-zero
+        short-zero fixops-one.long-fixops)
+    /let four-digits
+      (fn a b c d
+        (digpair-with-digits long-zero
+          (make-short a b)
+          (make-short c d)))
+    /case (digpair-compare n3210 m3210) yep -
+      err.\-qq[
+        Called digpair-dual-div-no-carry with a smaller dividend than
+        divisor]
+    /case n3210 digpair - - n32 n10
+      (case m3210 digpair - - m32 m10
+        (case digpair-is-zero.m32 yep -
+          err.\-qq[Called digpair-dual-div-no-carry with a zero m32]
+        /case n32 digpair digit-fixops - n3 n2
+          (case n10 digpair - - n1 n0
+            (case m32 digpair - - m3 m2
+              (case m10 digpair - - m1 m0
+                (let zdig fixops-zero.digit-fixops
+                /case
+                  (digpair-dual-div (four-digits zdig n3 n2 n1)
+                  /carried
+                    (digpair-plus long-one /four-digits zdig m3 m2 m1)
+                    long-zero)
+                  
+                  carried mid1-result -
+                  (case
+                    (digpair-minus n3210
+                    /carried
+                      (digpair-times m3210
+                      /carried mid1-result long-zero)
+                      long-zero)
+                    
+                    carried mid1-remainder -
+                    (case
+                      (digpair-dual-div mid1-remainder
+                      /carried m0123 long-zero)
+                      
+                      carried mid2-result mid2-remainder
+                      (carried
+                        (digpair-plus mid1-result
+                        /carried mid2-result long-zero)
+                        mid2-remainder)
+                      
+                      err.\-qq[Internal error])
+                    
+                    err.\-qq[Internal error])
+                  
+                  err.\-qq[Internal error])
+                err.\-qq[Expected an m10 value of type digpair])
+              err.\-qq[Expected an m32 value of type digpair])
+            err.\-qq[Expected an n10 value of type digpair])
+          err.\-qq[Expected an n32 value of type digpair])
+        err.\-qq[Expected an m3210 value of type digpair])
+      err.\-qq[Expected an n3210 value of type digpair])
+    err.\-qq[Internal error]))
+
+(defn digpair-dual-div n m-carried
+  (case n digpair fixops n-is-zero n-bdig n-ldig
+    (case m-carried carried m carry
+      (case m digpair - m-is-zero m-bdig m-ldig
+        (case m-is-zero yep -
+          err.\-qq[Called digpair-dual-div with a zero divisor]
+        /case carry digpair - carry-is-zero c-bdig c-ldig
+          (case carry-is-zero yep -
+            
+            \ If the carry is zero and the dividend is less than the
+            \ divisor, we return zero and a remainder equal to the
+            \ dividend.
+            (case (fixops-compare fixops n m) yep -
+              (carried digpair-as-zero.n n)
+            
+            \ If the carry is zero and the first digit of the divisor
+            \ is zero, we can reduce this division to a division of
+            \ the digits.
+            /case (fixops-is-zero fixops m-bdig) yep -
+              (let zdig fixops-zero.fixops
+              /case
+                (fixops-dual-div fixops n-bdig /carried m-ldig zdig)
+                
+                carried r-bdig intermediate1-carry
+                (case
+                  (fixops-dual-div fixops n-ldig
+                  /carried m-ldig intermediate1-carry)
+                  
+                  carried r-ldig carry
+                  (carried (digpair-with-digits n r-bdig r-ldig)
+                  /digpair-with-digits zdig carry)
+                  
+                  err.\-qq[Internal error])
+                
+                err.\-qq[Internal error])
+            
+            \ If the carry is zero, if the divisor is less than or
+            \ equal to the dividend, and if the first digit of the
+            \ divisor isn't zero, then we split the digits into
+            \ sub-digits and divide by an approximation of the
+            \ divisor first. We handle this in a separate function.
+            /digpair-dual-div-no-carry fixops n m)
+          \ If the carry isn't zero, we shift the carry-and-divisor
+          \ combination down by one digit, do a division from there,
+          \ and then do another division to account for the digit that
+          \ was dropped. This means the carry-and-divisor combination
+          \ will have one fewer nonzero digit, and it will take no
+          \ more than two of these reductions to wind up at the
+          \ carry-is-zero case.
+          /let zdig fixops-zero.fixops
+          /case
+            (c-new digpair-dual-div
+              (digpair-with-digits n c-ldig n-bdig)
+            /carried m (digpair-with-digits n zdig c-bdig))
+            
+            carried intermediate1-result intermediate1-carry
+            (case intermediate1-result digpair - - - ir-ldig
+              (case intermediate1-carry digpair - - ic-bdig ic-ldig
+                (case
+                  (c-new digpair-dual-div
+                    (digpair-with-digits n ic-ldig n-ldig)
+                  /carried m (digpair-with-digits n zdig ic-bdig))
+                  
+                  carried intermediate2-result carry
+                  (case
+                    (digpair-plus (digpair-with-digits ir-ldig zdig)
+                    /carried intermediate2-result digpair-as-zero.n)
+                    
+                    carried result - (carried result curry)
+                    err.\-qq[Internal error])
+                  
+                  err.\-qq[Internal error])
+                err.\-qq[Internal error])
+              err.\-qq[Internal error])
+            err.\-qq[Internal error])
+          err.\-qq[Expected a carry value of type digpair])
+        err.\-qq[Expected an m value of type digpair])
+      err.\-qq[Expected an m-carried value of type carried])
+    err.\-qq[Expected an n value of type digpair]))
 
 (run-defs)
 
