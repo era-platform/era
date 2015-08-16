@@ -245,6 +245,9 @@ BigIntLeaf.prototype.compareTo = function ( yoke, other, then ) {
 BigIntLeaf.prototype.divModSmall = function ( yoke,
     divisor, carryMod, then ) {
     
+    if ( divisor === 0 )
+        throw new Error();
+    
     // NOTE: We assume (0 <= carryMod < divisor <= 0x2000000000). Yes,
     // that's 37 bits of `carryMod`. We use an intermediate value of
     // 37+16=53 bits, which hits the edge of JavaScript number
@@ -338,7 +341,7 @@ function makeBigIntPart_( yoke, zeroDigit, digits, then ) {
     } );
 }
 BigIntPart.prototype.withDigits = function ( yoke, digits, then ) {
-    return makeBigIntPartWithDepth( yoke,
+    return makeBigIntPartWithDepth_( yoke,
         this.zeroDigit_, this.depth_, digits, then );
 };
 BigIntPart.prototype.getZeroDigits = function ( yoke, then ) {
@@ -509,12 +512,15 @@ BigIntPart.prototype.timesCarry = function ( yoke,
     
     // TODO: See if this can be more efficient.
     
-    // Optimization: If either bigint segment is just full of zeros
-    // and the carry is also zero, we can just skip over the whole
-    // segment.
-    if ( (self.isZero() || other.isZero()) && carry.isZero() )
+    // Optimization: If either factor is zero, we can just use the
+    // carry as the result value.
+    if ( self.isZero() )
         return runWaitOne( yoke, function ( yoke ) {
-            return then( yoke, carry, carry );
+            return then( yoke, carry, self );
+        } );
+    if ( other.isZero() )
+        return runWaitOne( yoke, function ( yoke ) {
+            return then( yoke, carry, other );
         } );
     
     var a = self.digits_;
@@ -640,6 +646,8 @@ BigIntPart.prototype.divModSmall = function ( yoke,
     divisor, carryMod, then ) {
     
     var self = this;
+    if ( divisor === 0 )
+        throw new Error();
     
     // Optimization: If this segment of the bigint is just full of
     // zeros and the carry is also zero, we can just skip over the

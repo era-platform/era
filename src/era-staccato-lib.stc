@@ -125,6 +125,16 @@
     nope val yep.val
     err.\-qq[Expected a yep-nope of type yep or nope]))
 
+(defn or-yep-nope a b
+  (case a yep - a
+  /case b yep - b
+  /nope/nil))
+
+(defn and-yep-nope a b
+  (case a nope - a
+  /case b nope - b
+  /yep/nil))
+
 (defn all func list
   (not-yep-nope/any list /fn elem /not-yep-nope/c func elem))
 
@@ -147,6 +157,393 @@
         lists)
       lists)
     err.\-qq[Expected a lists value of type cons]))
+
+
+(def-type fixops zero one complement compare plus minus times div)
+(def-type big-int-leaf fixops fixnum)
+(def-type big-int-part zero-leaf zero-digit depth bdig ldig is-zero)
+(def-type carried main carry)
+
+(defn fixops-zero fixops
+  (case fixops fixops zero one complement compare plus minus times div
+    zero
+    err.\-qq[Expected a fixops value of type fixops]))
+
+(defn fixops-one fixops
+  (case fixops fixops zero one complement compare plus minus times div
+    one
+    err.\-qq[Expected a fixops value of type fixops]))
+
+(defn fixops-complement fixops
+  (case fixops fixops zero one complement compare plus minus times div
+    complement
+    err.\-qq[Expected a fixops value of type fixops]))
+
+(defn fixops-compare fixops
+  (case fixops fixops zero one complement compare plus minus times div
+    compare
+    err.\-qq[Expected a fixops value of type fixops]))
+
+(defn fixops-plus fixops
+  (case fixops fixops zero one complement compare plus minus times div
+    plus
+    err.\-qq[Expected a fixops value of type fixops]))
+
+(defn fixops-minus fixops
+  (case fixops fixops zero one complement compare plus minus times div
+    minus
+    err.\-qq[Expected a fixops value of type fixops]))
+
+(defn fixops-times fixops
+  (case fixops fixops zero one complement compare plus minus times div
+    times
+    err.\-qq[Expected a fixops value of type fixops]))
+
+(defn fixops-div fixops
+  (case fixops fixops zero one complement compare plus minus times div
+    div
+    err.\-qq[Expected a fixops value of type fixops]))
+
+(defn big-int-leaf-fixops n
+  (case n big-int-leaf fixops fixnum
+    fixops
+    err.\-qq[Expected an n value of type big-int-leaf]))
+
+(defn big-int-leaf-fixnum n
+  (case n big-int-leaf fixops fixnum
+    fixnum
+    err.\-qq[Expected an n value of type big-int-leaf]))
+
+(defn big-int-maybe-promote-self-with-carry n carry
+  (case (c-new big-int-is-zero carry) yep - n
+  /c-new make-big-int-part (c-new big-int-as-zero n) carry n))
+
+(defn big-int-promote-self n
+  (let zero-digit (c-new big-int-as-zero n)
+  /c-new make-big-int-part zero-digit zero-digit n))
+
+(defn big-int-get-depth-plus-one n
+  (case n big-int-leaf fixops fixnum
+    (c-new big-int-zero fixops)
+  /case n big-int-part zero-leaf zero-digit depth bdig ldig is-zero
+    (c-new big-int-plus-one depth)
+    err.\-qq[Expected an n value of type big-int-leaf or big-int-part]
+    ))
+
+(defn big-int-complement n
+  (case n big-int-leaf fixops fixnum
+    (big-int-leaf fixops /fixops-complement fixops fixnum)
+  /case n big-int-part zero-leaf zero-digit depth bdig ldig is-zero
+    (c-new big-int-part-with-digits n
+      (c-new big-int-complement bdig)
+      (c-new big-int-complement ldig))
+    err.\-qq[Expected an n value of type big-int-leaf or big-int-part]
+    ))
+
+(defn big-int-leaf-map-carried n m-carried func-over-fixnums
+  (case n big-int-leaf fixops fixnum-n
+    (case m-carried carried m carry
+      (case
+        (c func-over-fixnums fixops fixnum-n
+        /carried big-int-leaf-fixnum.m big-int-leaf-fixnum.carry)
+        
+        carried fixnum-result fixnum-carry
+        (carried (big-int-leaf fixops fixnum-result)
+        /big-int-leaf fixops fixnum-carry)
+        
+        err.\-qq[
+          Expected a fixops plus result to be a value of type carried
+          ])
+      err.\-qq[Expected an m-carried value of type carried])
+    err.\-qq[Expected an n value of type big-int-leaf]))
+
+(defn big-int-plus n m-carried
+  (case n big-int-leaf fixops fixnum
+    (big-int-leaf-map-carried n m-carried fixops-plus)
+  /case n big-int-part - - - n-bdig n-ldig n-is-zero
+    (case m-carried carried m carry
+      (case m big-int-part - - - m-bdig m-ldig m-is-zero
+        (let carry-is-zero (c-new big-int-is-zero carry)
+        
+        \ Optimization: If this segment of the bigint is just full of
+        \ zeros and the carry is also zero, we can just skip over the
+        \ whole segment.
+        /case (and-yep-nope n-is-zero carry-is-zero) yep -
+          (carried m carry)
+        
+        \ Optimization: If both things to add to this are zero, we can
+        \ just skip the addition.
+        /case (and-yep-nope m-is-zero carry-is-zero) yep -
+          (carried n carry)
+        
+        /case (c-new big-int-plus n-ldig /carried m-ldig carry)
+          
+          carried r-ldig carry
+          (case (c-new big-int-plus n-bdig /carried m-bdig carry)
+            
+            carried r-bdig carry
+            (carried (c-new big-int-part-with-digits n r-bdig r-ldig)
+              carry)
+            
+            err.\-qq[Internal error])
+          
+          err.\-qq[Internal error])
+        err.\-qq[Expected an m value of type big-int-part to match n])
+      err.\-qq[Expected an m-carried value of type carried])
+    err.\-qq[Expected an n value of type big-int-leaf or big-int-part]
+    ))
+
+(defn big-int-minus n m-carried
+  (case n big-int-leaf fixops fixnum
+    (big-int-leaf-map-carried n m-carried fixops-minus)
+  /case n big-int-part - - - n-bdig n-ldig n-is-zero
+    (case m-carried carried m carry
+      (case m big-int-part - - - m-bdig m-ldig m-is-zero
+        (let carry-is-zero (c-new big-int-is-zero carry)
+        
+        \ Optimization: If both things to subtract from this are zero,
+        \ we can just skip the subtraction.
+        /case (and-yep-nope m-is-zero carry-is-zero) yep -
+          (carried n carry)
+        
+        /case (c-new big-int-minus n-ldig /carried m-ldig carry)
+          
+          carried r-ldig carry
+          (case (c-new big-int-minus n-bdig /carried m-bdig carry)
+            
+            carried r-bdig carry
+            (carried (c-new big-int-part-with-digits n r-bdig r-ldig)
+              carry)
+            
+            err.\-qq[Internal error])
+          
+          err.\-qq[Internal error])
+        err.\-qq[Expected an m value of type big-int-part to match n])
+      err.\-qq[Expected an m-carried value of type carried])
+    err.\-qq[Expected an n value of type big-int-leaf or big-int-part]
+    ))
+
+(defn big-int-is-zero n
+  (case n big-int-leaf fixops fixnum
+    (case (fixops-compare fixops fixops-zero.fixops fixnum) nil
+      (yep/nil)
+      (nope/nil))
+  /case n big-int-part zero-leaf zero-digit depth bdig ldig is-zero
+    is-zero
+    err.\-qq[Expected an n value of type big-int-leaf or big-int-part]
+    ))
+
+(defn big-int-as-zero n
+  (case n big-int-leaf fixops fixnum
+    (big-int-leaf fixops fixops-zero.fixops)
+  /case n big-int-part zero-leaf zero-digit depth bdig ldig is-zero
+    (big-int-part-with-digits n zero-digit zero-digit)
+    err.\-qq[Expected an n value of type big-int-leaf or big-int-part]
+    ))
+
+(defn big-int-zero-leaf n
+  (case n big-int-leaf fixops fixnum
+    big-int-as-zero.n
+  /case n big-int-part zero-leaf zero-digit depth bdig ldig is-zero
+    zero-leaf
+    err.\-qq[Expected an n value of type big-int-leaf or big-int-part]
+    ))
+
+(defn big-int-compare n m
+  (case n big-int-leaf fixops fixnum
+    (fixops-compare fixops n big-int-leaf-fixnum.m)
+  /case n big-int-part - - - n-bdig n-ldig n-is-zero
+    (case m big-int-part - - - m-bdig m-ldig m-is-zero
+      \ Optimization: If either thing to compare is zero, we can avoid
+      \ iterating over the digits.
+      (case n-is-zero yep -
+        (case m-is-zero yep -
+          (nil)
+          (yep/nil))
+      /case m-is-zero yep -
+        (nope/nil)
+      /caselet bcompare (c-new big-int-compare n-bdig m-bdig) nil
+        (c-new big-int-compare n-ldig n-bdig)
+        bcompare)
+      err.\-qq[Expected an m value of type big-int-part to match n])
+    err.\-qq[Expected an n value of type big-int-leaf or big-int-part]
+    ))
+
+(defn big-int-div-small n m-carried
+  (case n big-int-leaf fixops fixnum
+    (big-int-leaf-map-carried n m-carried fixops-div)
+  /case n big-int-part - - - n-bdig n-ldig n-is-zero
+    (case m-carried carried m carry
+      (case big-int-is-zero.m yep -
+        err.\-qq[Called big-int-div-small with a zero divisor]
+      /let carry-is-zero big-int-is-zero.carry
+      
+      \ Optimization: If this segment of the bigint is just full of
+      \ zeros and the carry is also zero, we can just skip over the
+      \ whole segment.
+      /case (and-yep-nope n-is-zero carry-is-zero) yep -
+        (carried n carry)
+      
+      /case (c-new big-int-div-small n-bdig /carried m carry)
+        
+        carried r-bdig carry
+        (case (c-new big-int-div-small n-ldig /carried m carry)
+          
+          carried r-ldig carry
+          (carried (c-new big-int-part-with-digits n r-bdig r-ldig)
+            carry)
+          
+          err.\-qq[Internal error])
+        
+        err.\-qq[Internal error])
+      err.\-qq[Expected an m-carried value of type carried])
+    err.\-qq[Expected an n value of type big-int-leaf or big-int-part]
+    ))
+
+(defn big-int-div n m-carried
+  (case n big-int-leaf fixops fixnum
+    (big-int-div-small n m-carried)
+  /case n big-int-part zero-leaf zero-digit - n-bdig n-ldig n-is-zero
+    \ TODO: See if this can be more efficient.
+    (case m-carried carried m carry
+      (case m big-int-part - - - m-bdig m-ldig m-is-zero
+        (case m-is-zero yep -
+          err.\-qq[Called big-int-div with a zero divisor]
+        /case carry
+          big-int-part - - - carry-bdig carry-ldig carry-is-zero
+          
+          \ Optimization: If this segment of the bigint is just full
+          \ of zeros and the carry is also zero, we can just skip over
+          \ the whole segment.
+          (case (and-yep-nope n-is-zero carry-is-zero) yep -
+            (carried n carry)
+          
+          \ TODO: Finish porting this part.
+          )
+          
+          err.\-qq[
+            Expected an carry value of type big-int-part to match n])
+        err.\-qq[Expected an m value of type big-int-part to match n])
+      err.\-qq[Expected an m-carried value of type carried])
+    err.\-qq[Expected an n value of type big-int-leaf or big-int-part]
+    ))
+
+(defn big-int-times-small n m-carried
+  (case n big-int-leaf fixops fixnum
+    (big-int-leaf-map-carried n m-carried fixops-times)
+  /case n big-int-part - - - n-bdig n-ldig n-is-zero
+    (case m-carried carried m carry
+      (let carry-is-zero (c-new big-int-is-zero carry)
+      
+      \ Optimization: If this segment of the bigint is just full of
+      \ zeros and the carry is also zero, we can just skip over the
+      \ whole segment.
+      /case (and-yep-nope n-is-zero carry-is-zero) yep -
+        (carried n carry)
+      
+      \ Optimization: If the factor is zero and the carry is also
+      \ zero, we can just use a result of zero.
+      /case (and-yep-nope big-int-is-zero.m carry-is-zero) yep -
+        (carried big-int-as-zero.n carry)
+      
+      /case (c-new big-int-times-small n-ldig /carried m carry)
+        
+        carried r-ldig carry
+        (case (c-new big-int-times-small n-bdig /carried m carry)
+          
+          carried r-bdig carry
+          (carried (c-new big-int-part-with-digits n r-bdig r-ldig)
+            carry)
+          
+          err.\-qq[Internal error])
+        
+        err.\-qq[Internal error])
+      err.\-qq[Expected an m-carried value of type carried])
+    err.\-qq[Expected an n value of type big-int-leaf or big-int-part]
+    ))
+
+(defn big-int-times n m-carried
+  (case n big-int-leaf fixops fixnum
+    (big-int-times-small n m-carried)
+  /case n big-int-part zero-leaf zero-digit - n-bdig n-ldig n-is-zero
+    \ TODO: See if this can be more efficient.
+    (case m-carried carried m carry
+      (case m big-int-part - - - m-bdig m-ldig m-is-zero
+        \ Optimization: If either factor is zero, we can just use the
+        \ carry as the result value.
+        (case n-is-zero yep - (carried carry n)
+        /case m-is-zero yep - (carried carry m)
+        
+        /let zero big-int-as-zero.carry
+        /let big-carry (make-big-int-part zero zero carry)
+        /let digit-times
+          (fn a b /c-new big-int-times a /carried b zero-digit)
+        /let plus-no-carry
+          (fn a b
+            (case (c-new big-int-plus a /carried b zero-leaf)
+              carried sum carry sum
+              err.\-qq[Internal error]))
+        /let four-digit
+          (fn a b c d
+            (make-big-int-part zero
+              (make-big-int-part zero-digit a b)
+              (make-big-int-part zero-digit c d)))
+        /let r-ll
+          (case (c digit-times n-ldig m-ldig) carried dig carry
+            (c four-digit zero-digit zero-digit carry dig)
+            err.\-qq[Internal error])
+        /let r-lb
+          (case (c digit-times n-ldig m-bdig) carried dig carry
+            (c four-digit zero-digit carry dig zero-digit)
+            err.\-qq[Internal error])
+        /let r-bl
+          (case (c digit-times n-bdig m-ldig) carried dig carry
+            (c four-digit zero-digit carry dig zero-digit)
+            err.\-qq[Internal error])
+        /let r-bb
+          (case (c digit-times n-bdig m-bdig) carried dig carry
+            (c four-digit carry dig zero-digit zero-digit)
+            err.\-qq[Internal error])
+        
+        \ NOTE: When the digits are 16-bit, the maximum value of
+        \ `carry` is 0xFFFFFFFF, and the maximum value of `n` times
+        \ `m` plus the carry is 0xFFFFFFFF00000000, so there's no
+        \ excess.
+        /case
+          (plus-no-carry r-ll
+          /plus-no-carry r-lb
+          /plus-no-carry r-bl
+          /plus-no-carry r-bb
+          /make-big-int-part zero zero carry)
+          
+          big-int-part zero-leaf zero-digit depth bdig ldig is-zero
+          (carried ldig bdig)
+          
+          err.\-qq[Internal error])
+        err.\-qq[Expected an m value of type big-int-part to match n])
+      err.\-qq[Expected an m-carried value of type carried])
+    err.\-qq[Expected an n value of type big-int-leaf or big-int-part]
+    ))
+
+(defn make-big-int-part-with-depth zero-digit depth bdig ldig
+  (let zero-leaf big-int-zero-leaf.zero-digit
+  /let is-zero
+    (and-yep-nope big-int-is-zero.bdig big-int-is-zero.ldig)
+  /big-int-part zero-leaf zero-digit depth n carry is-zero))
+
+(defn make-big-int-part zero-digit bdig ldig
+  (let depth big-int-get-depth-plus-one.zero-digit
+  /make-big-int-part-with-depth zero-digit depth n carry))
+
+(defn big-int-part-with-digits n bdig ldig
+  (case n big-int-part zero-leaf zero-digit depth bdig ldig is-zero
+    (make-big-int-part-with-depth zero-digit depth bdig ldig)
+    err.\-qq[Expected an n value of type big-int-part]))
+
+(defn big-int-part-promote-sub n digit
+  (case n big-int-part zero-leaf zero-digit depth bdig ldig is-zero
+    (big-int-part-with-digits n zero-digit digit)
+    err.\-qq[Expected an n value of type big-int-part]))
 
 (run-defs)
 
