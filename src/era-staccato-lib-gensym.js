@@ -130,7 +130,7 @@ var stcFoldlDoubleShortIter = stcAddDefun( "foldl-double-short-iter",
                     stcErr( "Internal error" ) ) ),
             stcCons.of( "list-b", "state" ) ),
         
-        stcYep, "result", "result",
+        stcYep, "result", "short-result",
         
         stcNope, "result",
         stcCase( "result", "result", stcCons, "rest-b", "state",
