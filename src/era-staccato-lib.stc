@@ -473,7 +473,8 @@
                   (c ignore-carry /c-new digpair-dual-div
                     (c four-digits zdig n3 n2 n1)
                   /carried
-                    (digpair-plus long-one
+                    \ We ignore the carry because it must be zero.
+                    (c ignore-carry /digpair-plus long-one
                     /c four-digits zdig m3 m2 m1)
                     long-zero)
                 /let mid1-remainder
@@ -487,27 +488,27 @@
                     /carried mid1-result long-zero)
                     long-zero)
                 
-                /case
-                  \ We divide again to account for the digit that we
-                  \ dropped before. This time, the dividend is a
-                  \ maximum of 3/4 the length not because we're
-                  \ dropping 1/4 of the precision, but because we've
-                  \ already divided accurately enough to drop its
-                  \ length down that low.
-                  (c-new digpair-dual-div mid1-remainder
-                  /carried m0123 long-zero)
-                  
-                  \ We pretty much use this second, more accurate
-                  \ division as the final result, but we make sure to
-                  \ add the first quotient onto this one.
-                  carried mid2-result mid2-remainder
+                \ At this point, we might be *one* subtraction away
+                \ from a fully accurate result. (We can't be two or
+                \ more subtractions away, since the approximate
+                \ divisor would have been small enough to fit in the
+                \ space of twice the accurate divisor. After all, the
+                \ approximate divisor is only too large by
+                \ (1 + maxDigitValue) or less, and we already
+                \ know the divisor is at least (1 + maxDigitValue)^2.)
+                \ So, we do that subtraction if possible.
+                \
+                /case (digpair-compare mid1-remainder m3210) yep -
+                  (carried mid1-result mid1-remainder)
                   (carried
+                    
                     \ We ignore the carry because it must be zero.
                     (c ignore-carry /digpair-plus mid1-result
-                    /carried mid2-result long-zero)
-                    mid2-remainder)
-                  
-                  err.\-qq[Internal error])
+                    /carried long-one long-zero)
+                    
+                    \ We ignore the carry because it must be zero.
+                    (c ignore-carry /digpair-minus mid1-remainder
+                    /carried m3210 long-zero)))
                 err.\-qq[Expected an m10 value of type digpair])
               err.\-qq[Expected an m32 value of type digpair])
             err.\-qq[Expected an n10 value of type digpair])
@@ -556,8 +557,11 @@
             \ If the carry is zero, if the divisor is less than or
             \ equal to the dividend, and if the first digit of the
             \ divisor isn't zero, then we split the digits into
-            \ sub-digits and divide by an approximation of the
-            \ divisor first. We handle this in a separate function.
+            \ sub-digits and divide by an approximation where we drop
+            \ the least significant sub-digits. The approximation may
+            \ be off by one, so we check for this and subtract one
+            \ more time if necessary. We handle this in a separate
+            \ function.
             /digpair-dual-div-no-carry fixops n m)
           \ If the carry isn't zero, we shift the carry-and-divisor
           \ combination down by one digit, do a division from there,
