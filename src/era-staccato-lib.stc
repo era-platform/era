@@ -685,7 +685,7 @@
   (binat fixops /nil))
 
 (defn binat-yep-nope-zero -
-  (binat-zero-for-fixops/make-fixops-yep-nope))
+  (binat-zero-for-fixops/make-fixops-yep-nope/nil))
 
 (defn binat-as-zero n
   (case n binat fixops n-internals
@@ -721,7 +721,7 @@
         (case m-internals binat-internals m-depth mfix
           (caselet depth-comparison (binat-compare n-depth m-depth)
             
-            nil -
+            nil
             (case binat-is-zero.n-depth yep -
               (fixops-compare fixops nfix mfix)
               (digpair-compare nfix mfix))
@@ -892,6 +892,9 @@
 
 
 \ ===== Big signed integers ==========================================
+\
+\ These might even be integers that carry a big sign. You can't say
+\ they aren't.
 
 (def-type bigint fixops nat)
 
@@ -899,7 +902,7 @@
   (bigint fixops /nil))
 
 (defn bigint-yep-nope-zero -
-  (bigint-zero-for-fixops/make-fixops-yep-nope))
+  (bigint-zero-for-fixops/make-fixops-yep-nope/nil))
 
 (defn bigint-as-zero n
   (case n bigint fixops n-nat
@@ -1025,7 +1028,7 @@
           yep m (c div n m neg neg)
           nope m (c div n m pos neg)
           err.\-qq[Called bigint-div-toward-zero with a zero divisor])
-        
+      
       /bigint fixops /nil)
       err.\-qq[Expected an m value of type bigint])
     err.\-qq[Expected an n value of type bigint]))
@@ -1033,7 +1036,201 @@
 \ TODO: Port toStringInRadix and bigIntFromStringInRadix. We don't
 \ have string manipulation yet, though.
 
-\ TODO: Port era-avl.js's AVL trees and (perhaps) finger trees.
+
+\ ===== AVL trees ====================================================
+
+\ TODO: Finish porting era-avl.js's AVL trees.
+
+(def-type avl-leaf compare)
+(def-type
+  avl-branches nope-unbalance nope-branch yep-unbalance yep-branch)
+(def-type avl-branch compare key val branches)
+(def-type depth-modified depth-was-modified result)
+
+\ TODO: Find a better name for this.
+(def-type map-fold-state state val)
+
+(defn avl-get-maybe tree k
+  (case tree avl-leaf compare
+    (nil)
+  /case tree avl-branch compare key val branches
+    (case branches avl-branches nub nbranch yub ybranch
+      (case (c compare key k)
+        nope - (c-new avl-get-maybe nbranch k)
+        yep - (c-new avl-get-maybe ybranch k)
+        yep.tree)
+      err.\-qq[Expected a branches value of type avl-branches])
+    err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
+
+\ TODO: This is the ported name for avlBranchMakeBalanced_. Once we've
+\ finished porting, remove this TODO.
+(defn improper-avl-branch-balance tree
+  (case tree avl-branch compare key val branches
+    (case branches avl-branches nub nbranch yub ybranch
+      - \ TODO
+      err.\-qq[Expected a branches value of type avl-branches])
+    err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
+
+(defn avl-branch-concatenate branches
+  (case branches avl-branches nub nbranch yub ybranch
+    - \ TODO
+    err.\-qq[Expected a branches value of type avl-branches]))
+
+(defn avl-merge a b process-both
+  - \ TODO
+  )
+
+(defn avl-minus-extreme-entry tree k-polarity
+  (case tree avl-leaf compare
+    nope.tree
+  /case tree avl-branch compare key val branches
+    - \ TODO
+    err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
+
+(defn avl-plus-entry tree k v
+  (case tree avl-leaf compare
+    (yep/avl-branch compare k v /avl-branches (nil) tree (nil) tree)
+  /case tree avl-branch compare key val branches
+    - \ TODO
+    err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
+
+(defn avl-minus-entry tree k
+  (case tree avl-leaf compare
+    nope.tree
+  /case tree avl-branch compare key val branches
+    - \ TODO
+    err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
+
+\ NOTE: This body takes its args as (state k v).
+(defn avl-short-fold-asc state tree body
+  (case tree avl-leaf compare
+    nope.state
+  /case tree avl-branch compare key val branches
+    (case branches avl-branches nub nbranch yub ybranch
+      (caselet first-result
+        (c-new avl-short-fold-asc state nbranch body)
+        
+        yep - first-result
+        
+        nope state
+        (caselet second-result (c body state k v)
+          
+          yep - second-result
+          
+          nope state (c-new avl-short-fold-asc state ybranch body)
+          
+          err.\-qq[
+            Expected body to return a value of type yep or nope])
+        
+        err.\-qq[Internal error])
+      err.\-qq[Expected a branches value of type avl-branches])
+    err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
+
+\ NOTE: This body takes its args as (state k v).
+(defn avl-map-short-fold-asc state tree body
+  (case tree avl-leaf compare
+    (map-fold-state state self)
+  /case tree avl-branch compare key val branches
+    (case branches avl-branches nub nbranch yub ybranch
+      (caselet first-result
+        (c-new avl-map-short-fold-asc state nbranch body)
+        
+        yep - first-result
+        
+        map-fold-state state result-nbranch
+        (caselet second-result (c body state k v)
+          
+          yep - second-result
+          
+          map-fold-state state result-val
+          (caselet third-result
+            (c-new avl-map-short-fold-asc state ybranch body)
+            
+            yep - third-result
+            
+            map-fold-state state result-ybranch
+            (map-fold-state state /avl-branch compare key result-val
+            /avl-branches nub result-nbranch yub result-ybranch)
+            
+            err.\-qq[Internal error])
+          
+          err.\-qq[
+            Expected body to return a value of type yep or
+            map-fold-state])
+        
+        err.\-qq[Internal error])
+      err.\-qq[Expected a branches value of type avl-branches])
+    err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
+
+(defn avl-has-any tree
+  (case tree avl-leaf compare
+    (nope/nil)
+    (yep/nil)))
+
+(defn avl-get-max-depth tree
+  (case tree avl-leaf compare
+    (nil)
+  /case tree avl-branch compare key val branches
+    (case branches avl-branches nub nbranch yub ybranch
+      (list (nil) /c-new avl-get-max-depth /case nub nil
+        ybranch
+        nbranch)
+      err.\-qq[Expected a branches value of type avl-branches])
+    err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
+
+\ TODO: Rename this to be more convenient to call.
+(defn avl-minus-entry-ignoring-depth avl k
+  (case (avl-minus-entry avl k)
+    yep result result
+    nope result result
+    err.\-qq[Internal error]))
+
+\ TODO: Rename this to be more convenient to call.
+(defn avl-plus-entry-ignoring-depth avl k
+  (case (avl-plus-entry avl k)
+    yep result result
+    nope result result
+    err.\-qq[Internal error]))
+
+(defn avl-plus-nil tree k
+  (avl-plus-entry tree k /nil))
+
+(defn avl-plus-nils tree list
+  (foldl tree list /avl-plus-nil))
+
+\ NOTE: This body takes its args as (k v).
+(defn avl-any tree body
+  (caselet result
+    (avl-short-fold-asc (nil) tree /fn state k v /body k v))
+    nope - (nope/nil)
+    result))
+
+\ NOTE: This body takes its args as (k v).
+(defn avl-each tree body
+  (let -
+    (avl-any tree /fn k v
+      (let - (body k v)
+      /nope/nil))
+  /nil))
+
+\ NOTE: This body takes its args as (k v).
+(defn avl-map tree body
+  (case
+    (avl-map-short-fold-asc (nil) tree /fn state k v
+      (map-fold-state (nil) /body k v))
+    map-fold-state state result result
+    err.\-qq[Internal error]))
+
+(defn avl-plus a b
+  (avl-merge a b /fn a b b)
+
+
+\ ===== Finger trees =================================================
+
+\ TODO: Port era-avl.js's finger trees. Finger trees don't have their
+\ best amortized computational complexity unless they can use lazy
+\ thunks, so they're not like the other, stateless utilities here. Do
+\ we want that impurity?
 
 
 (run-defs)

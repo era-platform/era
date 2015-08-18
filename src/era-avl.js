@@ -1559,9 +1559,9 @@ function avlBranchConcatenate_( yoke, branches, then ) {
             
             if ( maxDepthDecreased )
                 modifiedBranches[ polarity ] = {
-                    branch: branches[ polarity ],
-                    maxDepthAdvantage:
-                        { first: null, rest: branches[ polarity ] }
+                    branch: branches[ polarity ].branch,
+                    maxDepthAdvantage: { first: null,
+                        rest: branches[ polarity ].maxDepthAdvantage }
                 };
             
             return avlBranchMakeBalanced_( yoke,
