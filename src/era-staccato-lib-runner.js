@@ -150,6 +150,34 @@ function readerStringNilToString( stringNil ) {
         result += rest.first;
     return result;
 }
+function extractPattern( body ) {
+    if ( body.type !== "cons" )
+        throw new Error();
+    var frameNameExpr = body.first;
+    if ( frameNameExpr.type !== "stringNil" )
+        throw new Error();
+    var frameName = readerStringNilToString( frameNameExpr );
+    if ( !staccatoDeclarationState.types.has( frameName ) )
+        throw new Error();
+    var type = staccatoDeclarationState.types.get( frameName );
+    var remainingBody = body.rest;
+    var localVars = [];
+    for ( var i = 0, n = type.frameVars.length; i < n; i++ ) {
+        if ( remainingBody.type !== "cons" )
+            throw new Error();
+        if ( remainingBody.first.type !== "stringNil" )
+            throw new Error();
+        localVars.push(
+            readerStringNilToString( remainingBody.first ) );
+        remainingBody = remainingBody.rest;
+    }
+    
+    var result = {};
+    result.type = type;
+    result.localVars = localVars;
+    result.remainingBody = remainingBody;
+    return result;
+}
 function stcCaseletForRunner( maybeVa, matchSubject, body ) {
     function processTail( body ) {
         if ( body.type !== "cons" )
@@ -157,32 +185,15 @@ function stcCaseletForRunner( maybeVa, matchSubject, body ) {
         if ( body.rest.type !== "cons" )
             return jsList( "any",
                 stcSaveRoot( processReaderExpr( body.first ) ) );
-        var frameNameExpr = body.first;
-        if ( frameNameExpr.type !== "stringNil" )
+        var pattern = extractPattern( body );
+        if ( pattern.remainingBody.type !== "cons" )
             throw new Error();
-        var frameName = readerStringNilToString( frameNameExpr );
-        if ( !staccatoDeclarationState.types.has( frameName ) )
-            throw new Error();
-        var type = staccatoDeclarationState.types.get( frameName );
-        var remainingBody = body.rest;
-        var localVars = [];
-        for ( var i = 0, n = type.frameVars.length; i < n; i++ ) {
-            if ( remainingBody.type !== "cons" )
-                throw new Error();
-            if ( remainingBody.first.type !== "stringNil" )
-                throw new Error();
-            localVars.push(
-                readerStringNilToString( remainingBody.first ) );
-            remainingBody = remainingBody.rest;
-        }
-        if ( remainingBody.type !== "cons" )
-            throw new Error();
-        var then = processReaderExpr( remainingBody.first );
-        var els = remainingBody.rest;
-        return jsList( "match", type.frameName,
+        var then = processReaderExpr( pattern.remainingBody.first );
+        var els = pattern.remainingBody.rest;
+        return jsList( "match", pattern.type.frameName,
             stcEntriesPairMacro(
                 "env-pattern-cons", "env-pattern-nil",
-                type.frameVars, localVars ),
+                pattern.type.frameVars, pattern.localVars ),
             stcSaveRoot( then ),
             processTail( els ) );
     }
@@ -191,6 +202,27 @@ function stcCaseletForRunner( maybeVa, matchSubject, body ) {
     if ( maybeVa !== null )
         processedBody =
             jsList( "let-case", maybeVa.val, processedBody );
+    
+    return stcCall(
+        stcBasicRet(
+            jsList( "fn", stcGensym(), stcNoVars(), processedBody ) ),
+        stcSaveRoot( processReaderExpr( matchSubject ) ) );
+}
+function stcCast( matchSubject, body ) {
+    var pattern = extractPattern( body );
+    if ( pattern.remainingBody.type !== "cons" )
+        throw new Error();
+    if ( pattern.remainingBody.rest.type !== "cons" )
+        throw new Error();
+    if ( pattern.remainingBody.rest.rest.type === "cons" )
+        throw new Error();
+    var onCastErr = processReaderExpr( pattern.remainingBody.first );
+    var body = processReaderExpr( pattern.remainingBody.rest.first );
+    var processedBody = jsList( "match", pattern.type.frameName,
+        stcEntriesPairMacro( "env-pattern-cons", "env-pattern-nil",
+            pattern.type.frameVars, pattern.localVars ),
+        stcSaveRoot( body ),
+        jsList( "any", stcSaveRoot( onCastErr ) ) );
     
     return stcCall(
         stcBasicRet(
@@ -236,6 +268,12 @@ staccatoDeclarationState.macros.set( "caselet", function ( body ) {
         { val: readerStringNilToString( body.first ) },
         body.rest.first,
         body.rest.rest );
+} );
+
+staccatoDeclarationState.macros.set( "cast", function ( body ) {
+    if ( body.type !== "cons" )
+        throw new Error();
+    return stcCast( body.first, body.rest );
 } );
 
 staccatoDeclarationState.macros.set( "c", function ( body ) {
