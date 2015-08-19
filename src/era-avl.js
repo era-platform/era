@@ -1584,7 +1584,7 @@ function avlBranchConcatenate_( yoke, branches, then ) {
                 
                 if ( maxDepthDecreased )
                     modifiedDepthChanges[ -polarity ] =
-                        depthChanges[ polarity ];
+                        depthChanges[ -polarity ];
                 
                 return then( yoke, modifiedDepthChanges, tree );
             } );

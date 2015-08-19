@@ -103,6 +103,9 @@
     (case b yep - (nope/nil) a)
     (case b yep - b (nope/nil))))
 
+(defn yep-nope-swap a b
+  (case a yep - b not-yep-nope.b))
+
 (defn all func list
   (not-yep-nope/any list /fn elem /not-yep-nope/c func elem))
 
@@ -1041,19 +1044,25 @@
 
 \ TODO: Finish porting era-avl.js's AVL trees.
 
-(def-type avl-leaf compare)
+(def-type avl-leaf fixops compare)
 (def-type
   avl-branches nope-unbalance nope-branch yep-unbalance yep-branch)
-(def-type avl-branch compare key val branches)
+(def-type avl-branch fixops compare key val branches)
 (def-type depth-modified depth-was-modified result)
 
 \ TODO: Find a better name for this.
 (def-type map-fold-state state val)
 
+(defn avl-branches-swap polarity branches
+  (case polarity yep - branches
+  /case branches avl-branches nub nbranch yub ybranch
+    (avl-branches yub ybranch nub nbranch)
+    err.\-qq[Expected a branches value of type avl-branches]))
+
 (defn avl-get-maybe tree k
-  (case tree avl-leaf compare
+  (case tree avl-leaf fixops compare
     (nil)
-  /case tree avl-branch compare key val branches
+  /case tree avl-branch fixops compare key val branches
     (case branches avl-branches nub nbranch yub ybranch
       (case (c compare key k)
         nope - (c-new avl-get-maybe nbranch k)
@@ -1062,10 +1071,27 @@
       err.\-qq[Expected a branches value of type avl-branches])
     err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
 
+\ TODO: Find a better name for this.
+(def-type improper-avl-branch-balance-result
+  nope-depth-change yep-depth-change balanced-tree)
+
+(defn improper-avl-branch-balance-result-swap polarity balance-result
+  (case polarity yep - balance-result
+  /case balance-result
+    
+    improper-avl-branch-balance-result
+    nope-depth-change yep-depth-change balanced tree
+    (improper-avl-branch-balance-result
+      yep-depth-change nope-depth-change balanced tree)
+    
+    err.\-qq[
+      Expected a balance-result value of type
+      improper-avl-branch-balance-result]))
+
 \ TODO: This is the ported name for avlBranchMakeBalanced_. Once we've
 \ finished porting, remove this TODO.
 (defn improper-avl-branch-balance tree
-  (case tree avl-branch compare key val branches
+  (case tree avl-branch fixops compare key val branches
     (case branches avl-branches nub nbranch yub ybranch
       - \ TODO
       err.\-qq[Expected a branches value of type avl-branches])
@@ -1080,32 +1106,97 @@
   - \ TODO
   )
 
+(def-type avl-minus-extreme-entry-succeeded
+  max-depth-decreased k v tree-remaining)
+
 (defn avl-minus-extreme-entry tree k-polarity
-  (case tree avl-leaf compare
+  (case tree avl-leaf fixops compare
     nope.tree
-  /case tree avl-branch compare key val branches
-    - \ TODO
+  /case tree avl-branch fixops compare key val branches
+    (case (avl-branches-swap k-polarity branches)
+      
+      avl-branches wub wbranch tub tbranch
+      (case (c-new avl-minus-extreme-entry tbranch k-polarity)
+        
+        nope -
+        (avl-minus-extreme-entry-succeeded (yep/nil) key val wbranch)
+        
+        avl-minus-extreme-entry-succeeded
+        max-depth-decreased subtracted-key subracted-val tbranch
+        (let wub
+          (case max-depth-decreased yep -
+            (bigint-plus wub bigint-as-one.wub)
+            wub)
+        /case
+          (improper-avl-branch-balance-result-swap k-polarity
+          /improper-avl-branch-balance
+          /avl-branch fixops compare key val
+          /avl-branches-swap k-polarity
+          /avl-branches wub wbranch tub tbranch)
+          
+          improper-avl-branch-balance-result
+          w-depth-change t-depth-change balanced-tree
+          (case balanced-tree avl-branch - - - - balanced-branches
+            (case balanced-branches
+              
+              avl-branches balanced-wub - balanced-tub -
+              (avl-minus-extreme-entry-succeeded
+                
+                \ There are two ways the overall max depth can
+                \ decrease:
+                \  - Subtracting the entry from one side caused that
+                \    side to stop having more max depth than the
+                \    other.
+                \  - Subtracting the entry from one side caused that
+                \    side to have much less max depth than the other,
+                \    and the other lost some depth during a
+                \    rebalancing.
+                \
+                (or-yep-nope
+                  (and-yep-nope (not-yep-nope bigint-is-zero.tub)
+                    bigint-is-zero.balanced-tub)
+                  (and-yep-nope max-depth-decreased
+                  /and-yep-nope
+                    (not-yep-nope bigint-is-zero.balanced-wub)
+                    (case
+                      (bigint-compare w-depth-change
+                        bigint-as-one.w-depth-change)
+                      nil (nope/nil)
+                      (yep/nil))))
+                
+                subtracted-key subtracted-val balanced-tree)
+              
+              err.\-qq[Internal error])
+            err.\-qq[Internal error])
+          
+          err.\-qq[Internal error])
+        
+        err.\-qq[Internal error])
+      
+      err.\-qq[Expected a branches value of type avl-branches])
     err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
 
 (defn avl-plus-entry tree k v
-  (case tree avl-leaf compare
-    (yep/avl-branch compare k v /avl-branches (nil) tree (nil) tree)
-  /case tree avl-branch compare key val branches
+  (case tree avl-leaf fixops compare
+    (let zero bigint-zero-for-fixops.fixops
+    /yep/avl-branch fixops compare k v
+    /avl-branches zero tree zero tree)
+  /case tree avl-branch fixops compare key val branches
     - \ TODO
     err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
 
 (defn avl-minus-entry tree k
-  (case tree avl-leaf compare
+  (case tree avl-leaf fixops compare
     nope.tree
-  /case tree avl-branch compare key val branches
+  /case tree avl-branch fixops compare key val branches
     - \ TODO
     err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
 
 \ NOTE: This body takes its args as (state k v).
 (defn avl-short-fold-asc state tree body
-  (case tree avl-leaf compare
+  (case tree avl-leaf fixops compare
     nope.state
-  /case tree avl-branch compare key val branches
+  /case tree avl-branch fixops compare key val branches
     (case branches avl-branches nub nbranch yub ybranch
       (caselet first-result
         (c-new avl-short-fold-asc state nbranch body)
@@ -1128,9 +1219,9 @@
 
 \ NOTE: This body takes its args as (state k v).
 (defn avl-map-short-fold-asc state tree body
-  (case tree avl-leaf compare
+  (case tree avl-leaf fixops compare
     (map-fold-state state self)
-  /case tree avl-branch compare key val branches
+  /case tree avl-branch fixops compare key val branches
     (case branches avl-branches nub nbranch yub ybranch
       (caselet first-result
         (c-new avl-map-short-fold-asc state nbranch body)
@@ -1149,7 +1240,8 @@
             yep - third-result
             
             map-fold-state state result-ybranch
-            (map-fold-state state /avl-branch compare key result-val
+            (map-fold-state state
+            /avl-branch fixops compare key result-val
             /avl-branches nub result-nbranch yub result-ybranch)
             
             err.\-qq[Internal error])
@@ -1163,14 +1255,14 @@
     err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
 
 (defn avl-has-any tree
-  (case tree avl-leaf compare
+  (case tree avl-leaf fixops compare
     (nope/nil)
     (yep/nil)))
 
 (defn avl-get-max-depth tree
-  (case tree avl-leaf compare
+  (case tree avl-leaf fixops compare
     (nil)
-  /case tree avl-branch compare key val branches
+  /case tree avl-branch fixops compare key val branches
     (case branches avl-branches nub nbranch yub ybranch
       (list (nil) /c-new avl-get-max-depth /case nub nil
         ybranch
