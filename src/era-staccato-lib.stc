@@ -1178,11 +1178,13 @@
 
 (defn avl-get-max-depth tree
   (case tree avl-leaf fixops compare
-    (nil)
+    bigint-zero-for-fixops.fixops
   /case tree avl-branch fixops compare key val branches
     (cast branches avl-branches nub nbranch yub ybranch
       err.\-qq[Expected a branches value of type avl-branches]
-    /list (nil) /c-new avl-get-max-depth /case nub nil
+    /let zero bigint-zero-for-fixops.fixops
+    /let one bigint-as-one.zero
+    /bigint-plus one /c-new avl-get-max-depth /case nub nil
       ybranch
       nbranch)
     err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
