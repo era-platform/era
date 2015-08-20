@@ -21,14 +21,14 @@ great! Nothing to see here.</p>
 
 <script type="text/plain" id="stc-prelude">
 
-\ era-staccato-lib.stc
-\ Copyright 2015 Ross Angle. Released under the MIT License.
-\
-\ These are utilities written in a hypothetical macro layer over
-\ Staccato. For now, I'm porting the utilities from era-avl.js.
-\ (Actually, for now, these are ports of the utilities in
-\ era-staccato-lib.js and era-staccato-lib-gensym.js that were ported
-\ from era-avl.js.)
+\ NOTE: This has been pasted from era-staccato-lib.stc, but it's not
+\ the whole file yet. The whole file would probably have bugs.
+
+
+\ These are utilities written in a macro layer over Staccato. For now,
+\ I'm porting the utilities from era-avl.js. (Many of the utilities
+\ were actually ported from era-staccato-lib.js and
+\ era-staccato-lib-gensym.js, which were ported from era-avl.js.)
 \
 \ See era-staccato.js for more information about what Staccato is.
 
@@ -36,8 +36,10 @@ great! Nothing to see here.</p>
 \ NOTE: This file depends only on these macros, which are implemented
 \ in era-staccato-lib-runner.js:
 \
-\ def-type defn case caselet c c-new err fn run-defs test let
+\ def-type defn case caselet cast c c-new err fn run-defs test let
 
+
+\ ===== Lists and boolean tags =======================================
 
 (def-type cons car cdr)
 (def-type yep val)
@@ -45,70 +47,28 @@ great! Nothing to see here.</p>
 (def-type nil)
 
 (defn foldl-short state list combiner
-  (case list cons first rest
-    (caselet combiner-result (c combiner state first)
-      yep result combiner-result
-      nope result (c-new foldl-short result rest combiner)
-      err.\-qq[Expected a combiner-result of type yep or nope])
-    nope.state))
+  (cast list cons first rest nope.state
+  /caselet combiner-result (c combiner state first)
+    yep result combiner-result
+    nope result (c-new foldl-short result rest combiner)
+    err.\-qq[Expected a combiner-result of type yep or nope]))
 
 (defn foldl state list combiner
-  (case list cons first rest
-    (c-new foldl (c combiner state first) rest combiner)
-    state))
+  (cast list cons first rest state
+  /c-new foldl (c combiner state first) rest combiner))
 
-\ TODO: Choose just one of these implementations of
-\ `foldl-double-short`.
-
-\ This implements `foldl-double-short` independently.
 (defn foldl-double-short state list-a list-b combiner
-  (case list-a cons first-a rest-a
-    (case list-b cons first-b rest-b
-      (caselet combiner-result (c combiner state first-a first-b)
-        
-        yep result combiner-result
-        
-        nope result
-        (c-new foldl-double-short result list-a list-b combiner)
-        
-        err.\-qq[Expected a combiner-result of type yep or nope])
-      nope.state)
-    nope.state))
-
-\ This implements `foldl-double-short` in terms of `foldl-short`.
-(defn foldl-double-short state list-a list-b combiner
-  (case
-    (foldl-short (cons list-b state) list-a /fn state elem-a
-      (case state cons rest-b state
-        (case rest-b cons elem-b rest-b
-          (caselet combiner-result (c combiner state elem-a elem-b)
-            yep result combiner-result
-            nope result (nope/cons rest-b result)
-            err.\-qq[Expected a combiner-result of type yep or nope])
-          (yep nope.state))
-        err.\-qq[Internal error]))
+  (cast list-a cons first-a rest-a nope.state
+  /cast list-b cons first-b rest-b nope.state
+  /caselet combiner-result (c combiner state first-a first-b)
     
-    yep result result
+    yep result combiner-result
     
     nope result
-    (case result cons rest-b state
-      nope.state
-      err.\-qq[Internal error])
+    (c-new foldl-double-short result list-a list-b combiner)
     
-    err.\-qq[Internal error]))
+    err.\-qq[Expected a combiner-result of type yep or nope]))
 
-\ TODO: Choose just one of these implementations of `foldl-double`.
-
-\ This implements `foldl-double` independently.
-(defn foldl-double state list-a list-b combiner
-  (case list-a cons first-a rest-a
-    (case list-b cons first-b rest-b
-      (c-new foldl-double (c combiner state first-a rest-a)
-        rest-a rest-b combiner)
-      state)
-    state))
-
-\ This implements `foldl-double` in terms of `foldl-double-short`.
 (defn foldl-double state list-a list-b combiner
   (case
     (foldl-double-short state list-a list-b /fn state elem-a elem-b
@@ -148,28 +108,110 @@ great! Nothing to see here.</p>
     nope val yep.val
     err.\-qq[Expected a yep-nope of type yep or nope]))
 
+(defn or-yep-nope a b
+  (case a yep - a
+  /case b yep - b
+  /nope/nil))
+
+(defn and-yep-nope a b
+  (case a nope - a
+  /case b nope - b
+  /yep/nil))
+
+(defn xor-yep-nope a b
+  (case a yep -
+    (case b yep - (nope/nil) a)
+    (case b yep - b (nope/nil))))
+
+(defn yep-nope-swap a b
+  (case a yep - b not-yep-nope.b))
+
 (defn all func list
   (not-yep-nope/any list /fn elem /not-yep-nope/c func elem))
 
 (defn cut list-to-measure-by list-to-cut
   (foldl (cons (nil) list-to-cut) list-to-measure-by
   /fn state ignored-elem
-    (case state cons rev-before after
-      (case after cons first after
-        (cons (cons first rev-before) after)
-        err.\-qq[
-          Expected a list-to-measure-by no longer than the list-to-cut
-          ])
-      err.\-qq[Internal error])))
+    (cast state cons rev-before after
+      err.\-qq[Internal error]
+    /cast after cons first after
+      err.\-qq[
+        Expected a list-to-measure-by no longer than the list-to-cut]
+    /cons (cons first rev-before) after)))
 
 (defn tails lists
-  (case lists cons list-a list-b
-    (case list-a cons elem-a list-a
-      (case list-b cons elem-b list-b
-        (c-new tails /cons list-a list-b)
-        lists)
-      lists)
-    err.\-qq[Expected a lists value of type cons]))
+  (cast lists cons list-a list-b
+    err.\-qq[Expected a lists value of type cons]
+  /cast list-a cons elem-a list-a lists
+  /cast list-b cons elem-b list-b lists
+  /c-new tails /cons list-a list-b))
+
+
+\ ===== "Fixnum operations," a generic interface for bigint digits ===
+
+\ NOTE: Although they're separated into different sections, fixops and
+\ digpairs are actually interdependent.
+
+(def-type
+  fixops zero one complement compare plus minus times dual-div)
+(def-type carried main carry)
+
+(defn fixops-zero fixops
+  (cast fixops
+    fixops zero one complement compare plus minus times dual-div
+    err.\-qq[Expected a fixops value of type fixops]
+    zero))
+
+(defn fixops-one fixops
+  (cast fixops
+    fixops zero one complement compare plus minus times dual-div
+    err.\-qq[Expected a fixops value of type fixops]
+    one))
+
+(defn fixops-complement fixops
+  (cast fixops
+    fixops zero one complement compare plus minus times dual-div
+    err.\-qq[Expected a fixops value of type fixops]
+    complement))
+
+(defn fixops-compare fixops
+  (cast fixops
+    fixops zero one complement compare plus minus times dual-div
+    err.\-qq[Expected a fixops value of type fixops]
+    compare))
+
+(defn fixops-plus fixops
+  (cast fixops
+    fixops zero one complement compare plus minus times dual-div
+    err.\-qq[Expected a fixops value of type fixops]
+    plus))
+
+(defn fixops-minus fixops
+  (cast fixops
+    fixops zero one complement compare plus minus times dual-div
+    err.\-qq[Expected a fixops value of type fixops]
+    minus))
+
+(defn fixops-times fixops
+  (cast fixops
+    fixops zero one complement compare plus minus times dual-div
+    err.\-qq[Expected a fixops value of type fixops]
+    times))
+
+(defn fixops-dual-div fixops
+  (cast fixops
+    fixops zero one complement compare plus minus times dual-div
+    err.\-qq[Expected a fixops value of type fixops]
+    dual-div))
+
+(defn fixops-is-zero fixops n
+  (case (fixops-compare fixops fixops-zero.fixops n) nil
+    (yep/nil)
+    (nope/nil)))
+
+
+\ TODO: Paste the rest of era-staccato-lib.stc into this file.
+
 
 (run-defs)
 
