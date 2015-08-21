@@ -1029,7 +1029,14 @@
 (def-type avl-minus-extreme-entry-succeeded
   max-depth-decreased k v tree-remaining)
 
-(defn avl-branch-concatenate fixops compare branches
+(defn avl-branch-finish-minus fixops compare branches
+  \ NOTE: This effectively concatenates the branches. Like
+  \ `improper-avl-branch-balance`, this assumes all the elements are
+  \ already in the proper order, just not necessarily balanced between
+  \ the two branches. It's not a merge of arbitrary trees. For that,
+  \ see avlMerge_(). Furthermore, this can even rely on the fact that
+  \ the branches were initially balanced before the root key/value
+  \ entry was subtracted from the tree.
   (cast branches avl-branches nub nbranch yub ybranch
     err.\-qq[Expected a branches value of type avl-branches]
   /let attempt-shift
@@ -1044,7 +1051,7 @@
         avl-minus-extreme-entry-succeeded
         max-depth-decreased k v tree-remaining
         (let inc (fn n /bigint-plus n bigint-as-one.n)
-        /let tub
+        /let new-tub
           (case max-depth-decreased yep -
             inc.tub
             tub)
@@ -1052,23 +1059,24 @@
           (improper-avl-branch-balance-result-swap polarity
           /improper-avl-branch-balance/avl-branch fixops compare k v
           /avl-branches-swap polarity
-          /avl-branches wub wbranch tub tbranch)
+          /avl-branches wub wbranch new-tub tbranch)
           improper-avl-branch-balance-result
           w-depth-change t-depth-change tree
-        /improper-avl-branch-balance-result-swap polarity
-        /improper-avl-branch-balance-result
-          (case max-depth-decreased yep -
-            w-depth-change
-            inc.w-depth-change)
-          inc.t-depth-change
+        /yep-nope-swap
+          (and-yep-nope max-depth-decreased
+          /and-yep-nope (not-yep-nope bigint-is-zero.tub)
+            (case
+              (bigint-compare bigint-as-zero.w-depth-change
+                w-depth-change)
+              yep - (nope/nil)
+              (yep/nil)))
           tree)
         
         err.\-qq[Internal error]))
   
   /attempt-shift (yep/nil) /fn -
   /attempt-shift (nope/nil) /fn -
-  /let zero bigint-zero-for-fixops.fixops
-  /improper-avl-branch-balance-result zero zero ybranch))
+   yep.ybranch))
 
 (defn avl-merge a b process-both
   - \ TODO
@@ -1196,20 +1204,7 @@
     nope.tree
   /case tree avl-branch fixops compare key val branches
     (caselet polarity (c compare key k) nil
-      (cast (avl-branch-concatenate fixops compare branches)
-        improper-avl-branch-balance-result
-        w-depth-change t-depth-change tree
-        err.\-qq[Internal error]
-      /yep-nope-swap
-        (let is-positive
-          (fn n
-            (case (bigint-compare bigint-as-zero.n n) yep -
-              (yep/nil)
-              (nope/nil)))
-        /not-yep-nope/and-yep-nope
-          is-positive.w-depth-change
-          is-positive.t-depth-change)
-        yep.tree)
+      (avl-branch-finish-minus fixops compare branches)
     /cast
       (case (c-new avl-minus-entry tbranch k)
         nope result (cons (nope/nil) result)

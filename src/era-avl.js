@@ -1450,6 +1450,9 @@ AvlBranch_.prototype.plusEntry = function ( yoke, k, v, then ) {
     
     } );
 };
+// TODO: Make this return depthChanges that compare the old branches
+// to the new branches, rather than comparing the old branches to the
+// new parent.
 function avlBranchMakeBalanced_( yoke, key, val, branches, then ) {
     return runWaitOne( yoke, function ( yoke ) {
     
@@ -1540,11 +1543,14 @@ function avlBranchMakeBalanced_( yoke, key, val, branches, then ) {
     
     } );
 }
-function avlBranchConcatenate_( yoke, branches, then ) {
-    // NOTE: Like avlBranchMakeBalanced_(), this assumes all the
-    // elements are already in the proper order, just not necessarily
-    // balanced between the two branches. It's not a merge of
-    // arbitrary trees. For that, see avlMerge_().
+function avlBranchFinishMinus_( yoke, branches, then ) {
+    // NOTE: This effectively concatenates the branches. Like
+    // avlBranchMakeBalanced_(), this assumes all the elements are
+    // already in the proper order, just not necessarily balanced
+    // between the two branches. It's not a merge of arbitrary trees.
+    // For that, see avlMerge_(). Furthermore, this can even rely on
+    // the fact that the branches were initially balanced before the
+    // root key/value entry was subtracted from the tree.
     
     function attemptShift( yoke, polarity, onFail ) {
         return branches[ -polarity ].branch.minusExtremeEntry( yoke,
@@ -1578,28 +1584,18 @@ function avlBranchConcatenate_( yoke, branches, then ) {
                             abs: { first: null, rest: num.abs } };
                 }
                 
-                var modifiedDepthChanges = {};
-                modifiedDepthChanges[ -polarity ] =
-                    signedUnaryPlusOne( depthChanges[ -polarity ] );
-                modifiedDepthChanges[ polarity ] =
-                    signedUnaryPlusOne( depthChanges[ polarity ] );
+                var newMaxDepthDecreased = maxDepthDecreased &&
+                    branches[ polarity ].maxDepthAdvantage !== null &&
+                    depthChanges[ -polarity ].sign !== 1;
                 
-                if ( maxDepthDecreased )
-                    modifiedDepthChanges[ -polarity ] =
-                        depthChanges[ -polarity ];
-                
-                return then( yoke, modifiedDepthChanges, tree );
+                return then( yoke, newMaxDepthDecreased, tree );
             } );
         } );
     }
     
     return attemptShift( yoke, 1, function ( yoke ) {
         return attemptShift( yoke, -1, function ( yoke ) {
-            return then( yoke,
-                {
-                    "-1": { sign: 0, abs: null },
-                    "1": { sign: 0, abs: null }
-                },
+            return then( yoke, !!"maxDepthDecreased",
                 new AvlLeaf_().init_( branches[ -1 ].branch.compare_ )
                 );
         } );
@@ -1836,13 +1832,7 @@ AvlBranch_.prototype.minusEntry = function ( yoke, k, then ) {
         function ( yoke, kVsSelf ) {
     
     if ( kVsSelf === 0 )
-        return avlBranchConcatenate_( yoke, self.branches_,
-            function ( yoke, depthChanges, tree ) {
-            
-            var maxDepthDecreased = !(depthChanges[ -1 ].sign === 1 &&
-                depthChanges[ 1 ].sign === 1);
-            return then( yoke, maxDepthDecreased, tree );
-        } );
+        return avlBranchFinishMinus_( yoke, self.branches_, then );
     
     return self.branches_[ kVsSelf ].branch.minusEntry( yoke, k,
         function ( yoke, maxDepthDecreased, branchRemaining ) {
