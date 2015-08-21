@@ -1434,11 +1434,13 @@ AvlBranch_.prototype.plusEntry = function ( yoke, k, v, then ) {
     //  - Adding the entry to one side caused that side to have much
     //    more max depth than the other, and it didn't lose that edge
     //    during a rebalancing.
-    var finalMaxDepthIncreased = maxDepthIncreased &&
-        self.branches_[ -kVsSelf ].maxDepthAdvantage === null &&
+    var finalMaxDepthIncreased =
         (self.branches_[ kVsSelf ].maxDepthAdvantage === null
-            || (self.branches_[ kVsSelf ].maxDepthAdvantage !== null
-                && depthChanges[ kVsSelf ].sign === 1));
+            && tree.branches_[ kVsSelf ].maxDepthAdvantage !== null
+        ) ||
+        (maxDepthIncreased
+            && self.branches_[ kVsSelf ].maxDepthAdvantage !== null
+            && depthChanges[ kVsSelf ].sign !== -1);
     return then( yoke, finalMaxDepthIncreased, tree );
     
     } );

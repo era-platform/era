@@ -1087,8 +1087,8 @@
           (and-yep-nope max-depth-decreased
           /and-yep-nope (not-yep-nope bigint-is-zero.balanced-wub)
             (case
-              (bigint-compare w-depth-change
-                bigint-as-one.w-depth-change)
+              (bigint-compare bigint-as-zero.w-depth-change
+                w-depth-change)
               nil (nope/nil)
               (yep/nil))))
         
@@ -1103,7 +1103,48 @@
     /yep/avl-branch fixops compare k v
     /avl-branches zero tree zero tree)
   /case tree avl-branch fixops compare key val branches
-    - \ TODO
+    (caselet polarity (c compare key k) nil
+      (nope/avl-branch fixops compare k v branches)
+    /cast (avl-branches-swap polarity branches)
+      avl-branches wub wbranch tub tbranch
+      err.\-qq[Expected a branches value of type avl-branches]
+    /cast
+      (case (avl-plus-entry tbranch k v)
+        nope result (cons (nope/nil) result)
+        yep result (cons (yep/nil) result)
+        err.\-qq[Expected a branches value of type avl-branches])
+      cons max-depth-increased tbranch
+      err.\-qq[Internal error]
+    /let new-tub
+      (case max-depth-increased yep -
+        (bigint-plus tub bigint-as-one.tub)
+        tub)
+    /cast
+      (improper-avl-branch-balance-result-swap polarity
+      /improper-avl-branch-balance
+      /avl-branch fixops compare key val
+      /avl-branches-swap polarity
+      /avl-branches wub wbranch new-tub tbranch)
+      improper-avl-branch-balance-result
+      w-depth-change t-depth-change balanced-tree
+      err.\-qq[Internal error]
+    /cast balanced-tree avl-branch - - - - balanced-branches
+      err.\-qq[Internal error]
+    /cast balanced-branches
+      avl-branches balanced-wub - balanced-tub -
+      err.\-qq[Internal error]
+    /yep-nope-swap
+      (or-yep-nope
+        (and-yep-nope bigint-is-zero.tub
+        /not-yep-nope bigint-is-zero.balanced-tub)
+        (and-yep-nope max-depth-increased
+        /and-yep-nope (not-yep-nope bigint-is-zero.balanced-tub)
+          (case
+            (bigint-compare w-depth-change
+              bigint-as-zero.w-depth-change)
+            yep - (nope/nil)
+            (yep/nil))))
+      balanced-tree)
     err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
 
 (defn avl-minus-entry tree k
