@@ -1391,7 +1391,7 @@ AvlBranch_.prototype.minusExtremeEntry = function ( yoke,
         ) ||
         (maxDepthDecreased
             && self.branches_[ -kPolarity ].maxDepthAdvantage !== null
-            && depthChanges[ -kPolarity ].sign !== 1);
+            && depthChanges[ -kPolarity ].sign === -1);
     return then( yoke, finalMaxDepthDecreased, entry, tree );
     
     } );

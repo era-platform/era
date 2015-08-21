@@ -1026,18 +1026,53 @@
     - \ TODO
     ))
 
-(defn avl-branch-concatenate branches
+(def-type avl-minus-extreme-entry-succeeded
+  max-depth-decreased k v tree-remaining)
+
+(defn avl-branch-concatenate fixops compare branches
   (cast branches avl-branches nub nbranch yub ybranch
     err.\-qq[Expected a branches value of type avl-branches]
-    - \ TODO
-    ))
+  /let attempt-shift
+    (fn polarity on-fail
+      (cast branches (avl-branches-swap polarity branches)
+        avl-branches wub wbranch tub tbranch
+        err.\-qq[Internal error]
+      /case (c-new avl-minus-extreme-entry wbranch polarity)
+        
+        nope - (c on-fail /nil)
+        
+        avl-minus-extreme-entry-succeeded
+        max-depth-decreased k v tree-remaining
+        (let inc (fn n /bigint-plus n bigint-as-one.n)
+        /let tub
+          (case max-depth-decreased yep -
+            inc.tub
+            tub)
+        /cast
+          (improper-avl-branch-balance-result-swap polarity
+          /improper-avl-branch-balance/avl-branch fixops compare k v
+          /avl-branches-swap polarity
+          /avl-branches wub wbranch tub tbranch)
+          improper-avl-branch-balance-result
+          w-depth-change t-depth-change tree
+        /improper-avl-branch-balance-result-swap polarity
+        /improper-avl-branch-balance-result
+          (case max-depth-decreased yep -
+            w-depth-change
+            inc.w-depth-change)
+          inc.t-depth-change
+          tree)
+        
+        err.\-qq[Internal error]))
+  
+  /attempt-shift (yep/nil) /fn -
+  /attempt-shift (nope/nil) /fn -
+  /let zero bigint-zero-for-fixops.fixops
+  /improper-avl-branch-balance-result zero zero ybranch))
 
 (defn avl-merge a b process-both
   - \ TODO
   )
-
-(def-type avl-minus-extreme-entry-succeeded
-  max-depth-decreased k v tree-remaining)
 
 (defn avl-minus-extreme-entry tree k-polarity
   (case tree avl-leaf fixops compare
@@ -1089,7 +1124,7 @@
             (case
               (bigint-compare bigint-as-zero.w-depth-change
                 w-depth-change)
-              nil (nope/nil)
+              yep - (nope/nil)
               (yep/nil))))
         
         subtracted-key subtracted-val balanced-tree)
@@ -1109,10 +1144,10 @@
       avl-branches wub wbranch tub tbranch
       err.\-qq[Expected a branches value of type avl-branches]
     /cast
-      (case (avl-plus-entry tbranch k v)
+      (case (c-new avl-plus-entry tbranch k v)
         nope result (cons (nope/nil) result)
         yep result (cons (yep/nil) result)
-        err.\-qq[Expected a branches value of type avl-branches])
+        err.\-qq[Internal error])
       cons max-depth-increased tbranch
       err.\-qq[Internal error]
     /let new-tub
@@ -1134,24 +1169,93 @@
       avl-branches balanced-wub - balanced-tub -
       err.\-qq[Internal error]
     /yep-nope-swap
+      
+      \ There are two ways the overall max depth can increase:
+      \
+      \  - Adding the entry to one side caused that side to start
+      \    having more max depth than the other.
+      \  - Adding the entry to one side caused that side to have much
+      \    more max depth than the other, and it didn't lose that edge
+      \    during a rebalancing.
+      \
       (or-yep-nope
         (and-yep-nope bigint-is-zero.tub
         /not-yep-nope bigint-is-zero.balanced-tub)
         (and-yep-nope max-depth-increased
         /and-yep-nope (not-yep-nope bigint-is-zero.balanced-tub)
           (case
-            (bigint-compare w-depth-change
-              bigint-as-zero.w-depth-change)
-            yep - (nope/nil)
+            (bigint-compare bigint-as-zero.t-depth-change
+              t-depth-change)
+            nope - (nope/nil)
             (yep/nil))))
-      balanced-tree)
+      yep.balanced-tree)
     err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
 
 (defn avl-minus-entry tree k
   (case tree avl-leaf fixops compare
     nope.tree
   /case tree avl-branch fixops compare key val branches
-    - \ TODO
+    (caselet polarity (c compare key k) nil
+      (cast (avl-branch-concatenate fixops compare branches)
+        improper-avl-branch-balance-result
+        w-depth-change t-depth-change tree
+        err.\-qq[Internal error]
+      /yep-nope-swap
+        (let is-positive
+          (fn n
+            (case (bigint-compare bigint-as-zero.n n) yep -
+              (yep/nil)
+              (nope/nil)))
+        /not-yep-nope/and-yep-nope
+          is-positive.w-depth-change
+          is-positive.t-depth-change)
+        yep.tree)
+    /cast
+      (case (c-new avl-minus-entry tbranch k)
+        nope result (cons (nope/nil) result)
+        yep result (cons (yep/nil) result)
+        err.\-qq[Internal error])
+      cons max-depth-decreased tbranch
+      err.\-qq[Internal error]
+    /let new-wub
+      (case max-depth-decreased yep -
+        (bigint-plus tub bigint-as-one.tub)
+        tub)
+    /cast
+      (improper-avl-branch-balance-result-swap polarity
+      /improper-avl-branch-balance
+      /avl-branch fixops compare key val
+      /avl-branches-swap polarity
+      /avl-branches new-wub wbranch tub tbranch)
+      improper-avl-branch-balance-result
+      w-depth-change t-depth-change balanced-tree
+      err.\-qq[Internal error]
+    /cast balanced-tree avl-branch - - - - balanced-branches
+      err.\-qq[Internal error]
+    /cast balanced-branches
+      avl-branches balanced-wub - balanced-tub -
+      err.\-qq[Internal error]
+    /yep-nope-swap
+      
+      \ There are two ways the overall max depth can decrease:
+      \
+      \  - Subtracting the entry from one side caused that side to
+      \    stop having more max depth than the other.
+      \  - Subtracting the entry from one side caused that side to
+      \    have much less max depth than the other, and the other lost
+      \    some depth during a rebalancing.
+      \
+      (or-yep-nope
+        (and-yep-nope (not-yep-nope bigint-is-zero.tub)
+          bigint-is-zero.balanced-tub)
+        (and-yep-nope max-depth-increased
+        /and-yep-nope (not-yep-nope bigint-is-zero.balanced-tub)
+          (case
+            (bigint-compare bigint-as-zero.w-depth-change
+              w-depth-change)
+            nope - (yep/nil)
+            (nope/nil))))
+      yep.balanced-tree)
     err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
 
 \ NOTE: This body takes its args as (state k v).
