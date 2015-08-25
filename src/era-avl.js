@@ -1671,16 +1671,14 @@ function avlMerge_( yoke, processBoth, a, b, then ) {
             return unaryPlusBigUnary( yoke, a.abs, b, then );
     }
     
-    function combineBranchChanges( yoke,
-        thatBranch, thatChange, otherChange, then ) {
+    function combineBranchChanges( yoke, branchesToTest,
+        balancedChangesSignedUnary, subMergeChangesBigUnary, then ) {
         
-        // NOTE: This can call thatChange() or otherChange()
-        // synchronously.
-        
-        var getBranchChange = thatBranch.maxDepthAdvantage === null ?
-            otherChange : thatChange;
-        
-        return getBranchChange( yoke, then );
+        var polarity = a.branches_[ -1 ] === null ? 1 : -1;
+        return signedUnaryPlusBigUnary( yoke,
+            balancedChangesSignedUnary[ polarity ],
+            subMergeChangesBigUnary[ polarity ],
+            then );
     }
     
     
@@ -1729,23 +1727,14 @@ function avlMerge_( yoke, processBoth, a, b, then ) {
         
         // TODO: See if iterating over `balancedChanges` makes
         // avlMerge_() less efficient than it could be.
-        return combineBranchChanges( yoke, a.branches_[ -1 ],
-            function ( yoke, then ) {
-                return signedUnaryPlusBigUnary( yoke,
-                    balancedChanges[ -1 ], lesserChanges.left, then );
-            }, function ( yoke, then ) {
-                return signedUnaryPlusBigUnary( yoke,
-                    balancedChanges[ 1 ], biggerChanges.left, then );
-            }, function ( yoke, aChange ) {
-        return combineBranchChanges( yoke, b.branches_[ -1 ],
-            function ( yoke, then ) {
-                return signedUnaryPlusBigUnary( yoke,
-                    balancedChanges[ -1 ], lesserChanges.right, then
-                    );
-            }, function ( yoke, then ) {
-                return signedUnaryPlusBigUnary( yoke,
-                    balancedChanges[ 1 ], biggerChanges.right, then );
-            }, function ( yoke, bChange ) {
+        return combineBranchChanges( yoke, a.branches_,
+            balancedChanges,
+            { "-1": lesserChanges.left, "1": biggerChanges.left },
+            function ( yoke, aChange ) {
+        return combineBranchChanges( yoke, b.branches_,
+            balancedChanges,
+            { "-1": lesserChanges.right, "1": biggerChanges.right },
+            function ( yoke, bChange ) {
         
         var finalMaxDepthChanges = { left: aChange, right: bChange };
         return then( yoke, finalMaxDepthChanges, balanced );
@@ -1786,21 +1775,17 @@ function avlMerge_( yoke, processBoth, a, b, then ) {
         return avlBranchMakeBalanced_( yoke,
             b.key_, toRight( b.val_ ), branches,
             function ( yoke, balancedChanges, balanced ) {
-        // TODO: See if iterating over `balancedChanges[ aVsB ]` and
-        // `balancedChanges[ -aVsB ]` makes avlMerge_() less efficient
-        // than it could be.
+        // TODO: See if iterating over `balancedChanges` makes
+        // avlMerge_() less efficient than it could be.
         return signedUnaryPlusBigUnary( yoke,
             balancedChanges[ aVsB ], mergedChanges.left,
             function ( yoke, aChange ) {
-        return combineBranchChanges( yoke, b.branches_[ aVsB ],
-            function ( yoke, then ) {
-                return signedUnaryPlusBigUnary( yoke,
-                    balancedChanges[ aVsB ], mergedChanges.right, then
-                    );
-            }, function ( yoke, then ) {
-                return signedUnaryPlusBigUnary( yoke,
-                    balancedChanges[ -aVsB ], null, then );
-            }, function ( yoke, bChange ) {
+        return combineBranchChanges( yoke,
+            { "-1": b.branches_[ -aVsB ], "1": b.branches[ aVsB ] },
+            { "-1": balancedChanges[ -aVsB ],
+                "1": balancedChanges[ aVsB ] },
+            { "-1": null, "1": mergedChanges.right },
+            function ( yoke, bChange ) {
         
         var finalMaxDepthChanges = { left: aChange, right: bChange };
         return then( yoke, finalMaxDepthChanges, balanced );
