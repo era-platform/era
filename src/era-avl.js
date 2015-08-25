@@ -1450,9 +1450,6 @@ AvlBranch_.prototype.plusEntry = function ( yoke, k, v, then ) {
     
     } );
 };
-// TODO: Make this return depthChanges that compare the old branches
-// to the new branches, rather than comparing the old branches to the
-// new parent.
 function avlBranchMakeBalanced_( yoke, key, val, branches, then ) {
     return runWaitOne( yoke, function ( yoke ) {
     
@@ -1463,8 +1460,8 @@ function avlBranchMakeBalanced_( yoke, key, val, branches, then ) {
         || (mdLesser === null && mdBigger.rest === null)
         || (mdBigger === null && mdLesser.rest === null) )
         return then( yoke, {
-            "-1": { sign: 1, abs: { first: null, rest: null } },
-            "1": { sign: 1, abs: { first: null, rest: null } }
+            "-1": { sign: 0, abs: null },
+            "1": { sign: 0, abs: null }
         }, new AvlBranch_().init_( key, val, branches ) );
     
     if ( mdLesser === null ) {

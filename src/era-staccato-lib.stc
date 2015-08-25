@@ -1009,22 +1009,72 @@
   (case polarity yep - balance-result
   /cast balance-result
     improper-avl-branch-balance-result
-    nope-depth-change yep-depth-change balanced tree
+    nope-depth-change yep-depth-change balanced-tree
     err.\-qq[
       Expected a balance-result value of type
       improper-avl-branch-balance-result]
   /improper-avl-branch-balance-result
-    yep-depth-change nope-depth-change balanced tree))
+    yep-depth-change nope-depth-change balanced-tree))
 
-\ TODO: This is the ported name for avlBranchMakeBalanced_. Once we've
-\ finished porting, remove this TODO.
 (defn improper-avl-branch-balance tree
   (cast tree avl-branch fixops compare key val branches
     err.\-qq[Expected a tree value of type avl-branch]
   /cast branches avl-branches nub nbranch yub ybranch
     err.\-qq[Expected a branches value of type avl-branches]
-    - \ TODO
-    ))
+  /let bigint-minus-one (fn n /bigint-minus n bigint-as-one.n)
+  /let bigint-plus-one (fn n /bigint-plus n bigint-as-one.n)
+  /let bigint-lteq-one
+    (fn n
+      (case (bigint-compare n bigint-as-one.n) nope -
+        (nope/nil)
+        (yep/nil)))
+  /let n-is-zero bigint-is-zero.nub
+  /let y-is-zero bigint-is-zero.yub
+  /case (or-yep-nope n-is-zero y-is-zero) nope -
+    (c-new improper-avl-branch-balance
+    /avl-branch fixops compare key val
+    /avl-branches
+      bigint-minus-one.nub nbranch
+      bigint-minus-one.yub ybranch)
+  /case (and-yep-nope bigint-lteq-one.nub bigint-lteq-one.yub) yep -
+    (let zero bigint-zero-for-fixops.fixops
+    /improper-avl-branch-balance-result zero zero tree)
+  /let polarity y-is-zero
+  /cast (avl-branches-swap polarity branches)
+    avl-branches wub wbranch tub tbranch
+    err.\-qq[Internal error]
+  /cast (c-new avl-minus-extreme-entry wbranch polarity)
+    avl-minus-extreme-entry-succeeded
+    max-depth-decreased k v wbranch
+    err.\-qq[Internal error]
+  /cast
+    (case (c-new avl-plus-entry tbranch key val)
+      nope result (cons (nope/nil) result)
+      yep result (cons (yep/nil) result)
+      err.\-qq[Internal error])
+    cons max-depth-increased tbranch
+    err.\-qq[Internal error]
+  /let wub (case max-depth-decreased yep - bigint-minus-one.wub wub)
+  /let wub (case max-depth-increased yep - bigint-minus-one.wub wub)
+  /cast
+    (improper-avl-branch-balance-result-swap polarity
+    /c-new improper-avl-branch-balance /avl-branch fixops compare k v
+    /avl-branches-swap polarity
+    /avl-branches wub wbranch tub tbranch)
+    improper-avl-branch-balance-result
+    w-depth-change t-depth-change tree
+    err.\-qq[Internal error]
+  /let w-depth-change
+    (case max-depth-decreased yep -
+      bigint-minus-one.w-depth-change
+      w-depth-change)
+  /let t-depth-change
+    (case max-depth-decreased yep -
+      bigint-plus-one.t-depth-change
+      t-depth-change)
+  /improper-avl-branch-balance-result-swap polarity
+  /improper-avl-branch-balance-result
+    w-depth-change t-depth-change tree))
 
 (def-type avl-minus-extreme-entry-succeeded
   max-depth-decreased k v tree-remaining)
