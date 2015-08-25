@@ -1674,6 +1674,8 @@ function avlMerge_( yoke, processBoth, a, b, then ) {
     function combineBranchChanges( yoke, branchesToTest,
         balancedChangesSignedUnary, subMergeChangesBigUnary, then ) {
         
+        // TODO: See if iterating over `balancedChangesSignedUnary`
+        // makes avlMerge_() less efficient than it could be.
         var polarity = a.branches_[ -1 ] === null ? 1 : -1;
         return signedUnaryPlusBigUnary( yoke,
             balancedChangesSignedUnary[ polarity ],
@@ -1724,9 +1726,6 @@ function avlMerge_( yoke, processBoth, a, b, then ) {
             toBothKeys( a.key_, b.key_ ), toBoth( a.val_, b.val_ ),
             branches,
             function ( yoke, balancedChanges, balanced ) {
-        
-        // TODO: See if iterating over `balancedChanges` makes
-        // avlMerge_() less efficient than it could be.
         return combineBranchChanges( yoke, a.branches_,
             balancedChanges,
             { "-1": lesserChanges.left, "1": biggerChanges.left },
@@ -1741,7 +1740,6 @@ function avlMerge_( yoke, processBoth, a, b, then ) {
         
         } );
         } );
-        
         } );
         
         } );
@@ -1775,8 +1773,6 @@ function avlMerge_( yoke, processBoth, a, b, then ) {
         return avlBranchMakeBalanced_( yoke,
             b.key_, toRight( b.val_ ), branches,
             function ( yoke, balancedChanges, balanced ) {
-        // TODO: See if iterating over `balancedChanges` makes
-        // avlMerge_() less efficient than it could be.
         return signedUnaryPlusBigUnary( yoke,
             balancedChanges[ aVsB ], mergedChanges.left,
             function ( yoke, aChange ) {
