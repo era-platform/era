@@ -1643,7 +1643,7 @@ function avlMerge_( yoke, processBoth, a, b, then ) {
     function mapRight( yoke, bBranch, then ) {
         if ( simpleMerging )
             return runWaitOne( yoke, function ( yoke ) {
-                return then( yoke, aBranch );
+                return then( yoke, bBranch );
             } );
         bBranch.mapShortFoldAsc( yoke, null,
             function ( yoke, state, k, v, then ) {
@@ -1680,12 +1680,7 @@ function avlMerge_( yoke, processBoth, a, b, then ) {
         var getBranchChange = thatBranch.maxDepthAdvantage === null ?
             otherChange : thatChange;
         
-        return getBranchChange( yoke,
-            function ( yoke, branchChange ) {
-            
-            return negativeUnaryPlusUnary( yoke,
-                { first: null, rest: null }, branchChange, then );
-        } );
+        return getBranchChange( yoke, then );
     }
     
     
@@ -1750,11 +1745,9 @@ function avlMerge_( yoke, processBoth, a, b, then ) {
             }, function ( yoke, then ) {
                 return signedUnaryPlusBigUnary( yoke,
                     balancedChanges[ 1 ], biggerChanges.right, then );
-            }, function ( yoke, aChange ) {
+            }, function ( yoke, bChange ) {
         
         var finalMaxDepthChanges = { left: aChange, right: bChange };
-        // TODO: Change `finalMaxDepthChanges` based on the depth
-        // changes.
         return then( yoke, finalMaxDepthChanges, balanced );
         
         } );
