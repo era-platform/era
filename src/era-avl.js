@@ -1137,10 +1137,10 @@ BigInt.prototype.divModTowardZero = function ( yoke, other, then ) {
     
     // NOTE: These examples may clarify the following negations.
     //
-    //  9  /   2  =   4  R   1  because   9  =   2  *   4  +   1
-    //  9  /  -2  =  -4  R   1  because   9  =  -2  *  -4  +   1
-    // -9  /   2  =  -4  R  -1  because  -9  =   2  *  -4  +  -1
-    // -9  /  -2  =   4  R  -1  because  -9  =  -2  *   4  +  -1
+    //   9  /   2  =   4  R   1  because   9  =   2  *   4  +   1
+    //   9  /  -2  =  -4  R   1  because   9  =  -2  *  -4  +   1
+    //  -9  /   2  =  -4  R  -1  because  -9  =   2  *  -4  +  -1
+    //  -9  /  -2  =   4  R  -1  because  -9  =  -2  *   4  +  -1
     //
     if ( self.sign_ === -1 )
         return self.neg().divMod( yoke, other,

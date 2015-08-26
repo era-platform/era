@@ -945,10 +945,10 @@
   
   \ NOTE: These examples may clarify the following signs.
   \
-  \  9  /   2  =   4  R   1  because   9  =   2  *   4  +   1
-  \  9  /  -2  =  -4  R   1  because   9  =  -2  *  -4  +   1
-  \ -9  /   2  =  -4  R  -1  because  -9  =   2  *  -4  +  -1
-  \ -9  /  -2  =   4  R  -1  because  -9  =  -2  *   4  +  -1
+  \   9  /   2  =   4  R   1  because   9  =   2  *   4  +   1
+  \   9  /  -2  =  -4  R   1  because   9  =  -2  *  -4  +   1
+  \  -9  /   2  =  -4  R  -1  because  -9  =   2  *  -4  +  -1
+  \  -9  /  -2  =   4  R  -1  because  -9  =  -2  *   4  +  -1
   
   /case n
     
@@ -1192,12 +1192,11 @@
       nbranch)
     err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
 
-(defn avl-merge a b process-both
-  (let simple-merging (case process-both nil (yep/nil) (nope/nil))
+(defn avl-merge a b maybe-process-both
   \ TOOD: Make sure this algorithm is near-optimal both when
-  \ `simple-merging` is true and when it's false. When it's false,
-  \ this algorithm certainly takes at least O( m + n ) time because it
-  \ it transforms every element.
+  \ `maybe-process-both` is (yep ...) and when it's (nil). When it's
+  \ (nil), this algorithm certainly takes at least O( m + n ) time
+  \ because it transforms every element.
   \
   \ Online forum advice for merging AVL trees seems to recommend the
   \ use of sorted vectors, building the tree by bisecting the vector.
@@ -1206,33 +1205,33 @@
   \ that's not an obvious way forward.
   \
   \ (Yes, we're worrying about bigint operation complexity while not
-  \ worrying about JavaScript object allocation complexity.)
+  \ worrying about memory allocation complexity.)
   
-  /let to-left
+  (let to-left
     (fn val
-      (case simple-merging yep -
+      (case maybe-process-both yep -
         val
         (cons yep.val (nil))))
-  /let to-left
+  /let to-right
     (fn val
-      (case simple-merging yep -
+      (case maybe-process-both yep -
         val
         (cons (nil) yep.val)))
   /let to-both-keys (fn left right right)
   /let to-both
     (fn left right
-      (case simple-merging yep -
+      (case maybe-process-both yep process-both
         (c process-both left right)
         (cons yep.left yep.right)))
   /let map-left
     (fn a-branch
-      (case simple-merging yep -
+      (case maybe-process-both yep -
         a-branch
         (avl-map-short-fold-asc (nil) a-branch /fn state k v
           (nope/c to-left v))))
   /let map-right
     (fn b-branch
-      (case simple-merging yep -
+      (case maybe-process-both yep -
         b-branch
         (avl-map-short-fold-asc (nil) b-branch /fn state k v
           (nope/c to-right v))))
@@ -1259,11 +1258,11 @@
       err.\-qq[Expected an a-branches value of type avl-branches]
     /cast b-branches avl-branches b-nub b-nbranch b-yub b-ybranch
       err.\-qq[Expected a b-branches value of type avl-branches]
-    /cast (c-new avl-merge a-nbranch b-nbranch)
+    /cast (c-new avl-merge a-nbranch b-nbranch maybe-process-both)
       depth-changed an-change bn-change nbranch
       err.\-qq[Internal error]
     /let nub (bigint-plus a-nub an-change)
-    /cast (c-new avl-merge a-ybranch b-ybranch)
+    /cast (c-new avl-merge a-ybranch b-ybranch maybe-process-both)
       depth-changed ay-change by-change ybranch
       err.\-qq[Internal error]
     /let yub (bigint-plus a-yub ay-change)
@@ -1292,7 +1291,9 @@
     /cast (avl-branches-swap b-lt-a b-branches)
       avl-branches b-wub b-wbranch b-tub b-tbranch
       err.\-qq[Expected a b-branches value of type avl-branches]
-    /cast (depth-changed-swap b-lt-a /c-new avl-merge a b-tbranch)
+    /cast
+      (depth-changed-swap b-lt-a
+      /c-new avl-merge a b-tbranch maybe-process-both)
       depth-changed a-merge-change b-merge-change tbranch
       err.\-qq[Internal error]
     /let wbranch (c map-right b-wbranch)
@@ -1529,7 +1530,7 @@
     err.\-qq[Internal error]))
 
 (defn avl-plus a b
-  (cast (avl-merge a b /fn a b b)
+  (cast (avl-merge a b /yep/fn a b b)
     depth-changed n-depth-change y-depth-change tree
     err.\-qq[Internal error]
     tree))
