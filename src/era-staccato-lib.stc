@@ -1538,11 +1538,132 @@
 
 \ ===== Finger trees =================================================
 
-\ TODO: Port era-avl.js's finger trees. Finger trees don't have their
-\ best amortized computational complexity unless they can use lazy
-\ thunks, so they're not like the other, stateless utilities here. Do
-\ we want that impurity?
+\ NOTE: Finger trees don't have their best amortized computational
+\ complexity unless they can use lazy thunks, so they're not like the
+\ other, stateless utilities here.
 
+\ TODO: Finish porting era-avl.js's finger trees.
+
+(defn make-immediate-lazy make-lazy val
+  (c make-lazy /fn - val))
+
+(defn list-order-swap polarity list
+  (case polarity yep - list rev.list))
+
+(defn list-append-with-polarity polarity past rest
+  (list-order-swap polarity /append
+    (list-order-swap polarity past)
+    (list-order-swap polarity rest)))
+
+(defn list-cut-with-polarity polarity list-to-measure-by list-to-cut
+  (cast (cut list-to-measure-by /list-order-swap polarity list-to-cut)
+    cons past rest
+    err.\-qq[Internal error]
+  /cons
+    (list-order-swap polarity past)
+    (list-order-swap polarity rest)))
+
+(def-type ftree-meta make-lazy force measure plus)
+(def-type ftree-node summary elements)
+
+\ NOTE: The values of `n-digits` and `y-digits` are lists of one to
+\ four elements. When used directly in an `ftree-deep`, the elements
+\ in `n-digits` are the first ones, and the keys in `y-digits` are the
+\ last ones.
+(def-type ftree-digits n-digits y-digits)
+
+(def-type ftree-empty meta)
+(def-type ftree-single meta element)
+
+\ NOTE: The value of `lazy-next` is a `make-lazy` object that
+\ calculates a finger tree containing "nodes" containing the type of
+\ elements of this finger tree. A node is an object of the form
+\ (ftree-node summary elements), where `elements` is a list of two or
+\ three elements.
+(def-type ftree-deep meta digits lazy-next)
+
+(defn ftree-digits-swap polarity digits
+  (case polarity yep - digits
+  /cast digits ftree-digits n-digits y-digits
+    err.\-qq[Expected a digits value of type ftree-digits]
+  /ftree-digits y-digits n-digits))
+
+(defn ftree-push tree polarity new-element
+  (case tree ftree-empty meta
+    (ftree-single meta new-element)
+  /case tree ftree-single meta element
+    (cast meta ftree-meta make-lazy force measure plus
+      err.\-qq[Expected a meta value of type ftree-meta]
+    /let sub-measure
+      (fn node
+        (cast node ftree-node summary elements
+          err.\-qq[Expected a node value of type ftree-node]
+          summary))
+    /ftree-deep meta
+      (ftree-digits-swap polarity
+      /ftree-digits (cons element /nil) (cons new-element /nil))
+    /make-immediate-lazy make-lazy
+    /ftree-empty/ftree-meta make-lazy force sub-measure plus)
+  /case tree ftree-deep meta digits lazy-next
+    - \ TODO
+    err.\-qq[
+      Expected a tree value of type ftree-empty, ftree-single, or
+      ftree-deep]))
+
+(def-type ftree-pop-result maybe-popped-val tree)
+
+(defn ftree-pop tree polarity
+  (case tree ftree-empty meta
+    (ftree-pop-result (nil) tree)
+  /case tree ftree-single meta element
+    (ftree-pop-result yep.element ftree-empty.meta)
+  /case tree ftree-deep meta digits lazy-next
+    - \ TODO
+    err.\-qq[
+      Expected a tree value of type ftree-empty, ftree-single, or
+      ftree-deep]))
+
+(defn ftree-get-summary-stack tree
+  (case tree ftree-empty meta
+    (cast meta ftree-meta make-lazy force measure plus
+      err.\-qq[Expected a meta value of type ftree-meta]
+    /cons (c plus /nil) /nil)
+  /case tree ftree-single meta element
+    (cast meta ftree-meta make-lazy force measure plus
+      err.\-qq[Expected a meta value of type ftree-meta]
+    /cons (c measure element) /nil)
+  /case tree ftree-deep meta digits lazy-next
+    - \ TODO
+    err.\-qq[
+      Expected a tree value of type ftree-empty, ftree-single, or
+      ftree-deep]))
+
+(def-type ftree-split-iter-result-fell-off summary-so-far)
+(def-type ftree-split-iter-result-completed early-tree late-tree)
+
+(defn ftree-split-iter
+  tree summary-so-far summary-stack polarity test-is-early
+  (case tree ftree-empty meta
+    ftree-split-iter-result-fell-off.summary-so-far
+  /case tree ftree-single meta element
+    (let summary-so-far
+      (c plus /list-append-with-polarity polarity
+        (cons (c measure element) /nil)
+        (cons summary-so-far /nil))
+    /case (c test-is-early summary-so-far) yep -
+      ftree-split-iter-result-fell-off.summary-so-far
+    /ftree-split-iter-result-completed ftree-empty.meta tree)
+  /case tree ftree-deep meta digits lazy-next
+    - \ TODO
+    err.\-qq[
+      Expected a tree value of type ftree-empty, ftree-single, or
+      ftree-deep]))
+
+\ TODO: Port makeFingerTreeMaybeDeep, fingerTreePushArr,
+\ fingerTreeCat, and fingerTreeSplit.
+
+
+\ ===== Finishing up and some basic unit tests =======================
 
 (run-defs)
 

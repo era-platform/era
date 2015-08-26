@@ -2121,8 +2121,7 @@ function arrCutWithPolarity( polarity, arr, start, stop ) {
     if ( polarity === 1 )
         return arr.slice( start, stop );
     else
-        return arr.slice(
-            arr.length - 1 - start, arr.length - 1 - stop );
+        return arr.slice( arr.length - stop, arr.length - start );
 }
 
 // Finger trees have three cases and four methods:
@@ -2438,7 +2437,7 @@ FingerTreeDeep.prototype.split = function ( yoke, summarySoFar,
                     { summarySoFar: summarySoFar, i: state.i + 1 },
                     !"exitedEarly" );
             else
-                return then( yoke, state.i, !!"exitedEarly" );
+                return then( yoke, state, !!"exitedEarly" );
             
             } );
             } );
