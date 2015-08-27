@@ -2408,13 +2408,11 @@ FingerTreeDeep.prototype.split = function ( yoke, summarySoFar,
     if ( summaryStack === null )
         throw new Error();
     
-    function tryDigit( yoke,
-        summarySoFar, digits, polarity2, onFailed ) {
-        
+    function tryDigit( yoke, summarySoFar, polarity2, onFailed ) {
         return jsListShortFoldl( yoke,
             { summarySoFar: summarySoFar, i: 0 },
             jsListFromSmallArr(
-                digits[ polarity2 ].slice().reverse() ),
+                self.digits_[ polarity2 ].slice().reverse() ),
             function ( yoke, state, elem, then ) {
             
             return self.meta_.measure( yoke, elem,
@@ -2440,13 +2438,13 @@ FingerTreeDeep.prototype.split = function ( yoke, summarySoFar,
             if ( !exitedEarly )
                 return onFailed( yoke, state.summarySoFar );
             
-            var n = digits[ polarity2 ].length;
+            var n = self.digits_[ polarity2 ].length;
             var negDigits = {};
-            negDigits[ -polarity2 ] = digits[ -polarity2 ];
+            negDigits[ -polarity2 ] = self.digits_[ -polarity2 ];
             var cutI = polarity2 === polarity ? n - state.i : state.i;
             negDigits[ polarity2 ] =
-                digits[ polarity2 ].cut( 0, cutI );
-            var posDigits = digits[ polarity2 ].cut( cutI, n );
+                self.digits_[ polarity2 ].cut( 0, cutI );
+            var posDigits = self.digits_[ polarity2 ].cut( cutI, n );
             
             return fingerTreePushArr( yoke,
                 new FingerTreeEmpty().init_( self.meta_ ),
@@ -2477,7 +2475,7 @@ FingerTreeDeep.prototype.split = function ( yoke, summarySoFar,
         return onFellOff( yoke, summary );
     
     // Try each of the `polarity`-side digits.
-    return tryDigit( yoke, summarySoFar, self.digits_, polarity,
+    return tryDigit( yoke, summarySoFar, polarity,
         function ( yoke, summarySoFar ) {
     
     // Try a recursive call on the `lazyNext_`.
@@ -2502,7 +2500,7 @@ FingerTreeDeep.prototype.split = function ( yoke, summarySoFar,
     function nextStep( yoke, summarySoFar ) {
     
     // Try each of the `-polarity`-side digits.
-    return tryDigit( yoke, summarySoFar, self.digits_, -polarity,
+    return tryDigit( yoke, summarySoFar, -polarity,
         function ( yoke, summarySoFar ) {
     
     return onFellOff( yoke, summarySoFar );
