@@ -2416,17 +2416,20 @@ FingerTreeDeep.prototype.split = function ( yoke, summarySoFar,
     if ( summaryStack === null )
         throw new Error();
     
-    function tryDigit( yoke, summarySoFar, digitElements, then ) {
+    function tryDigit( yoke,
+        summarySoFar, digits, polarity2, onFailed ) {
+        
         return jsListShortFoldl( yoke,
             { summarySoFar: summarySoFar, i: 0 },
-            jsListFromSmallArr( polarity === 1 ?
-                digitElements.slice().reverse() : digitElements ),
+            jsListFromSmallArr( polarity2 === 1 ?
+                digits[ polarity2 ].slice().reverse() :
+                digits[ polarity2 ] ),
             function ( yoke, state, elem, then ) {
             
             return self.meta_.measure( yoke, elem,
                 function ( yoke, summary ) {
             return self.meta_.plus( yoke,
-                arrPlusWithPolarity( polarity,
+                arrPlusWithPolarity( polarity2,
                     [ summary ], [ state.summarySoFar ] ),
                 function ( yoke, summarySoFar ) {
             return testIsEarly( yoke, summarySoFar,
@@ -2442,7 +2445,37 @@ FingerTreeDeep.prototype.split = function ( yoke, summarySoFar,
             } );
             } );
             } );
-        }, then );
+        }, function ( yoke, state, exitedEarly ) {
+            if ( !exitedEarly )
+                return onFailed( yoke, state.summarySoFar );
+            
+            var n = digits[ polarity2 ].length;
+            var negDigits = {};
+            negDigits[ -polarity2 ] = digits[ -polarity2 ];
+            var cutI = polarity2 === polarity ? n - state.i : state.i;
+            negDigits[ polarity2 ] = arrCutWithPolarity(
+                polarity2, digits[ polarity2 ], 0, cutI );
+            var posDigits = arrCutWithPolarity(
+                polarity2, digits[ polarity2 ], cutI, n );
+            
+            return fingerTreePushArr( yoke,
+                new FingerTreeEmpty().init_( self.meta_ ),
+                polarity2,
+                polarity2 === 1 ?
+                    posDigits : posDigits.slice().reverse(),
+                function ( yoke, posTree ) {
+            return makeFingerTreeMaybeDeep( yoke,
+                polarity2, self.meta_, negDigits, self.lazyNext_,
+                function ( yoke, negTree ) {
+            
+            if ( polarity2 === polarity )
+                return onCompleted( yoke, posTree, negTree );
+            else
+                return onCompleted( yoke, negTree, posTree );
+            
+            } );
+            } );
+        } );
     }
     
     return self.meta_.plus( yoke,
@@ -2455,40 +2488,14 @@ FingerTreeDeep.prototype.split = function ( yoke, summarySoFar,
         return onFellOff( yoke, summary );
     
     // Try each of the `polarity`-side digits.
-    return tryDigit( yoke, summarySoFar, self.digits_[ polarity ],
-        function ( yoke, state, exitedEarly ) {
-    
-    if ( exitedEarly ) {
-        var n = self.digits_[ polarity ].length;
-        var lateDigits = {};
-        lateDigits[ -polarity ] = self.digits_[ -polarity ];
-        lateDigits[ polarity ] = arrCutWithPolarity(
-            polarity, self.digits_[ polarity ], 0, n - state.i );
-        var earlyDigits = arrCutWithPolarity(
-            polarity, self.digits_[ polarity ], n - state.i, n );
-        
-        return fingerTreePushArr( yoke,
-            new FingerTreeEmpty().init_( self.meta_ ),
-            polarity,
-            polarity === 1 ?
-                earlyDigits : earlyDigits.slice().reverse(),
-            function ( yoke, earlyTree ) {
-        return makeFingerTreeMaybeDeep( yoke, polarity,
-            self.meta_, lateDigits, self.lazyNext_,
-            function ( yoke, lateTree ) {
-        
-        return onCompleted( yoke, earlyTree, lateTree );
-        
-        } );
-        } );
-    }
-    
+    return tryDigit( yoke, summarySoFar, self.digits_, polarity,
+        function ( yoke, summarySoFar ) {
     
     // Try a recursive call on the `lazyNext_`.
     return self.lazyNext_.go( yoke, function ( yoke, nextTree ) {
     
     return nextTree.split( yoke,
-        state.summarySoFar, summaryStack.rest, polarity, testIsEarly,
+        summarySoFar, summaryStack.rest, polarity, testIsEarly,
         nextStep,
         function ( yoke, earlyTree, lateTree ) {
             return fingerTreePushArr( yoke, earlyTree,
@@ -2511,46 +2518,17 @@ FingerTreeDeep.prototype.split = function ( yoke, summarySoFar,
         } );
     function nextStep( yoke, summarySoFar ) {
     
-    
     // Try each of the `-polarity`-side digits.
-    return tryDigit( yoke, summarySoFar, self.digits_[ -polarity ],
-        function ( yoke, state, exitedEarly ) {
+    return tryDigit( yoke, summarySoFar, self.digits_, -polarity,
+        function ( yoke, summarySoFar ) {
     
-    if ( exitedEarly ) {
-        var n = self.digits_[ -polarity ].length;
-        var earlyDigits = {};
-        earlyDigits[ polarity ] = self.digits_[ polarity ];
-        earlyDigits[ -polarity ] = arrCutWithPolarity(
-            polarity, self.digits_[ -polarity ], n - state.i, n );
-        var lateDigits = arrCutWithPolarity(
-            polarity, self.digits_[ -polarity ], 0, n - state.i );
-        
-        return makeFingerTreeMaybeDeep( yoke, -polarity,
-            self.meta_, earlyDigits, self.lazyNext_,
-            function ( yoke, earlyTree ) {
-        return fingerTreePushArr( yoke,
-            new FingerTreeEmpty().init_( self.meta_ ),
-            -polarity,
-            -polarity === 1 ?
-                lateDigits : lateDigits.slice().reverse(),
-            function ( yoke, lateTree ) {
-        
-        return onCompleted( yoke, earlyTree, lateTree );
-        
-        } );
-        } );
-    }
-    
-    return onFellOff( yoke, state.summarySoFar );
-    
+    return onFellOff( yoke, summarySoFar );
     
     } );
-    
     
     }
     
     } );
-    
     
     } );
     
@@ -2576,9 +2554,9 @@ function makeFingerTreeMaybeDeep( yoke,
             return fingerTreePushArr( yoke,
                 new FingerTreeEmpty().init_( meta ),
                 -polarity,
-                polarity === 1 ?
-                    digits[ -polarity ].slice().reverse() :
-                    digits[ -polarity ],
+                -polarity === 1 ?
+                    digits[ -polarity ] :
+                    digits[ -polarity ].slice().reverse(),
                 function ( yoke, tree ) {
                 
                 return then( yoke, tree );
