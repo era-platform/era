@@ -2525,7 +2525,7 @@ FingerTreeDeep.prototype.split = function ( yoke, summarySoFar,
         var lateDigits = arrCutWithPolarity(
             polarity, self.digits_[ -polarity ], 0, n - state.i );
         
-        return makeFingerTreeMaybeDeep( yoke, polarity,
+        return makeFingerTreeMaybeDeep( yoke, -polarity,
             self.meta_, earlyDigits, self.lazyNext_,
             function ( yoke, earlyTree ) {
         return fingerTreePushArr( yoke,
@@ -2560,6 +2560,9 @@ FingerTreeDeep.prototype.split = function ( yoke, summarySoFar,
 };
 
 
+// This works like
+// `new FingerTreeDeep().init_( meta, digits, lazyNext )`, except that
+// this allows `digits[ polarity ]` to be empty.
 function makeFingerTreeMaybeDeep( yoke,
     polarity, meta, digits, lazyNext, then ) {
     
@@ -2574,8 +2577,8 @@ function makeFingerTreeMaybeDeep( yoke,
                 new FingerTreeEmpty().init_( meta ),
                 -polarity,
                 polarity === 1 ?
-                    digits[ -1 ].slice().reverse() :
-                    digits[ 1 ],
+                    digits[ -polarity ].slice().reverse() :
+                    digits[ -polarity ],
                 function ( yoke, tree ) {
                 
                 return then( yoke, tree );
