@@ -2271,7 +2271,10 @@ FingerTreeDeep.prototype.init_ = function ( meta, digits, lazyNext ) {
     // NOTE: The value of `digits` is an object of the form
     // { "-1": _, "1": _ }, where the elements are Arrays of one to
     // four elements. The elements in the -1 branch are the first
-    // ones, and the keys in the 1 branch are the last ones.
+    // ones, and the keys in the 1 branch are the last ones. In both
+    // of these Arrays, the elements toward the beginning of the Array
+    // are the ones furthest from the edge of the finger tree. This
+    // means the -1 branch may look backwards.
     
     // NOTE: The value of `lazyNext` is a `makeLazy()` object that
     // calculates a finger tree containing "nodes" containing the type
@@ -2293,32 +2296,23 @@ FingerTreeDeep.prototype.push = function ( yoke,
     digits[ -polarity ] = self.digits_[ -polarity ];
     
     if ( self.digits_[ polarity ].length === 4 ) {
-        digits[ polarity ] = arrPlusWithPolarity( polarity,
-            arrCutWithPolarity(
-                polarity, self.digits_[ polarity ], 3, 4 ),
-            [ element ] );
-        var newNodeElements = arrCutWithPolarity(
-            polarity, self.digits_[ polarity ], 0, 3 );
-        var newNodeElement0 = arrCutWithPolarity(
-            polarity, newNodeElements, 0, 1 )[ 0 ];
-        var newNodeElement1 = arrCutWithPolarity(
-            polarity, newNodeElements, 1, 2 )[ 0 ];
-        var newNodeElement2 = arrCutWithPolarity(
-            polarity, newNodeElements, 2, 3 )[ 0 ];
+        digits[ polarity ] =
+            [ self.digits_[ polarity ][ 3 ], element ];
+        var newNodeElementsUnordered =
+            self.digits_[ polarity ].cut( 0, 3 );
+        var newNodeElements = polarity === 1 ?
+            newNodeElementsUnordered :
+            newNodeElementsUnordered.slice().reverse();
         
-        return self.meta_.measure( yoke, newNodeElement0,
+        return self.meta_.measure( yoke, newNodeElements[ 0 ],
             function ( yoke, summary0 ) {
-        return self.meta_.measure( yoke, newNodeElement1,
+        return self.meta_.measure( yoke, newNodeElements[ 1 ],
             function ( yoke, summary1 ) {
-        return self.meta_.measure( yoke, newNodeElement2,
+        return self.meta_.measure( yoke, newNodeElements[ 2 ],
             function ( yoke, summary2 ) {
         
-        var summaries01 = arrCatWithPolarity(
-            polarity, [ summary0 ], [ summary1 ] );
-        var summaries012 = arrCatWithPolarity(
-            polarity, summaries01, [ summary2 ] );
-        
-        return self.meta_.plus( yoke, summaries012,
+        return self.meta_.plus( yoke,
+            [ summary0, summary1, summary2 ],
             function ( yoke, newNodeSummary ) {
         
         var newNode =
@@ -2351,8 +2345,8 @@ FingerTreeDeep.prototype.push = function ( yoke,
         } );
         } );
     } else {
-        digits[ polarity ] = arrPlusWithPolarity(
-            polarity, self.digits_[ polarity ], [ element ] );
+        digits[ polarity ] =
+            self.digits_[ polarity ].concat( [ element ] );
         return runWaitOne( yoke, function ( yoke ) {
             return then( yoke,
                 new FingerTreeDeep().init_(
@@ -2365,10 +2359,8 @@ FingerTreeDeep.prototype.pop = function ( yoke, polarity, then ) {
     var n = self.digits_[ polarity ].length;
     var digits = {};
     digits[ -polarity ] = self.digits_[ -polarity ];
-    digits[ polarity ] = arrCutWithPolarity(
-        polarity, self.digits_[ polarity ], 0, n - 1 );
-    var poppedElement = arrCutWithPolarity(
-        polarity, self.digits_[ polarity ], n - 1, n )[ 0 ];
+    digits[ polarity ] = self.digits_[ polarity ].cut( 0, n - 1 );
+    var poppedElement = self.digits_[ polarity ][ n - 1 ];
     return makeFingerTreeMaybeDeep( yoke,
         polarity, self.meta_, digits, self.lazyNext_,
         function ( yoke, tree ) {
@@ -2382,7 +2374,7 @@ FingerTreeDeep.prototype.getSummaryStack = function ( yoke, then ) {
     return next.getSummaryStack( yoke,
         function ( yoke, nextSummaryStack ) {
     return arrFoldlAsync( yoke, nextSummaryStack.first,
-        self.digits_[ -1 ].slice().reverse(),
+        self.digits_[ -1 ],
         function ( yoke, total, elem, then ) {
         
         return self.meta_.measure( yoke, elem,
@@ -2421,9 +2413,8 @@ FingerTreeDeep.prototype.split = function ( yoke, summarySoFar,
         
         return jsListShortFoldl( yoke,
             { summarySoFar: summarySoFar, i: 0 },
-            jsListFromSmallArr( polarity2 === 1 ?
-                digits[ polarity2 ].slice().reverse() :
-                digits[ polarity2 ] ),
+            jsListFromSmallArr(
+                digits[ polarity2 ].slice().reverse() ),
             function ( yoke, state, elem, then ) {
             
             return self.meta_.measure( yoke, elem,
@@ -2453,16 +2444,14 @@ FingerTreeDeep.prototype.split = function ( yoke, summarySoFar,
             var negDigits = {};
             negDigits[ -polarity2 ] = digits[ -polarity2 ];
             var cutI = polarity2 === polarity ? n - state.i : state.i;
-            negDigits[ polarity2 ] = arrCutWithPolarity(
-                polarity2, digits[ polarity2 ], 0, cutI );
-            var posDigits = arrCutWithPolarity(
-                polarity2, digits[ polarity2 ], cutI, n );
+            negDigits[ polarity2 ] =
+                digits[ polarity2 ].cut( 0, cutI );
+            var posDigits = digits[ polarity2 ].cut( cutI, n );
             
             return fingerTreePushArr( yoke,
                 new FingerTreeEmpty().init_( self.meta_ ),
                 polarity2,
-                polarity2 === 1 ?
-                    posDigits : posDigits.slice().reverse(),
+                posDigits,
                 function ( yoke, posTree ) {
             return makeFingerTreeMaybeDeep( yoke,
                 polarity2, self.meta_, negDigits, self.lazyNext_,
@@ -2498,17 +2487,11 @@ FingerTreeDeep.prototype.split = function ( yoke, summarySoFar,
         summarySoFar, summaryStack.rest, polarity, testIsEarly,
         nextStep,
         function ( yoke, earlyTree, lateTree ) {
-            return fingerTreePushArr( yoke, earlyTree,
-                polarity,
-                polarity === 1 ?
-                    self.digits_[ polarity ] :
-                    self.digits_[ polarity ].slice().reverse(),
+            return fingerTreePushArr( yoke,
+                earlyTree, polarity, self.digits_[ polarity ],
                 function ( yoke, earlyTree ) {
-            return fingerTreePushArr( yoke, lateTree,
-                -polarity,
-                -polarity === 1 ?
-                    self.digits_[ -polarity ] :
-                    self.digits_[ -polarity ].slice().reverse(),
+            return fingerTreePushArr( yoke,
+                lateTree, -polarity, self.digits_[ -polarity ],
                 function ( yoke, lateTree ) {
             
             return onCompleted( yoke, earlyTree, lateTree );
@@ -2564,7 +2547,9 @@ function makeFingerTreeMaybeDeep( yoke,
         } else {
             var newDigits = {};
             newDigits[ -polarity ] = digits[ -polarity ];
-            newDigits[ polarity ] = maybeNode.val.elements;
+            newDigits[ polarity ] = polarity === 1 ?
+                maybeNode.val.elements :
+                maybeNode.val.elements.slice().reverse();
             return then( yoke,
                 new FingerTreeDeep().init_(
                     meta, newDigits, makeImmediateLazy( rest ) ) );
@@ -2615,8 +2600,8 @@ function fingerTreeCat( yoke, a, middleElems, b, then ) {
     digits[ 1 ] = b.digits_[ 1 ];
     var aNext = a.lazyNext_;
     var bNext = b.lazyNext_;
-    var nextMiddleElems =
-        [].concat( a.digits_[ 1 ], middleElems, b.digits_[ -1 ] );
+    var nextMiddleElems = [].concat( a.digits_[ 1 ], middleElems,
+        b.digits_[ -1 ].slice().reverse() );
     return runWaitOne( yoke, function ( yoke ) {
         return then( yoke,
             new FingerTreeDeep().init_( a.meta_, digits,
