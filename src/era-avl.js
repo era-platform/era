@@ -2373,30 +2373,31 @@ FingerTreeDeep.prototype.getSummaryStack = function ( yoke, then ) {
     return self.lazyNext_.go( yoke, function ( yoke, next ) {
     return next.getSummaryStack( yoke,
         function ( yoke, nextSummaryStack ) {
-    return arrFoldlAsync( yoke, nextSummaryStack.first,
-        self.digits_[ -1 ],
-        function ( yoke, total, elem, then ) {
-        
-        return self.meta_.measure( yoke, elem,
-            function ( yoke, summary ) {
+    
+    function addSide( yoke, total, polarity, then ) {
+        return arrFoldlAsync( yoke, total, self.digits_[ polarity ],
+            function ( yoke, total, elem, then ) {
             
-            return self.meta_.plus( yoke, [ summary, total ], then );
-        } );
-    }, function ( yoke, total ) {
-    return arrFoldlAsync( yoke, total, self.digits_[ 1 ],
-        function ( yoke, total, elem, then ) {
-        
-        return self.meta_.measure( yoke, elem,
-            function ( yoke, summary ) {
-            
-            return self.meta_.plus( yoke, [ total, summary ], then );
-        } );
-    }, function ( yoke, total ) {
+            return self.meta_.measure( yoke, elem,
+                function ( yoke, summary ) {
+                
+                return self.meta_.plus( yoke,
+                    arrPlusWithPolarity(
+                        polarity, [ total ], [ summary ] ),
+                    then );
+            } );
+        }, then );
+    }
+    
+    var total = nextSummaryStack.first;
+    return addSide( yoke, total, -1, function ( yoke, total ) {
+    return addSide( yoke, total, 1, function ( yoke, total ) {
     
     return then( yoke, { first: total, rest: nextSummaryStack } );
     
     } );
     } );
+    
     } );
     } );
 };
