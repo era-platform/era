@@ -2532,9 +2532,7 @@ function makeFingerTreeMaybeDeep( yoke,
             return fingerTreePushArr( yoke,
                 new FingerTreeEmpty().init_( meta ),
                 -polarity,
-                -polarity === 1 ?
-                    digits[ -polarity ] :
-                    digits[ -polarity ].slice().reverse(),
+                digits[ -polarity ],
                 function ( yoke, tree ) {
                 
                 return then( yoke, tree );
