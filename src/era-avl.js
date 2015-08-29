@@ -2403,12 +2403,13 @@ FingerTreeDeep.prototype.split = function ( yoke, summarySoFar,
     if ( summaryStack === null )
         throw new Error();
     
-    function trySide( yoke, summarySoFar, polarity2, onFailed ) {
+    function trySide( yoke, summarySoFar, sidePolarity, onFailed ) {
+        var iteratingInward = polarity === sidePolarity;
         return jsListShortFoldl( yoke,
             { summarySoFar: summarySoFar, i: 0 },
-            jsListFromSmallArr( polarity2 === polarity ?
-                self.digits_[ polarity2 ].slice().reverse() :
-                self.digits_[ polarity2 ] ),
+            jsListFromSmallArr( iteratingInward ?
+                self.digits_[ sidePolarity ].slice().reverse() :
+                self.digits_[ sidePolarity ] ),
             function ( yoke, state, elem, then ) {
             
             return self.meta_.measure( yoke, elem,
@@ -2434,24 +2435,26 @@ FingerTreeDeep.prototype.split = function ( yoke, summarySoFar,
             if ( !exitedEarly )
                 return onFailed( yoke, state.summarySoFar );
             
-            var n = self.digits_[ polarity2 ].length;
+            var n = self.digits_[ sidePolarity ].length;
             var negDigits = {};
-            negDigits[ -polarity2 ] = self.digits_[ -polarity2 ];
-            var cutI = polarity2 === polarity ? n - state.i : state.i;
-            negDigits[ polarity2 ] =
-                self.digits_[ polarity2 ].cut( 0, cutI );
-            var posDigits = self.digits_[ polarity2 ].cut( cutI, n );
+            negDigits[ -sidePolarity ] =
+                self.digits_[ -sidePolarity ];
+            var cutI = iteratingInward ? n - state.i : state.i;
+            negDigits[ sidePolarity ] =
+                self.digits_[ sidePolarity ].cut( 0, cutI );
+            var posDigits =
+                self.digits_[ sidePolarity ].cut( cutI, n );
             
             return fingerTreePushArr( yoke,
                 new FingerTreeEmpty().init_( self.meta_ ),
-                polarity2,
+                sidePolarity,
                 posDigits,
                 function ( yoke, posTree ) {
             return makeFingerTreeMaybeDeep( yoke,
-                polarity2, self.meta_, negDigits, self.lazyNext_,
+                sidePolarity, self.meta_, negDigits, self.lazyNext_,
                 function ( yoke, negTree ) {
             
-            if ( polarity2 === polarity )
+            if ( iteratingInward )
                 return onCompleted( yoke, posTree, negTree );
             else
                 return onCompleted( yoke, negTree, posTree );
