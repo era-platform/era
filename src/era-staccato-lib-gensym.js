@@ -338,32 +338,6 @@ var stcTails = stcAddDefun( "tails", "lists",
 
 // TODO: Move this testing code somewhere better.
 
-function staccatoPretty( expr ) {
-    if ( expr === null ) {
-        return "()";
-    } else if ( isPrimString( expr ) ) {
-        return /^[-a-z01-9]*$/i.test( expr ) ? expr :
-            JSON.stringify( expr );
-    } else if ( likeJsCons( expr ) ) {
-        if ( expr.rest === null ) {
-            if ( expr.first === null || likeJsCons( expr.first ) ) {
-                return "(/" +
-                    staccatoPretty( expr.first ).substring( 1 );
-            } else {
-                return "(" + staccatoPretty( expr.first ) + ")";
-            }
-        } else if ( likeJsCons( expr.rest ) ) {
-            return "(" + staccatoPretty( expr.first ) + " " +
-                staccatoPretty( expr.rest ).substring( 1 );
-        } else {
-            return "(" + staccatoPretty( expr.first ) + " . " +
-                staccatoPretty( expr.rest ) + ")";
-        }
-    } else {
-        throw new Error();
-    }
-}
-
 console.log( arrMap( stcDefs, function ( def ) {
     return staccatoPretty( def );
 } ) );

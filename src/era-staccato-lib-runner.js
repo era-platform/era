@@ -31,32 +31,6 @@ function stcErr( msg ) {
 
 // TODO: Move this testing code somewhere better.
 
-function staccatoPretty( expr ) {
-    if ( expr === null ) {
-        return "()";
-    } else if ( isPrimString( expr ) ) {
-        return /^[-a-z01-9]*$/i.test( expr ) ? expr :
-            JSON.stringify( expr );
-    } else if ( likeJsCons( expr ) ) {
-        if ( expr.rest === null ) {
-            if ( expr.first === null || likeJsCons( expr.first ) ) {
-                return "(/" +
-                    staccatoPretty( expr.first ).substring( 1 );
-            } else {
-                return "(" + staccatoPretty( expr.first ) + ")";
-            }
-        } else if ( likeJsCons( expr.rest ) ) {
-            return "(" + staccatoPretty( expr.first ) + " " +
-                staccatoPretty( expr.rest ).substring( 1 );
-        } else {
-            return "(" + staccatoPretty( expr.first ) + " . " +
-                staccatoPretty( expr.rest ) + ")";
-        }
-    } else {
-        throw new Error();
-    }
-}
-
 var defs = {};
 function Stc( frameTag, opt_frameVars ) {
     this.frameTag = frameTag;
@@ -143,19 +117,15 @@ staccatoDeclarationState.types = strMap();
 staccatoDeclarationState.macros = strMap();
 staccatoDeclarationState.hasRunDefs = false;
 
-function readerStringNilToString( stringNil ) {
-    var result = "";
-    var rest = stringNil.string;
-    for ( ; rest !== null; rest = rest.rest )
-        result += rest.first;
-    return result;
-}
 function extractPattern( body ) {
     if ( body.type !== "cons" )
         throw new Error();
     var frameNameExpr = body.first;
     if ( frameNameExpr.type !== "stringNil" )
-        throw new Error();
+        throw new Error(
+            "Encountered a case branch with a frame name that " +
+            "wasn't a string: " +
+            staccatoReaderExprPretty( frameNameExpr ) );
     var frameName = readerStringNilToString( frameNameExpr );
     if ( !staccatoDeclarationState.types.has( frameName ) )
         throw new Error();
@@ -236,7 +206,9 @@ function processFn( body ) {
     if ( body.rest.type !== "cons" )
         return processReaderExpr( body.first );
     if ( body.first.type !== "stringNil" )
-        throw new Error();
+        throw new Error(
+            "Called fn with a non-string variable name: " +
+            staccatoReaderExprPretty( body.first ) );
     return stcFn( readerStringNilToString( body.first ),
         processFn( body.rest ) );
 }
@@ -353,7 +325,7 @@ function processReaderExpr( readerExpr ) {
         throw new Error();
     var macroName = readerStringNilToString( readerExpr.first );
     if ( !staccatoDeclarationState.macros.has( macroName ) )
-        throw new Error();
+        throw new Error( "No such macro: " + macroName );
     
     return staccatoDeclarationState.macros.get( macroName )(
         readerExpr.rest );
@@ -370,7 +342,9 @@ function processDefType( frameName, frameVars ) {
         var remainingBody = body;
         for ( var i = 0; i < n; i++ ) {
             if ( remainingBody.type !== "cons" )
-                throw new Error();
+                throw new Error(
+                    "Expected more arguments to " +
+                    JSON.stringify( frameName ) );
             frameVals.push(
                 stcBasicSave(
                     processReaderExpr( remainingBody.first ) ) );

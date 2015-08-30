@@ -132,54 +132,60 @@
 \ digpairs are actually interdependent.
 
 (def-type
-  fixops zero one complement compare plus minus times dual-div)
+  fixops zero one complement compare plus minus times div dual-div)
 (def-type carried main carry)
 
 (defn fixops-zero fixops
   (cast fixops
-    fixops zero one complement compare plus minus times dual-div
+    fixops zero one complement compare plus minus times div dual-div
     err.\-qq[Expected a fixops value of type fixops]
     zero))
 
 (defn fixops-one fixops
   (cast fixops
-    fixops zero one complement compare plus minus times dual-div
+    fixops zero one complement compare plus minus times div dual-div
     err.\-qq[Expected a fixops value of type fixops]
     one))
 
 (defn fixops-complement fixops
   (cast fixops
-    fixops zero one complement compare plus minus times dual-div
+    fixops zero one complement compare plus minus times div dual-div
     err.\-qq[Expected a fixops value of type fixops]
     complement))
 
 (defn fixops-compare fixops
   (cast fixops
-    fixops zero one complement compare plus minus times dual-div
+    fixops zero one complement compare plus minus times div dual-div
     err.\-qq[Expected a fixops value of type fixops]
     compare))
 
 (defn fixops-plus fixops
   (cast fixops
-    fixops zero one complement compare plus minus times dual-div
+    fixops zero one complement compare plus minus times div dual-div
     err.\-qq[Expected a fixops value of type fixops]
     plus))
 
 (defn fixops-minus fixops
   (cast fixops
-    fixops zero one complement compare plus minus times dual-div
+    fixops zero one complement compare plus minus times div dual-div
     err.\-qq[Expected a fixops value of type fixops]
     minus))
 
 (defn fixops-times fixops
   (cast fixops
-    fixops zero one complement compare plus minus times dual-div
+    fixops zero one complement compare plus minus times div dual-div
     err.\-qq[Expected a fixops value of type fixops]
     times))
 
+(defn fixops-div fixops
+  (cast fixops
+    fixops zero one complement compare plus minus times div dual-div
+    err.\-qq[Expected a fixops value of type fixops]
+    div))
+
 (defn fixops-dual-div fixops
   (cast fixops
-    fixops zero one complement compare plus minus times dual-div
+    fixops zero one complement compare plus minus times div dual-div
     err.\-qq[Expected a fixops value of type fixops]
     dual-div))
 
@@ -220,12 +226,13 @@
     c-new.digpair-plus
     c-new.digpair-minus
     c-new.digpair-times
+    fixops-dual-div.digit-fixops
     c-new.digpair-dual-div))
 
 (defn digpair-carried-promote carried
-  (case carried carried n carry
+  (cast carried carried n carry
     err.\-qq[Expected a carried value of type carried]
-  /case n digpair fixops is-zero bdig ldig
+  /cast n digpair fixops is-zero bdig ldig
     err.\-qq[Expected an n value of type digpair]
   /make-digpair make-fixops-digpair.fixops carry n))
 
@@ -262,7 +269,7 @@
   /case m-is-zero yep -
     (nope/nil)
   /caselet bcompare (fixops-compare fixops n-bdig m-bdig) nil
-    (fixops compare n-ldig n-bdig)
+    (fixops-compare n-ldig n-bdig)
     bcompare))
 
 (defn digpair-plus n m-carried
@@ -272,7 +279,7 @@
     err.\-qq[Expected an m-carried value of type carried]
   /cast m digpair - m-is-zero m-bdig m-ldig
     err.\-qq[Expected an m value of type digpair]
-  /cast carry digpair - carry-is-zero - cdig
+  /cast carry digpair - carry-is-zero -b cdig
     err.\-qq[Expected a carry value of type digpair]
   
   \ Optimization: If either summand is zero and the carry is also
@@ -296,7 +303,7 @@
     err.\-qq[Expected an m-carried value of type carried]
   /cast m digpair - m-is-zero m-bdig m-ldig
     err.\-qq[Expected an m value of type digpair]
-  /cast carry digpair - carry-is-zero - cdig
+  /cast carry digpair - carry-is-zero -b cdig
     err.\-qq[Expected a carry value of type digpair]
   
   \ Optimization: If both things to subtract from this are zero, we
@@ -416,7 +423,7 @@
 
 (defn digpair-dual-div-no-carry n3210 m3210
   (let long-zero digpair-as-zero.n3210
-  /cast long-zero digpair long-fixops - - short-zero
+  /cast long-zero digpair long-fixops - -b short-zero
     err.\-qq[Internal error]
   /let make-short (fn a b /digpair-with-digits short-zero a b)
   /let long-one
@@ -430,19 +437,19 @@
     err.\-qq[
       Called digpair-dual-div-no-carry with a smaller dividend than
       divisor]
-  /cast n3210 digpair - - n32 n10
+  /cast n3210 digpair - -b n32 n10
     err.\-qq[Expected an n3210 value of type digpair]
-  /cast m3210 digpair - - m32 m10
+  /cast m3210 digpair - -b m32 m10
     err.\-qq[Expected an m3210 value of type digpair]
   /case digpair-is-zero.m32 yep -
     err.\-qq[Called digpair-dual-div-no-carry with a zero m32]
   /cast n32 digpair digit-fixops - n3 n2
     err.\-qq[Expected an n32 value of type digpair]
-  /cast n10 digpair - - n1 n0
+  /cast n10 digpair - -b n1 n0
     err.\-qq[Expected an n10 value of type digpair]
-  /cast m32 digpair - - m3 m2
+  /cast m32 digpair - -b m3 m2
     err.\-qq[Expected an m32 value of type digpair]
-  /cast m10 digpair - - m1 m0
+  /cast m10 digpair - -b m1 m0
     err.\-qq[Expected an m10 value of type digpair]
   /let zdig fixops-zero.digit-fixops
   /let ignore-carry
@@ -502,6 +509,7 @@
     err.\-qq[Called digpair-dual-div with a zero divisor]
   /cast carry digpair - carry-is-zero c-bdig c-ldig
     err.\-qq[Expected a carry value of type digpair]
+  /let zdig fixops-zero.fixops
   /case carry-is-zero yep -
     
     \ If the carry is zero and the dividend is less than the divisor,
@@ -512,8 +520,7 @@
     \ If the carry is zero and the first digit of the divisor is zero,
     \ we can reduce this division to a division of the digits.
     /case (fixops-is-zero fixops m-bdig) yep -
-      (let zdig fixops-zero.fixops
-      /cast (fixops-dual-div fixops n-bdig /carried m-ldig zdig)
+      (cast (fixops-dual-div fixops n-bdig /carried m-ldig zdig)
         carried r-bdig intermediate1-carry
         err.\-qq[Internal error]
       /cast
@@ -539,15 +546,14 @@
   \ This means the carry-and-divisor combination will have one fewer
   \ nonzero digit, and it will take no more than two of these
   \ reductions to wind up at the carry-is-zero case.
-  /let zdig fixops-zero.fixops
   /cast
     (c-new digpair-dual-div (digpair-with-digits n c-ldig n-bdig)
     /carried m (digpair-with-digits n zdig c-bdig))
     carried intermediate1-result intermediate1-carry
     err.\-qq[Internal error]
-  /cast intermediate1-result digpair - - - ir-ldig
+  /cast intermediate1-result digpair - -b -c ir-ldig
     err.\-qq[Internal error]
-  /cast intermediate1-carry digpair - - ic-bdig ic-ldig
+  /cast intermediate1-carry digpair - -b ic-bdig ic-ldig
     err.\-qq[Internal error]
   /cast
     (c-new digpair-dual-div (digpair-with-digits n ic-ldig n-ldig)
@@ -559,7 +565,7 @@
     /carried intermediate2-result digpair-as-zero.n)
     carried result -
     err.\-qq[Internal error]
-  /carried result curry))
+  /carried result carry))
 
 
 \ ===== One-bit fixnums in terms of (yep/nil) and (nope/nil) =========
@@ -601,6 +607,18 @@
         (carried carry /nope/nil)))
     
     (fn n m-carried
+      \ Div
+      (cast m-carried carried m carry
+        err.\-qq[Expected an m-carried value of type carried]
+      /case m nope -
+        \ Divide by zero.
+        err.\-qq[
+          Called make-fixops-yep-nope's div operation with a zero
+          divisor]
+      \ Divide by one.
+      /carried n carry))
+    
+    (fn n m-carried
       \ Dual-div
       (cast n digpair - n-is-zero n1 n0
         err.\-qq[Expected an n value of type digpair]
@@ -615,10 +633,10 @@
         err.\-qq[
           Called make-fixops-yep-nope's dual-div operation with a zero
           divisor]
-      /case (and-yep-nope not-yep-nope.m1 m0)
+      /case (and-yep-nope not-yep-nope.m1 m0) yep -
         \ Divide by one.
         (carried n carry)
-      /case not-yep-nope.m0
+      /case not-yep-nope.m0 yep -
         \ Divide by two.
         (carried (digpair-with-digits n n2 n1)
         /digpair-with-digits n (nope/nil) n0)
@@ -680,13 +698,14 @@
     err.\-qq[Expected an m value of type binat]
   /case n-internals binat-internals n-depth nfix
     (case m-internals binat-internals m-depth mfix
-      (caselet depth-comparison (binat-compare n-depth m-depth) nil
+      (caselet depth-comparison (c-new binat-compare n-depth m-depth)
+        nil
         (case binat-is-zero.n-depth yep -
           (fixops-compare fixops nfix mfix)
           (digpair-compare nfix mfix))
         depth-comparison)
       (nope/nil))
-    (case m-internals binat-internals - -
+    (case m-internals binat-internals - -b
       (yep/nil)
       (nil))))
 
@@ -715,7 +734,7 @@
     ldig))
 
 (defn improper-binat-promote-carried fixops depth carried
-  (case carried carried result carry
+  (cast carried carried result carry
     err.\-qq[Expected a carried value of type carried]
   /case
     (case binat-is-zero.depth yep -
@@ -723,16 +742,28 @@
       digpair-is-zero.carry)
     
     yep - (binat fixops /binat-internals depth result)
-      
+    
     (binat fixops
     /binat-internals (c-new binat-plus depth binat-as-one.depth)
-      digpair-carried-promote.carried-result)))
+      digpair-carried-promote.carried)))
+
+(defn improper-binat-promote n
+  (cast n binat fixops n-internals
+    err.\-qq[Expected an n value of type binat]
+  /cast n-internals binat-internals depth fixnum
+    err.\-qq[Expected an n value that wasn't zero]
+  /binat fixops
+  /binat-internals (c-new binat-plus depth binat-as-one.depth)
+  /case binat-is-zero.depth yep -
+    (make-digpair
+      make-fixops-digpair.fixops fixops-zero.fixops fixnum)
+    (digpair-carried-promote/carried fixnum digpair-as-zero.fixnum)))
 
 (defn improper-binat-plus n m
   (cast n binat fixops n-internals
     err.\-qq[Expected an n value of type binat]
-  /case m binat - m-internals
-    err.\-qq[Expected an m value of type binat])
+  /cast m binat - m-internals
+    err.\-qq[Expected an m value of type binat]
   /cast n-internals binat-internals n-depth nfix
     m
   /cast m-internals binat-internals m-depth mfix
@@ -743,7 +774,7 @@
   /improper-binat-promote-carried fixops n-depth
   /case binat-is-zero.n-depth yep -
     (fixops-plus fixops nfix /carried mfix fixops-zero.fixops)
-    (digpair-plus nfix /carried mfix digpair-as-zero.nfix))
+    (digpair-plus nfix /carried mfix digpair-as-zero.nfix)))
 
 (defn binat-plus m n
   (improper-binat-plus m n))
@@ -758,7 +789,7 @@
     err.\-qq[Expected an m value of type binat]
   /cast n-internals binat-internals n-depth nfix
     yep.m
-  /case m-internals binat-internals m-depth mfix
+  /cast m-internals binat-internals m-depth mfix
     err.\-qq[Internal error]
   /case (binat-compare n-depth m-depth) yep -
     (c-new improper-binat-subtracted-from improper-binat-promote.n m)
@@ -774,7 +805,7 @@
   (case (improper-binat-subtracted-from m n)
     yep result (yep improper-binat-reduce.result)
     nope result (nope improper-binat-reduce.result)
-    nil (nil)))
+  /nil))
 
 (defn improper-binat-times n m
   (cast n binat fixops n-internals
@@ -815,7 +846,9 @@
   /cast
     (case binat-is-zero.n-depth yep -
       (fixops-div fixops nfix /carried mfix fixops-zero.fixops)
-      (digpair-div nfix /carried mfix digpair-as-zero.nfix))
+    /case (binat-compare n-depth binat-as-one.n-depth) nil
+      (fixops-dual-div fixops nfix /carried mfix digpair-as-zero.nfix)
+      (digpair-dual-div nfix /carried mfix digpair-as-zero.nfix))
     carried result carry
     err.\-qq[Internal error]
   /carried (binat fixops /binat-internals n-depth result)
@@ -846,12 +879,12 @@
     bigint-zero-for-fixops.fixops))
 
 (defn bigint-as-one n
-  (case n bigint fixops n-nat
+  (cast n bigint fixops n-nat
     err.\-qq[Expected an n value of type bigint]
   /bigint fixops /yep/binat-as-one binat-zero-for-fixops.fixops))
 
 (defn bigint-neg n
-  (case n bigint fixops n-nat
+  (cast n bigint fixops n-nat
     err.\-qq[Expected an n value of type bigint]
   /case n-nat nil
     n
@@ -934,6 +967,10 @@
 (defn bigint-div-toward-zero n m
   (let pos (fn n yep.n)
   /let neg (fn n nope.n)
+  /cast n bigint fixops n
+    err.\-qq[Expected an n value of type bigint]
+  /cast m bigint - m
+    err.\-qq[Expected an m value of type bigint]
   /let div
     (fn n m result-sign carry-sign
       (cast (binat-div n m) carried result carry
@@ -941,10 +978,6 @@
       /bigint fixops
       /carried (bigint fixops /c result-sign result)
       /bigint fixops /c carry-sign carry))
-  /cast n bigint fixops n
-    err.\-qq[Expected an n value of type bigint]
-  /cast m bigint - m
-    err.\-qq[Expected an m value of type bigint]
   
   \ NOTE: These examples may clarify the following signs.
   \
@@ -1344,10 +1377,10 @@
         /avl-branches wub wbranch tub tbranch)
         depth-changed w-depth-change t-depth-change balanced-tree
         err.\-qq[Internal error]
-      /cast balanced-tree avl-branch - - - - balanced-branches
+      /cast balanced-tree avl-branch - -b -c -d balanced-branches
         err.\-qq[Internal error]
       /cast balanced-branches
-        avl-branches balanced-wub - balanced-tub -
+        avl-branches balanced-wub - balanced-tub -b
         err.\-qq[Internal error]
       /avl-minus-extreme-entry-succeeded
         
@@ -1406,10 +1439,10 @@
       /avl-branches wub wbranch new-tub tbranch)
       depth-changed w-depth-change t-depth-change balanced-tree
       err.\-qq[Internal error]
-    /cast balanced-tree avl-branch - - - - balanced-branches
+    /cast balanced-tree avl-branch - -b -c -d balanced-branches
       err.\-qq[Internal error]
     /cast balanced-branches
-      avl-branches balanced-wub - balanced-tub -
+      avl-branches balanced-wub - balanced-tub -b
       err.\-qq[Internal error]
     /yep-nope-swap
       
@@ -1460,10 +1493,10 @@
       /avl-branches new-wub wbranch tub tbranch)
       depth-changed w-depth-change t-depth-change balanced-tree
       err.\-qq[Internal error]
-    /cast balanced-tree avl-branch - - - - balanced-branches
+    /cast balanced-tree avl-branch - -b -c -d balanced-branches
       err.\-qq[Internal error]
     /cast balanced-branches
-      avl-branches balanced-wub - balanced-tub -
+      avl-branches balanced-wub - balanced-tub -b
       err.\-qq[Internal error]
     /yep-nope-swap
       
@@ -1813,7 +1846,7 @@
   /cast (ftree-digits-swap polarity digits)
     ftree-digits w-digits t-digits
     err.\-qq[Expected a digits value of type ftree-digits]
-  /case t-digits cons - - (ftree-deep meta digits lazy-next)
+  /case t-digits cons - -b (ftree-deep meta digits lazy-next)
   /cast (ftree-pop (c force lazy-next) polarity)
     ftree-pop-result maybe-node rest
     err.\-qq[Internal error]
