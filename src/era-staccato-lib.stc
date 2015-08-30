@@ -919,6 +919,11 @@
     nope - (nope/nil)
     (nil)))
 
+(defn bigint-is-zero n
+  (case (bigint-compare n bigint-as-zero.n) nil
+    (yep/nil)
+    (nope/nil)))
+
 (defn bigint-plus n m
   (cast n bigint fixops n
     err.\-qq[Expected an n value of type bigint]
@@ -1048,6 +1053,9 @@
     err.\-qq[Expected a balance-result value of type depth-changed]
   /depth-changed yep-depth-change nope-depth-change balanced-tree))
 
+(def-type avl-minus-extreme-entry-succeeded
+  max-depth-decreased k v tree-remaining)
+
 (defn improper-avl-branch-balance tree
   (cast tree avl-branch fixops compare key val branches
     err.\-qq[Expected a tree value of type avl-branch]
@@ -1066,9 +1074,10 @@
     (c-new improper-avl-branch-balance
     /avl-branch fixops compare key val
     /avl-branches
-      bigint-minus-one.nub nbranch
-      bigint-minus-one.yub ybranch)
-  /case (and-yep-nope bigint-lteq-one.nub bigint-lteq-one.yub) yep -
+      (c bigint-minus-one nub) nbranch
+      (c bigint-minus-one yub) ybranch)
+  /case (and-yep-nope (c bigint-lteq-one nub) (c bigint-lteq-one yub))
+    yep -
     (let zero bigint-zero-for-fixops.fixops
     /depth-changed zero zero tree)
   /let polarity y-is-zero
@@ -1087,8 +1096,10 @@
       err.\-qq[Internal error])
     cons max-depth-increased tbranch
     err.\-qq[Internal error]
-  /let wub (case max-depth-decreased yep - bigint-minus-one.wub wub)
-  /let wub (case max-depth-increased yep - bigint-minus-one.wub wub)
+  /let wub
+    (case max-depth-decreased yep - (c bigint-minus-one wub) wub)
+  /let wub
+    (case max-depth-increased yep - (c bigint-minus-one wub) wub)
   /cast
     (depth-changed-swap polarity
     /c-new improper-avl-branch-balance /avl-branch fixops compare k v
@@ -1098,17 +1109,14 @@
     err.\-qq[Internal error]
   /let w-depth-change
     (case max-depth-decreased yep -
-      bigint-minus-one.w-depth-change
+      (c bigint-minus-one w-depth-change)
       w-depth-change)
   /let t-depth-change
     (case max-depth-decreased yep -
-      bigint-plus-one.t-depth-change
+      (c bigint-plus-one t-depth-change)
       t-depth-change)
   /depth-changed-swap polarity
   /depth-changed w-depth-change t-depth-change tree))
-
-(def-type avl-minus-extreme-entry-succeeded
-  max-depth-decreased k v tree-remaining)
 
 (defn avl-branch-finish-minus fixops compare branches
   \ NOTE: This effectively concatenates the branches. Like
@@ -1122,7 +1130,7 @@
     err.\-qq[Expected a branches value of type avl-branches]
   /let attempt-shift
     (fn polarity on-fail
-      (cast branches (avl-branches-swap polarity branches)
+      (cast (avl-branches-swap polarity branches)
         avl-branches wub wbranch tub tbranch
         err.\-qq[Internal error]
       /case (c-new avl-minus-extreme-entry wbranch polarity)
@@ -1134,7 +1142,7 @@
         (let inc (fn n /bigint-plus n bigint-as-one.n)
         /let new-tub
           (case max-depth-decreased yep -
-            inc.tub
+            (c inc tub)
             tub)
         /cast
           (depth-changed-swap polarity
@@ -1142,6 +1150,7 @@
           /avl-branches-swap polarity
           /avl-branches wub wbranch new-tub tbranch)
           depth-changed w-depth-change t-depth-change tree
+          err.\-qq[Internal error]
         /yep-nope-swap
           (and-yep-nope max-depth-decreased
           /and-yep-nope (not-yep-nope bigint-is-zero.tub)
@@ -1154,8 +1163,8 @@
         
         err.\-qq[Internal error]))
   
-  /attempt-shift (yep/nil) /fn -
-  /attempt-shift (nope/nil) /fn -
+  /c attempt-shift (yep/nil) /fn -
+  /c attempt-shift (nope/nil) /fn -
    yep.ybranch))
 
 \ NOTE: This body takes its args as (state k v).
@@ -1171,7 +1180,7 @@
       yep - first-result
       
       nope state
-      (caselet second-result (c body state k v)
+      (caselet second-result (c body state key val)
         yep - second-result
         nope state (c-new avl-short-fold-asc state ybranch body)
         err.\-qq[Expected body to return a value of type yep or nope])
@@ -1182,7 +1191,7 @@
 \ NOTE: This body takes its args as (state k v).
 (defn avl-map-short-fold-asc state tree body
   (case tree avl-leaf fixops compare
-    (map-fold-state state self)
+    (map-fold-state state tree)
   /case tree avl-branch fixops compare key val branches
     (cast branches avl-branches nub nbranch yub ybranch
       err.\-qq[Expected a branches value of type avl-branches]
@@ -1192,7 +1201,7 @@
       yep - first-result
       
       map-fold-state state result-nbranch
-      (caselet second-result (c body state k v)
+      (caselet second-result (c body state key val)
         
         yep - second-result
         
@@ -1273,7 +1282,6 @@
         b-branch
         (avl-map-short-fold-asc (nil) b-branch /fn state k v
           (nope/c to-right v))))
-  /let bigint-minus-one (fn n /bigint-minus n bigint-as-one.n)
   /let combine-branch-changes
     (fn wub tub w-balanced-change t-balanced-change
       w-sub-merge-change t-sub-merge-change
@@ -1364,7 +1372,7 @@
       (avl-minus-extreme-entry-succeeded (yep/nil) key val wbranch)
       
       avl-minus-extreme-entry-succeeded
-      max-depth-decreased subtracted-key subracted-val tbranch
+      max-depth-decreased subtracted-key subtracted-val tbranch
       (let wub
         (case max-depth-decreased yep -
           (bigint-plus wub bigint-as-one.wub)
@@ -1396,12 +1404,12 @@
           (and-yep-nope (not-yep-nope bigint-is-zero.tub)
             bigint-is-zero.balanced-tub)
           (and-yep-nope max-depth-decreased
-          /and-yep-nope (not-yep-nope bigint-is-zero.balanced-wub)
+          /and-yep-nope (not-yep-nope bigint-is-zero.wub)
             (case
-              (bigint-compare bigint-as-zero.w-depth-change
-                w-depth-change)
-              yep - (nope/nil)
-              (yep/nil))))
+              (bigint-compare w-depth-change
+                bigint-as-zero.w-depth-change)
+              yep - (yep/nil)
+              (nope/nil))))
         
         subtracted-key subtracted-val balanced-tree)
       
@@ -1458,11 +1466,11 @@
         (and-yep-nope bigint-is-zero.tub
         /not-yep-nope bigint-is-zero.balanced-tub)
         (and-yep-nope max-depth-increased
-        /and-yep-nope (not-yep-nope bigint-is-zero.balanced-tub)
+        /and-yep-nope (not-yep-nope bigint-is-zero.tub)
           (case
-            (bigint-compare bigint-as-zero.t-depth-change
-              t-depth-change)
-            nope - (nope/nil)
+            (bigint-compare t-depth-change
+              bigint-as-zero.t-depth-change)
+            yep - (nope/nil)
             (yep/nil))))
       yep.balanced-tree)
     err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
@@ -1473,6 +1481,9 @@
   /case tree avl-branch fixops compare key val branches
     (caselet polarity (c compare key k) nil
       (avl-branch-finish-minus fixops compare branches)
+    /cast (avl-branches-swap polarity branches)
+      avl-branches wub wbranch tub tbranch
+      err.\-qq[Expected a branches value of type avl-branches]
     /cast
       \ TODO: Stop using cons as a pair here.
       (case (c-new avl-minus-entry tbranch k)
@@ -1511,12 +1522,12 @@
       (or-yep-nope
         (and-yep-nope (not-yep-nope bigint-is-zero.tub)
           bigint-is-zero.balanced-tub)
-        (and-yep-nope max-depth-increased
-        /and-yep-nope (not-yep-nope bigint-is-zero.balanced-tub)
+        (and-yep-nope max-depth-decreased
+        /and-yep-nope (not-yep-nope bigint-is-zero.wub)
           (case
-            (bigint-compare bigint-as-zero.w-depth-change
-              w-depth-change)
-            nope - (yep/nil)
+            (bigint-compare w-depth-change
+              bigint-as-zero.w-depth-change)
+            yep - (yep/nil)
             (nope/nil))))
       yep.balanced-tree)
     err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
@@ -1549,7 +1560,7 @@
 \ NOTE: This body takes its args as (k v).
 (defn avl-any tree body
   (caselet result
-    (avl-short-fold-asc (nil) tree /fn state k v /body k v))
+    (avl-short-fold-asc (nil) tree /fn state k v /c body k v)
     nope - (nope/nil)
     result))
 
@@ -1557,7 +1568,7 @@
 (defn avl-each tree body
   (let -
     (avl-any tree /fn k v
-      (let - (body k v)
+      (let - (c body k v)
       /nope/nil))
   /nil))
 
@@ -1565,7 +1576,7 @@
 (defn avl-map tree body
   (case
     (avl-map-short-fold-asc (nil) tree /fn state k v
-      (map-fold-state (nil) /body k v))
+      (map-fold-state (nil) /c body k v))
     map-fold-state state result result
     err.\-qq[Internal error]))
 
@@ -1654,7 +1665,8 @@
       (fn -
         (ftree-deep meta
           (ftree-digits-swap polarity
-          /ftree-digits w-digits (append t-digits /cons element /nil))
+          /ftree-digits w-digits
+            (append t-digits /cons new-element /nil))
           lazy-next))
     /cast t-digits cons d0 t-digits (c not-four-digits /nil)
     /cast t-digits cons d1 t-digits (c not-four-digits /nil)
@@ -1664,7 +1676,7 @@
     /let new-node (ftree-node (c plus /map d012 measure) d012)
     /ftree-deep meta
       (ftree-digits-swap polarity
-      /ftree-digits w-digits (cons d3 /cons element /nil))
+      /ftree-digits w-digits (cons d3 /cons new-element /nil))
     \ NOTE: This `makeLazy()` isn't constant-time, so it's impure. It
     \ does have the same space footprint before and after.
     /c make-lazy /fn -
@@ -1730,6 +1742,29 @@
       Expected a tree value of type ftree-empty, ftree-single, or
       ftree-deep]))
 
+\ This works like `(ftree-deep meta digits lazy-next)`, except that it
+\ allows one of the sides of digits to be empty.
+(defn ftree-maybe-deep polarity meta digits lazy-next
+  (cast meta ftree-meta make-lazy force measure plus
+    err.\-qq[Expected a meta value of type ftree-meta]
+  /cast (ftree-digits-swap polarity digits)
+    ftree-digits w-digits t-digits
+    err.\-qq[Expected a digits value of type ftree-digits]
+  /case t-digits cons - -b (ftree-deep meta digits lazy-next)
+  /cast (ftree-pop (c force lazy-next) polarity)
+    ftree-pop-result maybe-node rest
+    err.\-qq[Internal error]
+  /cast maybe-node yep node
+    (ftree-push-list ftree-empty.meta not-yep-nope.polarity w-digits)
+  /cast node ftree-node summary elements
+    err.\-qq[
+      Expected the finger tree in lazy-next to contain values of type
+      ftree-node]
+  /ftree-deep meta
+    (ftree-digits-swap polarity
+    /ftree-digits w-digits (list-order-swap polarity elements))
+  /make-immediate-lazy make-lazy rest))
+
 (def-type ftree-split-iter-state summary-so-far rev-before after)
 (def-type ftree-split-iter-result-fell-off summary-so-far)
 (def-type ftree-split-iter-result-completed early-tree late-tree)
@@ -1740,7 +1775,9 @@
   (case tree ftree-empty meta
     ftree-split-iter-result-fell-off.summary-so-far
   /case tree ftree-single meta element
-    (let summary-so-far
+    (cast meta ftree-meta make-lazy force measure plus
+      err.\-qq[Expected a meta value of type ftree-meta]
+    /let summary-so-far
       (c plus /list-order-swap polarity
       /cons (c measure element) /cons summary-so-far /nil)
     /case (c test-is-early summary-so-far) yep -
@@ -1838,29 +1875,6 @@
       Expected a tree value of type ftree-empty, ftree-single, or
       ftree-deep]))
 
-\ This works like `(ftree-deep meta digits lazy-next)`, except that it
-\ allows one of the sides of digits to be empty.
-(defn ftree-maybe-deep polarity meta digits lazy-next
-  (cast meta ftree-meta make-lazy force measure plus
-    err.\-qq[Expected a meta value of type ftree-meta]
-  /cast (ftree-digits-swap polarity digits)
-    ftree-digits w-digits t-digits
-    err.\-qq[Expected a digits value of type ftree-digits]
-  /case t-digits cons - -b (ftree-deep meta digits lazy-next)
-  /cast (ftree-pop (c force lazy-next) polarity)
-    ftree-pop-result maybe-node rest
-    err.\-qq[Internal error]
-  /cast maybe-node yep node
-    (ftree-push-list ftree-empty.meta not-yep-nope.polarity w-digits)
-  /cast node ftree-node summary elements
-    err.\-qq[
-      Expected the finger tree in lazy-next to contain values of type
-      ftree-node]
-  /ftree-deep meta
-    (ftree-digits-swap polarity
-    /ftree-digits w-digits (list-order-swap polarity elements))
-  /make-immediate-lazy make-lazy rest))
-
 (defn ftree-append-with-middle a middle b
   (case a ftree-empty meta
     (ftree-push-list b (nope/nil) rev.middle)
@@ -1892,7 +1906,7 @@
     (append ay-digits /append middle bn-digits)
     (c force b-lazy-next)))
 
-(defn ftree-split-result early-tree late-tree)
+(def-type ftree-split-result early-tree late-tree)
 
 \ This looks through every segment of the tree starting from the end
 \ that corresponds with `polarity` until it can drill down to the one
@@ -1921,18 +1935,18 @@
 \ requires to exist.
 \
 (defn ftree-split tree polarity test-is-early
-  (cast
+  (let meta
     (case tree ftree-empty meta meta
     /case tree ftree-single meta element meta
     /case tree ftree-deep meta digits lazy-next meta
       err.\-qq[
         Expected a tree value of type ftree-empty, ftree-single, or
         ftree-deep])
-    ftree-meta make-lazy force measure plus
+  /cast meta ftree-meta make-lazy force measure plus
     err.\-qq[Expected a meta value of type ftree-meta]
   /case
-    (ftree-split-iter (c plus /nil) ftree-summary-stack.tree polarity
-      test-is-early)
+    (ftree-split-iter (c plus /nil)
+      ftree-get-summary-stack.tree polarity test-is-early)
     
     ftree-split-iter-result-fell-off summary-so-far
     \ Apparently everything is early.

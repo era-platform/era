@@ -128,7 +128,7 @@ function extractPattern( body ) {
             staccatoReaderExprPretty( frameNameExpr ) );
     var frameName = readerStringNilToString( frameNameExpr );
     if ( !staccatoDeclarationState.types.has( frameName ) )
-        throw new Error();
+        throw new Error( "No such type: " + frameName );
     var type = staccatoDeclarationState.types.get( frameName );
     var remainingBody = body.rest;
     var localVars = [];

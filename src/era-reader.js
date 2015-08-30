@@ -374,7 +374,7 @@
 //     // be represented as a string, since otherwise this syntax
 //     // would interpret the ) or ] in other ways.
 //
-//   ! " # $ % & ' * + / : < > ? @ \ ^ _ { | } or ~ has behavior
+//   ! " # $ % & ' * + : < > ? @ \ ^ _ { | } or ~ has behavior
 //     reserved for future use
 //     //
 //     // NOTE: These are the Basic Latin punctuation characters we're
@@ -466,6 +466,8 @@
 //     // the same way, we leave open the possibility of syntaxes
 //     // where some delimiters don't need to be balanced, with one
 //     // example being our own \.{ and \.} escape sequences.
+//
+//   / reads unsophisticated string elements until it reads ) or ]
 
 
 function customStream( underlyingStream, read ) {
@@ -892,7 +894,7 @@ function readUnsophisticatedEscapeSequenceSuffix( yoke, s, then ) {
         if ( /^[)\]]$/.test( c ) )
             return then( yoke, s, { ok: false, msg:
                 "Unmatched " + c + " in escape sequence suffix" } );
-        else if ( /^[!"#$%&'*+/:<>?@\\^_{|}~]$/.test( c ) )
+        else if ( /^[!"#$%&'*+:<>?@\\^_{|}~]$/.test( c ) )
             return then( yoke, s, { ok: false, msg:
                 "Encountered escape sequence suffix " + c + " " +
                 "which is reserved for future use" } );

@@ -1839,7 +1839,7 @@ AvlBranch_.prototype.minusEntry = function ( yoke, k, then ) {
         ) ||
         (maxDepthDecreased
             && self.branches_[ -kVsSelf ].maxDepthAdvantage !== null
-            && depthChanges[ -kVsSelf ].sign !== 1);
+            && depthChanges[ -kVsSelf ].sign === -1);
     return then( yoke, finalMaxDepthDecreased, tree );
     
     } );
