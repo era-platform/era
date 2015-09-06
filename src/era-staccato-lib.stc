@@ -12,7 +12,8 @@
 \ NOTE: This file depends only on these macros, which are implemented
 \ in era-staccato-lib-runner.js:
 \
-\ def-type defn case caselet cast c c-new err fn run-defs test let
+\ def-type defn case caselet cast isa proj1 c c-new err fn run-defs
+\ test let
 
 
 \ ===== Lists and boolean tags =======================================
@@ -22,11 +23,11 @@
 (def-type nope val)
 (def-type nil)
 
-(defn foldl-short state list combiner
+(defn short-foldl state list combiner
   (cast list cons first rest nope.state
   /caselet combiner-result (c combiner state first)
     yep result combiner-result
-    nope result (c-new foldl-short result rest combiner)
+    nope result (c-new short-foldl result rest combiner)
     err.\-qq[Expected a combiner-result of type yep or nope]))
 
 (defn foldl state list combiner
@@ -46,11 +47,9 @@
     err.\-qq[Expected a combiner-result of type yep or nope]))
 
 (defn foldl-double state list-a list-b combiner
-  (case
-    (foldl-double-short state list-a list-b /fn state elem-a elem-b
-      (nope/c combiner state elem-a elem-b))
-    nope result result
-    err.\-qq[Internal error]))
+  (proj1 nope
+  /foldl-double-short state list-a list-b /fn state elem-a elem-b
+    (nope/c combiner state elem-a elem-b)))
 
 (defn rev-onto target source
   (foldl target source /fn state elem /cons elem state))
@@ -65,7 +64,7 @@
   (rev/foldl (nil) list /fn state elem /cons (c func elem) state))
 
 (defn any list func
-  (foldl-short (nil) list /fn state elem
+  (short-foldl (nil) list /fn state elem
     (caselet func-result (c func elem)
       yep result func-result
       nope result (nope/nil)
@@ -78,32 +77,36 @@
       nope result (nope/nil)
       err.\-qq[Expected a func-result of type yep or nope])))
 
-(defn not-yep-nope yep-nope
+(defn not yep-nope
   (case yep-nope
     yep val nope.val
     nope val yep.val
     err.\-qq[Expected a yep-nope of type yep or nope]))
 
-(defn or-yep-nope a b
+(defn or a b
   (case a yep - a
   /case b yep - b
   /nope/nil))
 
-(defn and-yep-nope a b
+(defn and-lazy a get-b
   (case a nope - a
+  /let b (c get-b /nil)
   /case b nope - b
   /yep/nil))
 
-(defn xor-yep-nope a b
+(defn and a b
+  (and-lazy a /fn - b))
+
+(defn xor a b
   (case a yep -
     (case b yep - (nope/nil) a)
     (case b yep - b (nope/nil))))
 
 (defn yep-nope-swap a b
-  (case a yep - b not-yep-nope.b))
+  (case a yep - b not.b))
 
 (defn all func list
-  (not-yep-nope/any list /fn elem /not-yep-nope/c func elem))
+  (not/any list /fn elem /not/c func elem))
 
 \ TODO: Rename this to `rev-cut`.
 (defn cut list-to-measure-by list-to-cut
@@ -124,6 +127,33 @@
   /cast list-a cons elem-a list-a lists
   /cast list-b cons elem-b list-b lists
   /c-new tails /cons list-a list-b))
+
+
+\ ===== Lazy lists ===================================================
+
+(def-type lazy-cons get-first get-rest)
+(def-type lazy-nil)
+
+(defn lazy-append a b
+  (cast a lazy-cons a-first a-rest b
+  /lazy-cons a-first /fn - /c-new lazy-append (c a-rest /nil) b))
+
+(defn lazy-short-foldl state lazy-list body
+  (cast lazy-list lazy-cons get-first get-rest nope.state
+  /caselet body-result (c body state /c get-first /nil)
+    yep - body-result
+    nope state (c-new lazy-short-foldl state (c get-rest /nil) body)
+    err.\-qq[Expected a body-result of type yep or nope]))
+
+(defn lazy-list-compare-by a b elem-compare
+  (cast a lazy-cons a-first a-rest (yep/nil)
+  /cast b lazy-cons b-first b-rest (nope/nil)
+  /caselet comparison
+    (c elem-compare (c a-first /nil) (c b-first /nil))
+    
+    nil (c-new lazy-list-compare-by (c a-rest /nil) (c b-rest /nil))
+    
+    comparison))
 
 
 \ ===== "Fixnum operations," a generic interface for bigint digits ===
@@ -190,9 +220,7 @@
     dual-div))
 
 (defn fixops-is-zero fixops n
-  (case (fixops-compare fixops fixops-zero.fixops n) nil
-    (yep/nil)
-    (nope/nil)))
+  (isa nil /fixops-compare fixops fixops-zero.fixops n))
 
 
 \ ===== "Digit pairs," fixnums built out of two smaller fixnums ======
@@ -201,8 +229,7 @@
 
 (defn make-digpair fixops bdig ldig
   (let is-zero
-    (and-yep-nope
-      (fixops-is-zero fixops bdig)
+    (and-lazy (fixops-is-zero fixops bdig) /fn -
       (fixops-is-zero fixops ldig))
   /digpair fixops is-zero bdig ldig))
 
@@ -284,8 +311,8 @@
   
   \ Optimization: If either summand is zero and the carry is also
   \ zero, we can just use the other as the result.
-  /case (and-yep-nope n-is-zero carry-is-zero) yep - (carried m carry)
-  /case (and-yep-nope m-is-zero carry-is-zero) yep - (carried n carry)
+  /case (and n-is-zero carry-is-zero) yep - (carried m carry)
+  /case (and m-is-zero carry-is-zero) yep - (carried n carry)
   
   /cast (fixops-plus fixops n-ldig /carried m-ldig cdig)
     carried r-ldig cdig
@@ -308,7 +335,7 @@
   
   \ Optimization: If both things to subtract from this are zero, we
   \ can just skip the subtraction.
-  /case (and-yep-nope m-is-zero carry-is-zero) yep - (carried n carry)
+  /case (and m-is-zero carry-is-zero) yep - (carried n carry)
   
   /cast (fixops-minus fixops n-ldig /carried m-ldig cdig)
     carried r-ldig cdig
@@ -328,9 +355,9 @@
   
   \ Optimization: If either factor is zero and the carry is also zero,
   \ we can just use a result of zero.
-  /case (and-yep-nope n-is-zero carry-is-zero) yep - (carried n carry)
+  /case (and n-is-zero carry-is-zero) yep - (carried n carry)
   
-  /case (and-yep-nope (fixops-is-zero fixops m) carry-is-zero) yep -
+  /case (and (fixops-is-zero fixops m) carry-is-zero) yep -
     (carried digpair-as-zero.n carry)
   /cast (fixops-times fixops n-ldig /carried m carry)
     carried r-ldig carry
@@ -411,7 +438,7 @@
   
   \ Optimization: If the dividend is zero and the carry is also zero,
   \ we can just use a result of zero.
-  /case (and-yep-nope n-is-zero carry-is-zero) yep - (carried n carry)
+  /case (and n-is-zero carry-is-zero) yep - (carried n carry)
   
   /cast (fixops-div fixops n-bdig /carried m carry)
     carried r-bdig carry
@@ -574,7 +601,7 @@
   (fixops
     (nope/nil)
     (yep/nil)
-    (not-yep-nope)
+    (not)
     
     (fn n m
       \ Compare
@@ -586,24 +613,24 @@
       \ Plus
       (cast m-carried carried m carry
         err.\-qq[Expected an m-carried value of type carried]
-      /case (xor-yep-nope n m) yep -
-        (carried not-yep-nope.carry carry)
+      /case (xor n m) yep -
+        (carried not.carry carry)
         (carried carry n)))
     
     (fn n m-carried
       \ Minus
       (cast m-carried carried m carry
         err.\-qq[Expected an m-carried value of type carried]
-      /case (xor-yep-nope n m) yep -
-        (carried not-yep-nope.carry m)
+      /case (xor n m) yep -
+        (carried not.carry m)
         (carried carry carry)))
     
     (fn n m-carried
       \ Times
       (cast m-carried carried m carry
         err.\-qq[Expected an m-carried value of type carried]
-      /case (and-yep-nope n m) yep -
-        (carried not-yep-nope.carry carry)
+      /case (and n m) yep -
+        (carried not.carry carry)
         (carried carry /nope/nil)))
     
     (fn n m-carried
@@ -633,24 +660,24 @@
         err.\-qq[
           Called make-fixops-yep-nope's dual-div operation with a zero
           divisor]
-      /case (and-yep-nope not-yep-nope.m1 m0) yep -
+      /case (and not.m1 m0) yep -
         \ Divide by one.
         (carried n carry)
-      /case not-yep-nope.m0 yep -
+      /case not.m0 yep -
         \ Divide by two.
         (carried (digpair-with-digits n n2 n1)
         /digpair-with-digits n (nope/nil) n0)
       
       \ Divide by three.
-      /let r1 (or-yep-nope n3 /and-yep-nope n2 n1)
-      /let n2b (case r1 nope - n2 /and-yep-nope n3 n1)
-      /let n1b (case r1 nope - n1 not-yep-nope.n1)
+      /let r1 (or n3 /and n2 n1)
+      /let n2b (case r1 nope - n2 /and n3 n1)
+      /let n1b (case r1 nope - n1 not.n1)
       /let n0b n0
-      /let r0 (or-yep-nope n2b /and-yep-nope n1b n0b)
+      /let r0 (or n2b /and n1b n0b)
       /carried (digpair-with-digits n r1 r0)
       /digpair-with-digits n
-        (case r0 nope - n1b /and-yep-nope n2b n0b)
-        (case r0 nope - n0b not-yep-nope.n0b)))))
+        (case r0 nope - n1b /and n2b n0b)
+        (case r0 nope - n0b not.n0b)))))
 
 
 \ ===== Big, zero-based natural numbers ==============================
@@ -660,9 +687,6 @@
 
 (defn binat-zero-for-fixops fixops
   (binat fixops /nil))
-
-(defn binat-yep-nope-zero -
-  (binat-zero-for-fixops/make-fixops-yep-nope/nil))
 
 (defn binat-as-zero n
   (cast n binat fixops n-internals
@@ -678,9 +702,7 @@
 (defn binat-is-zero n
   (cast n binat fixops n-internals
     err.\-qq[Expected an n value of type binat]
-  /case n-internals binat-internals depth fixnum
-    (nope/nil)
-    (yep/nil)))
+  /not/isa binat-internals n-internals))
 
 (defn improper-binat-is-zero n
   (cast n binat fixops n-internals
@@ -782,7 +804,7 @@
 (defn improper-binat-subtracted-from n m
   (case (binat-compare n m)
     nil (nil)
-    nope - (not-yep-nope/c-new improper-binat-subtracted-from m n)
+    nope - (not/c-new improper-binat-subtracted-from m n)
   /cast n binat fixops n-internals
     err.\-qq[Expected an n value of type binat]
   /cast m binat - m-internals
@@ -870,9 +892,6 @@
 (defn bigint-zero-for-fixops fixops
   (bigint fixops /nil))
 
-(defn bigint-yep-nope-zero -
-  (bigint-zero-for-fixops/make-fixops-yep-nope/nil))
-
 (defn bigint-as-zero n
   (cast n bigint fixops n-nat
     err.\-qq[Expected an n value of type bigint]
@@ -888,7 +907,7 @@
     err.\-qq[Expected an n value of type bigint]
   /case n-nat nil
     n
-  /bigint fixops not-yep-nope.n))
+  /bigint fixops not.n))
 
 (defn bigint-abs n
   (cast n bigint fixops n-nat
@@ -920,9 +939,7 @@
     (nil)))
 
 (defn bigint-is-zero n
-  (case (bigint-compare n bigint-as-zero.n) nil
-    (yep/nil)
-    (nope/nil)))
+  (isa nil /bigint-compare n bigint-as-zero.n))
 
 (defn bigint-plus n m
   (cast n bigint fixops n
@@ -1031,6 +1048,11 @@
     err.\-qq[Expected a branches value of type avl-branches]
   /avl-branches yub ybranch nub nbranch))
 
+(defn avl-comparer tree
+  (case tree avl-leaf fixops compare compare
+  /case tree avl-branch fixops compare key val branches compare
+    err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
+
 (defn avl-get-maybe tree k
   (case tree avl-leaf fixops compare
     (nil)
@@ -1065,18 +1087,17 @@
   /let bigint-plus-one (fn n /bigint-plus n bigint-as-one.n)
   /let bigint-lteq-one
     (fn n
-      (case (bigint-compare n bigint-as-one.n) nope -
-        (nope/nil)
-        (yep/nil)))
+      (not/isa nope /bigint-compare n bigint-as-one.n))
   /let n-is-zero bigint-is-zero.nub
   /let y-is-zero bigint-is-zero.yub
-  /case (or-yep-nope n-is-zero y-is-zero) nope -
+  /case (or n-is-zero y-is-zero) nope -
     (c-new improper-avl-branch-balance
     /avl-branch fixops compare key val
     /avl-branches
       (c bigint-minus-one nub) nbranch
       (c bigint-minus-one yub) ybranch)
-  /case (and-yep-nope (c bigint-lteq-one nub) (c bigint-lteq-one yub))
+  /case
+    (and-lazy (c bigint-lteq-one nub) /fn - (c bigint-lteq-one yub))
     yep -
     (let zero bigint-zero-for-fixops.fixops
     /depth-changed zero zero tree)
@@ -1152,13 +1173,10 @@
           depth-changed w-depth-change t-depth-change tree
           err.\-qq[Internal error]
         /yep-nope-swap
-          (and-yep-nope max-depth-decreased
-          /and-yep-nope (not-yep-nope bigint-is-zero.tub)
-            (case
-              (bigint-compare bigint-as-zero.w-depth-change
-                w-depth-change)
-              yep - (nope/nil)
-              (yep/nil)))
+          (and-lazy max-depth-decreased /fn -
+          /and-lazy (not bigint-is-zero.tub) /fn -
+            (not/isa yep /bigint-compare bigint-as-zero.w-depth-change
+              w-depth-change))
           tree)
         
         err.\-qq[Internal error]))
@@ -1167,26 +1185,24 @@
   /c attempt-shift (nope/nil) /fn -
    yep.ybranch))
 
-\ NOTE: This body takes its args as (state k v).
-(defn avl-short-fold-asc state tree body
+(def-type entry k v)
+
+(defn avl-lazy-entries-asc tree
   (case tree avl-leaf fixops compare
-    nope.state
+    (lazy-nil)
   /case tree avl-branch fixops compare key val branches
     (cast branches avl-branches nub nbranch yub ybranch
       err.\-qq[Expected a branches value of type avl-branches]
-    /caselet first-result
-      (c-new avl-short-fold-asc state nbranch body)
-      
-      yep - first-result
-      
-      nope state
-      (caselet second-result (c body state key val)
-        yep - second-result
-        nope state (c-new avl-short-fold-asc state ybranch body)
-        err.\-qq[Expected body to return a value of type yep or nope])
-      
-      err.\-qq[Internal error])
+    /lazy-append (c-new avl-lazy-entries-asc nbranch)
+    /lazy-cons (entry key val) /c-new avl-lazy-entries-asc ybranch)
     err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
+
+\ NOTE: This body takes its args as (state k v).
+(defn avl-short-fold-asc state tree body
+  (lazy-short-foldl state avl-lazy-entries-asc.tree /fn state entry
+    (cast entry entry k v
+      err.\-qq[Internal error]
+    /c body state k v)))
 
 \ NOTE: This body takes its args as (state k v).
 (defn avl-map-short-fold-asc state tree body
@@ -1400,16 +1416,13 @@
         \    have much less max depth than the other, and the other
         \    lost some depth during a rebalancing.
         \
-        (or-yep-nope
-          (and-yep-nope (not-yep-nope bigint-is-zero.tub)
+        (or
+          (and-lazy (not bigint-is-zero.tub) /fn -
             bigint-is-zero.balanced-tub)
-          (and-yep-nope max-depth-decreased
-          /and-yep-nope (not-yep-nope bigint-is-zero.wub)
-            (case
-              (bigint-compare w-depth-change
-                bigint-as-zero.w-depth-change)
-              yep - (yep/nil)
-              (nope/nil))))
+          (and-lazy max-depth-decreased /fn -
+          /and-lazy (not bigint-is-zero.wub) /fn -
+            (isa yep /bigint-compare w-depth-change
+              bigint-as-zero.w-depth-change)))
         
         subtracted-key subtracted-val balanced-tree)
       
@@ -1462,16 +1475,13 @@
       \    more max depth than the other, and it didn't lose that edge
       \    during a rebalancing.
       \
-      (or-yep-nope
-        (and-yep-nope bigint-is-zero.tub
-        /not-yep-nope bigint-is-zero.balanced-tub)
-        (and-yep-nope max-depth-increased
-        /and-yep-nope (not-yep-nope bigint-is-zero.tub)
-          (case
-            (bigint-compare t-depth-change
-              bigint-as-zero.t-depth-change)
-            yep - (nope/nil)
-            (yep/nil))))
+      (or
+        (and-lazy bigint-is-zero.tub /fn -
+        /not bigint-is-zero.balanced-tub)
+        (and-lazy max-depth-increased /fn -
+        /and-lazy (not bigint-is-zero.tub) /fn -
+          (not/isa yep /bigint-compare t-depth-change
+            bigint-as-zero.t-depth-change)))
       yep.balanced-tree)
     err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
 
@@ -1519,23 +1529,18 @@
       \    have much less max depth than the other, and the other lost
       \    some depth during a rebalancing.
       \
-      (or-yep-nope
-        (and-yep-nope (not-yep-nope bigint-is-zero.tub)
+      (or
+        (and-lazy (not bigint-is-zero.tub) /fn -
           bigint-is-zero.balanced-tub)
-        (and-yep-nope max-depth-decreased
-        /and-yep-nope (not-yep-nope bigint-is-zero.wub)
-          (case
-            (bigint-compare w-depth-change
-              bigint-as-zero.w-depth-change)
-            yep - (yep/nil)
-            (nope/nil))))
+        (and-lazy max-depth-decreased /fn -
+        /and-lazy (not bigint-is-zero.wub) /fn -
+          (isa yep /bigint-compare w-depth-change
+            bigint-as-zero.w-depth-change)))
       yep.balanced-tree)
     err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
 
 (defn avl-has-any tree
-  (case tree avl-leaf fixops compare
-    (nope/nil)
-    (yep/nil)))
+  (not/isa avl-leaf tree))
 
 \ TODO: Rename this to be more convenient to call.
 (defn avl-minus-entry-ignoring-depth avl k
@@ -1565,12 +1570,22 @@
     result))
 
 \ NOTE: This body takes its args as (k v).
+(defn avl-all tree test
+  (not/avl-any tree /fn k v
+    (not/c test k v)))
+
+\ NOTE: This body takes its args as (k v).
 (defn avl-each tree body
   (let -
     (avl-any tree /fn k v
       (let - (c body k v)
       /nope/nil))
   /nil))
+
+\ NOTE: This body takes its args as (state k v).
+(defn avl-fold-asc state tree body
+  (proj1 nope /avl-short-fold-asc state tree /fn state k v
+    (nope/c body state k v)))
 
 \ NOTE: This body takes its args as (k v).
 (defn avl-map tree body
@@ -1755,7 +1770,7 @@
     ftree-pop-result maybe-node rest
     err.\-qq[Internal error]
   /cast maybe-node yep node
-    (ftree-push-list ftree-empty.meta not-yep-nope.polarity w-digits)
+    (ftree-push-list ftree-empty.meta not.polarity w-digits)
   /cast node ftree-node summary elements
     err.\-qq[
       Expected the finger tree in lazy-next to contain values of type
@@ -1793,15 +1808,14 @@
       err.\-qq[Expected a digits value of type ftree-digits]
     /let try-side
       (fn summary-so-far side-polarity on-failed
-        (let iterating-inward
-          (not-yep-nope/xor-yep-nope polarity side-polarity)
+        (let iterating-inward (not/xor polarity side-polarity)
         /cast (ftree-digits-swap polarity digits)
           ftree-digits w2-digits t2-digits
           err.\-qq[Internal error]
         /let digits-to-traverse
           (list-order-swap iterating-inward rev.t2-digits)
         /case
-          (foldl-short
+          (short-foldl
             (ftree-split-iter-state summary-so-far (nil)
               digits-to-traverse)
             digits-to-traverse
@@ -1861,11 +1875,11 @@
       ftree-split-iter-result-completed early-tree late-tree
       (ftree-split-iter-result-completed
         (ftree-push-list early-tree polarity t-digits)
-        (ftree-push-list late-tree not-yep-nope.polarity w-digits))
+        (ftree-push-list late-tree not.polarity w-digits))
       
       ftree-split-iter-result-fell-off summary-so-far
       \ Try each of the digits on the side opposite to `polarity`.
-      (c try-side summary-so-far not-yep-nope.polarity
+      (c try-side summary-so-far not.polarity
       /fn summary-so-far
       /ftree-split-iter-result-fell-off summary-so-far)
       
@@ -1958,6 +1972,175 @@
     err.\-qq[Internal error]))
 
 
+\ ===== Comparison utilities =========================================
+
+(def-type comparable compare val)
+
+(defn comparable-compare a b
+  (cast a comparable compare a-val
+    err.\-qq[Expected an a value of type comparable]
+  /cast b comparable - b-val
+    err.\-qq[Expected a b value of type comparable]
+  /c compare a-val b-val))
+
+\ With the following utilities `bimap` and `cmpd-compare`, we can more
+\ easily define ordered abstract data types. For instance:
+\ -----
+\-rm(
+  (def-type foo x y)
+  (def-type bar x)
+  (def-type baz)
+  
+  (defn foo-bar-baz-compare a b
+    (bimap (cmpd-compare) a b /fn it
+      (case it foo x y
+        (cmpd-cons (bigint-compare) x
+        /cmpd-cons (bigint-compare) y
+        /cmpd-nil)
+      /cmpd-succ/case it bar x
+        (cmpd-cons (bigint-compare) x /cmpd-nil)
+      /cmpd-succ/case it baz (cmpd-nil)
+        err.\-qq[Expected a value of type foo, bar, or baz])))
+)
+\ -----
+
+(defn bimap combine a b func
+  (c combine (c func a) (c func b)))
+
+\ NOTE: The "cmpd" stands for "comparison delegate."
+(def-type cmpd-succ rest)
+(def-type cmpd-cons compare val rest)
+(def-type cmpd-nil)
+
+(defn cmpd-compare a b
+  (case a cmpd-succ a-rest
+    (case b cmpd-succ b-rest
+      (c-new cmpd-compare a-rest b-rest)
+      (nope/nil))
+  /case b cmpd-succ b-rest (yep/nil)
+  /case a cmpd-cons compare a-val a-rest
+    (case b cmpd-cons - b-val b-rest
+      (caselet comparison (c compare a-val b-val) nil
+        (c-new compare a-rest b-rest)
+        comparison)
+      err.\-qq[
+        Expected a and b to be the same length since neither was a
+        cmpd-succ])
+  /case b cmpd-cons compare b-val b-rest
+    err.\-qq[
+      Expected a and b to be the same length since neither was a
+      cmpd-succ]
+  /cast a cmpd-nil
+    err.\-qq[
+      Expected an a value of type cmpd-succ, cmpd-cons, or cmpd-nil]
+  /cast b cmpd-nil
+    err.\-qq[
+      Expected a b value of type cmpd-succ, cmpd-cons, or cmpd-nil]
+  /nil))
+
+
+\ ===== Recommended settings for performance =========================
+
+(defn make-fixops-recommended -
+  (make-fixops-yep-nope/nil))
+
+(defn bigint-zero-recommended -
+  (bigint-zero-for-fixops/make-fixops-recommended/nil))
+
+
+\ ===== Sets (bags) ==================================================
+
+(def-type bag avl-tree)
+
+(defn bag-all bag test
+  (cast bag bag avl-tree
+    err.\-qq[Expected a bag value of type bag]
+  /avl-all avl-tree /fn k v
+    (c test k)))
+
+(defn bag-empty compare
+  (bag/avl-leaf (make-fixops-recommended/nil) compare))
+
+(defn bag-plus a b
+  (cast a bag a-avl-tree
+    err.\-qq[Expected an a value of type bag]
+  /cast b bag b-avl-tree
+    err.\-qq[Expected a b value of type bag]
+  /bag/avl-plus a-avl-tree b-avl-tree))
+
+(defn bag-short-fold-asc state bag body
+  (cast bag bag avl-tree
+    err.\-qq[Expected a bag value of type bag]
+  /avl-short-fold-asc state avl-tree /fn state k v
+    (c body state k)))
+
+(defn bag-fold-asc state bag body
+  (proj1 nope /bag-short-fold-asc state bag /fn state elem
+    (nope/c body state elem)))
+
+(defn bag-mappend compare bag func
+  (bag-fold-asc bag-empty.compare bag /fn state elem
+    (bag-plus state /c func elem)))
+
+(defn bag-minus a b
+  (cast a bag a-avl-tree
+    err.\-qq[Expected an a value of type bag]
+  /cast b bag b-avl-tree
+    err.\-qq[Expected a b value of type bag]
+  /bag/bag-fold-asc a-avl-tree b /fn state elem
+    (avl-minus-entry state elem)))
+
+(defn bag-only bag
+  (case
+    (bag-short-fold-asc (nil) bag /fn state elem
+      (case state yep -
+        (yep/nil)
+        (nope yep.elem)))
+    nope val val
+  /nil))
+
+(defn bag-plus-elem bag elem
+  (cast bag bag avl-tree
+    err.\-qq[Expected a bag value of type bag]
+  /bag/avl-plus-nil avl-tree elem))
+
+(defn bag-compare a b
+  (let compare avl-comparer.a
+  /lazy-list-compare-by avl-lazy-entries-asc.a avl-lazy-entries-asc.b
+  /fn a b
+    (bimap compare a b /fn it
+      (cast it entry k v
+        err.\-qq[Internal error]
+        k))))
+
+(defn bag-just compare elem
+  (bag-plus-elem bag-empty.compare elem))
+
+(defn bag-map compare bag func
+  (bag-mappend compare bag /fn elem
+    (bag-just compare /c func elem)))
+
+
+\ ===== Lenses =======================================================
+
+(def-type lens get replace)
+
+(defn lens-get lens
+  (cast lens lens get replace
+    err.\-qq[Expected a lens value of type lens]
+  /c get /nil))
+
+(defn lens-replace lens val
+  (cast lens lens get replace
+    err.\-qq[Expected a lens value of type lens]
+  /c replace val))
+
+(defn lens-replace-by lens func
+  (cast lens lens get replace
+    err.\-qq[Expected a lens value of type lens]
+  /c replace /c func /c get /nil))
+
+
 \ ===== Finishing up and some basic unit tests =======================
 
 (run-defs)
@@ -1966,7 +2149,7 @@
 
 (test/rev/nil)
 
-(test/not-yep-nope/yep/nil)
+(test/not/yep/nil)
 
 (test
   (let x (nope/nil) y (yep/nil)

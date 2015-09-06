@@ -248,6 +248,47 @@ staccatoDeclarationState.macros.set( "cast", function ( body ) {
     return stcCast( body.first, body.rest );
 } );
 
+staccatoDeclarationState.macros.set( "isa", function ( body ) {
+    if ( body.type !== "cons" )
+        throw new Error();
+    if ( body.rest.type !== "cons" )
+        throw new Error();
+    if ( body.rest.rest.type === "cons" )
+        throw new Error();
+    var frameName = readerStringNilToString( body.first );
+    if ( !staccatoDeclarationState.types.has( frameName ) )
+        throw new Error( "No such type: " + frameName );
+    var type = staccatoDeclarationState.types.get( frameName );
+    var stcYep = stcType( "yep", "val" );
+    var stcNope = stcType( "nope", "val" );
+    var stcNil = stcType( "nil" );
+    var processedBody = jsList( "match", frameName,
+        stcEntriesPairMacro( "env-pattern-cons", "env-pattern-nil",
+            type.frameVars,
+            arrMap( type.frameVars, function ( frameVar ) {
+                return stcGensym();
+            } ) ),
+        stcSaveRoot( stcYep.of( stcNil.of() ) ),
+        jsList( "any", stcSaveRoot( stcNope.of( stcNil.of() ) ) ) );
+    return stcCall(
+        stcBasicRet(
+            jsList( "fn", stcGensym(), stcNoVars(), processedBody ) ),
+        stcSaveRoot( processReaderExpr( body.rest.first ) ) );
+} );
+
+staccatoDeclarationState.macros.set( "proj1", function ( body ) {
+    if ( body.type !== "cons" )
+        throw new Error();
+    if ( body.rest.type !== "cons" )
+        throw new Error();
+    if ( body.rest.rest.type === "cons" )
+        throw new Error();
+    return stcCast( body.rest.first,
+        { type: "cons", first: body.first, rest:
+            readAll( "(val err.\\-qq[Internal error] val)" )[ 0 ].val
+        } );
+} );
+
 staccatoDeclarationState.macros.set( "c", function ( body ) {
     if ( body.type !== "cons" )
         throw new Error();
