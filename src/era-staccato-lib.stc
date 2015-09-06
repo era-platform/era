@@ -1972,6 +1972,105 @@
     err.\-qq[Internal error]))
 
 
+\ ===== Big finger trees =============================================
+\
+\ A native platform (namely, JavaScript) may provide an efficient
+\ finger-tree-like data structure with the exception that the size of
+\ the data is limited. These "big finger trees" are finger trees
+\ implemented as finger trees whose elements abstractly follow a
+\ finger-tree-style interface, with the anomaly that the elements'
+\ concatenation operation doesn't have to be total.
+
+(def-type fix-ftree-ops push pop maybe-plus split)
+(def-type bftree fix-ftree-ops ftree)
+
+(defn ftree-is-too-empty-to-pop elem pop
+  (cast (c pop elem /yep/nil) ftree-pop-result maybe-popped -
+    err.\-qq[Expected pop to return a value of type ftree-pop-result]
+  /isa nil maybe-popped))
+
+(defn bftree-push tree polarity elem
+  (cast tree bftree fix-ftree-ops ftree
+    err.\-qq[Expected a tree value of type bftree]
+  /cast fix-ftree-ops fix-ftree-ops push pop maybe-plus split
+    err.\-qq[Expected a fix-ftree-ops value of type fix-ftree-ops]
+  /case (ftree-is-too-empty-to-pop elem pop) yep - tree
+  /cast (ftree-pop ftree polarity)
+    ftree-pop-result maybe-popped diminished-ftree
+    err.\-qq[Internal error]
+  /bftree fix-ftree-ops
+  /case
+    (cast maybe-popped yep popped (nil)
+    /case polarity yep -
+      (c maybe-plus popped elem)
+      (c maybe-plus elem popped))
+    yep elem (ftree-push diminished-ftree polarity elem)
+    (ftree-push ftree polarity elem)))
+
+(defn bftree-pop tree polarity
+  (cast tree bftree fix-ftree-ops ftree
+    err.\-qq[Expected a tree value of type bftree]
+  /cast fix-ftree-ops fix-ftree-ops push pop maybe-plus split
+    err.\-qq[Expected a fix-ftree-ops value of type fix-ftree-ops]
+  /cast (ftree-pop ftree polarity) ftree-pop-result maybe-popped ftree
+    err.\-qq[Internal error]
+  /cast maybe-popped yep popped
+    (ftree-pop-result (nil) ftree)
+  /cast (c pop popped polarity) ftree-pop-result maybe-popped new-leaf
+    err.\-qq[
+      Expected a fix-ftree-ops's pop function to return a value of
+      type ftree-pop-result]
+  /cast maybe-popped yep popped
+    err.\-qq[
+      Expected a bftree's ftree to contain only nonempty leaves]
+  /ftree-pop-result maybe-popped
+  /bftree fix-ftree-ops /ftree-push ftree polarity new-leaf))
+
+(defn bftree-plus a b
+  (cast a bftree fix-ftree-ops a
+    err.\-qq[Expected an a value of type bftree]
+  /cast b bftree - b
+    err.\-qq[Expected a b value of type bftree]
+  /cast fix-ftree-ops fix-ftree-ops push pop maybe-plus split
+    err.\-qq[Expected a fix-ftree-ops value of type fix-ftree-ops]
+  /cast (ftree-pop a /yep/nil)
+    ftree-pop-result a-maybe-popped a-diminished
+    err.\-qq[Internal error]
+  /cast (ftree-pop b /yep/nil)
+    ftree-pop-result b-maybe-popped b-diminished
+    err.\-qq[Internal error]
+  /bftree fix-ftree-ops
+  /cast a-maybe-popped yep a-elem (ftree-append-with-middle a (nil) b)
+  /cast b-maybe-popped yep b-elem (ftree-append-with-middle a (nil) b)
+  /cast (c maybe-plus a-elem b-elem) yep elem
+    (ftree-append-with-middle a (nil) b)
+  /ftree-append-with-middle
+    a-diminished (cons elem /nil) b-diminished))
+
+(defn bftree-split tree polarity test-is-early
+  (cast tree bftree fix-ftree-ops ftree
+    err.\-qq[Expected a tree value of type bftree]
+  /cast fix-ftree-ops fix-ftree-ops push pop maybe-plus split
+    err.\-qq[Expected a fix-ftree-ops value of type fix-ftree-ops]
+  /cast (ftree-split ftree polarity test-is-early)
+    ftree-split-result early-tree late-tree
+    err.\-qq[Internal error]
+  /cast (ftree-pop late-tree polarity)
+    ftree-pop-result maybe-popped late-tree
+    err.\-qq[Internal error]
+  /cast maybe-popped yep popped
+    (ftree-split-result
+      (bftree fix-ftree-ops early-tree)
+      (bftree fix-ftree-ops late-tree))
+  /cast (c split popped polarity test-is-early)
+    ftree-split-result early-elem late-elem
+    err.\-qq[Internal error]
+  /ftree-split-result
+    (bftree fix-ftree-ops
+    /ftree-push early-tree not.polarity early-elem)
+    (bftree fix-ftree-ops /ftree-push late-tree polarity late-elem)))
+
+
 \ ===== Comparison utilities =========================================
 
 (def-type comparable compare val)
