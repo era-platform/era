@@ -1,0 +1,584 @@
+\ era-staccato-lib.stc
+\ Copyright 2015 Ross Angle. Released under the MIT License.
+
+
+\ Although this may look like source code, and it may even become full
+\ source code at some point, right now it mostly serves as a
+\ collection of notes.
+\
+\ One side of the notes explores a potential high-level design for
+\ Staccato macro definitions and ad hoc namespace manipulation. This
+\ is far more expressive than Staccato is likely to support for some
+\ time, but it means that I can writing Staccato code freely, safe in
+\ the knowledge that I won't be tied down to regretful name choices or
+\ ever-growing lists of syntactic primitives.
+\
+\ The other side of these notes begins the more immediate exercise of
+\ porting the era-stacato.js desugarer to Staccato. This could
+\ hypothetically be used to implement `(defn ...)` and
+\ `(def-type ...)` as macros someday, but what it proves is that the
+\ design of the desugarer itself is something programmers can replace
+\ when needed. Furthermore, the port should ultimately support a
+\ slightly different syntax than before: In a raw Staccato AST,
+\ constructors and their projections will no longer be designated by
+\ unqualified strings, but by fully qualified names.
+\
+\ TODO: The macro system would have all definitions happen as side
+\ effects of macro calls. On the other hand, the desugarer can't
+\ eliminate (def ...) until basically the end of the desugaring
+\ process; all of the desugaring leads up to that.
+
+
+\ ===== Notes and examples for using the macro system ================
+
+\ These depend on a type `(stx stx-details s-expr)` representing an
+\ s-expression tagged with source location information.
+\
+\ These depend on a type `(foreign name)` representing an s-expression
+\ that consists of a name. The program may not know of a way to encode
+\ the name as serializable data, but it can still be passed to
+\ `(compile ...)`.
+\
+\ These depend on a macro `(name name)` which obtains a first-class
+\ representation of the given name. This is usually useless, but it is
+\ useful for `(compile ...)`.
+\
+\ These sort of depend on a macro `(new type)`, which creates a value
+\ of the given type. The type must be empty.
+\
+\ These depend on a macro `(str string)`, which obtains a first-class
+\ string value with the given literal text.
+\
+\ These depend on a function `(compile unique-ns definition-ns stx)`
+\ which macroexpands the given `stx` and installs any definitions it
+\ produces.
+\
+\ A macro could depend on a function `(derive-ns ns ns)` which obtains
+\ a sub-namespace determined by the first namespace, using the second
+\ namespace's complete identity as a "folder name." Usually, distinct
+\ "folder names" will yield distinct sub-namespaces, but sometimes the
+\ interpreter may be configured so that this isn't the case.
+\
+\ These depend on a function `(string-ns ns string)` which obtains a
+\ sub-namespace determined by the first namespace, using the string as
+\ a "folder name." Usually, distinct "folder names" will yield
+\ distinct sub-namespaces, but sometimes the interpreter may be
+\ configured so that this isn't the case.
+\
+\ These depend on a function `(ns-get ns)`, which blocks until the
+\ given namespace has a defined Staccato value and then returns it.
+\
+\ A macro could depend on a function `(ns-set ns value)`, which
+\ installs a definition so that the given namespace has a defined
+\ Staccato value, namely the given one. The return value is `(nil)`.
+\
+\ Yes, we're using deterministic side effects during macroexpansion.
+\ Since a macro will necessarily need to *read* existing definitions
+\ in order for its implementation code to do anything at all, we're
+\ doing concurrency with blocking reads and assumed-unique writes. If
+\ two or more conflicting writes are performed, all definitions that
+\ depended on reading those writes will be retroactively updated.
+\ Usually, conflicting definitions are an error. However, at a REPL,
+\ definitions from a newer command may take the place of definitions
+\ from an older command without error. Errors or updates may cascade
+\ through several layers of other definitions that depended on them.
+\
+\ Common definitions are stored like so, where slashes represent
+\ `string-ns` except where marked as `derive-ns`:
+\
+\   <definition-ns>/constructor-names/<constructor name string>/name
+\     = No defined value, but the proper identity to use for the
+\       constructor in everything except manually keyboarded code.
+\   <definition-ns>/constructor-names/<constructor name string>/
+\       projection-list
+\       = An ordered list of projection name strings. Projections
+\         should only be treated as an ordered list in manually
+\         keyboarded code and in macros catering to manually
+\         keyboarded code.
+\   <definition-ns>/constructor-names/<constructor name string>/
+\     projection-names/<projection name string>/name
+\     = No defined value, but the proper identity to use for the
+\       projection in everything except manually keyboarded code.
+\
+\   <definition-ns>/macro-names/<macro name string>/name
+\     = No defined value, but the proper identity to use for the macro
+\       in everything except manually keyboarded code.
+\
+\   <definition-ns>/macros/<derive-ns: macro identity>/function
+\     = A value that can be invoked with the arguments of a macro
+\       call.
+\
+\   <definition-ns>/functions/<derive-ns: constructor identity>/
+\     staccato
+\     = An s-expression that can be compiled as a raw, sugarless
+\       Staccato function definition.
+\
+\ The usual definition forms generate several definitions all at once:
+\
+\   (def-type ...)
+\     * The constructor name information desired.
+\     * A macro so that the construction is easy to do.
+\     * The name information for that macro.
+\     * Constructor name information for a callable value which
+\       implements that macro.
+\     * A function implementation for that callable value.
+\
+\   (defn ...)
+\     * The function implementation desired.
+\     * Constructor name information for a first-class representation
+\       of the function.
+\     * A macro so that the function is easy to call. (Fortunately,
+\       every (defn ...) macro can reuse the same callable value
+\       constructor and function implementation.)
+\     * The name information for that macro.
+\
+\ A macro could depend on a function `(shadowing-ns ns ns ns)` which
+\ creates a new namespace that behaves like the first namespace in
+\ almost every way, except when the second namespace is requested as a
+\ "folder name", in which case the third namespace is returned
+\ instead. This can be used to establish local macros. The new
+\ namespace even works the same way as the old one when it's used as
+\ the "folder name" itself. This way, we can imagine that the
+\ namespace's "complete identity" is stored as an entry somewhere in
+\ the namespace, just using a key that we don't have the ability to
+\ construct.
+\
+\ A macro's `unique-ns` parameter is a namespace. It's useful in the
+\ way that gensyms are typically useful in other macro-capable
+\ languages, but the uniqueness is achieved by playing along: If the
+\ macro compiles more than one subexpression, each subexpression
+\ should be given a `unique-ns` derived in different ways from this
+\ one.
+\
+\ A macro's `definition-ns` parameter is a namespace. If the macro
+\ needs to install any definitions or look up any definitions, this is
+\ the namespace for that purpose. It should usually be passed as-is to
+\ any compiled subexpressions, except when defining a macro that's
+\ local to a certain subexpression.
+\
+\ A macro's `my-stx-details` parameter is a collection of source
+\ location information. There's no direct way to deconstruct this
+\ value, but it conveys information about this macro invocation, so
+\ the macro can use it to receive attribution for any `stx` values it
+\ creates.
+\
+\ (TODO: Figure out what the format of source location information
+\ actually is. For now, this is sort of just an unspecified area, but
+\ at least a language implementation can use this to hold filenames
+\ and line numbers in practice. An implementation should be able to
+\ treat this as a completely empty data structure; it's not needed for
+\ any variable scoping purposes.)
+\
+\ A macro's `args` parameter is a list of `(stx stx-details s-expr)`
+\ values. The list is built out of `(cons car cdr)` and `(nil)`
+\ values.
+
+(def-macro c-new unique-ns definition-ns my-stx-details args
+  (let s (fn it /stx my-stx-details it)
+  /cast args cons func-name args
+    err.\-qq[Not enough arguments to c-new]
+  /compile unique-ns definition-ns
+  /c s
+  /cons (c s /foreign name.c)
+  /cons (c s /list (c s /foreign name.new) func-name)
+    args))
+
+(def-macro case unique-ns definition-ns my-stx-details args
+  (let s (fn it /stx my-stx-details it)
+  /compile (string-ns unique-ns str.body) definition-ns
+  /c s
+  /cons (c s /foreign name.caselet)
+  /cons (c s /foreign/string-ns unique-ns str.ignored)
+    args))
+
+(def-macro cast unique-ns definition-ns my-stx-details args
+  (let s (fn it /stx my-stx-details it)
+  \ TODO: Oops, we didn't need this utility. Do something with it.
+  /let to-constructor-name
+    (fn constructor-name
+      (case constructor-name
+        
+        foreign name name
+        
+        string-nil constructor-string
+        (string-ns
+          (string-ns
+            (string-ns definition-ns str.constructor-names)
+            constructor-string)
+          str.name)
+        
+        err.\-qq[Called cast with a non-name]))
+  \ TODO: Oops, we didn't need this utility. Do something with it.
+  /let to-projection-name
+    (fn constructor-name projection-name
+      (case projection-name
+        
+        foreign name name
+        
+        string-nil projection-string
+        (case constructor-name string-nil constructor-string
+          (string-ns
+            (string-ns
+              (string-ns
+                (string-ns
+                  (string-ns definition-ns str.constructor-names)
+                  constructor-string)
+                str.projection-names)
+              projection-string)
+            str.name)
+          err.\-qq[
+            Called to-projection-name with an inconsistent constructor
+            name])
+        
+        err.\-qq[Called to-projection-name with a non-name]))
+  /case args cons var args
+    (case args cons constructor-string args
+      (let projection-list
+        (ns-get/string-ns
+          (string-ns
+            (string-ns definition-ns str.constructor-names)
+            constructor-string)
+          str.projection-names)
+        ; TODO: Fold over the `projection-list` to get the pattern
+        ; variables, and build a call to `(case ...)`.
+        -)
+      err.\-qq[Not enough arguments to cast])
+    err.\-qq[Not enough arguments to cast]))
+
+
+
+\ ===== Reimplementation of the desugarer ============================
+
+\ TODO: Replace `opt-var-list` with `opt-env-pattern`.
+(def-type stc-def frame-name opt-var-list case-list)
+(def-type stc-let-case var case-list)
+(def-type stc-match frame-name env-pattern get-expr case-list)
+(def-type stc-any get-expr)
+(def-type stc-env-nil)
+\ TODO: Use names instead of strings for `var`.
+(def-type stc-env-cons var get-expr env-expr)
+(def-type stc-let-def def get-expr)
+(def-type stc-let env-expr get-expr)
+(def-type stc-local var)
+(def-type stc-frame frame-name env-expr)
+(def-type stc-save-root save-root get-expr)
+(def-type stc-save
+  save-root call-frame-name call-func frame-name opt-var-list call-arg
+  var arg)
+(def-type stc-fn frame-name opt-var-list case-list)
+\ TODO: Replace this with `stc-env-pattern-omitted`, and have it
+\ contain a namespace from which the projection names can be derived
+\ as "<ns>/<projection name>/name".
+(def-type stc-var-list-omitted)
+\ TODO: Replace this with `stc-env-pattern`.
+(def-type stc-var-list var-list)
+\ TODO: Remove this altogether.
+(def-type stc-var-list-nil)
+\ TODO: Remove this altogether.
+(def-type stc-var-list-cons var var-list)
+(def-type stc-env-pattern-nil)
+\ TODO: Use names instead of strings for `k`.
+(def-type stc-env-pattern-cons k v env-pattern)
+
+(defn staccato-visit expr visitor
+  (case expr
+    
+    stc-def frame-name opt-var-list case-list
+    (cast
+      (visitor-visit visitor case-list
+        (case staccato-opt-var-list-set.opt-var-list yep set
+          set
+          (jsn-map/nil))
+      /scope-policy-no-free-vars)
+      visitor-visit-completion visitor case-list
+      err.\-qq[Internal error]
+    /visitor-redecorate visitor (jsn-map/nil)
+    /stc-def frame-name opt-var-list case-list)
+    
+    stc-let-case var case-list
+    (cast var string -
+      err.\-qq[Visited a stc-let-case where the var was not a string]
+    /cast
+      (visitor-visit visitor case-list
+        (jsn-map-plus-truth (jsn-map/nil)
+        /cons str.\-qq[va:va] /cons var /nil)
+      /scope-policy-does-not-matter)
+      visitor-visit-completion visitor case-list
+      err.\-qq[Internal error]
+    /visitor-redecorate visitor (jsn-map/nil)
+    /stc-let-case var case-list)
+    
+    stc-match frame-name env-pattern get-expr case-list
+    (cast
+      (visitor-visit visitor get-expr
+        staccato-env-pattern-vals-to-keys.env-pattern
+      /scope-policy-not-root)
+      visitor-visit-completion visitor get-expr
+      err.\-qq[Internal error]
+    /cast
+      (visitor-visit visitor case-list (jsn-map/nil)
+      /scope-policy-not-root)
+      visitor-visit-completion visitor case-list
+      err.\-qq[Internal error]
+    /visitor-redecorate visitor (jsn-map/nil)
+    /stc-match frame-name env-pattern get-expr case-list)
+    
+    stc-any get-expr
+    (cast
+      (visitor-visit visitor get-expr (jsn-map/nil)
+      /scope-policy-not-root)
+      visitor-visit-completion visitor get-expr
+      err.\-qq[Internal error]
+    /visitor-redecorate visitor (jsn-map/nil)
+    /stc-any get-expr)
+    
+    stc-env-nil
+    (visitor-redecorate visitor (jsn-map/nil)
+    /stc-env-nil)
+    
+    stc-env-cons var get-expr env-expr
+    (cast
+      (visitor-visit visitor get-expr (jsn-map/nil)
+      /scope-policy-not-root)
+      visitor-visit-completion visitor get-expr
+      err.\-qq[Internal error]
+    /cast
+      (visitor-visit visitor env-expr (jsn-map/nil)
+      /scope-policy-not-root)
+      visitor-visit-completion visitor env-expr
+      err.\-qq[Internal error]
+    /visitor-redecorate visitor (jsn-map/nil)
+    /stc-env-cons var get-expr env-expr)
+    
+    stc-let-def def get-expr
+    (cast
+      (visitor-visit visitor def (jsn-map/nil)
+      /scope-policy-does-not-matter)
+      visitor-visit-completion visitor def
+      err.\-qq[Internal error]
+    /cast
+      (visitor-visit visitor get-expr (jsn-map/nil)
+      /scope-policy-not-root)
+      visitor-visit-completion visitor get-expr
+      err.\-qq[Internal error]
+    /visitor-redecorate visitor (jsn-map/nil)
+    /stc-let-def def get-expr)
+    
+    stc-let env-expr get-expr
+    (cast
+      (visitor-visit visitor env-expr (jsn-map/nil)
+      /scope-policy-not-root)
+      visitor-visit-completion visitor env-expr
+      err.\-qq[Internal error]
+    /cast
+      (visitor-visit visitor get-expr staccato-env-expr-keys.env-expr
+      /scope-policy-not-root)
+      visitor-visit-completion visitor get-expr
+      err.\-qq[Internal error]
+    /visitor-redecorate visitor (jsn-map/nil)
+    /stc-let env-expr get-expr)
+    
+    stc-local var
+    (cast var string -
+      err.\-qq[Visited a stc-local where the var was not a string]
+    /visitor-redecorate visitor
+      (jsn-map-plus-truth (jsn-map/nil)
+      /cons str.\-qq[va:va] /cons var /nil)
+    /stc-local)
+    
+    stc-frame frame-name env-expr
+    (cast
+      (visitor-visit visitor env-expr (jsn-map/nil)
+      /scope-policy-not-root)
+      visitor-visit-completion visitor env-expr
+      err.\-qq[Internal error]
+    /visitor-redecorate visitor (jsn-map/nil)
+    /stc-frame frame-name env-expr)
+    
+    stc-save-root save-root get-expr
+    (cast save-root string -
+      err.\-qq[
+        Visited a stc-local where the save-root was not a string]
+    /cast
+      (visitor-visit visitor get-expr (jsn-map/nil)
+      /scope-policy-save-root save-root)
+      visitor-visit-completion visitor get-expr
+      err.\-qq[Internal error]
+    /visitor-redecorate visitor (jsn-map/nil)
+    /stc-save-root save-root get-expr)
+    
+    \ TODO: Handle other expressions (`save` and `fn`).
+    
+    err.\-qq[
+      Called staccato-visit with an expr that wasn't a Staccato
+      expression]))
+
+(defn fix func
+  (fn arg
+    (c func (c-new fix func) arg)))
+
+(defn make-fix-visitor body
+  (make-visitor/fix/fn loop
+    (c body make-visitor.loop)))
+
+(defn id-visitor recur
+  (make-fix-visitor/fn self method /case method
+    
+    method-visitor-visit part shadow scope-policy
+    (visitor-visit-result (c recur part shadow scope-policy) self)
+    
+    method-visitor-redecorate extra-vars whole whole
+    
+    err.\-qq[Expected method to be a visitor method]))
+
+(defn staccato-desugar-save expr
+  (case expr
+    
+    stc-save-root save-root get-expr
+    (fix
+      (fn loop expr
+        (caselet desugared (c-new staccato-desugar-save expr)
+          
+          desugared-save-expr expr desugared
+          
+          desugared-save-save
+          desugared-save-root call-frame-name call-func frame-name
+          opt-var-list call-arg var arg frame-body-expr
+          (cast (string-compare save-root desugared-save-root) nil
+            desugared
+          /c loop /stc-get-expr /stc-save-root save-root
+          /stc-frame call-frame-name
+          /env-cons call-func
+            (stc-fn frame-name opt-var-list
+              (stc-let-case var
+              /stc-any frame-body-expr))
+          /env-cons call-arg arg
+          /env-nil)
+          
+          err.\-qq[Internal error]))
+      get-expr)
+    
+    stc-save
+    save-root call-frame-name call-func frame-name opt-var-list
+    call-arg var arg
+    (desugared-save-save
+      save-root call-frame-name call-func frame-name opt-var-list
+      call-arg var arg
+    /stc-local var)
+    
+    (staccato-visit expr /make-fix-visitor/fn self method /case method
+      
+      method-visitor-visit part shadow scope-policy
+      (case (c-new staccato-desugar-save part)
+        
+        desugared-save-expr expr
+        (visitor-visit-result expr self)
+        
+        desugared-save-save
+        desugared-save-root call-frame-name call-func frame-name
+        opt-var-list call-arg var arg frame-body-expr
+        (visitor-visit-result frame-body-expr
+        /make-fix-visitor/fn self method /case method
+          
+          method-visitor-visit part shadow scope-policy
+          (visitor-visit-result part self)
+          
+          method-visitor-redecorate extra-vars whole
+          (desugared-save-save
+            desugared-save-root call-frame-name call-func frame-name
+            opt-var-list call-arg var arg whole)
+          
+          err.\-qq[Expected method to be a visitor method])
+        
+        err.\-qq[Internal error])
+      
+      method-visitor-redecorate extra-vars whole
+      desugared-save-expr.whole
+      
+      err.\-qq[Expected method to be a visitor method])))
+
+(defn staccato-desugar-var-lists expr
+  (case expr
+    
+    stc-def frame-name opt-var-list case-list
+    (let inner-free-vars get-free-vars.case-list
+    /stc-def frame-name
+      (opt-var-list-or opt-var-list inner-free-vars)
+      staccato-desugar-var-lists.case-list)
+    
+    stc-save-root - -2
+    err.\-qq[Called staccato-desugar-var-lists on a stc-save-root]
+    
+    stc-save - -2 -3 -4 -5 -6 -7 -8
+    err.\-qq[Called staccato-desugar-var-lists on a stc-save]
+    
+    stc-fn frame-name opt-var-list case-list
+    (let inner-free-vars get-free-vars.case-list
+    /stc-fn frame-name
+      (opt-var-list-or opt-var-list inner-free-vars)
+      staccato-desugar-var-lists.case-list)
+    
+    (staccato-visit expr /id-visitor/fn part shadow scope-policy
+      staccato-desugar-var-lists.part)))
+
+(defn staccato-desugar-fn expr
+  (case expr
+    
+    stc-save-root - -2
+    err.\-qq[Called staccato-desugar-fn on a stc-save-root]
+    
+    stc-save - -2 -3 -4 -5 -6 -7 -8
+    err.\-qq[Called staccato-desugar-fn on a stc-save]
+    
+    stc-fn frame-name opt-var-list case-list
+    (stc-let-def
+      (stc-def frame-name opt-var-list
+        desugar-fn.case-list)
+    /stc-frame frame-name opt-var-list-capture.opt-var-list)
+    
+    (staccato-visit expr /id-visitor/fn part shadow scope-policy
+      staccato-desugar-fn.part)))
+
+(defn staccato-desugar-def-including-self expr
+  (cast expr stc-def frame-name opt-var-list case-list
+    qerr.\-qq[
+      Called staccato-desugar-def-including-self on an expr that
+      wasn't a stc-def]
+  /cast desugar-def.case-list desugar-def-result defs expr
+  /append defs /cons (stc-def frame-name opt-var-list expr) /nil))
+
+(defn staccato-desugar-def expr
+  (case expr
+    
+    stc-let-def def get-expr
+    (let desugared-def staccato-desugar-def-including-self.def
+    /cast (c-new staccato-desugar-def get-expr)
+      desugar-def-result defs expr
+      err.\-qq[Internal error]
+    /desugar-def-result (append desugared-def defs) expr)
+    
+    stc-save-root - -2
+    err.\-qq[Called staccato-desugar-def on a stc-save-root]
+    
+    stc-save - -2 -3 -4 -5 -6 -7 -8
+    err.\-qq[Called staccato-desugar-def on a stc-save]
+    
+    stc-fn - -2 -3
+    err.\-qq[Called staccato-desugar-def on a stc-fn]
+    
+    (staccato-visit expr
+    /make-visitor/fix
+      (fn visitor-loop defs method /case method
+        
+        method-visitor-visit part shadow scope-policy
+        (cast (c-new staccato-desugar-def part)
+          desugar-def-result more-defs expr
+          err.\-qq[Internal error]
+        /visitor-visit-result expr
+        /make-visitor/c visitor-loop /append defs more-defs)
+        
+        method-visitor-redecorate extra-vars whole
+        (desugar-def-result defs whole)
+        
+        err.\-qq[Expected method to be a visitor method])
+      (nil))))

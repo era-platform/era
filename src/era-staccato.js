@@ -257,6 +257,38 @@ function run( stack, rules ) {
 //   (env-pattern-cons var var env-pattern)
 //
 //
+// Here it is again, this time with the notes and sugar removed:
+//
+// def ::=
+//   (def frame-name opt-var-list case-list)
+//
+// case-list ::=
+//   (let-case var case-list)
+//   (match frame-name env-pattern get-expr case-list)
+//   (any get-expr)
+//
+// env-expr ::=
+//   (env-nil)
+//   (env-cons var get-expr env-expr)
+//
+// get-expr ::=
+//   (let env-expr get-expr)
+//   (local var)
+//   (frame frame-name env-expr)
+//
+// opt-var-list ::=
+//   (var-list var-list)
+//
+// var-list ::=
+//   (var-list-nil)
+//   (var-list-cons var var-list)
+//
+// env-pattern ::=
+//   (env-pattern-nil)
+//   (env-pattern-cons var var env-pattern)
+//
+//
+//
 // ~~ Staccato Turing-complete computation ~~~
 //
 // The core language semantics doesn't specify a particular way to do
@@ -640,26 +672,22 @@ function freeVarsWriter() {
     
     var writer = {};
     writer.consume = function ( part, inheritedAttrs ) {
-        if ( inheritedAttrs.shadow === null )
-            return;
+        var shadowed =
+            getFreeVars( part ).minus( inheritedAttrs.shadow );
         
-        var shadowed = getFreeVars( part );
-        
-        if ( inheritedAttrs.shadow === null ) {
-            if ( shadowed.any( function ( truth, va ) {
+        if ( inheritedAttrs.scopePolicy.type === "noFreeVars"
+            && shadowed.any( function ( truth, va ) {
                 return va[ 0 ] !== "va:scopeError";
             } ) ) {
-                // TODO: Use this error message: Encountered a use of
-                // (def ...) with free variables
-                shadowed = jsnMap().plusTruth( [ "va:scopeError" ] );
-            }
-        } else {
-            shadowed = shadowed.minus( inheritedAttrs.shadow );
+            
+            // TODO: Use this error message: Encountered a use of
+            // (def ...) with free variables
+            shadowed = jsnMap().plusTruth( [ "va:scopeError" ] );
         }
         
         if ( shadowed.any( function ( truth, va ) {
             return va[ 0 ] === "va:savedInputVar" &&
-                !shadowed.has( [ "va:va", va[ 2 ] ] );
+                inheritedAttrs.shadow.has( [ "va:va", va[ 2 ] ] );
         } ) ) {
             // TODO: Use this error message: Encountered a use of
             // (save ...) where the saved value's variable name was
@@ -692,8 +720,9 @@ function freeVarsWriter() {
             } );
         } else if ( inheritedAttrs.scopePolicy.type === "notRoot" ) {
             // Do nothing.
-        } else if ( inheritedAttrs.scopePolicy.type ===
-            "doesNotMatter" ) {
+        } else if (
+            inheritedAttrs.scopePolicy.type === "doesNotMatter"
+            || inheritedAttrs.scopePolicy.type === "noFreeVars" ) {
             
             if ( shadowed.any( function ( truth, va ) {
                 return va[ 0 ] === "va:savedInputVar" ||
@@ -862,8 +891,8 @@ addSyntax( "def", "def", "frameName optVarList caseList", {
             args.frameName.expr,
             args.optVarList.expr,
             writer.consume( args.caseList, {
-                shadow: null,
-                scopePolicy: { type: "doesNotMatter" }
+                shadow: args.optVarList.set() || jsnMap(),
+                scopePolicy: { type: "noFreeVars" }
             } ) ) );
     },
     hasProperScope: function ( args ) {
@@ -1395,7 +1424,7 @@ addSyntax( "var-list-omitted", "optVarList", "", {
             varSetExpr =
                 jsList( "var-list-cons", va[ 1 ], varSetExpr );
         } );
-        return jsList( "var-list", varSetExpr ) ;
+        return jsList( "var-list", varSetExpr );
     },
     isProvidedProperlyForSet: function ( args, varSet ) {
         return false;
