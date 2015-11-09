@@ -20,8 +20,8 @@ function stcAddDefun( var_args ) {
 }
 
 function stcErr( msg ) {
-    // We return a value whose frame name is the given error message.
-    return stcFrame( msg );
+    // We return a value whose tuple name is the given error message.
+    return stcTuple( msg );
 }
 
 
@@ -42,7 +42,7 @@ var stcFoldlShortIter = stcAddDefun( "foldl-short-iter",
             stcYep, "result", "combiner-result",
             
             stcNope, "result",
-            stcCallFrame( "foldl-short-iter",
+            stcCallTuple( "foldl-short-iter",
                 "list", "rest", "combiner", "combiner", "result" ),
             
             stcErr(
@@ -55,7 +55,7 @@ var stcFoldlShortIter = stcAddDefun( "foldl-short-iter",
 var stcFoldlIter = stcAddDefun( "foldl-iter",
     "list", "combiner", "state",
     stcCase( "list", "list", stcCons, "first", "rest",
-        stcCallFrame( "foldl-iter", "list", "rest",
+        stcCallTuple( "foldl-iter", "list", "rest",
             "combiner", "combiner",
             stcCall( "combiner", "state", "first" ) ),
         "state" ) );
@@ -88,7 +88,7 @@ var stcFoldlDoubleShortIter = stcAddDefun( "foldl-double-short-iter",
                 stcYep, "result", "combiner-result",
                 
                 stcNope, "result",
-                stcCallFrame( "foldl-double-short-iter",
+                stcCallTuple( "foldl-double-short-iter",
                     "list-a", "rest-a",
                     "list-b", "rest-b",
                     "combiner", "combiner",
@@ -147,7 +147,7 @@ var stcFoldlDoubleIter = stcAddDefun( "foldl-double-iter",
     "list-a", "list-b", "combiner", "state",
     stcCase( "list-a", "list-a", stcCons, "first-a", "rest-a",
         stcCase( "list-b", "list-b", stcCons, "first-b", "rest-b",
-            stcCallFrame( "foldl-double-iter",
+            stcCallTuple( "foldl-double-iter",
                 "list-a", "rest-a",
                 "list-b", "rest-b",
                 "combiner", "combiner",
@@ -177,7 +177,7 @@ var stcFoldlDoubleIter = stcAddDefun( "foldl-double-iter",
 // This implements `rev-onto` independently.
 var stcRevOnto = stcAddDefun( "rev-onto", "target", "source",
     stcCase( "source", "source", stcCons, "first", "rest",
-        stcCallFrame( "rev-onto",
+        stcCallTuple( "rev-onto",
             "target", stcCons.of( "first", "target" ), "rest" ),
         "target" ) );
 
@@ -200,7 +200,7 @@ var stcAppend = stcAddDefun( "append", "past", "rest",
 var stcMapIter = stcAddDefun( "map-iter", "func", "list",
     stcCase( "list", "list", stcCons, "elem", "rest",
         stcCons.of( stcCall( "func", "elem" ),
-            stcCallFrame( "map-iter", "func", "func", "rest" ) ),
+            stcCallTuple( "map-iter", "func", "func", "rest" ) ),
         stcNil.of() ) );
 
 // This implements `map-iter` independently and with bounded stack
@@ -208,7 +208,7 @@ var stcMapIter = stcAddDefun( "map-iter", "func", "list",
 var stcRevOntoMapIter = stcAddDefun( "rev-onto-map-iter",
     "func", "target", "source",
     stcCase( "source", "source", stcCons, "elem", "rest",
-        stcCallFrame( "rev-onto-map-iter", "func", "func",
+        stcCallTuple( "rev-onto-map-iter", "func", "func",
             "target",
             stcCons.of( stcCall( "func", "elem" ), "target" ),
             "rest" ),
@@ -236,7 +236,7 @@ var stcAnyIter = stcAddDefun( "any-iter", "func", "list",
             stcYep, "result", "func-result",
             
             stcNope, "result",
-            stcCallFrame( "any-iter", "func", "func", "rest" ),
+            stcCallTuple( "any-iter", "func", "func", "rest" ),
             
             stcErr( "Expected a func-result of type yep or nope" ) ),
         stcNope.of( stcNil.of() ) ) );
@@ -269,7 +269,7 @@ var stcAnyDouble = stcAddDefun( "any-double",
                 stcYep, "result", "func-result",
                 
                 stcNope, "result",
-                stcCallFrame( "any-double",
+                stcCallTuple( "any-double",
                     "list-a", "list-a",
                     "list-b", "list-b",
                     "func" ),
@@ -329,7 +329,7 @@ var stcTails = stcAddDefun( "tails", "lists",
     stcCase( "lists", "lists", stcCons, "list-a", "list-b",
         stcCase( "list-a", "list-a", stcCons, "elem-a", "list-a",
             stcCase( "list-b", "list-b", stcCons, "elem-b", "list-b",
-                stcCallFrame( "tails",
+                stcCallTuple( "tails",
                     stcCons.of( "list-a", "list-b" ) ),
                 "lists" ),
             "lists" ),
@@ -343,17 +343,17 @@ console.log( arrMap( stcDefs, function ( def ) {
 } ) );
 
 var defs = {};
-function Stc( frameTag, opt_frameVars ) {
-    this.frameTag = frameTag;
-    this.frameVars = opt_frameVars || [];
+function Stc( tupleTag, opt_projNames ) {
+    this.tupleTag = tupleTag;
+    this.projNames = opt_projNames || [];
 }
 Stc.prototype.call = function ( arg ) {
-    var func = defs[ this.frameTag ];
-    return func( this.frameVars, arg );
+    var func = defs[ this.tupleTag ];
+    return func( this.projNames, arg );
 };
 Stc.prototype.pretty = function () {
-    return "(" + this.frameTag +
-        arrMap( this.frameVars, function ( elem, i ) {
+    return "(" + this.tupleTag +
+        arrMap( this.projNames, function ( elem, i ) {
             return " " + elem.pretty();
         } ).join( "" ) + ")";
 };
@@ -377,35 +377,35 @@ function testStcDef( expr ) {
     stcDefs = stcDefs.concat( stcTest.defs );
     runDefs( stcTest.defs );
     
-    var callFrameVars = makeFrameVars( strMap().plusArrTruth( [
+    var callTupleVars = makeProjNames( strMap().plusArrTruth( [
         [ "va:va", "func" ],
         [ "va:va", "arg" ]
     ] ) );
-    var callFrameFuncI = callFrameVars[ 0 ] === "func" ? 0 : 1;
-    var callFrameArgI = callFrameVars[ 0 ] === "func" ? 1 : 0;
-    var callFrameTag =
-        JSON.stringify( [ "call", callFrameVars ] );
-    var returnFrameValI = 0;
-    var returnFrameTag =
+    var callTupleFuncI = callTupleVars[ 0 ] === "func" ? 0 : 1;
+    var callTupleArgI = callTupleVars[ 0 ] === "func" ? 1 : 0;
+    var callTupleTag =
+        JSON.stringify( [ "call", callTupleVars ] );
+    var returnTupleValI = 0;
+    var returnTupleTag =
         JSON.stringify( [ "return", [ "val" ] ] );
     
     var maxStackDepth = 0;
     var calls = 0;
     
     var stack = [ stcTest.type.makeStc() ];
-    var comp = new Stc( returnFrameTag, [ stcNil.makeStc() ] );
+    var comp = new Stc( returnTupleTag, [ stcNil.makeStc() ] );
     while ( true ) {
         if ( !(comp instanceof Stc) )
             throw new Error();
-        while ( comp.frameTag === callFrameTag ) {
-            stack.push( comp.frameVars[ callFrameFuncI ] );
-            comp = comp.frameVars[ callFrameArgI ];
+        while ( comp.tupleTag === callTupleTag ) {
+            stack.push( comp.projNames[ callTupleFuncI ] );
+            comp = comp.projNames[ callTupleArgI ];
             if ( !(comp instanceof Stc) )
                 throw new Error();
         }
-        if ( comp.frameTag !== returnFrameTag )
+        if ( comp.tupleTag !== returnTupleTag )
             throw new Error();
-        var result = comp.frameVars[ returnFrameValI ];
+        var result = comp.projNames[ returnTupleValI ];
         var n = stack.length;
         if ( n === 0 )
             break;

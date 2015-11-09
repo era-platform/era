@@ -24,25 +24,25 @@ function stcAddDefun( var_args ) {
 }
 
 function stcErr( msg ) {
-    // We return a value whose frame name is the given error message.
-    return stcFrame( msg );
+    // We return a value whose tuple name is the given error message.
+    return stcTuple( msg );
 }
 
 
 // TODO: Move this testing code somewhere better.
 
 var defs = {};
-function Stc( frameTag, opt_frameVars ) {
-    this.frameTag = frameTag;
-    this.frameVars = opt_frameVars || [];
+function Stc( tupleTag, opt_projNames ) {
+    this.tupleTag = tupleTag;
+    this.projNames = opt_projNames || [];
 }
 Stc.prototype.call = function ( arg ) {
-    var func = defs[ this.frameTag ];
-    return func( this.frameVars, arg );
+    var func = defs[ this.tupleTag ];
+    return func( this.projNames, arg );
 };
 Stc.prototype.pretty = function () {
-    return "(" + this.frameTag +
-        arrMap( this.frameVars, function ( elem, i ) {
+    return "(" + this.tupleTag +
+        arrMap( this.projNames, function ( elem, i ) {
             return " " + elem.pretty();
         } ).join( "" ) + ")";
 };
@@ -66,35 +66,35 @@ function testStcDef( expr ) {
     stcDefs = stcDefs.concat( stcTest.defs );
     runDefs( stcTest.defs );
     
-    var callFrameVars = makeFrameVars( strMap().plusArrTruth( [
+    var callProjNames = makeProjNames( strMap().plusArrTruth( [
         [ "va:va", "func" ],
         [ "va:va", "arg" ]
     ] ) );
-    var callFrameFuncI = callFrameVars[ 0 ] === "func" ? 0 : 1;
-    var callFrameArgI = callFrameVars[ 0 ] === "func" ? 1 : 0;
-    var callFrameTag =
-        JSON.stringify( [ "call", callFrameVars ] );
-    var returnFrameValI = 0;
-    var returnFrameTag =
+    var callTupleFuncI = callProjNames[ 0 ] === "func" ? 0 : 1;
+    var callTupleArgI = callProjNames[ 0 ] === "func" ? 1 : 0;
+    var callTupleTag =
+        JSON.stringify( [ "call", callProjNames ] );
+    var returnTupleValI = 0;
+    var returnTupleTag =
         JSON.stringify( [ "return", [ "val" ] ] );
     
     var maxStackDepth = 0;
     var calls = 0;
     
     var stack = [ stcTest.type.makeStc() ];
-    var comp = new Stc( returnFrameTag, [ stcNil.makeStc() ] );
+    var comp = new Stc( returnTupleTag, [ stcNil.makeStc() ] );
     while ( true ) {
         if ( !(comp instanceof Stc) )
             throw new Error();
-        while ( comp.frameTag === callFrameTag ) {
-            stack.push( comp.frameVars[ callFrameFuncI ] );
-            comp = comp.frameVars[ callFrameArgI ];
+        while ( comp.tupleTag === callTupleTag ) {
+            stack.push( comp.projNames[ callTupleFuncI ] );
+            comp = comp.projNames[ callTupleArgI ];
             if ( !(comp instanceof Stc) )
                 throw new Error();
         }
-        if ( comp.frameTag !== returnFrameTag )
+        if ( comp.tupleTag !== returnTupleTag )
             throw new Error();
-        var result = comp.frameVars[ returnFrameValI ];
+        var result = comp.projNames[ returnTupleValI ];
         var n = stack.length;
         if ( n === 0 )
             break;
@@ -120,19 +120,19 @@ staccatoDeclarationState.hasRunDefs = false;
 function extractPattern( body ) {
     if ( body.type !== "cons" )
         throw new Error();
-    var frameNameExpr = body.first;
-    if ( frameNameExpr.type !== "stringNil" )
+    var tupleNameExpr = body.first;
+    if ( tupleNameExpr.type !== "stringNil" )
         throw new Error(
-            "Encountered a case branch with a frame name that " +
+            "Encountered a case branch with a tuple name that " +
             "wasn't a string: " +
-            staccatoReaderExprPretty( frameNameExpr ) );
-    var frameName = readerStringNilToString( frameNameExpr );
-    if ( !staccatoDeclarationState.types.has( frameName ) )
-        throw new Error( "No such type: " + frameName );
-    var type = staccatoDeclarationState.types.get( frameName );
+            staccatoReaderExprPretty( tupleNameExpr ) );
+    var tupleName = readerStringNilToString( tupleNameExpr );
+    if ( !staccatoDeclarationState.types.has( tupleName ) )
+        throw new Error( "No such type: " + tupleName );
+    var type = staccatoDeclarationState.types.get( tupleName );
     var remainingBody = body.rest;
     var localVars = [];
-    for ( var i = 0, n = type.frameVars.length; i < n; i++ ) {
+    for ( var i = 0, n = type.projNames.length; i < n; i++ ) {
         if ( remainingBody.type !== "cons" )
             throw new Error();
         if ( remainingBody.first.type !== "stringNil" )
@@ -160,10 +160,10 @@ function stcCaseletForRunner( maybeVa, matchSubject, body ) {
             throw new Error();
         var then = processReaderExpr( pattern.remainingBody.first );
         var els = pattern.remainingBody.rest;
-        return jsList( "match", pattern.type.frameName,
+        return jsList( "match", pattern.type.tupleName,
             stcEntriesPairMacro(
-                "env-pattern-cons", "env-pattern-nil",
-                pattern.type.frameVars, pattern.localVars ),
+                "proj-pattern-cons", "proj-pattern-nil",
+                pattern.type.projNames, pattern.localVars ),
             stcSaveRoot( then ),
             processTail( els ) );
     }
@@ -175,7 +175,8 @@ function stcCaseletForRunner( maybeVa, matchSubject, body ) {
     
     return stcCall(
         stcBasicRet(
-            jsList( "fn", stcGensym(), stcNoVars(), processedBody ) ),
+            jsList( "fn", stcGensym(), stcNoProjs(),
+                processedBody ) ),
         stcSaveRoot( processReaderExpr( matchSubject ) ) );
 }
 function stcCast( matchSubject, body ) {
@@ -188,15 +189,16 @@ function stcCast( matchSubject, body ) {
         throw new Error();
     var onCastErr = processReaderExpr( pattern.remainingBody.first );
     var body = processReaderExpr( pattern.remainingBody.rest.first );
-    var processedBody = jsList( "match", pattern.type.frameName,
-        stcEntriesPairMacro( "env-pattern-cons", "env-pattern-nil",
-            pattern.type.frameVars, pattern.localVars ),
+    var processedBody = jsList( "match", pattern.type.tupleName,
+        stcEntriesPairMacro( "proj-pattern-cons", "proj-pattern-nil",
+            pattern.type.projNames, pattern.localVars ),
         stcSaveRoot( body ),
         jsList( "any", stcSaveRoot( onCastErr ) ) );
     
     return stcCall(
         stcBasicRet(
-            jsList( "fn", stcGensym(), stcNoVars(), processedBody ) ),
+            jsList( "fn", stcGensym(), stcNoProjs(),
+                processedBody ) ),
         stcSaveRoot( processReaderExpr( matchSubject ) ) );
 }
 
@@ -255,24 +257,25 @@ staccatoDeclarationState.macros.set( "isa", function ( body ) {
         throw new Error();
     if ( body.rest.rest.type === "cons" )
         throw new Error();
-    var frameName = readerStringNilToString( body.first );
-    if ( !staccatoDeclarationState.types.has( frameName ) )
-        throw new Error( "No such type: " + frameName );
-    var type = staccatoDeclarationState.types.get( frameName );
+    var tupleName = readerStringNilToString( body.first );
+    if ( !staccatoDeclarationState.types.has( tupleName ) )
+        throw new Error( "No such type: " + tupleName );
+    var type = staccatoDeclarationState.types.get( tupleName );
     var stcYep = stcType( "yep", "val" );
     var stcNope = stcType( "nope", "val" );
     var stcNil = stcType( "nil" );
-    var processedBody = jsList( "match", frameName,
-        stcEntriesPairMacro( "env-pattern-cons", "env-pattern-nil",
-            type.frameVars,
-            arrMap( type.frameVars, function ( frameVar ) {
+    var processedBody = jsList( "match", tupleName,
+        stcEntriesPairMacro( "proj-pattern-cons", "proj-pattern-nil",
+            type.projNames,
+            arrMap( type.projNames, function ( tupleVar ) {
                 return stcGensym();
             } ) ),
         stcSaveRoot( stcYep.of( stcNil.of() ) ),
         jsList( "any", stcSaveRoot( stcNope.of( stcNil.of() ) ) ) );
     return stcCall(
         stcBasicRet(
-            jsList( "fn", stcGensym(), stcNoVars(), processedBody ) ),
+            jsList( "fn", stcGensym(), stcNoProjs(),
+                processedBody ) ),
         stcSaveRoot( processReaderExpr( body.rest.first ) ) );
 } );
 
@@ -304,7 +307,7 @@ staccatoDeclarationState.macros.set( "c-new", function ( body ) {
     if ( body.first.type !== "stringNil" )
         throw new Error();
     return stcCallArr(
-        stcFrame( readerStringNilToString( body.first ) ),
+        stcTuple( readerStringNilToString( body.first ) ),
         mapReaderExprToArr( body.rest, function ( expr ) {
             return processReaderExpr( expr );
         } ) );
@@ -328,7 +331,7 @@ staccatoDeclarationState.macros.set( "fn", function ( body ) {
 
 staccatoDeclarationState.macros.set( "let", function ( body ) {
     var remainingBody = body;
-    var envArrThunks = [];
+    var bindingArrThunks = [];
     while ( true ) {
         if ( remainingBody.type !== "cons" )
             throw new Error();
@@ -338,7 +341,7 @@ staccatoDeclarationState.macros.set( "let", function ( body ) {
             throw new Error();
         (function () {
             var thisRemainingBody = remainingBody;
-            envArrThunks.push( function () {
+            bindingArrThunks.push( function () {
                 return readerStringNilToString(
                     thisRemainingBody.first );
             }, function () {
@@ -350,9 +353,10 @@ staccatoDeclarationState.macros.set( "let", function ( body ) {
     }
     return stcSaveRoot(
         jsList( "let",
-            stcBasicEnvArr( arrMap( envArrThunks, function ( thunk ) {
-                return thunk();
-            } ) ),
+            stcBasicLetBindingsArr(
+                arrMap( bindingArrThunks, function ( thunk ) {
+                    return thunk();
+                } ) ),
             stcSaveRoot(
                 processReaderExpr( remainingBody.first ) ) ) );
 } );
@@ -372,21 +376,21 @@ function processReaderExpr( readerExpr ) {
         readerExpr.rest );
 }
 
-function processDefType( frameName, frameVars ) {
-    var n = frameVars.length;
-    staccatoDeclarationState.types.set( frameName,
-        stcTypeArr( frameName, frameVars ) );
-    staccatoDeclarationState.macros.set( frameName,
+function processDefType( tupleName, projNames ) {
+    var n = projNames.length;
+    staccatoDeclarationState.types.set( tupleName,
+        stcTypeArr( tupleName, projNames ) );
+    staccatoDeclarationState.macros.set( tupleName,
         function ( body ) {
         
-        var frameVals = [];
+        var projVals = [];
         var remainingBody = body;
         for ( var i = 0; i < n; i++ ) {
             if ( remainingBody.type !== "cons" )
                 throw new Error(
                     "Expected more arguments to " +
-                    JSON.stringify( frameName ) );
-            frameVals.push(
+                    JSON.stringify( tupleName ) );
+            projVals.push(
                 stcBasicSave(
                     processReaderExpr( remainingBody.first ) ) );
             remainingBody = remainingBody.rest;
@@ -394,9 +398,9 @@ function processDefType( frameName, frameVars ) {
         return stcCallArr(
             stcSaveRoot(
                 stcBasicRet(
-                    jsList( "frame", frameName,
-                        stcEntriesPairMacro( "env-cons", "env-nil",
-                            frameVars, frameVals ) ) ) ),
+                    jsList( "tuple", tupleName,
+                        stcEntriesPairMacro( "proj-cons", "proj-nil",
+                            projNames, projVals ) ) ) ),
             mapReaderExprToArr( remainingBody, function ( expr ) {
                 return processReaderExpr( expr );
             } ) );
@@ -416,18 +420,18 @@ function processTopLevelReaderExpr( readerExpr ) {
         if ( readerExpr.rest.first.type !== "stringNil" )
             throw new Error();
         
-        var frameName =
+        var tupleName =
             readerStringNilToString( readerExpr.rest.first );
-        if ( staccatoDeclarationState.macros.has( frameName ) )
+        if ( staccatoDeclarationState.macros.has( tupleName ) )
             throw new Error();
         
-        var frameVars = mapReaderExprToArr( readerExpr.rest.rest,
-            function ( frameVar ) {
-                if ( frameVar.type !== "stringNil" )
+        var projNames = mapReaderExprToArr( readerExpr.rest.rest,
+            function ( tupleVar ) {
+                if ( tupleVar.type !== "stringNil" )
                     throw new Error();
-                return readerStringNilToString( frameVar );
+                return readerStringNilToString( tupleVar );
             } );
-        processDefType( frameName, frameVars );
+        processDefType( tupleName, projNames );
     } else if ( macroName === "defn" ) {
         if ( readerExpr.rest.type !== "cons" )
             throw new Error();

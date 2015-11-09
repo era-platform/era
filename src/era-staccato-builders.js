@@ -4,14 +4,6 @@
 // These are JavaScript utilities for building Staccato expressions.
 // See era-staccato.js for more information about what Staccato is.
 
-function stcListMacro( cons, nil, args ) {
-    var result = jsList( nil );
-    for ( var i = args.length - 1; 0 <= i; i-- ) {
-        result = jsList( cons, args[ i ], result );
-    }
-    return result;
-}
-
 function stcEntriesMacro( entry, nil, args ) {
     var n = args.length;
     if ( n % 2 !== 0 )
@@ -34,40 +26,45 @@ function stcEntriesPairMacro( entry, nil, first, second ) {
     return result;
 }
 
-function stcEnvArr( args ) {
-    return stcEntriesMacro( "env-cons", "env-nil", args );
+function stcLetBindingsArr( args ) {
+    return stcEntriesMacro( "let-bindings-cons", "let-bindings-nil",
+        args );
 }
 
-function stcEnv( var_args ) {
-    return stcEnvArr( arguments );
+function stcProjsArr( args ) {
+    return stcEntriesMacro( "proj-cons", "proj-nil", args );
 }
 
-function stcEnvPatArr( args ) {
+function stcProjs( var_args ) {
+    return stcProjsArr( arguments );
+}
+
+function stcProjPatArr( args ) {
     return stcEntriesMacro(
-        "env-pattern-cons", "env-pattern-nil", args );
+        "proj-pattern-cons", "proj-pattern-nil", args );
 }
 
-function stcEnvPat( var_args ) {
-    return stcEnvPatArr( arguments );
+function stcProjPat( var_args ) {
+    return stcProjPatArr( arguments );
 }
 
-function stcFrame( frameName, var_args ) {
-    return jsList( "frame", frameName,
-        stcEnvArr( [].slice.call( arguments, 1 ) ) );
+function stcTuple( tupleName, var_args ) {
+    return jsList( "tuple", tupleName,
+        stcProjsArr( [].slice.call( arguments, 1 ) ) );
 }
 
-function stcYesVarsArr( args ) {
-    return jsList( "var-list",
-        stcListMacro( "var-list-cons", "var-list-nil", args ) );
+function stcYesProjsArr( args ) {
+    return jsList( "proj-pattern",
+        stcEntriesPairMacro( "proj-pattern-cons", "proj-pattern-nil",
+            args, args ) );
 }
 
-function stcYesVars( var_args ) {
-    return stcYesVarsArr( arguments );
+function stcYesProjs( var_args ) {
+    return stcYesProjsArr( arguments );
 }
 
-// TODO: See if we'll use this.
-function stcNoVars() {
-    return jsList( "var-list-omitted" );
+function stcNoProjs() {
+    return jsList( "proj-pattern-omitted", "dummy-namespace" );
 }
 
 function stcv( va ) {
@@ -75,56 +72,56 @@ function stcv( va ) {
 }
 
 // TODO: See if we'll use this.
-function stcMatch( frameName, var_args ) {
+function stcMatch( tupleName, var_args ) {
     var n = arguments.length;
     if ( n < 3 )
         throw new Error();
     var entries = [].slice.call( arguments, 1, n - 2 );
     var then = arguments[ n - 2 ];
     var els = arguments[ n - 1 ];
-    return jsList( "match", frameName, stcEnvPatArr( entries ),
+    return jsList( "match", tupleName, stcProjPatArr( entries ),
         then,
         els );
 }
 
 function stcRet( val ) {
-    return jsList( "frame", "return", stcEnv( "val", val ) );
+    return jsList( "tuple", "return", stcProjs( "val", val ) );
 }
 
 function stcCall( func, arg ) {
-    return jsList( "frame", "call",
-        stcEnv( "func", func, "arg", arg ) );
+    return jsList( "tuple", "call",
+        stcProjs( "func", func, "arg", arg ) );
 }
 
-function stcCallFrame( frameName, var_args ) {
+function stcCallTuple( tupleName, var_args ) {
     var n = arguments.length;
     if ( n < 2 )
         throw new Error();
     var entries = [].slice.call( arguments, 1, n - 1 );
     var input = arguments[ n - 1 ];
     return stcCall(
-        jsList( "frame", frameName, stcEnvArr( entries ) ),
+        jsList( "tuple", tupleName, stcProjsArr( entries ) ),
         input );
 }
 
-function stcYesDef( frameName, var_args ) {
+function stcYesDef( tupleName, var_args ) {
     var n = arguments.length;
     if ( n < 2 )
         throw new Error();
-    var frameVars = [].slice.call( arguments, 1, n - 1 );
+    var projNames = [].slice.call( arguments, 1, n - 1 );
     var body = arguments[ n - 1 ];
-    return jsList( "def", frameName, stcYesVarsArr( frameVars ),
+    return jsList( "def", tupleName, stcYesProjsArr( projNames ),
         body );
 }
 
-function stcYesDefAny( frameName, var_args ) {
+function stcYesDefAny( tupleName, var_args ) {
     var n = arguments.length;
     if ( n < 3 )
         throw new Error();
-    var frameVars = [].slice.call( arguments, 1, n - 2 );
+    var projNames = [].slice.call( arguments, 1, n - 2 );
     var input = arguments[ n - 2 ];
     var body = arguments[ n - 1 ];
-    return jsList( "def", frameName, stcYesVarsArr( frameVars ),
+    return jsList( "def", tupleName, stcYesProjsArr( projNames ),
         jsList( "let-case", input, jsList( "any", body ) ) );
 }
 
@@ -134,43 +131,43 @@ function stcLet( var_args ) {
         throw new Error();
     var bindings = [].slice.call( arguments, 0, n - 1 );
     var body = arguments[ n - 1 ];
-    return jsList( "let", stcEnvArr( bindings ), body );
+    return jsList( "let", stcLetBindingsArr( bindings ), body );
 }
 
-function stcFnAny( frameName, va, body ) {
-    return jsList( "fn", frameName, stcNoVars(),
+function stcFnAny( tupleName, va, body ) {
+    return jsList( "fn", tupleName, stcNoProjs(),
         jsList( "let-case", va, jsList( "any", body ) ) );
 }
 
-function stcRetFnAny( frameName, va, body ) {
-    return stcRet( stcFnAny( frameName, va, body ) );
+function stcRetFnAny( tupleName, va, body ) {
+    return stcRet( stcFnAny( tupleName, va, body ) );
 }
 
 function stcSaveRoot( expr ) {
     return jsList( "save-root", "sr", expr );
 }
 
-function stcSave( va, frameName, expr ) {
+function stcSave( va, tupleName, expr ) {
     return jsList( "save", "sr", "call",
-        "func", frameName, stcNoVars(),
+        "func", tupleName, stcNoProjs(),
         "arg", va,
         expr );
 }
 
-function stcType( frameName, var_args ) {
-    var frameVars = [].slice.call( arguments, 1 );
-    var n = frameVars.length;
+function stcType( tupleName, var_args ) {
+    var projNames = [].slice.call( arguments, 1 );
+    var n = projNames.length;
     
     var result = {};
     result.type = "stcType";
-    result.frameName = frameName;
-    result.frameVars = frameVars;
+    result.tupleName = tupleName;
+    result.projNames = projNames;
     result.make = function ( var_args ) {
         if ( arguments.length !== n )
             throw new Error();
-        return jsList( "frame", frameName,
+        return jsList( "tuple", tupleName,
             stcEntriesPairMacro(
-                "env-cons", "env-nil", frameVars, arguments ) );
+                "proj-cons", "proj-nil", projNames, arguments ) );
     };
     result.match = function ( var_args ) {
         if ( arguments.length !== n + 2 )
@@ -178,14 +175,14 @@ function stcType( frameName, var_args ) {
         var localVars = [].slice.call( arguments, 0, n );
         var then = arguments[ n ];
         var els = arguments[ n + 1 ];
-        return jsList( "match", frameName,
+        return jsList( "match", tupleName,
             stcEntriesPairMacro(
-                "env-pattern-cons", "env-pattern-nil",
-                frameVars, localVars ),
+                "proj-pattern-cons", "proj-pattern-nil",
+                projNames, localVars ),
             then,
             els );
     };
-    result.cond = function ( caseFrameName, var_args ) {
+    result.cond = function ( caseTupleName, var_args ) {
         if ( arguments.length !== n + 4 )
             throw new Error();
         var localVars = [].slice.call( arguments, 1, n + 1 );
@@ -193,11 +190,11 @@ function stcType( frameName, var_args ) {
         var then = arguments[ n + 2 ];
         var els = arguments[ n + 3 ];
         return stcCall(
-            jsList( "fn", caseFrameName, stcNoVars(),
-                jsList( "match", frameName,
+            jsList( "fn", caseTupleName, stcNoProjs(),
+                jsList( "match", tupleName,
                     stcEntriesPairMacro(
-                        "env-pattern-cons", "env-pattern-nil",
-                        frameVars, localVars ),
+                        "proj-pattern-cons", "proj-pattern-nil",
+                        projNames, localVars ),
                     then,
                     jsList( "any", els ) ) ),
             matchSubject );
@@ -205,12 +202,12 @@ function stcType( frameName, var_args ) {
     // TODO: See if we should leave this in. If so, optimize it.
     result.makeStc = function ( var_args ) {
         var args = arguments;
-        var sortedFrameVars = frameVars.slice().sort();
+        var sortedProjNames = projNames.slice().sort();
         return new Stc(
-            JSON.stringify( [ frameName, sortedFrameVars ] ),
-            arrMap( sortedFrameVars, function ( va ) {
-                for ( var i = 0, n = frameVars.length; i < n; i++ )
-                    if ( frameVars[ i ] === va )
+            JSON.stringify( [ tupleName, sortedProjNames ] ),
+            arrMap( sortedProjNames, function ( va ) {
+                for ( var i = 0, n = projNames.length; i < n; i++ )
+                    if ( projNames[ i ] === va )
                         return args[ i ];
                 throw new Error();
             } ) );
@@ -218,7 +215,7 @@ function stcType( frameName, var_args ) {
     return result;
 }
 
-function stcCase( frameName, va, matchSubject, var_args ) {
+function stcCase( tupleName, va, matchSubject, var_args ) {
     function processTail( args ) {
         if ( args.length === 0 )
             throw new Error();
@@ -227,23 +224,23 @@ function stcCase( frameName, va, matchSubject, var_args ) {
         var type = args[ 0 ];
         if ( type.type !== "stcType" )
             throw new Error();
-        var n = type.frameVars.length;
+        var n = type.projNames.length;
         if ( args.length <= n + 2 )
             throw new Error();
         var localVars = [].slice.call( args, 1, n + 1 );
         var then = args[ n + 1 ];
         var els = [].slice.call( args, n + 2 );
-        return jsList( "match", type.frameName,
+        return jsList( "match", type.tupleName,
             stcEntriesPairMacro(
-                "env-pattern-cons", "env-pattern-nil",
-                type.frameVars, localVars ),
+                "proj-pattern-cons", "proj-pattern-nil",
+                type.projNames, localVars ),
             then,
             processTail( els ) );
     }
     
     var body = [].slice.call( arguments, 3 );
     return stcCall(
-        jsList( "fn", frameName, stcNoVars(),
+        jsList( "fn", tupleName, stcNoProjs(),
             jsList( "let-case", va, processTail( body ) ) ),
         matchSubject );
 }

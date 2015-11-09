@@ -31,7 +31,7 @@
 // multithreading environment; they won't cause long pauses. (To make
 // this bound meaningful, most Staccato operations can be implemented
 // in constant time on most target platforms. Unfortunately, an
-// exception is the (frame ...) Staccato operation, which performs
+// exception is the (tuple ...) Staccato operation, which performs
 // allocation.)
 //
 // Since the Staccato language and Staccato programs go to the trouble
@@ -97,7 +97,7 @@ function run( stack, rules ) {
         var frame = stack.pop();
         if ( !frame )
             return stack.getReturnValue();
-        var rule = rules[ frame.frameName ];
+        var rule = rules[ frame.tupleName ];
         var newFrames = rule( frame.env, stack.getReturnValue() );
         while ( newFrames.type === "pendingFrame" ) {
             stack.push( newFrames.frame );
@@ -111,10 +111,16 @@ function run( stack, rules ) {
 
 
 // def ::=
-//   // This defines a frame that takes an environment with the
-//   // variables needed in the case-list. It proceeds by matching the
-//   // incoming return value against the case-list under that scope.
-//   (def frame-name opt-var-list case-list)
+//   // This defines function call behavior for the tuple that has the
+//   // specified tuple-name and projection names. It proceeds by
+//   // binding each projection to its corresponding variable in the
+//   // opt-proj-pattern and then matching the parameter value against
+//   // the case-list under that scope.
+//   //
+//   // If the opt-proj-pattern is omitted, this infers projection
+//   // names that correspond to the free variables of the case-list.
+//   //
+//   (def tuple-name opt-proj-pattern case-list)
 //
 // case-list ::=
 //   // This proceeds as the given case-list while binding the given
@@ -122,35 +128,43 @@ function run( stack, rules ) {
 //   //
 //   (let-case var case-list)
 //
-//   // If the value to match is a function closure that fits the
-//   // given frame name and environment pattern, this proceeds as the
-//   // get-expr with the pattern's variables in scope. Otherwise, it
-//   // proceeds as the case-list.
-//   (match frame-name env-pattern
+//   // If the value to match is a tuple that has the given tuple name
+//   // and the projection names from the proj-pattern, this proceeds
+//   // as the get-expr with the pattern's variables in scope.
+//   // Otherwise, it proceeds as the case-list.
+//   (match tuple-name proj-pattern
 //     get-expr
 //     case-list)
 //
 //   // This proceeds as the get-expr.
 //   (any get-expr)
 //
-// env-expr ::=
-//   (env-nil)
-//   (env-cons var get-expr env-expr)
+// let-bindings-expr ::=
+//   (let-bindings-nil)
+//   (let-bindings-cons var get-expr let-bindings-expr)
+//
+// proj-expr ::=
+//   (proj-nil)
+//   (proj-cons proj-name get-expr proj-expr)
 //
 // get-expr ::=
 //   // Sugar.
 //   (let-def def get-expr)
 //
-//   // This executes the env-expr and proceeds as the get-expr with
-//   // those bindings in scope.
+//   // This executes the let-bindings-expr and proceeds as the
+//   // get-expr with those bindings in scope.
 //   //
 //   // NOTE: This is not a recursive let where a binding is in scope
 //   // during its own expression. It's not a sequential let where a
 //   // binding is in scope during later bindings. For example, if x
-//   // and y are in scope, then (let (env-cons x x (env-nil)) ...)
-//   // has no effect, and
-//   // (let (env-cons x y (env-cons y x (env-nil))) ...) has the
-//   // effect of swapping x and y.
+//   // and y are in scope, then
+//   // (let (let-bindings-cons x x (let-bindings-nil)) ...) has no
+//   // effect, and
+//   // (let
+//   //   (let-bindings-cons x y
+//   //     (let-bindings-cons y x (let-bindings-nil)))
+//   //   ...)
+//   // has the effect of swapping x and y.
 //   //
 //   // NOTE: This is the only syntax that allows changing the lexical
 //   // scope in between a Staccato operation's case-list branch being
@@ -160,21 +174,19 @@ function run( stack, rules ) {
 //   // (save ...), which can cause a scope error if it would get in
 //   // the way of the inner (save ...) desugaring.
 //   //
-//   (let env-expr get-expr)
+//   (let let-bindings-expr get-expr)
 //
 //   (local var)
 //
-//   // This forms a function closure from any frame and any
-//   // environment. Whenever the function's argument is supplied, it
-//   // will be used as the frame's incoming return value.
-//   (frame frame-name env-expr)
+//   // This creates an instance of a tuple.
+//   (tuple tuple-name proj-expr)
 //
 //   // Sugar.
 //   //
-//   // For desugaring purposes, establish the current continuation as
-//   // a save root. Occurrences of (save ...) inside will desugar by
-//   // transforming all the code under this (save-root ...) up to the
-//   // location of that (save ...).
+//   // For desugaring purposes, this establishes the current
+//   // continuation as a save root. Occurrences of (save ...) inside
+//   // will desugar by transforming all the code under this
+//   // (save-root ...) up to the location of that (save ...).
 //   //
 //   (save-root save-root get-expr)
 //
@@ -185,19 +197,19 @@ function run( stack, rules ) {
 //   // save-root label, and it reinserts a get-expr that does the
 //   // following:
 //   //
-//   // It defines a function with the second given frame-name and
-//   // the given opt-var-list, which executes the extracted subtree
-//   // on an argument named by the third given var.
+//   // It defines a function with the second given tuple-name and
+//   // the given opt-proj-pattern, which executes the extracted
+//   // subtree on an argument named by the given variable name.
 //   //
-//   // It constructs a frame with the first given frame-name and the
-//   // first and second given vars. The first var is bound to a frame
-//   // with the defined function's frame-name and opt-var-list, and
-//   // the bindings of that frame are taken from the current lexical
-//   // scope. The second var is bound to the result of the given
-//   // get-expr.
+//   // It constructs a tuple with the first given tuple-name and the
+//   // two given proj-names. The first projection contains a tuple
+//   // with the defined function's tuple-name and opt-proj-pattern,
+//   // and the contents of that tuple are taken from the current
+//   // lexical scope. The second projection contains the result of
+//   // the given get-expr.
 //   //
 //   // That sounds complicated, but usually this means we're building
-//   // a frame whose meaning is a request to call a certain function
+//   // a tuple whose meaning is a request to call a certain function
 //   // (the sliced-out ancestors) with a certain argument (the result
 //   // of the given expression). Staccato does not directly have
 //   // access to Turing-complete computation, but this syntax lets us
@@ -205,87 +217,82 @@ function run( stack, rules ) {
 //   // while letting us structure our code in a full-powered lambda
 //   // calculus style.
 //   //
-//   // It's worth noting that the variables in the opt-var-list will,
-//   // after desugaring, refer to the lexical scope at the *base* of
-//   // the sliced-out subtree. Nothing is done with them before
-//   // desugaring, so they actually have nothing to do with the
-//   // lexical scope this (save ...) itself appears in.
+//   // It's worth noting that the variables in the opt-proj-pattern
+//   // will, after desugaring, refer to the lexical scope at the
+//   // *base* of the sliced-out subtree. Nothing is done with them
+//   // before desugaring, so they actually have nothing to do with
+//   // the lexical scope this (save ...) itself appears in.
 //   //
-//   // It's an error to access a variable by the third given variable
-//   // name anywhere under the sliced-out subtree, since those
-//   // accesses would be clobbered by the desugaring of this syntax.
+//   // It's an error to access a variable by the given variable name
+//   // anywhere under the sliced-out subtree, since those accesses
+//   // would be clobbered by the desugaring of this syntax.
 //   //
 //   // It's also an error to surround this expression with a local
-//   // variable binding that would shadow the third given variable
-//   // name, since that would interfere with the proper desugaring of
-//   // this syntax. The only way to cause this error is (let ...).
+//   // variable binding that would shadow the given variable name,
+//   // since that would interfere with the proper desugaring of this
+//   // syntax. The only way to cause this error is (let ...).
 //   //
-//   (save save-root frame-name
-//     var frame-name opt-var-list
-//     var var
+//   (save save-root tuple-name
+//     proj-name tuple-name opt-proj-pattern
+//     proj-name var
 //     get-expr)
 //
 //   // Sugar.
 //   //
-//   // This defines and forms a function closure for a frame that
-//   // takes an environment with the variables needed in the
-//   // case-list, which (in this call) is captured from the
-//   // surrounding lexical scope. It proceeds by matching the
-//   // incoming return value against the case-list under that scope.
+//   // This behaves like def, defining the function call behavior for
+//   // the given tuple-name and projection names.
 //   //
-//   (fn frame-name opt-var-list case-list)
+//   // Additionally, unlike def, this creates an instance of the
+//   // tuple. The contents are taken from the current lexical scope,
+//   // using the variable names in the opt-proj-pattern.
+//   //
+//   (fn tuple-name opt-proj-pattern case-list)
 //
-// // When an opt-var-list is not omitted, it overrides the usual
-// // behavior for inferring the variables required by a frame
-// // definition. This way, frames can be defined that receive more
-// // variables than they actually use.
-// opt-var-list ::=
+// opt-proj-pattern ::=
 //   // Sugar.
-//   (var-list-omitted)
+//   //
+//   // When this is desugared, any proj-names needed will be obtained
+//   // by looking them <ns>/<projection name string>/name where <ns>
+//   // is the given namespace.
+//   //
+//   (proj-pattern-omitted namespace)
 //
-//   (var-list var-list)
+//   (proj-pattern proj-pattern)
 //
-// var-list ::=
-//   (var-list-nil)
-//   (var-list-cons var var-list)
-//
-// env-pattern ::=
-//   (env-pattern-nil)
-//
-//   // NOTE: The first var is the key in the environment, and the
-//   // second var is the local variable to bind it to.
-//   (env-pattern-cons var var env-pattern)
+// proj-pattern ::=
+//   (proj-pattern-nil)
+//   (proj-pattern-cons proj-name var proj-pattern)
 //
 //
 // Here it is again, this time with the notes and sugar removed:
 //
 // def ::=
-//   (def frame-name opt-var-list case-list)
+//   (def tuple-name opt-proj-pattern case-list)
 //
 // case-list ::=
 //   (let-case var case-list)
-//   (match frame-name env-pattern get-expr case-list)
+//   (match tuple-name proj-pattern get-expr case-list)
 //   (any get-expr)
 //
-// env-expr ::=
-//   (env-nil)
-//   (env-cons var get-expr env-expr)
+// let-bindings-expr ::=
+//   (let-bindings-nil)
+//   (let-bindings-cons var get-expr proj-expr)
+//
+// proj-expr ::=
+//   (proj-nil)
+//   (proj-cons proj-name get-expr proj-expr)
 //
 // get-expr ::=
-//   (let env-expr get-expr)
+//   (let let-bindings-expr get-expr)
 //   (local var)
-//   (frame frame-name env-expr)
+//   (tuple tuple-name proj-expr)
 //
-// opt-var-list ::=
-//   (var-list var-list)
+// opt-proj-pattern ::=
+//   (proj-pattern proj-pattern)
 //
-// var-list ::=
-//   (var-list-nil)
-//   (var-list-cons var var-list)
-//
-// env-pattern ::=
-//   (env-pattern-nil)
-//   (env-pattern-cons var var env-pattern)
+// proj-pattern ::=
+//   (proj-pattern-nil)
+//   (proj-pattern-cons proj-name var proj-pattern)
 //
 //
 //
@@ -300,33 +307,32 @@ function run( stack, rules ) {
 //
 // // Wrap the given cheaply computed value as a computation. (This
 // // meaning of "return" is monadic return, not a nonlocal exit.)
-// (frame return /env-cons val _ /env-nil)
+// (tuple return /proj-cons val _ /proj-nil)
 //
 // // Call `func` with `arg` as the argument.
-// (frame call /env-cons func _ /env-cons arg _ /env-nil)
+// (tuple call /proj-cons func _ /proj-cons arg _ /proj-nil)
 
 
 // NOTE: We implement these methods on every corresponding syntax:
-// def/caseList/getExpr/envExpr visit( writer )
-// def/caseList/getExpr/envExpr hasProperScope()
-// envExpr isProperForSet( varSet )
-// def/caseList/getExpr/envExpr desugarSave()
-// def/caseList/getExpr/envExpr desugarVarLists()
-// def/caseList/getExpr/envExpr desugarFn()
+// def/caseList/getExpr/letBindingsExpr/projExpr visit( writer )
+// def/caseList/getExpr/letBindingsExpr/projExpr hasProperScope()
+// letBindingsExpr/projExpr isProperForSet( varSet )
+// def/caseList/getExpr/letBindingsExpr/projExpr desugarSave()
+// def/caseList/getExpr/letBindingsExpr/projExpr desugarOmitted()
+// def/caseList/getExpr/letBindingsExpr/projExpr desugarFn()
 // def desugarDefIncludingSelf()
-// caseList/getExpr/envExpr desugarDef()
+// caseList/getExpr/letBindingsExpr/projExpr desugarDef()
 // def compileToNaiveJs( options )
 // caseList/getExpr compileToNaiveJs( options, locals )
-// envExpr keys()
-// envExpr compileToNaiveJsForFrame( options, locals, keyToI )
-// envExpr compileToNaiveJsForLet( options, locals )
-// optVarList/varList set()
-// optVarList or( varSet )
-// optVarList/varList isProvidedProperlyForSet( varSet )
-// optVarList/varList capture()
-// envPattern valsToKeys()
-// envPattern keysToVals()
-// envPattern isProperForSets( keySet, varSet )
+// letBindingsExpr/projExpr keys()
+// projExpr compileToNaiveJsForTuple( options, locals, keyToI )
+// letBindingsExpr compileToNaiveJsForLet( options, locals )
+// optProjPattern/projPattern getVarSet()
+// optProjPattern or( varSet )
+// optProjPattern/projPattern isProvidedProperlyForVarSet( varSet )
+// optProjPattern/projPattern capture()
+// projPattern keysToVals()
+// projPattern isProperForSets( keySet, varSet )
 
 // NOTE: Certain parts of the implementation are marked "INTERESTING".
 // These parts are tricky enough to be the motivators for the way the
@@ -563,6 +569,10 @@ function addStringSyntax( nontermName ) {
     if ( nonterminal.type !== "string" )
         throw new Error();
 }
+function addNamespaceSyntax( nontermName ) {
+    // TODO: Do something more special here.
+    addStringSyntax( nontermName );
+}
 function addSyntax( name, nontermName, argNontermNamesStr, methods ) {
     if ( !(isPrimString( name )
         && isValidNontermName( nontermName )
@@ -788,15 +798,15 @@ function desugarSaveWriter() {
                 state = {
                     type: "saveState",
                     saveRoot: desugared.saveRoot,
-                    callFrameName: desugared.callFrameName,
+                    callTupleName: desugared.callTupleName,
                     callFunc: desugared.callFunc,
-                    frameName: desugared.frameName,
-                    optVarList: desugared.optVarList,
+                    tupleName: desugared.tupleName,
+                    optProjPattern: desugared.optProjPattern,
                     callArg: desugared.callArg,
                     va: desugared.va,
                     arg: desugared.arg
                 };
-                return desugared.frameBodyExpr;
+                return desugared.tupleBodyExpr;
             } else {
                 throw new Error();
             }
@@ -813,14 +823,14 @@ function desugarSaveWriter() {
             return {
                 type: "save",
                 saveRoot: state.saveRoot,
-                callFrameName: state.callFrameName,
+                callTupleName: state.callTupleName,
                 callFunc: state.callFunc,
-                frameName: state.frameName,
-                optVarList: state.optVarList,
+                tupleName: state.tupleName,
+                optProjPattern: state.optProjPattern,
                 callArg: state.callArg,
                 va: state.va,
                 arg: state.arg,
-                frameBodyExpr: whole
+                tupleBodyExpr: whole
             };
         } else {
             throw new Error();
@@ -829,22 +839,25 @@ function desugarSaveWriter() {
     return writer;
 }
 
-function makeFrameVars( varSet ) {
-    var frameVars = [];
+function makeProjNames( varSet ) {
+    var projNames = [];
     varSet.each( function ( va, truth ) {
         if ( va[ 0 ] !== "va:va" )
             throw new Error();
-        frameVars.push( va[ 1 ] );
+        projNames.push( va[ 1 ] );
     } );
-    frameVars.sort();
-    return frameVars;
+    projNames.sort();
+    return projNames;
 }
 
-function optVarListIsProper( inferredVars, declaredVarsExprObj ) {
-    var declaredVars = declaredVarsExprObj.set();
+function optProjPatternIsProper(
+    inferredVars, declaredPatternExprObj ) {
+    
+    var declaredVars = declaredPatternExprObj.getVarSet();
     return declaredVars === null ||
-        (declaredVarsExprObj.isProvidedProperlyForSet( strMap() ) &&
-            !inferredVars.any( function ( truth, va ) {
+        (declaredPatternExprObj.isProvidedProperlyForVarSet(
+            strMap() )
+            && !inferredVars.any( function ( truth, va ) {
                 return va[ 0 ] === "va:va" && !declaredVars.has( va );
             } ));
 }
@@ -861,11 +874,11 @@ var defaults = {
     desugarSave: function ( args ) {
         return args.self.visit( desugarSaveWriter() );
     },
-    desugarVarLists: function ( args ) {
+    desugarOmitted: function ( args ) {
         return args.self.visit(
             idWriter( function ( part, inheritedAttrs ) {
             
-            return part.desugarVarLists();
+            return part.desugarOmitted();
         } ) );
     },
     desugarFn: function ( args ) {
@@ -881,39 +894,41 @@ var defaults = {
 };
 
 addStringSyntax( "va" );
-addStringSyntax( "frameName" );
 addStringSyntax( "saveRoot" );
-addSyntax( "def", "def", "frameName optVarList caseList", {
+addNamespaceSyntax( "tupleName" );
+addNamespaceSyntax( "projName" );
+addNamespaceSyntax( "namespace" );
+addSyntax( "def", "def", "tupleName optProjPattern caseList", {
     // INTERESTING
     
     visit: function ( args, writer ) {
         return writer.redecorate( jsnMap(), jsList( "def",
-            args.frameName.expr,
-            args.optVarList.expr,
+            args.tupleName.expr,
+            args.optProjPattern.expr,
             writer.consume( args.caseList, {
-                shadow: args.optVarList.set() || jsnMap(),
+                shadow: args.optProjPattern.getVarSet() || jsnMap(),
                 scopePolicy: { type: "noFreeVars" }
             } ) ) );
     },
     hasProperScope: function ( args ) {
-        return optVarListIsProper( getFreeVars( args.caseList ),
-                args.optVarList ) &&
+        return optProjPatternIsProper( getFreeVars( args.caseList ),
+                args.optProjPattern ) &&
             args.caseList.hasProperScope();
     },
     desugarSave: defaults.desugarSave,
-    desugarVarLists: function ( args ) {
+    desugarOmitted: function ( args ) {
         var innerFreeVars = getFreeVars( args.caseList );
         return jsList( "def",
-            args.frameName.expr,
-            args.optVarList.or( innerFreeVars ),
-            args.caseList.desugarVarLists() );
+            args.tupleName.expr,
+            args.optProjPattern.or( innerFreeVars ),
+            args.caseList.desugarOmitted() );
     },
     desugarFn: defaults.desugarFn,
     desugarDefIncludingSelf: function ( args ) {
         var desugared = args.caseList.desugarDef();
         return desugared.defs.concat( [ jsList( "def",
-            args.frameName.expr,
-            args.optVarList.expr,
+            args.tupleName.expr,
+            args.optProjPattern.expr,
             desugared.expr
         ) ] );
     },
@@ -923,23 +938,24 @@ addSyntax( "def", "def", "frameName optVarList caseList", {
             return "v" + nextGensymI++;
         }
         
-        var frameVars = makeFrameVars( args.optVarList.set() );
-        var frameTag =
-            JSON.stringify( [ args.frameName.expr, frameVars ] );
+        var projNames =
+            makeProjNames( args.optProjPattern.getVarSet() );
+        var tupleTag =
+            JSON.stringify( [ args.tupleName.expr, projNames ] );
         
         var locals = strMap();
         var varStatements = "";
-        arrEach( frameVars, function ( va, i ) {
+        arrEach( projNames, function ( va, i ) {
             var gs = gensym();
             varStatements =
-                "var " + gs + " = frameVars[ " + i + " ];\n" +
+                "var " + gs + " = projNames[ " + i + " ];\n" +
                 varStatements;
             locals.set( va, gs );
         } );
         
         return (
-            "defs[ " + jsStr( frameTag ) + " ] = " +
-                "function ( frameVars, matchSubject ) {\n" +
+            "defs[ " + jsStr( tupleTag ) + " ] = " +
+                "function ( projNames, matchSubject ) {\n" +
             "\n" +
             varStatements +
             args.caseList.compileToNaiveJs(
@@ -961,7 +977,7 @@ addSyntax( "let-case", "caseList", "va caseList", {
     },
     hasProperScope: defaults.hasProperScope,
     desugarSave: defaults.desugarSave,
-    desugarVarLists: defaults.desugarVarLists,
+    desugarOmitted: defaults.desugarOmitted,
     desugarFn: defaults.desugarFn,
     desugarDef: defaults.desugarDef,
     compileToNaiveJs: function ( args, options, locals ) {
@@ -973,15 +989,15 @@ addSyntax( "let-case", "caseList", "va caseList", {
     }
 } );
 addSyntax( "match", "caseList",
-    "frameName envPattern getExpr caseList", {
+    "tupleName projPattern getExpr caseList", {
     // INTERESTING
     
     visit: function ( args, writer ) {
         return writer.redecorate( jsnMap(), jsList( "match",
-            args.frameName.expr,
-            args.envPattern.expr,
+            args.tupleName.expr,
+            args.projPattern.expr,
             writer.consume( args.getExpr, {
-                shadow: args.envPattern.valsToKeys(),
+                shadow: args.projPattern.getVarSet(),
                 scopePolicy: { type: "notRoot" }
             } ),
             writer.consume( args.caseList, {
@@ -990,28 +1006,28 @@ addSyntax( "match", "caseList",
             } ) ) );
     },
     hasProperScope: function ( args ) {
-        return args.envPattern.isProperForSets(
+        return args.projPattern.isProperForSets(
                 strMap(), strMap() ) &&
             args.getExpr.hasProperScope() &&
             args.caseList.hasProperScope();
     },
     desugarSave: defaults.desugarSave,
-    desugarVarLists: defaults.desugarVarLists,
+    desugarOmitted: defaults.desugarOmitted,
     desugarFn: defaults.desugarFn,
     desugarDef: defaults.desugarDef,
     compileToNaiveJs: function ( args, options, locals ) {
-        var entries = args.envPattern.keysToVals();
-        var frameVars = makeFrameVars( entries );
-        var frameTag =
-            JSON.stringify( [ args.frameName.expr, frameVars ] );
+        var entries = args.projPattern.keysToVals();
+        var projNames = makeProjNames( entries );
+        var tupleTag =
+            JSON.stringify( [ args.tupleName.expr, projNames ] );
         
         var varStatements = "";
         var thenLocals = strMap().plus( locals );
-        arrEach( frameVars, function ( va, i ) {
+        arrEach( projNames, function ( va, i ) {
             var gs = options.gensym();
             varStatements +=
                 "var " + gs + " = " +
-                    "matchSubject.frameVars[ " + i + " ];\n";
+                    "matchSubject.projNames[ " + i + " ];\n";
             var local = entries.get( [ "va:va", va ] );
             if ( local[ 0 ] !== "va:va" )
                 throw new Error();
@@ -1019,8 +1035,8 @@ addSyntax( "match", "caseList",
         } );
         
         return (
-            "if ( matchSubject.frameTag === " +
-                jsStr( frameTag ) + " ) {\n" +
+            "if ( matchSubject.tupleTag === " +
+                jsStr( tupleTag ) + " ) {\n" +
             "\n" +
             varStatements +
             "return " +
@@ -1042,7 +1058,7 @@ addSyntax( "any", "caseList", "getExpr", {
     },
     hasProperScope: defaults.hasProperScope,
     desugarSave: defaults.desugarSave,
-    desugarVarLists: defaults.desugarVarLists,
+    desugarOmitted: defaults.desugarOmitted,
     desugarFn: defaults.desugarFn,
     desugarDef: defaults.desugarDef,
     compileToNaiveJs: function ( args, options, locals ) {
@@ -1053,7 +1069,7 @@ addSyntax( "any", "caseList", "getExpr", {
         );
     }
 } );
-addSyntax( "env-nil", "envExpr", "", {
+addSyntax( "let-bindings-nil", "letBindingsExpr", "", {
     visit: function ( args, writer ) {
         return writer.redecorate( jsnMap(), args.self.expr );
     },
@@ -1062,13 +1078,13 @@ addSyntax( "env-nil", "envExpr", "", {
         return true;
     },
     desugarSave: defaults.desugarSave,
-    desugarVarLists: defaults.desugarVarLists,
+    desugarOmitted: defaults.desugarOmitted,
     desugarFn: defaults.desugarFn,
     desugarDef: defaults.desugarDef,
     keys: function ( args ) {
         return jsnMap();
     },
-    compileToNaiveJsForFrame: function ( args,
+    compileToNaiveJsForTuple: function ( args,
         options, locals, keyToI ) {
         
         return "";
@@ -1082,45 +1098,35 @@ addSyntax( "env-nil", "envExpr", "", {
             ";\n";
     }
 } );
-addSyntax( "env-cons", "envExpr", "va getExpr envExpr", {
+addSyntax( "let-bindings-cons", "letBindingsExpr",
+    "va getExpr letBindingsExpr", {
+    
     visit: function ( args, writer ) {
-        return writer.redecorate( jsnMap(), jsList( "env-cons",
-            args.va.expr,
-            writer.consume( args.getExpr, {
-                shadow: jsnMap(),
-                scopePolicy: { type: "notRoot" }
-            } ),
-            writer.consume( args.envExpr, {
-                shadow: jsnMap(),
-                scopePolicy: { type: "notRoot" }
-            } ) ) );
+        return writer.redecorate( jsnMap(),
+            jsList( "let-bindings-cons",
+                args.va.expr,
+                writer.consume( args.getExpr, {
+                    shadow: jsnMap(),
+                    scopePolicy: { type: "notRoot" }
+                } ),
+                writer.consume( args.letBindingsExpr, {
+                    shadow: jsnMap(),
+                    scopePolicy: { type: "notRoot" }
+                } ) ) );
     },
     hasProperScope: defaults.hasProperScope,
     isProperForSet: function ( args, varSet ) {
         return !varSet.has( args.va.expr ) &&
-            args.envExpr.isProperForSet(
+            args.letBindingsExpr.isProperForSet(
                 varSet.plusTruth( args.va.expr ) );
     },
     desugarSave: defaults.desugarSave,
-    desugarVarLists: defaults.desugarVarLists,
+    desugarOmitted: defaults.desugarOmitted,
     desugarFn: defaults.desugarFn,
     desugarDef: defaults.desugarDef,
     keys: function ( args ) {
-        return args.envExpr.keys().
+        return args.letBindingsExpr.keys().
             plusTruth( [ "va:va", args.va.expr ] );
-    },
-    compileToNaiveJsForFrame: function ( args,
-        options, locals, keyToI ) {
-        
-        if ( !keyToI.has( args.va.expr ) )
-            throw new Error();
-        return (
-            "x.frameVars[ " + keyToI.get( args.va.expr ) + " ] = " +
-                args.getExpr.compileToNaiveJs( options, locals ) +
-                ";\n" +
-            args.envExpr.compileToNaiveJsForFrame(
-                options, locals, keyToI )
-        );
     },
     compileToNaiveJsForLet: function ( args,
         options, locals, pendingLocals, bodyExprObj ) {
@@ -1130,11 +1136,82 @@ addSyntax( "env-cons", "envExpr", "va getExpr envExpr", {
             "var " + gs + " = " +
                 args.getExpr.compileToNaiveJs( options, locals ) +
                 ";\n" +
-            args.envExpr.compileToNaiveJsForLet(
+            args.letBindingsExpr.compileToNaiveJsForLet(
                 options,
                 locals,
                 pendingLocals.plusEntry( args.va.expr, gs ),
                 bodyExprObj )
+        );
+    }
+} );
+addSyntax( "proj-nil", "projExpr", "", {
+    visit: function ( args, writer ) {
+        return writer.redecorate( jsnMap(), args.self.expr );
+    },
+    hasProperScope: defaults.hasProperScope,
+    isProperForSet: function ( args, varSet ) {
+        return true;
+    },
+    desugarSave: defaults.desugarSave,
+    desugarOmitted: defaults.desugarOmitted,
+    desugarFn: defaults.desugarFn,
+    desugarDef: defaults.desugarDef,
+    keys: function ( args ) {
+        return jsnMap();
+    },
+    compileToNaiveJsForTuple: function ( args,
+        options, locals, keyToI ) {
+        
+        return "";
+    },
+    compileToNaiveJsForLet: function ( args,
+        options, locals, pendingLocals, bodyExprObj ) {
+        
+        return "return " +
+            bodyExprObj.compileToNaiveJs(
+                options, locals.plus( pendingLocals ) ) +
+            ";\n";
+    }
+} );
+addSyntax( "proj-cons", "projExpr", "projName getExpr projExpr", {
+    visit: function ( args, writer ) {
+        return writer.redecorate( jsnMap(), jsList( "proj-cons",
+            args.projName.expr,
+            writer.consume( args.getExpr, {
+                shadow: jsnMap(),
+                scopePolicy: { type: "notRoot" }
+            } ),
+            writer.consume( args.projExpr, {
+                shadow: jsnMap(),
+                scopePolicy: { type: "notRoot" }
+            } ) ) );
+    },
+    hasProperScope: defaults.hasProperScope,
+    isProperForSet: function ( args, varSet ) {
+        return !varSet.has( args.projName.expr ) &&
+            args.projExpr.isProperForSet(
+                varSet.plusTruth( args.projName.expr ) );
+    },
+    desugarSave: defaults.desugarSave,
+    desugarOmitted: defaults.desugarOmitted,
+    desugarFn: defaults.desugarFn,
+    desugarDef: defaults.desugarDef,
+    keys: function ( args ) {
+        return args.projExpr.keys().
+            plusTruth( [ "va:va", args.projName.expr ] );
+    },
+    compileToNaiveJsForTuple: function ( args,
+        options, locals, keyToI ) {
+        
+        if ( !keyToI.has( args.projName.expr ) )
+            throw new Error();
+        return (
+            "x.projNames[ " +
+                keyToI.get( args.projName.expr ) + " ] = " +
+                args.getExpr.compileToNaiveJs( options, locals ) +
+                ";\n" +
+            args.projExpr.compileToNaiveJsForTuple(
+                options, locals, keyToI )
         );
     }
 } );
@@ -1152,7 +1229,7 @@ addSyntax( "let-def", "getExpr", "def getExpr", {
     },
     hasProperScope: defaults.hasProperScope,
     desugarSave: defaults.desugarSave,
-    desugarVarLists: defaults.desugarVarLists,
+    desugarOmitted: defaults.desugarOmitted,
     desugarFn: defaults.desugarFn,
     desugarDef: function ( args ) {
         var desugaredDef = args.def.desugarDefIncludingSelf();
@@ -1166,32 +1243,32 @@ addSyntax( "let-def", "getExpr", "def getExpr", {
         throw new Error();
     }
 } );
-addSyntax( "let", "getExpr", "envExpr getExpr", {
+addSyntax( "let", "getExpr", "letBindingsExpr getExpr", {
     visit: function ( args, writer ) {
         return writer.redecorate( jsnMap(), jsList( "let",
-            writer.consume( args.envExpr, {
+            writer.consume( args.letBindingsExpr, {
                 shadow: jsnMap(),
                 scopePolicy: { type: "notRoot" }
             } ),
             writer.consume( args.getExpr, {
-                shadow: args.envExpr.keys(),
+                shadow: args.letBindingsExpr.keys(),
                 scopePolicy: { type: "notRoot" }
             } ) ) );
     },
     hasProperScope: function ( args ) {
-        return args.envExpr.isProperForSet( strMap() ) &&
-            args.envExpr.hasProperScope() &&
+        return args.letBindingsExpr.isProperForSet( strMap() ) &&
+            args.letBindingsExpr.hasProperScope() &&
             args.getExpr.hasProperScope();
     },
     desugarSave: defaults.desugarSave,
-    desugarVarLists: defaults.desugarVarLists,
+    desugarOmitted: defaults.desugarOmitted,
     desugarFn: defaults.desugarFn,
     desugarDef: defaults.desugarDef,
     compileToNaiveJs: function ( args, options, locals ) {
         return (
             "(function () {\n" +
             "\n" +
-            args.envExpr.compileToNaiveJsForLet(
+            args.letBindingsExpr.compileToNaiveJsForLet(
                 options, locals, strMap(), args.getExpr ) +
             "\n" +
             "})()"
@@ -1206,7 +1283,7 @@ addSyntax( "local", "getExpr", "va", {
     },
     hasProperScope: defaults.hasProperScope,
     desugarSave: defaults.desugarSave,
-    desugarVarLists: defaults.desugarVarLists,
+    desugarOmitted: defaults.desugarOmitted,
     desugarFn: defaults.desugarFn,
     desugarDef: defaults.desugarDef,
     compileToNaiveJs: function ( args, options, locals ) {
@@ -1215,37 +1292,37 @@ addSyntax( "local", "getExpr", "va", {
         return locals.get( args.va.expr );
     }
 } );
-addSyntax( "frame", "getExpr", "frameName envExpr", {
+addSyntax( "tuple", "getExpr", "tupleName projExpr", {
     visit: function ( args, writer ) {
-        return writer.redecorate( jsnMap(), jsList( "frame",
-            args.frameName.expr,
-            writer.consume( args.envExpr, {
+        return writer.redecorate( jsnMap(), jsList( "tuple",
+            args.tupleName.expr,
+            writer.consume( args.projExpr, {
                 shadow: jsnMap(),
                 scopePolicy: { type: "notRoot" }
             } ) ) );
     },
     hasProperScope: function ( args ) {
-        return args.envExpr.isProperForSet( strMap() ) &&
-            args.envExpr.hasProperScope();
+        return args.projExpr.isProperForSet( strMap() ) &&
+            args.projExpr.hasProperScope();
     },
     desugarSave: defaults.desugarSave,
-    desugarVarLists: defaults.desugarVarLists,
+    desugarOmitted: defaults.desugarOmitted,
     desugarFn: defaults.desugarFn,
     desugarDef: defaults.desugarDef,
     compileToNaiveJs: function ( args, options, locals ) {
-        var frameVars = makeFrameVars( args.envExpr.keys() );
-        var frameTag =
-            JSON.stringify( [ args.frameName.expr, frameVars ] );
+        var projNames = makeProjNames( args.projExpr.keys() );
+        var tupleTag =
+            JSON.stringify( [ args.tupleName.expr, projNames ] );
         var keyToI = strMap();
-        arrEach( frameVars, function ( va, i ) {
+        arrEach( projNames, function ( va, i ) {
             keyToI.set( va, i );
         } );
         return (
             "(function () {\n" +
             "\n" +
-            "var x = new Stc( " + jsStr( frameTag ) + " );\n" +
+            "var x = new Stc( " + jsStr( tupleTag ) + " );\n" +
             "\n" +
-            args.envExpr.compileToNaiveJsForFrame(
+            args.projExpr.compileToNaiveJsForTuple(
                 options, locals, keyToI ) +
             "\n" +
             "return x;\n" +
@@ -1279,24 +1356,24 @@ addSyntax( "save-root", "getExpr", "saveRoot getExpr", {
                     return desugared;
                 exprObj = parseSyntax( "getExpr",
                     jsList( "save-root", args.saveRoot.expr,
-                        jsList( "frame", desugared.callFrameName.expr,
-                            jsList( "env-cons",
+                        jsList( "tuple", desugared.callTupleName.expr,
+                            jsList( "proj-cons",
                                 desugared.callFunc.expr,
                                 jsList( "fn",
-                                    desugared.frameName.expr,
-                                    desugared.optVarList.expr,
+                                    desugared.tupleName.expr,
+                                    desugared.optProjPattern.expr,
                                     jsList( "let-case", desugared.va.expr,
-                                        jsList( "any", desugared.frameBodyExpr ) ) ),
-                                jsList( "env-cons",
+                                        jsList( "any", desugared.tupleBodyExpr ) ) ),
+                                jsList( "proj-cons",
                                     desugared.callArg.expr,
                                     desugared.arg.expr,
-                                    jsList( "env-nil" ) ) ) ) ) );
+                                    jsList( "proj-nil" ) ) ) ) ) );
             } else {
                 throw new Error();
             }
         }
     },
-    desugarVarLists: function ( args ) {
+    desugarOmitted: function ( args ) {
         throw new Error();
     },
     desugarFn: function ( args ) {
@@ -1310,11 +1387,14 @@ addSyntax( "save-root", "getExpr", "saveRoot getExpr", {
     }
 } );
 addSyntax( "save", "getExpr",
-    "saveRoot frameName va frameName optVarList va va getExpr", {
+    "saveRoot tupleName " +
+    "projName tupleName optProjPattern " +
+    "projName va " +
+    "getExpr", {
     // INTERESTING
     
     visit: function ( args, writer ) {
-        var vars = args.optVarList.set();
+        var vars = args.optProjPattern.getVarSet();
         if ( vars === null )
             vars = jsnMap();
         return writer.redecorate(
@@ -1325,15 +1405,15 @@ addSyntax( "save", "getExpr",
                     va[ 1 ] ];
             } ).plusTruth(
                 [ "va:savedInputVar", args.saveRoot.expr,
-                    args[ 6 ].expr ] ),
+                    args.va.expr ] ),
             jsList( "save",
                 args.saveRoot.expr,
                 args[ 1 ].expr,
                 args[ 2 ].expr,
                 args[ 3 ].expr,
-                args.optVarList.expr,
+                args.optProjPattern.expr,
                 args[ 5 ].expr,
-                args[ 6 ].expr,
+                args.va.expr,
                 writer.consume( args.getExpr, {
                     shadow: jsnMap(),
                     scopePolicy: { type: "saveRoot",
@@ -1345,17 +1425,17 @@ addSyntax( "save", "getExpr",
         return {
             type: "save",
             saveRoot: args.saveRoot,
-            callFrameName: args[ 1 ],
+            callTupleName: args[ 1 ],
             callFunc: args[ 2 ],
-            frameName: args[ 3 ],
-            optVarList: args.optVarList,
+            tupleName: args[ 3 ],
+            optProjPattern: args.optProjPattern,
             callArg: args[ 5 ],
-            va: args[ 6 ],
+            va: args.va,
             arg: args.getExpr,
-            frameBodyExpr: jsList( "local", args[ 6 ].expr )
+            tupleBodyExpr: jsList( "local", args.va.expr )
         };
     },
-    desugarVarLists: function ( args ) {
+    desugarOmitted: function ( args ) {
         throw new Error();
     },
     desugarFn: function ( args ) {
@@ -1368,42 +1448,43 @@ addSyntax( "save", "getExpr",
         throw new Error();
     }
 } );
-addSyntax( "fn", "getExpr", "frameName optVarList caseList", {
+addSyntax( "fn", "getExpr", "tupleName optProjPattern caseList", {
     // INTERESTING
     
     visit: function ( args, writer ) {
-        var declaredInnerFreeVars = args.optVarList.set();
+        var declaredInnerFreeVars = args.optProjPattern.getVarSet();
         
         return writer.redecorate(
             declaredInnerFreeVars === null ?
                 jsnMap() : declaredInnerFreeVars,
             jsList( "fn",
-                args.frameName.expr,
-                args.optVarList.expr,
+                args.tupleName.expr,
+                args.optProjPattern.expr,
                 writer.consume( args.caseList, {
                     shadow: jsnMap(),
                     scopePolicy: { type: "notRoot" }
                 } ) ) );
     },
     hasProperScope: function ( args ) {
-        return optVarListIsProper( getFreeVars( args.caseList ),
-                args.optVarList ) &&
+        return optProjPatternIsProper( getFreeVars( args.caseList ),
+                args.optProjPattern ) &&
             args.caseList.hasProperScope();
     },
     desugarSave: defaults.desugarSave,
-    desugarVarLists: function ( args ) {
+    desugarOmitted: function ( args ) {
         var innerFreeVars = getFreeVars( args.caseList );
         return jsList( "fn",
-            args.frameName.expr,
-            args.optVarList.or( innerFreeVars ),
-            args.caseList.desugarVarLists() );
+            args.tupleName.expr,
+            args.optProjPattern.or( innerFreeVars ),
+            args.caseList.desugarOmitted() );
     },
     desugarFn: function ( args ) {
         return jsList( "let-def",
-            jsList( "def", args.frameName.expr, args.optVarList.expr,
+            jsList( "def", args.tupleName.expr,
+                args.optProjPattern.expr,
                 args.caseList.desugarFn() ),
-            jsList( "frame", args.frameName.expr,
-                args.optVarList.capture() ) );
+            jsList( "tuple", args.tupleName.expr,
+                args.optProjPattern.capture() ) );
     },
     desugarDef: function ( args ) {
         throw new Error();
@@ -1412,95 +1493,80 @@ addSyntax( "fn", "getExpr", "frameName optVarList caseList", {
         throw new Error();
     }
 } );
-addSyntax( "var-list-omitted", "optVarList", "", {
-    set: function ( args ) {
+addSyntax( "proj-pattern-omitted", "optProjPattern", "namespace", {
+    getVarSet: function ( args ) {
         return null;
     },
     or: function ( args, varSet ) {
-        var varSetExpr = jsList( "var-list-nil" );
+        var varSetExpr = jsList( "proj-pattern-nil" );
         varSet.each( function ( va, truth ) {
             if ( va[ 0 ] !== "va:va" )
                 throw new Error();
-            varSetExpr =
-                jsList( "var-list-cons", va[ 1 ], varSetExpr );
+            // TODO: Use args.namespace to derive the projection name,
+            // rather than just using va[ 1 ] directly.
+            varSetExpr = jsList( "proj-pattern-cons",
+                va[ 1 ], va[ 1 ], varSetExpr );
         } );
-        return jsList( "var-list", varSetExpr );
+        return jsList( "proj-pattern", varSetExpr );
     },
-    isProvidedProperlyForSet: function ( args, varSet ) {
+    isProvidedProperlyForVarSet: function ( args, varSet ) {
         return false;
     },
     capture: function ( args ) {
         throw new Error();
     }
 } );
-addSyntax( "var-list", "optVarList", "varList", {
-    set: function ( args ) {
-        return args.varList.set();
+addSyntax( "proj-pattern", "optProjPattern", "projPattern", {
+    getVarSet: function ( args ) {
+        return args.projPattern.getVarSet();
     },
     or: function ( args, varSet ) {
         return args.self.expr;
     },
-    isProvidedProperlyForSet: function ( args, varSet ) {
-        return args.varList.isProvidedProperlyForSet( varSet );
+    isProvidedProperlyForVarSet: function ( args, varSet ) {
+        return args.projPattern.isProperForSets( strMap(), varSet );
     },
     capture: function ( args ) {
-        return args.varList.capture();
+        return args.projPattern.capture();
     }
 } );
-addSyntax( "var-list-nil", "varList", "", {
-    set: function ( args ) {
+addSyntax( "proj-pattern-nil", "projPattern", "", {
+    getVarSet: function ( args ) {
         return jsnMap();
     },
-    isProvidedProperlyForSet: function ( args, varSet ) {
-        return true;
-    },
     capture: function ( args ) {
-        return jsList( "env-nil" );
+        return jsList( "proj-nil" );
+    },
+    keysToVals: function ( args ) {
+        return jsnMap();
+    },
+    isProperForSets: function ( args, keySet, varSet ) {
+        return true;
     }
 } );
-addSyntax( "var-list-cons", "varList", "va varList", {
-    set: function ( args ) {
-        return args.varList.set().
+addSyntax( "proj-pattern-cons", "projPattern",
+    "projName va projPattern", {
+    
+    getVarSet: function ( args ) {
+        return args.projPattern.getVarSet().
             plusTruth( [ "va:va", args.va.expr ] );
     },
-    isProvidedProperlyForSet: function ( args, varSet ) {
-        return !varSet.has( args.va.expr ) &&
-            args.varList.isProvidedProperlyForSet(
-                varSet.plusTruth( args.va.expr ) );
-    },
     capture: function ( args ) {
-        return jsList( "env-cons",
-            args.va.expr,
+        return jsList( "proj-cons",
+            args.projName.expr,
             jsList( "local", args.va.expr ),
-            args.varList.capture() );
-    }
-} );
-addSyntax( "env-pattern-nil", "envPattern", "", {
-    valsToKeys: function ( args ) {
-        return jsnMap();
+            args.projPattern.capture() );
     },
     keysToVals: function ( args ) {
-        return jsnMap();
+        return args.projPattern.keysToVals().plusEntry(
+            [ "va:va", args.projName.expr ],
+            [ "va:va", args.va.expr ] );
     },
     isProperForSets: function ( args, keySet, varSet ) {
-        return true;
-    }
-} );
-addSyntax( "env-pattern-cons", "envPattern", "va va envPattern", {
-    valsToKeys: function ( args ) {
-        return args.envPattern.valsToKeys().
-            plusEntry( [ "va:va", args[ 1 ].expr ], args[ 0 ].expr );
-    },
-    keysToVals: function ( args ) {
-        return args.envPattern.keysToVals().plusEntry(
-            [ "va:va", args[ 0 ].expr ],
-            [ "va:va", args[ 1 ].expr ] );
-    },
-    isProperForSets: function ( args, keySet, varSet ) {
-        var k = args[ 0 ].expr;
-        var v = args[ 1 ].expr;
+        var k = args.projName.expr;
+        var v = args.va.expr;
         return !keySet.has( k ) && !varSet.has( v ) &&
-            args.envPattern.isProperForSets(
+            args.projPattern.isProperForSets(
                 keySet.plusTruth( k ), varSet.plusTruth( v ) );
     }
 } );
@@ -1514,7 +1580,7 @@ function desugarDefExpr( expr ) {
     if ( noSavesResult.type !== "expr" )
         throw new Error();
     var noSaves = parseSyntax( "def", noSavesResult.expr );
-    var noVarLists = parseSyntax( "def", noSaves.desugarVarLists() );
-    var noFns = parseSyntax( "def", noVarLists.desugarFn() );
+    var noOmitted = parseSyntax( "def", noSaves.desugarOmitted() );
+    var noFns = parseSyntax( "def", noOmitted.desugarFn() );
     return noFns.desugarDefIncludingSelf();
 }

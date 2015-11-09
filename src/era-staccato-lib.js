@@ -23,8 +23,8 @@ function stcAddYesDefAny( var_args ) {
 }
 
 function stcErr( msg ) {
-    // We return a value whose frame name is the given error message.
-    return stcFrame( msg );
+    // We return a value whose tuple name is the given error message.
+    return stcTuple( msg );
 }
 
 function stcRetErr( msg ) {
@@ -44,14 +44,14 @@ stcAddYesDefAny( "foldl-short-iter", "list", "combiner", "state",
     stcCons.cond( "foldl-short-iter-case1", "first", "rest",
         stcRet( stcv( "list" ) ),
         stcCase( "foldl-short-iter-case2", "combiner-result",
-            stcCallFrame( "pass-to", "arg", stcv( "first" ),
+            stcCallTuple( "pass-to", "arg", stcv( "first" ),
                 stcCall( stcv( "combiner" ),
                     stcRet( stcv( "state" ) ) ) ),
             
             stcYep, "result", stcRet( stcv( "combiner-result" ) ),
             
             stcNope, "result",
-            stcCallFrame( "foldl-short-iter",
+            stcCallTuple( "foldl-short-iter",
                 "list", stcv( "rest" ),
                 "combiner", stcv( "combiner" ),
                 stcRet( stcv( "result" ) ) ),
@@ -66,9 +66,9 @@ stcAddYesDefAny( "foldl-short-iter", "list", "combiner", "state",
 stcAddYesDefAny( "foldl-iter", "list", "combiner", "state",
     stcCons.cond( "foldl-iter-case", "first", "rest",
         stcRet( stcv( "list" ) ),
-        stcCallFrame( "foldl-iter", "list", stcv( "rest" ),
+        stcCallTuple( "foldl-iter", "list", stcv( "rest" ),
             "combiner", stcv( "combiner" ),
-            stcCallFrame( "pass-to", "arg", stcv( "first" ),
+            stcCallTuple( "pass-to", "arg", stcv( "first" ),
                 stcCall( stcv( "combiner" ),
                     stcRet( stcv( "state" ) ) ) ) ),
         stcRet( stcv( "state" ) ) ) );
@@ -76,7 +76,7 @@ stcAddYesDefAny( "foldl-iter", "list", "combiner", "state",
 // This implements `foldl-iter` in terms of `foldl-short-iter`.
 stcAddYesDefAny( "foldl-iter", "list", "combiner", "state",
     stcNope.cond( "foldl-iter-case", "result",
-        stcCallFrame( "foldl-short-iter", "list", stcv( "list" ),
+        stcCallTuple( "foldl-short-iter", "list", stcv( "list" ),
             "combiner",
             stcFnAny( "foldl-iter-adapter-1", "state",
                 stcRetFnAny( "foldl-iter-adapter-2", "elem",
@@ -84,7 +84,7 @@ stcAddYesDefAny( "foldl-iter", "list", "combiner", "state",
                         stcRet(
                             stcNope.make(
                                 stcSave( "combiner-result", "foldl-iter-adapter-3",
-                                    stcCallFrame( "pass-to", "arg", stcv( "elem" ),
+                                    stcCallTuple( "pass-to", "arg", stcv( "elem" ),
                                         stcCall( stcv( "combiner" ),
                                             stcRet( stcv( "state" ) ) ) ) ) ) ) ) ) ),
             stcRet( stcv( "state" ) ) ),
@@ -105,15 +105,15 @@ stcAddYesDefAny( "foldl-double-short-iter",
             stcRet( stcv( "list-b" ) ),
             stcCase( "foldl-double-short-iter-case3",
                 "combiner-result",
-                stcCallFrame( "pass-to", "arg", stcv( "first-b" ),
-                    stcCallFrame( "pass-to", "arg", stcv( "first-a" ),
+                stcCallTuple( "pass-to", "arg", stcv( "first-b" ),
+                    stcCallTuple( "pass-to", "arg", stcv( "first-a" ),
                         stcCall( stcv( "combiner" ),
                             stcRet( stcv( "state" ) ) ) ) ),
                 
                 stcYep, "result", stcRet( stcv( "combiner-result" ) ),
                 
                 stcNope, "result",
-                stcCallFrame( "foldl-double-short-iter",
+                stcCallTuple( "foldl-double-short-iter",
                     "list-a", stcv( "rest-a" ),
                     "list-b", stcv( "rest-b" ),
                     "combiner", stcv( "combiner" ),
@@ -130,7 +130,7 @@ stcAddYesDefAny( "foldl-double-short-iter",
 stcAddYesDefAny( "foldl-double-short-iter",
     "list-a", "list-b", "combiner", "state",
     stcCase( "foldl-double-short-iter-case1", "short-result",
-        stcCallFrame( "foldl-short-iter",
+        stcCallTuple( "foldl-short-iter",
             "list", stcv( "list-a" ),
             "combiner",
             stcFnAny( "foldl-double-short-iter-adapter-1", "state",
@@ -146,9 +146,9 @@ stcAddYesDefAny( "foldl-double-short-iter",
                             stcCase(
                                 "foldl-double-short-iter-case5",
                                 "combiner-result",
-                                stcCallFrame( "pass-to",
+                                stcCallTuple( "pass-to",
                                     "arg", stcv( "elem-b" ),
-                                    stcCallFrame( "pass-to", "arg", stcv( "elem-a" ),
+                                    stcCallTuple( "pass-to", "arg", stcv( "elem-a" ),
                                         stcCall( stcv( "combiner" ), stcRet( stcv( "state" ) ) ) ) ),
                                 
                                 stcYep, "result", stcRet( stcYep.make( stcv( "combiner-result" ) ) ),
@@ -188,12 +188,12 @@ stcAddYesDefAny( "foldl-double-iter",
         stcRet( stcv( "list-a" ) ),
         stcCons.cond( "foldl-double-iter-case2", "first-b", "rest-b",
             stcRet( stcv( "list-b" ) ),
-            stcCallFrame( "foldl-double-iter",
+            stcCallTuple( "foldl-double-iter",
                 "list-a", stcv( "rest-a" ),
                 "list-b", stcv( "rest-b" ),
                 "combiner", stcv( "combiner" ),
-                stcCallFrame( "pass-to", "arg", stcv( "first-b" ),
-                    stcCallFrame( "pass-to",
+                stcCallTuple( "pass-to", "arg", stcv( "first-b" ),
+                    stcCallTuple( "pass-to",
                         "arg", stcv( "first-a" ),
                         stcCall( stcv( "combiner" ),
                             stcRet( stcv( "state" ) ) ) ) ) ),
@@ -205,7 +205,7 @@ stcAddYesDefAny( "foldl-double-iter",
 stcAddYesDefAny( "foldl-double-iter",
     "list-a", "list-b", "combiner", "state",
     stcNope.cond( "foldl-double-iter-case", "result",
-        stcCallFrame( "foldl-double-short-iter",
+        stcCallTuple( "foldl-double-short-iter",
             "list-a", stcv( "list-a" ),
             "list-b", stcv( "list-b" ),
             "combiner",
@@ -217,8 +217,8 @@ stcAddYesDefAny( "foldl-double-iter",
                             stcRet(
                                 stcNope.make(
                                     stcSave( "combiner-result", "foldl-double-iter-adapter-4",
-                                        stcCallFrame( "pass-to", "arg", stcv( "elem-b" ),
-                                            stcCallFrame( "pass-to", "arg", stcv( "elem-a" ),
+                                        stcCallTuple( "pass-to", "arg", stcv( "elem-b" ),
+                                            stcCallTuple( "pass-to", "arg", stcv( "elem-a" ),
                                                 stcCall( stcv( "combiner" ),
                                                     stcRet( stcv( "state" ) ) ) ) ) ) ) ) ) ) ) ),
             stcRet( stcv( "state" ) ) ),
@@ -230,14 +230,14 @@ stcAddYesDefAny( "foldl-double-iter",
 // This implements `rev-onto` independently.
 stcAddYesDef( "rev-onto", "target",
     stcCons.match( "first", "rest",
-        stcCallFrame( "rev-onto", "target",
+        stcCallTuple( "rev-onto", "target",
             stcCons.make( stcv( "first" ), stcv( "target" ) ),
             stcRet( stcv( "rest" ) ) ),
         jsList( "any", stcRet( stcv( "target" ) ) ) ) );
 
 // This implements `rev-onto` in terms of `foldl-iter`.
 stcAddYesDefAny( "rev-onto", "target", "source",
-    stcCallFrame( "foldl-iter", "list", stcv( "source" ),
+    stcCallTuple( "foldl-iter", "list", stcv( "source" ),
         "combiner",
         stcFnAny( "rev-onto-adapter-1", "state",
             stcRetFnAny( "rev-onto-adapter-2", "elem",
@@ -247,12 +247,12 @@ stcAddYesDefAny( "rev-onto", "target", "source",
         stcRet( stcv( "target" ) ) ) );
 
 stcAddYesDefAny( "rev", "source",
-    stcCallFrame( "rev-onto", "target", stcNil.make(),
+    stcCallTuple( "rev-onto", "target", stcNil.make(),
         stcRet( stcv( "source" ) ) ) );
 
 stcAddYesDefAny( "append", "past", "rest",
-    stcCallFrame( "rev-onto", "target", stcv( "rest" ),
-        stcCallFrame( "rev", stcRet( stcv( "past" ) ) ) ) );
+    stcCallTuple( "rev-onto", "target", stcv( "rest" ),
+        stcCallTuple( "rev", stcRet( stcv( "past" ) ) ) ) );
 
 // TODO: Choose just one of these implementations of `map-iter`.
 
@@ -267,7 +267,7 @@ stcAddYesDef( "map-iter", "func",
                         stcCall( stcv( "func" ),
                             stcRet( stcv( "elem" ) ) ) ),
                     stcSave( "rest-result", "map-iter-inner-2",
-                        stcCallFrame( "map-iter",
+                        stcCallTuple( "map-iter",
                             "func", stcv( "func" ),
                             stcRet( stcv( "rest" ) ) ) ) ) ) ),
         jsList( "any", stcRet( stcNil.make() ) ) ) );
@@ -279,7 +279,7 @@ stcAddYesDefAny( "map-iter", "func", "list",
         stcYesDef( "rev-onto-map-iter", "func", "target",
             stcCons.match( "elem", "rest",
                 stcSaveRoot(
-                    stcCallFrame( "rev-onto-map-iter",
+                    stcCallTuple( "rev-onto-map-iter",
                         "func", stcv( "func" ),
                         "target",
                         stcCons.make(
@@ -290,16 +290,16 @@ stcAddYesDefAny( "map-iter", "func", "list",
                             stcv( "target" ) ),
                         stcRet( stcv( "rest" ) ) ) ),
                 jsList( "any", stcRet( stcv( "target" ) ) ) ) ),
-        stcCallFrame( "rev",
-            stcCallFrame( "rev-onto-map-iter", "func", stcv( "func" ),
+        stcCallTuple( "rev",
+            stcCallTuple( "rev-onto-map-iter", "func", stcv( "func" ),
                 "target", stcNil.make(),
                 stcRet( stcv( "list" ) ) ) ) ) );
 
 // This implements `map-iter` in terms of `foldl-iter` and with
 // bounded stack size.
 stcAddYesDefAny( "map-iter", "func", "list",
-    stcCallFrame( "rev",
-        stcCallFrame( "foldl-iter", "list", stcv( "list" ),
+    stcCallTuple( "rev",
+        stcCallTuple( "foldl-iter", "list", stcv( "list" ),
             "combiner",
             stcFnAny( "map-iter-adapter-1", "state",
                 stcRetFnAny( "map-iter-adapter-2", "elem",
@@ -323,7 +323,7 @@ stcAddYesDef( "any-iter", "func",
             stcYep, "result", stcRet( stcv( "func-result" ) ),
             
             stcNope, "result",
-            stcCallFrame( "any-iter", "func", stcv( "func" ),
+            stcCallTuple( "any-iter", "func", stcv( "func" ),
                 stcRet( stcv( "rest" ) ) ),
             
             stcRetErr(
@@ -332,7 +332,7 @@ stcAddYesDef( "any-iter", "func",
 
 // This implements `any-iter` in terms of `foldl-short-iter`.
 stcAddYesDefAny( "any-iter", "func", "list",
-    stcCallFrame( "foldl-short-iter", "list", stcv( "list" ),
+    stcCallTuple( "foldl-short-iter", "list", stcv( "list" ),
         "combiner",
         stcFnAny( "any-iter-adapter-1", "state",
             stcRetFnAny( "any-iter-adapter-2", "elem",
@@ -359,14 +359,14 @@ stcAddYesDefAny( "any-double", "list-a", "list-b", "func",
         stcCons.cond( "any-double-case2", "first-b", "rest-b",
             stcRet( stcv( "list-b" ) ),
             stcCase( "any-double-case3", "func-result",
-                stcCallFrame( "pass-to", "arg", stcv( "first-b" ),
+                stcCallTuple( "pass-to", "arg", stcv( "first-b" ),
                     stcCall( stcv( "func" ),
                         stcRet( stcv( "first-a" ) ) ) ),
                 
                 stcYep, "result", stcRet( stcv( "func-result" ) ),
                 
                 stcNope, "result",
-                stcCallFrame( "any-double",
+                stcCallTuple( "any-double",
                     "list-a", stcv( "rest-a" ),
                     "list-b", stcv( "rest-b" ),
                     stcRet( stcv( "func" ) ) ),
@@ -378,7 +378,7 @@ stcAddYesDefAny( "any-double", "list-a", "list-b", "func",
 
 // This implements `any-double` in terms of `foldl-double-short-iter`.
 stcAddYesDefAny( "any-double", "list-a", "list-b", "func",
-    stcCallFrame( "foldl-double-short-iter",
+    stcCallTuple( "foldl-double-short-iter",
         "list-a", stcv( "list-a" ),
         "list-b", stcv( "list-b" ),
         "combiner",
@@ -386,7 +386,7 @@ stcAddYesDefAny( "any-double", "list-a", "list-b", "func",
             stcRetFnAny( "any-double-adapter-2", "elem-a",
                 stcRetFnAny( "any-double-adapter-3", "elem-b",
                     stcCase( "any-double-case", "func-result",
-                        stcCallFrame( "pass-to",
+                        stcCallTuple( "pass-to",
                             "arg", stcv( "elem-b" ),
                             stcCall( stcv( "func" ),
                                 stcRet( stcv( "elem-a" ) ) ) ),
@@ -411,17 +411,17 @@ stcAddYesDef( "not-yep-nope",
                     ) ) ) ) );
 
 stcAddYesDefAny( "all-iter", "func", "list",
-    stcCallFrame( "not-yep-nope",
-        stcCallFrame( "any-iter",
+    stcCallTuple( "not-yep-nope",
+        stcCallTuple( "any-iter",
             "func",
             stcFnAny( "all-iter-adapter-1", "elem",
-                stcCallFrame( "not-yep-nope",
+                stcCallTuple( "not-yep-nope",
                     stcCall( stcv( "func" ),
                         stcRet( stcv( "elem" ) ) ) ) ),
             stcRet( stcv( "list" ) ) ) ) );
 
 stcAddYesDefAny( "cut", "list-to-measure-by", "list-to-cut",
-    stcCallFrame( "foldl-iter", "list", stcv( "list-to-measure-by" ),
+    stcCallTuple( "foldl-iter", "list", stcv( "list-to-measure-by" ),
         "combiner",
         stcFnAny( "cut-adapter-1", "state",
             stcRetFnAny( "cut-adapter-2", "ignored-elem",
@@ -449,7 +449,7 @@ stcAddYesDef( "tails",
                 stcRet( stcv( "list-a" ) ),
                 stcCons.cond( "tails-case2", "elem-b", "list-b",
                     stcRet( stcv( "list-b" ) ),
-                    stcCallFrame( "tails",
+                    stcCallTuple( "tails",
                         stcRet(
                             stcCons.make(
                                 stcv( "list-a" ),
@@ -468,17 +468,17 @@ console.log( arrMap( stcDefs, function ( def ) {
 } ) );
 
 var defs = {};
-function Stc( frameTag, opt_frameVars ) {
-    this.frameTag = frameTag;
-    this.frameVars = opt_frameVars || [];
+function Stc( tupleTag, opt_projNames ) {
+    this.tupleTag = tupleTag;
+    this.projNames = opt_projNames || [];
 }
 Stc.prototype.call = function ( arg ) {
-    var func = defs[ this.frameTag ];
-    return func( this.frameVars, arg );
+    var func = defs[ this.tupleTag ];
+    return func( this.projNames, arg );
 };
 Stc.prototype.pretty = function () {
-    return "(" + this.frameTag +
-        arrMap( this.frameVars, function ( elem, i ) {
+    return "(" + this.tupleTag +
+        arrMap( this.projNames, function ( elem, i ) {
             return " " + elem.pretty();
         } ).join( "" ) + ")";
 };
@@ -503,35 +503,35 @@ function testStcDef( expr ) {
     stcDefs = stcDefs.concat( testDefs );
     runDefs( testDefs );
     
-    var callFrameVars = makeFrameVars( strMap().plusArrTruth( [
+    var callProjNames = makeProjNames( strMap().plusArrTruth( [
         [ "va:va", "func" ],
         [ "va:va", "arg" ]
     ] ) );
-    var callFrameFuncI = callFrameVars[ 0 ] === "func" ? 0 : 1;
-    var callFrameArgI = callFrameVars[ 0 ] === "func" ? 1 : 0;
-    var callFrameTag =
-        JSON.stringify( [ "call", callFrameVars ] );
-    var returnFrameValI = 0;
-    var returnFrameTag =
+    var callTupleFuncI = callProjNames[ 0 ] === "func" ? 0 : 1;
+    var callTupleArgI = callProjNames[ 0 ] === "func" ? 1 : 0;
+    var callTupleTag =
+        JSON.stringify( [ "call", callProjNames ] );
+    var returnTupleValI = 0;
+    var returnTupleTag =
         JSON.stringify( [ "return", [ "val" ] ] );
     
     var maxStackDepth = 0;
     var calls = 0;
     
     var stack = [ stcTest.makeStc() ];
-    var comp = new Stc( returnFrameTag, [ stcNil.makeStc() ] );
+    var comp = new Stc( returnTupleTag, [ stcNil.makeStc() ] );
     while ( true ) {
         if ( !(comp instanceof Stc) )
             throw new Error();
-        while ( comp.frameTag === callFrameTag ) {
-            stack.push( comp.frameVars[ callFrameFuncI ] );
-            comp = comp.frameVars[ callFrameArgI ];
+        while ( comp.tupleTag === callTupleTag ) {
+            stack.push( comp.projNames[ callTupleFuncI ] );
+            comp = comp.projNames[ callTupleArgI ];
             if ( !(comp instanceof Stc) )
                 throw new Error();
         }
-        if ( comp.frameTag !== returnFrameTag )
+        if ( comp.tupleTag !== returnTupleTag )
             throw new Error();
-        var result = comp.frameVars[ returnFrameValI ];
+        var result = comp.projNames[ returnTupleValI ];
         var n = stack.length;
         if ( n === 0 )
             break;
@@ -549,16 +549,16 @@ function testStcDef( expr ) {
 }
 
 testStcDef(
-    stcCallFrame( "rev",
+    stcCallTuple( "rev",
         stcRet(
             stcCons.make( stcYep.make( stcNil.make() ),
                 stcCons.make( stcNope.make( stcNil.make() ),
                     stcNil.make() ) ) ) ) );
 
-testStcDef( stcCallFrame( "rev", stcRet( stcNil.make() ) ) );
+testStcDef( stcCallTuple( "rev", stcRet( stcNil.make() ) ) );
 
 testStcDef(
-    stcCallFrame( "not-yep-nope",
+    stcCallTuple( "not-yep-nope",
         stcRet( stcYep.make( stcNil.make() ) ) ) );
 
 testStcDef(

@@ -46,9 +46,9 @@ of requests. (NOTE: Right now those are (union ...) and (call ...),
 which generate stack frames in the Tenerezza operation's result.)
 
 The language will have a lot in common with Staccato, including its
-constant-time-and-space-per-step semantics and its data/codata frames.
+constant-time-and-space-per-step semantics and its data/codata tuples.
 However, the stack will be a tree carrying multiple active frames at
-any given time, and the data/codata frames will have cryptographic
+any given time, and the data/codata tuples will have cryptographic
 restrictions on who can construct them and who can deconstruct them.
 
 ~~ Naming rationale ~~
@@ -129,7 +129,7 @@ overview of the differences:
 
 Close cousins:
 Staccato's (match ...) and Tenerezza's (match-element ...)
-Staccato's (frame ...) and Tenerezza's (singleton ...)
+Staccato's (tuple ...) and Tenerezza's (singleton ...)
 
 Only in Tenerezza:
 (minus ...)
@@ -151,10 +151,10 @@ everything else. Staccato only needed <case-list> to branch and
 Tenerezza (any-element ...) and (let-element-case), and it's the
 reason Tenerezza has (match-element ...) instead of (match ...).
 
-The difference between Staccato's (frame ...) and Tenerezza's
+The difference between Staccato's (tuple ...) and Tenerezza's
 (singleton ...) is that anyone can check (singleton ...) values for
 equality using (minus ...), whereas there's no plan to support an
-equality check for (frame ...).
+equality check for (tuple ...).
 
 The remaining, not-so-idiosyncratic difference is the addition of
 certain operations to Tenerezza, making it possible to compute on
@@ -173,12 +173,12 @@ sets flowing in two directions:
 describe them. Update this so Staccato isn't required reading.)
 
 <def> ::=
-  // This defines the given frame name to have the given
+  // This defines the given tuple name to have the given function call
   // implementation.
   //
   // This requires permission to eliminate the tag.
   //
-  (def <frame-name> <opt-var-list>
+  (def <tuple-name> <opt-var-list>
     <case-list>)
 
 <case-list> ::=
@@ -223,7 +223,7 @@ describe them. Update this so Staccato isn't required reading.)
   //         \ Send this back-and-forth everything it already has plus
   //         \ a wrapped-up version of itself. This goes infinite.
   //         (union back-and-forth
-  //           (make foo /env-cons foo back-and-forth /env-nil))))))
+  //           (make foo /proj-cons foo back-and-forth /proj-nil))))))
   //
   (swap-continuation <case-list>)
 
@@ -241,14 +241,14 @@ describe them. Update this so Staccato isn't required reading.)
   //
   // From the point of view of the conscience itself, the conscience
   // receives connections like these from all over the program. There
-  // is one connection per stack frame definition. There may be
-  // multiple instances of that stack frame in progress at a given
+  // is one connection per function call behavior definition. There
+  // may be multiple instances of that behavior in progress at a given
   // time, but they all use the same connection.
   //
   // TODO: See if we should make it so there's one conscience
-  // connection per active frame. These all go to the same place
-  // anyway; it's just a question of whether the conscience will want
-  // to manipulate different substacks in different ways.
+  // connection per active function call behavior. These all go to the
+  // same place anyway; it's just a question of whether the conscience
+  // will want to manipulate different substacks in different ways.
   //
   // NOTE: If we had a (conscience) <get-expr>, we would have the
   // additional conundrum of whether multiple occurrences of those in
@@ -266,13 +266,13 @@ describe them. Update this so Staccato isn't required reading.)
 
   // This requires permission to eliminate the tag.
   //
-  (match-element <frame-name> <env-pattern>
+  (match-element <tuple-name> <proj-pattern>
     <get-expr>
     <element-case-list>)
 
 <get-expr> ::=
   (local <var>)
-  (let <var> <get-expr>
+  (let <let-bindings-expr>
     <get-expr>)
   // Sugar.
   (let-def <def>
@@ -298,23 +298,23 @@ describe them. Update this so Staccato isn't required reading.)
   //
   // This requires permission to introduce the tag.
   //
-  (singleton <frame-name> <env-expr>)
+  (singleton <tuple-name> <proj-expr>)
 
   // Sugar.
   (save-root <save-root> <get-expr>)
-  (save <save-root> <frame-name>
-    <var> <frame-name> <opt-var-list>
-    <var> <var>
+  (save <save-root> <tuple-name>
+    <proj-name> <tuple-name> <opt-var-list>
+    <proj-name> <var>
     <get-expr>)
-  (fn <frame-name> <opt-var-list>
+  (fn <tuple-name> <opt-var-list>
     <case-list>)
 
-// A <frame-name> is a global name, and it will always be accompanied
-// by an <opt-var-list>, <var-list>, <env-pattern>, or <env-expr>
-// where the identifiers correspond to the channels that have been
-// wrapped in a dynamic tag.
+// A <tuple-name> is a global name, and it will always be accompanied
+// by an <opt-proj-pattern>, <proj-pattern>, or <proj-expr> where the
+// identifiers correspond to the channels that have been wrapped in a
+// dynamic tag.
 //
-// Every <frame-name> is associated with permission requirements that
+// Every <tuple-name> is associated with permission requirements that
 // clients must meet to introduce or eliminate the tag. The actual
 // content of the dynamic tag is the permission requirements, along
 // with enough information about the unordered set of identifiers that
@@ -324,22 +324,22 @@ describe them. Update this so Staccato isn't required reading.)
 // invoke when the tag is used with (call ...). (However, we may allow
 // programs to run when not all definitions are known.)
 //
-<frame-name> ::= ...
+<tuple-name> ::= ...
 
 <var> ::= ...  // Any identifier.
 <save-root> ::= ...  // Any identifier.
-<opt-var-list> ::=
-  (var-list-omitted)
-  (var-list <var-list>)
-<var-list> ::=
-  (var-list-cons <var> <var-list>)
-  (var-list-nil)
-<env-pattern> ::=
-  (env-pattern-cons <var> <var> <env-pattern>)
-  (env-pattern-nil)
-<env-expr> ::=
-  (env-expr-cons <var> <get-expr> <env-expr>)
-  (env-expr-nil)
+<opt-proj-pattern> ::=
+  (proj-pattern-omitted)
+  (proj-pattern <proj-pattern>)
+<proj-pattern> ::=
+  (proj-pattern-cons <proj-name> <var> <proj-pattern>)
+  (proj-pattern-nil)
+<let-bindings-expr> ::=
+  (let-bindings-cons <var> <get-expr> <let-bindings-expr>)
+  (let-bindings-nil)
+<proj-expr> ::=
+  (proj-cons <proj-name> <get-expr> <proj-expr>)
+  (proj-nil)
 
 ~~ Tenerezza Turing-complete computation ~~~
 
@@ -352,9 +352,9 @@ value, and sets of more than one of these values will work too:
 
 // Wrap the given cheaply computed value as a computation. (This is
 // monadic return, not a nonlocal exit.)
-(singleton return /env-cons val _ /env-nil)
+(singleton return /proj-cons val _ /proj-nil)
 
 // Call all elements of the `func`, using the `arg` as the argument
 // and the current continuation as the continuation each time. (This
 // means we end up taking the union of the results.)
-(singleton call /env-cons func _ /env-cons arg _ /env-nil)
+(singleton call /proj-cons func _ /proj-cons arg _ /proj-nil)
