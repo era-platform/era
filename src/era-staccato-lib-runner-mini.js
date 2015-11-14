@@ -1,11 +1,31 @@
-// era-staccato-lib-runner.js
+// era-staccato-lib-runner-mini.js
 // Copyright 2015 Ross Angle. Released under the MIT License.
 //
-// This is the JavaScript code to support running
+// This is alternative JavaScript code to support running
 // era-staccato-lib.stc. Most of it comes from
-// era-staccato-lib-gensym.js.
+// era-staccato-lib-runner.js.
+//
+// The distinction of this file is that it processes a "mini" version
+// of Staccato, which actually does not have most of the distinctive
+// run time characteristics that make Staccato a worthwhile language.
+// This "mini" Staccato dialect is effectively just for generating
+// JavaScript.
 //
 // See era-staccato.js for more information about what Staccato is.
+
+
+function readerStringListToString( stringList ) {
+    var result = "";
+    var rest = stringList;
+    for ( ; rest !== null; rest = rest.rest )
+        result += rest.first;
+    return result;
+}
+
+function readerStringNilToString( stringNil ) {
+    return readerStringListToString( stringNil.string );
+}
+
 
 var stcNextGensymI = 0;
 function stcGensym() {
@@ -13,16 +33,113 @@ function stcGensym() {
 }
 
 
-var stcDefs = [];
-function stcAddDefun( var_args ) {
-    var defun = stcDefun.apply( {}, arguments );
-    stcDefs = stcDefs.concat( defun.defs );
-    return defun.type;
+function stcIdentifier( identifier ) {
+    return "_stc_" +
+        identifier.replace( /[^a-z01-9]/g, function ( c ) {
+            if ( c === "-" )
+                return "__";
+            var hexWithExcess = "0000" +
+                c.charCodeAt( 0 ).toString( 16 ).toUpperCase();
+            return "_" +
+                hexWithExcess.substring( hexWithExcess.length - 4 );
+        } );
+}
+
+function stcCallArr( func, argsArr ) {
+    var result = func;
+    arrEach( argsArr, function ( arg ) {
+        result = "(" + result + ".call( " + arg + " ))";
+    } );
+    return result;
+}
+
+function stcCall( func, var_args ) {
+    return stcCallArr( func, [].slice.call( arguments, 1 ) );
+}
+
+function stcFn( var_args ) {
+    var n = arguments.length;
+    var vars = [].slice.call( arguments, 0, n - 1 );
+    var body = arguments[ n - 1 ];
+    var result = body;
+    for ( var i = n - 2; 0 <= i; i-- ) {
+        var va = vars[ i ];
+        var vaIdentifier = stcIdentifier( va );
+        result =
+            "(new StcFn( function ( " + vaIdentifier + " ) { " +
+                "return " + result + "; " +
+            "} ))";
+    }
+    return result;
+}
+
+function stcTypeArr( tupleName, projNames ) {
+    var n = projNames.length;
+    var tupleTag =
+        JSON.stringify( [ tupleName, projNames.slice().sort() ] );
+    
+    var result = {};
+    result.type = "stcType";
+    result.tupleName = tupleName;
+    result.projNames = projNames;
+    result.getTupleTag = function () {
+        return tupleTag;
+    };
+    result.ofArr = function ( args ) {
+        var n = projNames.length;
+        var projectionVals;
+        var arg;
+        if ( args.length === n ) {
+            projectionVals = args;
+            arg = null;
+        } else if ( args.length === n + 1 ) {
+            projectionVals = [].slice.call( args, 0, n );
+            arg = { val: args[ n ] };
+        } else {
+            throw new Error();
+        }
+        
+        projectionVals = arrMap(
+            arrMap( projectionVals, function ( val, i ) {
+                return { name: projNames[ i ], val: val };
+            } ).sort( function ( a, b ) {
+                return a.name < b.name ? -1 : b.name < a.name ? 1 : 0;
+            } ),
+            function ( entry ) {
+                return entry.val;
+            } );
+        
+        var result =
+            "(new Stc( " + JSON.stringify( tupleTag ) + ", [ " +
+                projectionVals.join( ", " ) +
+            " ] ))";
+        if ( arg !== null )
+            result = stcCall( result, processReaderExpr( arg.val ) );
+        return result;
+    };
+    result.of = function ( var_args ) {
+        return this.ofArr( arguments );
+    };
+    return result;
+}
+
+function stcType( tupleName, var_args ) {
+    return stcTypeArr( tupleName, [].slice.call( arguments, 1 ) );
+}
+
+function stcAddDefun( name, argName, body ) {
+    var tupleTag = JSON.stringify( [ name, [] ] );
+    var func =
+        Function( stcIdentifier( argName ), "return " + body + ";" );
+    defs[ tupleTag ] = function ( projectionVals, argVal ) {
+        return func( argVal );
+    }
 }
 
 function stcErr( msg ) {
-    // We return a value whose tuple name is the given error message.
-    return stcTuple( msg );
+    return "(function () { " +
+        "throw new Error( " + JSON.stringify( msg ) + " ); " +
+    "})()";
 }
 
 
@@ -41,80 +158,22 @@ Stc.prototype.pretty = function () {
             return " " + elem.pretty();
         } ).join( "" ) + ")";
 };
-
-var timeSpentParsing = 0;
-var timeSpentCompiling = 0;
-var timeSpentRunning = 0;
-function runDefs( newDefs ) {
-    arrEach( newDefs, function ( def ) {
-        var startMillis = new Date().getTime();
-        var parsed = parseSyntax( "def", def );
-        var parseMillis = new Date().getTime();
-        var compiled = parsed.compileToNaiveJs( {} );
-        var compileMillis = new Date().getTime();
-        Function( "defs", "Stc", compiled )( defs, Stc );
-        var stopMillis = new Date().getTime();
-        
-        timeSpentParsing += parseMillis - startMillis;
-        timeSpentCompiling += compileMillis - parseMillis;
-        timeSpentRunning += stopMillis - compileMillis;
-    } );
+function StcFn( func ) {
+    this.func = func;
 }
+StcFn.prototype.call = function ( arg ) {
+    var func = this.func;
+    return func( arg );
+};
+StcFn.prototype.pretty = function () {
+    return "(fn)";
+};
 
 var stcNil = stcType( "nil" );
 
 function testStcDef( expr ) {
-    
-    var testName = stcGensym();
-    var ignoredVar = stcGensym();
-    
-    var stcTest = stcDefun( testName, ignoredVar, expr );
-    stcDefs = stcDefs.concat( stcTest.defs );
-    runDefs( stcTest.defs );
-    
-    var callProjNames = makeProjNames( strMap().plusArrTruth( [
-        [ "va:va", "func" ],
-        [ "va:va", "arg" ]
-    ] ) );
-    var callTupleFuncI = callProjNames[ 0 ] === "func" ? 0 : 1;
-    var callTupleArgI = callProjNames[ 0 ] === "func" ? 1 : 0;
-    var callTupleTag =
-        JSON.stringify( [ "call", callProjNames ] );
-    var returnTupleValI = 0;
-    var returnTupleTag =
-        JSON.stringify( [ "return", [ "val" ] ] );
-    
-    var maxStackDepth = 0;
-    var calls = 0;
-    
-    var stack = [ stcTest.type.makeStc() ];
-    var comp = new Stc( returnTupleTag, [ stcNil.makeStc() ] );
-    while ( true ) {
-        if ( !(comp instanceof Stc) )
-            throw new Error();
-        while ( comp.tupleTag === callTupleTag ) {
-            stack.push( comp.projNames[ callTupleFuncI ] );
-            comp = comp.projNames[ callTupleArgI ];
-            if ( !(comp instanceof Stc) )
-                throw new Error();
-        }
-        if ( comp.tupleTag !== returnTupleTag )
-            throw new Error();
-        var result = comp.projNames[ returnTupleValI ];
-        var n = stack.length;
-        if ( n === 0 )
-            break;
-        comp = stack.pop().call( result );
-        
-        if ( maxStackDepth < n )
-            maxStackDepth = n;
-        calls++;
-    }
-    
+    var result = Function( "return " + expr + ";" )();
     console.log( result.pretty() );
-    console.log(
-        "in " + calls + " " + (calls === 1 ? "call" : "calls") + " " +
-        "with a maximum stack depth of " + maxStackDepth );
 }
 
 
@@ -159,31 +218,33 @@ function stcCaseletForRunner( maybeVa, matchSubject, body ) {
         if ( body.type !== "cons" )
             throw new Error();
         if ( body.rest.type !== "cons" )
-            return jsList( "any",
-                stcSaveRoot( processReaderExpr( body.first ) ) );
+            return "return " + processReaderExpr( body.first ) + "; ";
         var pattern = extractPattern( body );
         if ( pattern.remainingBody.type !== "cons" )
             throw new Error();
         var then = processReaderExpr( pattern.remainingBody.first );
         var els = pattern.remainingBody.rest;
-        return jsList( "match", pattern.type.tupleName,
-            stcEntriesPairMacro(
-                "proj-pattern-cons", "proj-pattern-nil",
-                pattern.type.projNames, pattern.localVars ),
-            stcSaveRoot( then ),
-            processTail( els ) );
+        return "if ( " +
+            "matchSubject.tupleTag === " +
+                JSON.stringify( pattern.type.getTupleTag() ) + " " +
+        ") return (function () { " +
+            arrMap( pattern.type.projNames, function ( projName, i ) {
+                return "var " +
+                    stcIdentifier( pattern.localVars[ i ] ) + " = " +
+                    "matchSubject.projNames[ " + i + " ]; ";
+            } ).join( "" ) +
+            "return " + then + "; " +
+        "})(); " + processTail( els );
     }
     
-    var processedBody = processTail( body );
-    if ( maybeVa !== null )
-        processedBody =
-            jsList( "let-case", maybeVa.val, processedBody );
-    
-    return stcCall(
-        stcBasicRet(
-            jsList( "fn", stcGensym(), stcNoProjs(),
-                processedBody ) ),
-        stcSaveRoot( processReaderExpr( matchSubject ) ) );
+    return "(function () { " +
+        "var matchSubject = " +
+            processReaderExpr( matchSubject ) + "; " +
+        (maybeVa === null ? "" :
+            "var " + stcIdentifier( maybeVa.val ) + " = " +
+                "matchSubject; ") +
+        processTail( body ) +
+    " }())";
 }
 function stcCast( matchSubject, body ) {
     var pattern = extractPattern( body );
@@ -195,17 +256,22 @@ function stcCast( matchSubject, body ) {
         throw new Error();
     var onCastErr = processReaderExpr( pattern.remainingBody.first );
     var body = processReaderExpr( pattern.remainingBody.rest.first );
-    var processedBody = jsList( "match", pattern.type.tupleName,
-        stcEntriesPairMacro( "proj-pattern-cons", "proj-pattern-nil",
-            pattern.type.projNames, pattern.localVars ),
-        stcSaveRoot( body ),
-        jsList( "any", stcSaveRoot( onCastErr ) ) );
     
-    return stcCall(
-        stcBasicRet(
-            jsList( "fn", stcGensym(), stcNoProjs(),
-                processedBody ) ),
-        stcSaveRoot( processReaderExpr( matchSubject ) ) );
+    return "(function () { " +
+        "var matchSubject = " +
+            processReaderExpr( matchSubject ) + "; " +
+        "if ( matchSubject.tupleTag === " +
+            JSON.stringify( pattern.type.getTupleTag() ) + " " +
+        ") return (function () { " +
+            arrMap( pattern.type.projNames, function ( projName, i ) {
+                return "var " +
+                    stcIdentifier( pattern.localVars[ i ] ) + " = " +
+                    "matchSubject.projNames[ " + i + " ]; ";
+            } ).join( "" ) +
+            "return " + body + "; " +
+        "})(); " +
+        "return " + onCastErr + "; " +
+    " }())";
 }
 
 function processFn( body ) {
@@ -270,19 +336,11 @@ staccatoDeclarationState.macros.set( "isa", function ( body ) {
     var stcYep = stcType( "yep", "val" );
     var stcNope = stcType( "nope", "val" );
     var stcNil = stcType( "nil" );
-    var processedBody = jsList( "match", tupleName,
-        stcEntriesPairMacro( "proj-pattern-cons", "proj-pattern-nil",
-            type.projNames,
-            arrMap( type.projNames, function ( tupleVar ) {
-                return stcGensym();
-            } ) ),
-        stcSaveRoot( stcYep.of( stcNil.of() ) ),
-        jsList( "any", stcSaveRoot( stcNope.of( stcNil.of() ) ) ) );
-    return stcCall(
-        stcBasicRet(
-            jsList( "fn", stcGensym(), stcNoProjs(),
-                processedBody ) ),
-        stcSaveRoot( processReaderExpr( body.rest.first ) ) );
+    return "(" +
+        processReaderExpr( body.rest.first ) + ".tupleTag === " +
+            JSON.stringify( type.getTupleTag() ) + " ? " +
+            stcYep.of( stcNil.of() ) + " : " +
+            stcNope.of( stcNil.of() ) + ")";
 } );
 
 staccatoDeclarationState.macros.set( "proj1", function ( body ) {
@@ -312,8 +370,8 @@ staccatoDeclarationState.macros.set( "c-new", function ( body ) {
         throw new Error();
     if ( body.first.type !== "stringNil" )
         throw new Error();
-    return stcCallArr(
-        stcTuple( readerStringNilToString( body.first ) ),
+    var type = stcType( readerStringNilToString( body.first ) );
+    return stcCallArr( type.of(),
         mapReaderExprToArr( body.rest, function ( expr ) {
             return processReaderExpr( expr );
         } ) );
@@ -337,6 +395,8 @@ staccatoDeclarationState.macros.set( "fn", function ( body ) {
 
 staccatoDeclarationState.macros.set( "let", function ( body ) {
     var remainingBody = body;
+    var bindingVars = [];
+    var bindingVals = [];
     var bindingArrThunks = [];
     while ( true ) {
         if ( remainingBody.type !== "cons" )
@@ -347,29 +407,23 @@ staccatoDeclarationState.macros.set( "let", function ( body ) {
             throw new Error();
         (function () {
             var thisRemainingBody = remainingBody;
-            bindingArrThunks.push( function () {
-                return readerStringNilToString(
-                    thisRemainingBody.first );
-            }, function () {
-                return stcBasicSave(
-                    processReaderExpr( thisRemainingBody.rest.first ) );
-            } );
+            bindingVars.push(
+                stcIdentifier(
+                    readerStringNilToString(
+                        thisRemainingBody.first ) ) );
+            bindingVals.push(
+                processReaderExpr( thisRemainingBody.rest.first ) );
         })();
         remainingBody = remainingBody.rest.rest;
     }
-    return stcSaveRoot(
-        jsList( "let",
-            stcBasicLetBindingsArr(
-                arrMap( bindingArrThunks, function ( thunk ) {
-                    return thunk();
-                } ) ),
-            stcSaveRoot(
-                processReaderExpr( remainingBody.first ) ) ) );
+    return "(function ( " + bindingVars.join( ", " ) + " ) { " +
+        "return " + processReaderExpr( remainingBody.first ) + "; " +
+    "}( " + bindingVals.join( ", " ) + " ))";
 } );
 
 function processReaderExpr( readerExpr ) {
     if ( readerExpr.type === "stringNil" )
-        return readerStringNilToString( readerExpr );
+        return stcIdentifier( readerStringNilToString( readerExpr ) );
     if ( readerExpr.type !== "cons" )
         throw new Error();
     if ( readerExpr.first.type !== "stringNil" )
@@ -384,8 +438,8 @@ function processReaderExpr( readerExpr ) {
 
 function processDefType( tupleName, projNames ) {
     var n = projNames.length;
-    staccatoDeclarationState.types.set( tupleName,
-        stcTypeArr( tupleName, projNames ) );
+    var type = stcTypeArr( tupleName, projNames );
+    staccatoDeclarationState.types.set( tupleName, type );
     staccatoDeclarationState.macros.set( tupleName,
         function ( body ) {
         
@@ -396,17 +450,11 @@ function processDefType( tupleName, projNames ) {
                 throw new Error(
                     "Expected more arguments to " +
                     JSON.stringify( tupleName ) );
-            projVals.push(
-                stcBasicSave(
-                    processReaderExpr( remainingBody.first ) ) );
+            projVals.push( processReaderExpr( remainingBody.first ) );
             remainingBody = remainingBody.rest;
         }
         return stcCallArr(
-            stcSaveRoot(
-                stcBasicRet(
-                    jsList( "tuple", tupleName,
-                        stcEntriesPairMacro( "proj-cons", "proj-nil",
-                            projNames, projVals ) ) ) ),
+            type.ofArr( projVals ),
             mapReaderExprToArr( remainingBody, function ( expr ) {
                 return processReaderExpr( expr );
             } ) );
@@ -454,7 +502,8 @@ function processTopLevelReaderExpr( readerExpr ) {
         var firstArg =
             readerStringNilToString( readerExpr.rest.rest.first );
         stcAddDefun( name, firstArg,
-            stcCall( processFn( readerExpr.rest.rest ), firstArg ) );
+            stcCall( processFn( readerExpr.rest.rest ),
+                stcIdentifier( firstArg ) ) );
         processDefType( name, [] );
     } else if ( macroName === "run-defs" ) {
         if ( readerExpr.rest.type === "cons" )
@@ -462,10 +511,6 @@ function processTopLevelReaderExpr( readerExpr ) {
         if ( staccatoDeclarationState.hasRunDefs )
             throw new Error();
         
-        console.log( arrMap( stcDefs, function ( def ) {
-            return staccatoPretty( def );
-        } ) );
-        runDefs( stcDefs );
         staccatoDeclarationState.hasRunDefs = true;
     } else if ( macroName === "test" ) {
         if ( readerExpr.rest.type !== "cons" )

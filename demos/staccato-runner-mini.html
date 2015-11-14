@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <!--
-staccato-runner.html (part of Era)
+staccato-runner-mini.html (part of Era)
 Copyright 2015 Ross Angle. Released under the MIT License.
 -->
 <title>Era Staccato demo</title>
@@ -2284,11 +2284,8 @@ great! Nothing to see here.</p>
     </script>
 <script type="text/javascript" src="../src/era-misc.js"></script>
 <script type="text/javascript" src="../src/era-reader.js"></script>
-<script type="text/javascript" src="../src/era-staccato.js"></script>
 <script type="text/javascript"
-    src="../src/era-staccato-builders-gensym.js"></script>
-<script type="text/javascript"
-    src="../src/era-staccato-lib-runner.js"></script>
+    src="../src/era-staccato-lib-runner-mini.js"></script>
 <script type="text/javascript">"use strict";
 
 window.onload = function () {
@@ -2322,14 +2319,7 @@ window.onload = function () {
             "seconds reading the code." );
         console.log(
             "- Spent " + (stopMillis - readMillis) / 1000 + " " +
-            "seconds processing it, broken down as follows:" );
-        console.log(
-            "- - Parsing: " + timeSpentParsing / 1000 + " seconds" );
-        console.log(
-            "- - Compiling: " + timeSpentCompiling / 1000 + " " +
-            "seconds" );
-        console.log(
-            "- - Running: " + timeSpentRunning / 1000 + " seconds" );
+            "seconds processing it." );
     }
     generateOutput();
 };
