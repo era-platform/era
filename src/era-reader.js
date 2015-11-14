@@ -470,14 +470,119 @@
 //   / reads unsophisticated string elements until it reads ) or ]
 
 
-function customStream( underlyingStream, read ) {
-    var stream = {};
-    stream.underlyingStream = underlyingStream;
-    stream.peek = function ( yoke, then ) {
+function customStream(
+    givenStringChunk, underlyingStream, readOrChunk ) {
+    
+    var stringChunk = givenStringChunk || { i: 0, string: "" };
+    
+    function read( yoke, stringChunk, underlyingStream, then ) {
         return runWaitOne( yoke, function ( yoke ) {
-        return read( yoke, underlyingStream,
-            function ( yoke, underlyingStream, result ) {
+            var i = stringChunk.i;
+            var string = stringChunk.string;
+            if ( i < string.length ) {
+                var charCodeInfo =
+                    getUnicodeCodePointAtCodeUnitIndex( string, i );
+                var result = charCodeInfo.charString;
+                return then( yoke,
+                    customStream( {
+                        i: i + result.length,
+                        string: string
+                    }, underlyingStream, readOrChunk ),
+                    { ok: true, val:
+                        { type: "stringChunkCodePoint",
+                            val: result } } );
+            }
+            
+            return readOrChunk( yoke, underlyingStream,
+                function ( yoke, underlyingStream, result ) {
+            return runWaitOne( yoke, function ( yoke ) {
+            
+            if ( !result.ok )
+                return then( yoke, result );
+            
+            if ( result.val.type === "stringChunk" ) {
+                return read( yoke, {
+                    i: result.val.i,
+                    string: result.val.string
+                }, underlyingStream, then );
+                
+            } else if (
+                result.val.type === "notStringChunk"
+                || result.val.type === "end" ) {
+                
+                return then( yoke, result );
+            } else {
+                throw new Error();
+            }
+            
+            } );
+            } );
+        } );
+    }
+    
+    function readExhaustingRegex( yoke,
+        stream, stringChunk, underlyingStream, makeRegex, soFar ) {
+        
         return runWaitOne( yoke, function ( yoke ) {
+            var i = stringChunk.i;
+            var string = stringChunk.string;
+            var n = string.length;
+            if ( soFar === "" && i < n )
+                return then( yoke, stream, { ok: true, val: "" } );
+            var regex = makeRegex();
+            regex.lastIndex = i;
+            soFar += regex.exec( string )[ 0 ];
+            var newI = regex.lastIndex;
+            if ( i === newI )
+                return then( yoke, stream, { ok: true, val: "" } );
+            if ( newI < n )
+                return then( yoke,
+                    customStream( {
+                        i: newI,
+                        string: string
+                    }, underlyingStream, readOrChunk ),
+                    { ok: true, val: soFar } );
+            
+            return readOrChunk( yoke, underlyingStream,
+                function ( yoke, underlyingStream, result ) {
+            return runWaitOne( yoke, function ( yoke ) {
+            
+            if ( !result.ok )
+                return then( yoke,
+                    customStream( { i: 0, string: "" },
+                        underlyingStream, readOrChunk ),
+                    result );
+            
+            if ( result.val.type === "stringChunk" ) {
+                var stringChunk = {
+                    i: result.val.i,
+                    string: result.val.string
+                };
+                return readExhaustingRegex( yoke,
+                    customStream(
+                        stringChunk, underlyingStream, readOrChunk ),
+                    stringChunk, underlyingStream, makeRegex, soFar,
+                    then );
+                
+            } else if (
+                result.val.type === "notStringChunk"
+                || result.val.type === "end" ) {
+                
+                return then( yoke,
+                    makeCachingStream( { i: 0, string: "" },
+                        underlyingStream, result ),
+                    result );
+            } else {
+                throw new Error();
+            }
+            
+            } );
+            } );
+        } );
+    }
+    
+    function makeCachingStream(
+        stringChunk, underlyingStream, result ) {
         
         var cachingStream = {};
         cachingStream.underlyingStream = underlyingStream;
@@ -489,56 +594,68 @@ function customStream( underlyingStream, read ) {
         cachingStream.read = function ( yoke, then ) {
             return runWaitOne( yoke, function ( yoke ) {
                 return then( yoke,
-                    customStream( underlyingStream, read ),
+                    customStream(
+                        stringChunk, underlyingStream, readOrChunk ),
                     result );
             } );
         };
-        return then( yoke, cachingStream, result );
-        
-        } );
-        } );
-        } );
-    };
-    stream.read = function ( yoke, then ) {
-        return runWaitOne( yoke, function ( yoke ) {
-        return read( yoke, underlyingStream,
-            function ( yoke, underlyingStream, result ) {
-        return runWaitOne( yoke, function ( yoke ) {
+        cachingStream.readExhaustingRegex =
+            function ( yoke, makeRegex, then ) {
+            
+            return readExhaustingRegex( yoke, cachingStream,
+                stringChunk, underlyingStream, makeRegex, "" );
+        };
+        return cachingStream;
+    }
+    
+    var stream = {};
+    stream.underlyingStream = underlyingStream;
+    stream.peek = function ( yoke, then ) {
+        return read( yoke, stringChunk, underlyingStream,
+            function ( yoke, stringChunk, underlyingStream, result ) {
         
         return then( yoke,
-            customStream( underlyingStream, read ),
+            makeCachingStream(
+                stringChunk, underlyingStream, result ),
             result );
         
         } );
+    };
+    stream.read = function ( yoke, then ) {
+        return read( yoke, stringChunk, underlyingStream,
+            function ( yoke, stringChunk, underlyingStream, result ) {
+        
+        return then( yoke,
+            customStream(
+                stringChunk, underlyingStream, readOrChunk ),
+            result );
+        
         } );
-        } );
+    };
+    stream.readExhaustingRegex = function ( yoke, makeRegex, then ) {
+        return readExhaustingRegex( yoke,
+            stream, stringChunk, underlyingStream, makeRegex, "" );
     };
     return stream;
 }
 function listToStream( list ) {
-    return customStream( list, function ( yoke, list, then ) {
+    return customStream( null, list, function ( yoke, list, then ) {
         if ( list === null )
-            return then( yoke, null, { ok: true, val: null } );
+            return then( yoke, null, { ok: true, val:
+                { type: "end" } } );
         else
             return then( yoke, list.rest, { ok: true, val:
-                { val: list.first } } );
+                { type: "notStringChunk", val: list.first } } );
     } );
 }
 function stringToStream( string ) {
     if ( !isValidUnicode( string ) )
         throw new Error();
-    
-    var n = string.length;
-    
-    return customStream( 0, function ( yoke, i, then ) {
-        if ( n <= i )
-            return then( yoke, i, { ok: true, val: null } );
-        var charCodeInfo =
-            getUnicodeCodePointAtCodeUnitIndex( string, i );
-        var result = charCodeInfo.charString;
-        return then( yoke, i + result.length, { ok: true, val:
-            { val: result } } );
-    } );
+    return customStream( { i: 0, string: string }, null,
+        function ( yoke, underlyingStream, then ) {
+            return then( yoke, underlyingStream, { ok: true, val:
+                { type: "end" } } );
+        } ),
 }
 function exhaustStream( yoke, s, then ) {
     // This reads the remainder of the stream as a linked list.
@@ -549,6 +666,8 @@ function exhaustStream( yoke, s, then ) {
     
     return loop( yoke, s, null );
     function loop( yoke, s, revList ) {
+        // TODO NOW: Update this read() call to handle the new
+        // stringChunkCodePoint result format.
         return s.read( yoke, function ( yoke, s, result ) {
             
             if ( !result.ok )
@@ -575,6 +694,9 @@ function exhaustStream( yoke, s, then ) {
 // NOTE: For this, `s` must be a stream of Unicode code points as
 // short JavaScript strings.
 function readRestOfLine( yoke, s, revElements, then ) {
+    // TODO NOW: Optimize this with readExhaustingRegex.
+    // TODO NOW: Update this peek() call to handle the new
+    // stringChunkCodePoint result format.
     return s.peek( yoke, function ( yoke, s, result ) {
         if ( !result.ok )
             return then( yoke, s, result );
@@ -587,6 +709,8 @@ function readRestOfLine( yoke, s, revElements, then ) {
                 return then( yoke, s, { ok: true, val: elements } );
             } );
         else
+            // TODO NOW: Update this read() call to handle the new
+            // stringChunkCodePoint result format.
             return s.read( yoke, function ( yoke, s, result ) {
                 if ( !result.ok )
                     return then( yoke, s, result );
@@ -604,6 +728,8 @@ function readRestOfLine( yoke, s, revElements, then ) {
 function readUnsophisticatedBrackets( yoke, s,
     closeRegex, consume, revSoFar, then ) {
     
+    // TODO NOW: Update this peek() call to handle the new
+    // stringChunkCodePoint result format.
     return s.peek( yoke, function ( yoke, s, result ) {
         if ( !result.ok )
             return then( yoke, s, result );
@@ -611,6 +737,8 @@ function readUnsophisticatedBrackets( yoke, s,
         if ( result.val !== null
             && closeRegex.test( result.val.val ) ) {
             if ( consume )
+                // TODO NOW: Update this read() call to handle the new
+                // stringChunkCodePoint result format.
                 return s.read( yoke, function ( yoke, s, result ) {
                     if ( !result.ok )
                         return then( yoke, s, result );
@@ -645,6 +773,9 @@ function readUnsophisticatedBrackets( yoke, s,
 // NOTE: For this, `s` must be a stream of Unicode code points as
 // short JavaScript strings.
 function readUnsophisticatedStringElement( yoke, s, then ) {
+    // TODO NOW: Optimize this with readExhaustingRegex.
+    // TODO NOW: Update this read() call to handle the new
+    // stringChunkCodePoint result format.
     return s.read( yoke, function ( yoke, s, result ) {
         if ( !result.ok )
             return then( yoke, s, result );
@@ -829,6 +960,8 @@ function unsophisticatedStringElementToString( yoke, element, then ) {
 // NOTE: For this, `s` must be a stream of Unicode code points as
 // short JavaScript strings.
 function readLowercaseBasicLatinCodePoint( yoke, s, then ) {
+    // TODO NOW: Update this read() call to handle the new
+    // stringChunkCodePoint result format.
     return s.read( yoke, function ( yoke, s, result ) {
         
         if ( !result.ok )
@@ -869,6 +1002,8 @@ function readTwoLowercaseBasicLatinCodePoints( yoke, s, then ) {
 // NOTE: For this, `s` must be a stream of Unicode code points as
 // short JavaScript strings.
 function readUnsophisticatedEscapeSequenceSuffix( yoke, s, then ) {
+    // TODO NOW: Update this peek() call to handle the new
+    // stringChunkCodePoint result format.
     return s.peek( yoke, function ( yoke, s, result ) {
         
         if ( !result.ok )
@@ -886,6 +1021,8 @@ function readUnsophisticatedEscapeSequenceSuffix( yoke, s, then ) {
             } );
         
         
+        // TODO NOW: Update this read() call to handle the new
+        // stringChunkCodePoint result format.
         return s.read( yoke, function ( yoke, s, result ) {
             if ( !result.ok )
                 return then( yoke, s, result );
@@ -914,6 +1051,8 @@ function readUnsophisticatedEscapeSequenceSuffix( yoke, s, then ) {
             return then( yoke, s, { ok: true, val:
                 { type: "veryShort" } } );
         else if ( c === "." )
+            // TODO NOW: Update this read() call to handle the new
+            // stringChunkCodePoint result format.
             return s.read( yoke, function ( yoke, s, result ) {
                 
                 if ( !result.ok )
@@ -1077,6 +1216,8 @@ function readSexpOrInfixOp( yoke, s,
     // "stringCons", and "stringNil", this may also result in a value
     // of type "infixNewline" or "infixDot".
     
+    // TODO NOW: Update this read() call to handle the new
+    // stringChunkCodePoint result format.
     return s.read( yoke, function ( yoke, s, result ) {
         if ( !result.ok )
             return then( yoke, s, result );
@@ -1242,9 +1383,18 @@ function readSexpOrInfixOp( yoke, s,
                 elements, qqStack, then ) {
                 
                 return exhaustStream( yoke,
+                    // TODO NOW: Give this customStream() call a
+                    // stringChunk parameter, and make its body call
+                    // then() with the new
+                    // stringChunk/notStringChunk/end result format.
                     customStream( listToStream( elements ),
                         function ( yoke, s, then ) {
                         
+                        // TODO NOW: Optimize this with
+                        // readExhaustingRegex.
+                        
+                        // TODO NOW: Update this read() call to handle
+                        // the new stringChunkCodePoint result format.
                         return s.read( yoke,
                             function ( yoke, s, result ) {
                             
@@ -1253,6 +1403,10 @@ function readSexpOrInfixOp( yoke, s,
                                 || result.val.val.type !== "codePoint"
                                 || result.val.val.val !== "\r" )
                                 return then( yoke, s, result );
+                            
+                            // TODO NOW: Update this peek() call to
+                            // handle the new stringChunkCodePoint
+                            // result format.
                             
                             // We convert CRLF and CR to LF.
                             return s.peek( yoke,
@@ -1266,6 +1420,8 @@ function readSexpOrInfixOp( yoke, s,
                                     || result.val.val.val !== "\n" )
                                     return next( yoke, s );
                                 else
+                                    // TODO NOW: Update this read() call to handle the new
+                                    // stringChunkCodePoint result format.
                                     return s.read( yoke, function ( yoke, s, result ) {
                                         if ( !result.ok )
                                             return then( yoke, s, result );
@@ -1497,6 +1653,8 @@ function readSexpOrInfixOp( yoke, s,
                                         if ( esc.suffix.type !== "escapeDelimited" )
                                             return unexpected( yoke,
                                                 "-ch but not -ch( or -ch[ or -ch/" );
+                                        // TODO NOW: See if we can optimize this with
+                                        // readExhaustingRegex.
                                         var elementsArr = jsListToArrBounded( esc.suffix.elements, 6 );
                                         if ( elementsArr === null
                                             || !(1 <= elementsArr.length && elementsArr.length <= 6)
@@ -1714,6 +1872,7 @@ function readSexpOrInfixOp( yoke, s,
                             ), ret );
                         } );
                     } else if ( element.type === "codePoint" ) {
+                        // TODO NOW: See if we can optimize this with readExhaustingRegex.
                         var c = element.val;
                         if ( /^[ \t\r\n]$/.test( c ) ) {
                             if ( qqStack.cache.get( "inQqLabel" ) )
@@ -2070,9 +2229,12 @@ function readSexpOrInfixOp( yoke, s,
                 return then( yoke, s, { ok: true, val:
                     { val: { type: "infixNewline" } } } );
             } else if ( /^[-*a-z01-9]$/i.test( c ) ) {
+                // TODO NOW: Optimize this with readExhaustingRegex.
                 // We read any number of code points in this set to
                 // build a string.
                 var loop = function ( yoke, s, revElements ) {
+                    // TODO NOW: Update this peek() call to handle the
+                    // new stringChunkCodePoint result format.
                     return s.peek( yoke,
                         function ( yoke, s, result ) {
                         
@@ -2083,6 +2245,9 @@ function readSexpOrInfixOp( yoke, s,
                             && result.val.val.type === "codePoint"
                             && /^[-*a-z01-9]$/i.test(
                                 result.val.val.val ) )
+                            // TODO NOW: Update this read() call to
+                            // handle the new stringChunkCodePoint
+                            // result format.
                             return s.read( yoke,
                                 function ( yoke, s, result ) {
                                 
@@ -2151,7 +2316,15 @@ function readSexpOrInfixOp( yoke, s,
             // "infixDot" values.
             
             return exhaustStream( yoke,
+                // TODO NOW: Give this customStream() call a
+                // stringChunk parameter, and make its body call
+                // then() with the new stringChunk/notStringChunk/end
+                // result format.
                 customStream(
+                    // TODO NOW: Give this customStream() call a
+                    // stringChunk parameter, and make its body call
+                    // then() with the new
+                    // stringChunk/notStringChunk/end result format.
                     customStream( s, function ( yoke, s, then ) {
                         return readSexpOrInfixOp( yoke, s,
                             encompassingClosingBracket, then );
@@ -2194,6 +2367,8 @@ function readSexpOrInfixOp( yoke, s,
 function readSexp( yoke, s, heedCommandEnds, then ) {
     return loop( yoke, s, null );
     function loop( yoke, s, maybeLhs, recentDot ) {
+        // TODO NOW: Update this peek() call to handle the new
+        // stringChunkCodePoint result format.
         return s.peek( yoke, function ( yoke, s, result ) {
             
             if ( !result.ok )
@@ -2210,6 +2385,8 @@ function readSexp( yoke, s, heedCommandEnds, then ) {
                     return complain();
                 return then( yoke, s, { ok: true, val: maybeLhs } );
             } else if ( result.val.val.type === "infixNewline" ) {
+                // TODO NOW: Update this read() call to handle the new
+                // stringChunkCodePoint result format.
                 return s.read( yoke, function ( yoke, s, result ) {
                     
                     if ( !result.ok )
@@ -2225,6 +2402,8 @@ function readSexp( yoke, s, heedCommandEnds, then ) {
                     }
                 } );
             } else if ( result.val.val.type === "infixDot" ) {
+                // TODO NOW: Update this read() call to handle the new
+                // stringChunkCodePoint result format.
                 return s.read( yoke, function ( yoke, s, result ) {
                     
                     if ( !result.ok )
@@ -2236,6 +2415,8 @@ function readSexp( yoke, s, heedCommandEnds, then ) {
                 } );
             } else {
                 if ( recentDot )
+                    // TODO NOW: Update this read() call to handle the
+                    // new stringChunkCodePoint result format.
                     return s.read( yoke,
                         function ( yoke, s, result ) {
                         
@@ -2254,6 +2435,8 @@ function readSexp( yoke, s, heedCommandEnds, then ) {
                     return then( yoke, s, { ok: true, val:
                         maybeLhs } );
                 else
+                    // TODO NOW: Update this read() call to handle the
+                    // new stringChunkCodePoint result format.
                     return s.read( yoke,
                         function ( yoke, s, result ) {
                         
@@ -2271,8 +2454,18 @@ function readSexp( yoke, s, heedCommandEnds, then ) {
 
 function readAll( string ) {
     return runSyncYoke( null, function ( yoke, then ) {
+        // TODO NOW: Give this customStream() call a stringChunk
+        // parameter, and make its body call then() with the new
+        // stringChunk/notStringChunk/end result format.
         return exhaustStream( yoke, customStream(
+            // TODO NOW: Give this customStream() call a stringChunk
+            // parameter, and make its body call then() with the new
+            // stringChunk/notStringChunk/end result format.
             customStream(
+                // TODO NOW: Give this customStream() call a
+                // stringChunk parameter, and make its body call
+                // then() with the new stringChunk/notStringChunk/end
+                // result format.
                 customStream(
                     stringToStream( string ),
                     function ( yoke, s, then ) {
