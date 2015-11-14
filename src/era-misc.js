@@ -160,41 +160,35 @@ function getUnicodeCodePointAtCodeUnitIndex( string, codeUnitIndex ) {
         codePoint: 0xFFFD,
         charString: "\uFFFD"
     };
-    function getCodeUnit( codeUnitIndex ) {
-        if ( string.length < codeUnitIndex )
-            return null;
-        return {
-            codeUnit: string.charCodeAt( codeUnitIndex ),
-            charString: string.charAt( codeUnitIndex )
-        };
-    }
-    var first = getCodeUnit( codeUnitIndex );
-    if ( first === null )
+    var n = string.length;
+    if ( n <= codeUnitIndex )
         throw new Error();
-    if ( isHead( first.codeUnit ) ) {
-        var second = getCodeUnit( codeUnitIndex + 1 );
-        if ( second === null ) {
+    var firstCodeUnit = string.charCodeAt( codeUnitIndex );
+    if ( isHead( firstCodeUnit ) ) {
+        if ( n <= codeUnitIndex + 1 )
             return replacement;
-        } else if ( isHead( second.codeUnit ) ) {
+        var secondCodeUnit = string.charCodeAt( codeUnitIndex + 1 );
+        if ( isHead( secondCodeUnit ) ) {
             return replacement;
-        } else if ( isTrail( second.codeUnit ) ) {
+        } else if ( isTrail( secondCodeUnit ) ) {
             return {
                 isReplaced: false,
                 codePoint: 0x10000 +
-                    ((first.codeUnit - 0xD800) << 10) +
-                    (second.codeUnit - 0xDC00),
-                charString: first.charString + second.charString
+                    ((firstCodeUnit - 0xD800) << 10) +
+                    (secondCodeUnit - 0xDC00),
+                charString: string.charAt( codeUnitIndex ) +
+                    string.charAt( codeUnitIndex + 1 )
             };
         } else {
             return replacement;
         }
-    } else if ( isTrail( first.codeUnit ) ) {
+    } else if ( isTrail( firstCodeUnit ) ) {
         return replacement;
     } else {
         return {
             isReplaced: false,
-            codePoint: first.codeUnit,
-            charString: first.charString
+            codePoint: firstCodeUnit,
+            charString: string.charAt( codeUnitIndex )
         };
     }
 }
