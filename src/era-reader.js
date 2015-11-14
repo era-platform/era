@@ -127,11 +127,11 @@
 //       in the middle, I have to go all over my code to add or remove
 //       "-uq".
 //
-//     - Solution: You can use \-wq[foo]-qq-... to locally define the
+//     - Solution: You can use \-wq=[foo]-qq... to locally define the
 //       name "foo" to refer to the current quasiquote level before
-//       you start a new one. Then you can use \-rq[foo]-... to rewind
+//       you start a new one. Then you can use \-rq=[foo]... to rewind
 //       back to the original level. Altogether, you can write
-//       \-wq[foo]-qq[...\-rq[foo]-ls[...]...] instead of
+//       \-wq=[foo]-qq[...\-rq=[foo]-ls[...]...] instead of
 //       \-qq[...\-uq-ls[...]...] for example.
 //
 //   - As a programmer whose programs contain error messages and
@@ -780,7 +780,7 @@ function unsophisticatedStringEscapeSuffixToString( yoke,
                     asciiToEl( esc.open ),
                     elements,
                     asciiToEl( esc.open === "/" ? "" : esc.close )
-                ) );
+                ), then );
             } );
         } else {
             throw new Error();
@@ -1027,6 +1027,48 @@ function readUnsophisticatedEscapeSequenceSuffix( yoke, s, then ) {
     } );
 }
 
+function AsyncStrMap() {}
+AsyncStrMap.prototype.init_ = function ( rootVal, children ) {
+    this.rootVal_ = rootVal;
+    this.children_ = children;
+    return this;
+};
+function asyncStrMap() {
+    return new AsyncStrMap().init_( null, strMap() );
+}
+AsyncStrMap.prototype.plusTruth = function ( yoke, k, then ) {
+    var self = this;
+    return runWaitOne( yoke, function ( yoke ) {
+        if ( k === null )
+            return then( yoke,
+                new AsyncStrMap().init_(
+                    { val: true }, self.children_ ) );
+        var newChild = self.children_.has( k.first ) ?
+            self.children_.get( k.first ) : asyncStrMap();
+        return newChild.plusTruth( yoke, k.rest,
+            function ( yoke, newChild ) {
+            
+            return runWaitOne( yoke, function ( yoke ) {
+                return then( yoke,
+                    new AsyncStrMap().init_( self.rootVal_,
+                        self.children_.plusEntry( k.first,
+                            newChild ) ) );
+            } );
+        } );
+    } );
+};
+AsyncStrMap.prototype.has = function ( yoke, k, then ) {
+    var self = this;
+    return runWaitOne( yoke, function ( yoke ) {
+        if ( k === null )
+            return then( yoke, self.rootVal_ !== null );
+        if ( !self.children_.has( k.first ) )
+            return then( yoke, false );
+        return self.children_.get( k.first ).has( yoke,
+            k.rest, then );
+    } );
+};
+
 // NOTE: For this, `s` must be a stream of
 // readUnsophisticatedStringElement results.
 function readSexpOrInfixOp( yoke, s,
@@ -1057,7 +1099,7 @@ function readSexpOrInfixOp( yoke, s,
                             return withQqStack( yoke, {
                                 uq: qqStack,
                                 cache: qqStack.cache.plusObj( {
-                                    names: strMap()
+                                    names: asyncStrMap()
                                 } )
                             }, esc.suffix );
                         } );
@@ -1077,12 +1119,17 @@ function readSexpOrInfixOp( yoke, s,
                             if ( !result.ok )
                                 return then( yoke, s, result );
                             var name = result.val;
-                            return withQqStack( yoke, {
-                                uq: qqStack.uq,
-                                cache: qqStack.cache.plusObj( {
-                                    names: qqStack.cache.get( "names" ).plusTruth( name )
-                                } )
-                            }, esc.suffix.second );
+                            return qqStack.cache.get( "names" ).
+                                plusTruth( yoke, name,
+                                    function ( yoke, names ) {
+                                
+                                return withQqStack( yoke, {
+                                    uq: qqStack.uq,
+                                    cache: qqStack.cache.plusObj( {
+                                        names: names
+                                    } )
+                                }, esc.suffix.second );
+                            } );
                         } );
                     } else if ( esc.name === "rq" ) {
                         return parseQqLabelEsc( esc, qqStack,
@@ -1095,16 +1142,18 @@ function readSexpOrInfixOp( yoke, s,
                             function unwindingQqStack( yoke,
                                 qqStack ) {
                                 
-                                return runWaitOne( yoke,
-                                    function ( yoke ) {
+                                return qqStack.cache.get( "names" ).
+                                    has( yoke, name, function ( yoke, had ) {
                                     
-                                    if ( qqStack.cache.get( "names" ).has( name ) )
+                                    if ( had )
                                         return withQqStack( yoke, qqStack, esc.suffix.second );
                                     else if ( qqStack.uq === null )
                                         return then( yoke, s, { ok: false, msg:
                                             "Expected s-expression escape suffix, encountered -rq= " +
-                                            // TODO: Use custom slashification here.
-                                            "for unbound label " + JSON.stringify( name ) } );
+                                            // TODO: Describe the unbound label. We'll need custom
+                                            // slashification and/or an error string that can get larger
+                                            // than JavaScript's strings.
+                                            "for an unbound label" } );
                                     else
                                         return unwindingQqStack( yoke, qqStack.uq );
                                 } );
@@ -1496,7 +1545,7 @@ function readSexpOrInfixOp( yoke, s,
                                         return readEscapeLurking( yoke, prefix, esc.suffix, {
                                             uq: qqStack,
                                             cache: qqStack.cache.plusObj( {
-                                                names: strMap()
+                                                names: asyncStrMap()
                                             } )
                                         }, then );
                                     } );
@@ -1533,14 +1582,17 @@ function readSexpOrInfixOp( yoke, s,
                                             asciiToEl( "-wq=" ),
                                             labelCode
                                         ), function ( yoke, prefix ) {
+                                        return qqStack.cache.get( "names" ).plusTruth( yoke, name,
+                                            function ( yoke, names ) {
                                         
                                         return readEscapeLurking( yoke, prefix, esc.suffix.second, {
                                             uq: qqStack.uq,
                                             cache: qqStack.cache.plusObj( {
-                                                names: qqStack.cache.get( "names" ).plusTruth( name )
+                                                names: names
                                             } )
                                         }, then );
                                         
+                                        } );
                                         } );
                                         } );
                                     } );
@@ -1567,15 +1619,19 @@ function readSexpOrInfixOp( yoke, s,
                                         
                                         return unwindingQqStack( yoke, qqStack );
                                         function unwindingQqStack( yoke, qqStack ) {
-                                            return runWaitOne( yoke, function ( yoke ) {
-                                                if ( qqStack.cache.get( "names" ).has( name ) )
+                                            return qqStack.cache.get( "names" ).has( yoke, name,
+                                                function ( yoke, had ) {
+                                                
+                                                if ( had )
                                                     return readEscapeLurking( yoke,
                                                         prefix, esc.suffix.second, qqStack, then );
                                                 else if ( qqStack.uq === null )
                                                     return unexpected( yoke,
-                                                        "-rq= for unbound label " +
-                                                        // TODO: Use custom slashification here.
-                                                        JSON.stringify( name ) );
+                                                        // TODO: Describe the unbound label. We'll need
+                                                        // custom slashification and/or an error string
+                                                        // that can get larger than JavaScript's
+                                                        // strings.
+                                                        "-rq= for an unbound label" );
                                                 else
                                                     return unwindingQqStack( yoke, qqStack.uq );
                                             } );
@@ -1964,11 +2020,11 @@ function readSexpOrInfixOp( yoke, s,
                 // We read the string elements as a string with
                 // whitespace discouraged and no interpolations, and
                 // we call then( yoke, { ok: true, val: _ } ) with the
-                // result as a JavaScript string.
+                // result as a linked list of code points.
                 return readString( yoke, elements, {
                     uq: qqStack.uq,
                     cache: qqStack.cache.plusObj( {
-                        names: strMap(),
+                        names: asyncStrMap(),
                         encompassingClosingBracket:
                             encompassingClosingBracket,
                         
@@ -1984,29 +2040,21 @@ function readSexpOrInfixOp( yoke, s,
                         return then( yoke, result );
                     if ( result.val.type !== "stringNil" )
                         throw new Error();
-                    return jsListFoldl( yoke, "", result.val.string,
-                        function ( yoke, state, elem, then ) {
-                        
-                        if ( elem.type !== "codePoint" )
-                            throw new Error();
-                        return then( yoke, state + elem.val );
-                    }, function ( yoke, jsString ) {
-                        return then( yoke,
-                            { ok: true, val: jsString } );
-                    } );
+                    return then( yoke, { ok: true, val:
+                        result.val.string } );
                 } );
             };
             return withQqStack( yoke, {
                 uq: null,
                 cache: strMap().plusObj( {
-                    names: strMap(),
+                    names: asyncStrMap(),
                     encompassingClosingBracket:
                         encompassingClosingBracket,
                     encompassingClosingBracketIsInString: false,
                     normalizingWhitespace: true,
                     inQqLabel: false
-                }
-            ) }, result.val.val.suffix );
+                } )
+            }, result.val.val.suffix );
         } else if ( result.val.val.type === "textParens" ) {
             return continueListFromElements( yoke,
                 result.val.val.elements, ")" );

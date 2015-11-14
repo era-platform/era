@@ -73,3 +73,10 @@ addReaderTest(
         string: "abc \\-qq[def \\-qq[ghi",
         interpolation: "jkl",
         rest: "mno]pqr] stu" } );
+
+addReaderTest(
+    "\\-wq=[my-label]-qq[abc \\-qq[def \\-qq[ghi\\-rq=[my-label]-ls[jkl]mno]pqr] stu]",
+    { type: "stringCons",
+        string: "abc \\-qq[def \\-qq[ghi",
+        interpolation: "jkl",
+        rest: "mno]pqr] stu" } );
