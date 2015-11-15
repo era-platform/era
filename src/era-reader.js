@@ -515,6 +515,23 @@ function customStream( underlyingStream, read ) {
     };
     return stream;
 }
+function streamPrepend( originalStream, element ) {
+    var result = { ok: true, val: { val: element } };
+    
+    var stream = {};
+    stream.underlyingStream = originalStream.underlyingStream;
+    stream.peek = function ( yoke, then ) {
+        return runWaitOne( yoke, function ( yoke ) {
+            return then( yoke, stream, result );
+        } );
+    };
+    stream.read = function ( yoke, then ) {
+        return runWaitOne( yoke, function ( yoke ) {
+            return then( yoke, originalStream, result );
+        } );
+    };
+    return stream;
+}
 function listToStream( list ) {
     return customStream( list, function ( yoke, list, then ) {
         if ( list === null )
@@ -524,7 +541,7 @@ function listToStream( list ) {
                 { val: list.first } } );
     } );
 }
-function stringToStream( string ) {
+function stringToClassifiedTokenStream( string ) {
     if ( !isValidUnicode( string ) )
         throw new Error();
     
@@ -533,9 +550,10 @@ function stringToStream( string ) {
     return customStream( 0, function ( yoke, i, then ) {
         if ( n <= i )
             return then( yoke, i, { ok: true, val: null } );
-        var charCodeInfo =
-            getUnicodeCodePointAtCodeUnitIndex( string, i );
-        var result = charCodeInfo.charString;
+        var regex =
+            /[\r\n\(\)\[\]\\\/,`.\-=a-z]|[ \t]+|[*A-Z01-9]+|[^\r\n\(\)\[\]\\\/,`.\-=a-z \t*A-Z01-9]*/g;
+        regex.lastIndex = i;
+        var result = regex.exec( string )[ 0 ];
         return then( yoke, i + result.length, { ok: true, val:
             { val: result } } );
     } );
@@ -572,8 +590,21 @@ function exhaustStream( yoke, s, then ) {
     }
 }
 
-// NOTE: For this, `s` must be a stream of Unicode code points as
-// short JavaScript strings.
+function stringRevAppendToList( yoke, string, i, target, then ) {
+    return runWaitOne( yoke, function ( yoke ) {
+        if ( string.length <= i )
+            return then( yoke, target );
+        
+        var charCodeInfo =
+            getUnicodeCodePointAtCodeUnitIndex( string, i );
+        var result = charCodeInfo.charString;
+        return stringRevAppendToList( yoke, string, i + result.length,
+            { first: result, rest: target },
+            then );
+    } );
+}
+
+// NOTE: For this, `s` must be a classified token stream.
 function readRestOfLine( yoke, s, revElements, then ) {
     return s.peek( yoke, function ( yoke, s, result ) {
         if ( !result.ok )
@@ -593,14 +624,13 @@ function readRestOfLine( yoke, s, revElements, then ) {
                 
                 return readRestOfLine( yoke, s,
                     { first:
-                        { type: "codePoint", val: result.val.val },
+                        { type: "codePoints", val: result.val.val },
                         rest: revElements },
                     then );
             } );
     } );
 }
-// NOTE: For this, `s` must be a stream of Unicode code points as
-// short JavaScript strings.
+// NOTE: For this, `s` must be a classified token stream.
 function readUnsophisticatedBrackets( yoke, s,
     closeRegex, consume, revSoFar, then ) {
     
@@ -642,8 +672,7 @@ function readUnsophisticatedBrackets( yoke, s,
         }
     } );
 }
-// NOTE: For this, `s` must be a stream of Unicode code points as
-// short JavaScript strings.
+// NOTE: For this, `s` must be a classified token stream.
 function readUnsophisticatedStringElement( yoke, s, then ) {
     return s.read( yoke, function ( yoke, s, result ) {
         if ( !result.ok )
@@ -694,7 +723,7 @@ function readUnsophisticatedStringElement( yoke, s, then ) {
             } );
         else
             return then( yoke, s, { ok: true, val:
-                { val: { type: "codePoint", val: c } } } );
+                { val: { type: "codePoints", val: c } } } );
     } );
 }
 
@@ -702,7 +731,7 @@ function asciiToEl( ascii ) {
     var result = null;
     for ( var i = ascii.length - 1; 0 <= i; i-- )
         result =
-            { first: { type: "codePoint", val: ascii.charAt( i ) },
+            { first: { type: "codePoints", val: ascii.charAt( i ) },
                 rest: result };
     return result;
 }
@@ -720,7 +749,7 @@ function asciiToEl( ascii ) {
 //   - The value contains an "escapeDelimited" escape suffix, and its
 //     opening bracket is / but it is not in a context where its
 //     closing bracket will be in the expected place.
-//   - The element contains a "codePoint" string element whose value
+//   - The element contains a "codePoints" string element whose value
 //     is \ ( ) [ ] or whitespace.
 //
 // If the value was created by parsing in the first place, these cases
@@ -746,7 +775,7 @@ function unsophisticatedStringEscapeSuffixToString( yoke,
         } else if ( esc.type === "short" ) {
             return jsListAppend( yoke,
                 asciiToEl( "." ),
-                jsList( { type: "codePoint", val: esc.name } ),
+                jsList( { type: "codePoints", val: esc.name } ),
                 then );
         } else if ( esc.type === "modifier" ) {
             return unsophisticatedStringEscapeSuffixToString( yoke,
@@ -818,7 +847,7 @@ function unsophisticatedStringElementToString( yoke, element, then ) {
                 asciiToEl( "]" )
             ), then );
         } );
-    else if ( element.type === "codePoint" )
+    else if ( element.type === "codePoints" )
         return runWaitOne( yoke, function ( yoke ) {
             return then( yoke, jsList( element ) );
         } );
@@ -826,10 +855,28 @@ function unsophisticatedStringElementToString( yoke, element, then ) {
         throw new Error();
 }
 
-// NOTE: For this, `s` must be a stream of Unicode code points as
-// short JavaScript strings.
-function readLowercaseBasicLatinCodePoint( yoke, s, then ) {
+// NOTE: For this, `s` must be a classified token stream.
+function readCodePoint( yoke, s, then ) {
     return s.read( yoke, function ( yoke, s, result ) {
+        
+        if ( !result.ok || result.val === null )
+            return then( yoke, s, result );
+        
+        var codePoint =
+            getUnicodeCodePointAtCodeUnitIndex(
+                result.val.val, 0 ).charString;
+        if ( codePoint.length === result.val.val.length )
+            return then( yoke, s, result );
+        
+        return then( yoke,
+            streamPrepend( s,
+                result.val.val.substr( codePoint.length ) ),
+            { ok: true, val: { val: codePoint } } );
+    } );
+}
+// NOTE: For this, `s` must be a classified token stream.
+function readLowercaseBasicLatinCodePoint( yoke, s, then ) {
+    return readCodePoint( yoke, s, function ( yoke, s, result ) {
         
         if ( !result.ok )
             return then( yoke, s, result );
@@ -847,8 +894,7 @@ function readLowercaseBasicLatinCodePoint( yoke, s, then ) {
         return then( yoke, s, { ok: true, val: result.val.val } );
     } );
 }
-// NOTE: For this, `s` must be a stream of Unicode code points as
-// short JavaScript strings.
+// NOTE: For this, `s` must be a classified token stream.
 function readTwoLowercaseBasicLatinCodePoints( yoke, s, then ) {
     return readLowercaseBasicLatinCodePoint( yoke, s,
         function ( yoke, s, result ) {
@@ -866,8 +912,7 @@ function readTwoLowercaseBasicLatinCodePoints( yoke, s, then ) {
         } );
     } );
 }
-// NOTE: For this, `s` must be a stream of Unicode code points as
-// short JavaScript strings.
+// NOTE: For this, `s` must be a classified token stream.
 function readUnsophisticatedEscapeSequenceSuffix( yoke, s, then ) {
     return s.peek( yoke, function ( yoke, s, result ) {
         
@@ -875,7 +920,7 @@ function readUnsophisticatedEscapeSequenceSuffix( yoke, s, then ) {
             return then( yoke, s, result );
         
         if ( result.val === null
-            || /^[ \t\r\n]$/.test( result.val.val ) )
+            || /^[ \t\r\n]+$/.test( result.val.val ) )
             return readRestOfLine( yoke, s, null,
                 function ( yoke, s, result ) {
                 
@@ -886,7 +931,7 @@ function readUnsophisticatedEscapeSequenceSuffix( yoke, s, then ) {
             } );
         
         
-        return s.read( yoke, function ( yoke, s, result ) {
+        return readCodePoint( yoke, s, function ( yoke, s, result ) {
             if ( !result.ok )
                 return then( yoke, s, result );
         
@@ -1250,7 +1295,8 @@ function readSexpOrInfixOp( yoke, s,
                             
                             if ( !result.ok
                                 || result.val === null
-                                || result.val.val.type !== "codePoint"
+                                || result.val.val.type !==
+                                    "codePoints"
                                 || result.val.val.val !== "\r" )
                                 return then( yoke, s, result );
                             
@@ -1262,7 +1308,7 @@ function readSexpOrInfixOp( yoke, s,
                                     return then( yoke, s, result );
                                 
                                 if ( result.val === null
-                                    || result.val.val.type !== "codePoint"
+                                    || result.val.val.type !== "codePoints"
                                     || result.val.val.val !== "\n" )
                                     return next( yoke, s );
                                 else
@@ -1274,7 +1320,7 @@ function readSexpOrInfixOp( yoke, s,
                                 
                                 function next( yoke, s ) {
                                     return then( yoke, s, { ok: true, val:
-                                        { val: { type: "codePoint", val: "\n" } } } );
+                                        { val: { type: "codePoints", val: "\n" } } } );
                                 }
                             } );
                         } );
@@ -1498,20 +1544,31 @@ function readSexpOrInfixOp( yoke, s,
                                             return unexpected( yoke,
                                                 "-ch but not -ch( or -ch[ or -ch/" );
                                         var elementsArr = jsListToArrBounded( esc.suffix.elements, 6 );
-                                        if ( elementsArr === null
-                                            || !(1 <= elementsArr.length && elementsArr.length <= 6)
-                                            || !arrAll( elementsArr, function ( element, i ) {
-                                                return element.type === "codePoint" &&
-                                                    /^[01-9A-F]$/.test( element.val );
-                                            } ) )
+                                        
+                                        var hexErr = function () {
                                             return then( yoke, { ok: false, msg:
                                                 "Encountered -ch with something other than 1-6 " +
                                                 "uppercase hex digits inside" } );
+                                        };
+                                        
+                                        if ( elementsArr === null
+                                            || !(1 <= elementsArr.length && elementsArr.length <= 6)
+                                            || !arrAll( elementsArr, function ( element, i ) {
+                                                return element.type === "codePoints" &&
+                                                    /^[01-9A-F]+$/.test( element.val ) &&
+                                                    element.val.length <= 6;
+                                            } ) )
+                                            return hexErr();
+                                        
+                                        var elementsString = arrMap( elementsArr, function ( element, i ) {
+                                            return element.val;
+                                        } ).join( "" );
+                                        
+                                        if ( 6 < elementsString.length )
+                                            return hexErr();
                                         
                                         var codePoint = unicodeCodePointToString(
-                                            parseInt( arrMap( elementsArr, function ( element, i ) {
-                                                return element.val;
-                                            } ).join( "" ), 16 ) );
+                                            parseInt( elementsString, 16 ) );
                                         
                                         if ( codePoint === null )
                                             return then( yoke, { ok: false, msg:
@@ -1519,7 +1576,7 @@ function readSexpOrInfixOp( yoke, s,
                                                 "or a code point outside the Unicode range" } );
                                         
                                         return ret( yoke,
-                                            jsList( { type: "codePoint", val: codePoint } ) );
+                                            jsList( { type: "codePoints", val: codePoint } ) );
                                     } else {
                                         return readDelimitedStringLurking( yoke, esc.suffix, qqStack,
                                             function ( yoke, result ) {
@@ -1713,23 +1770,23 @@ function readSexpOrInfixOp( yoke, s,
                                 asciiToEl( "]" )
                             ), ret );
                         } );
-                    } else if ( element.type === "codePoint" ) {
+                    } else if ( element.type === "codePoints" ) {
                         var c = element.val;
-                        if ( /^[ \t\r\n]$/.test( c ) ) {
+                        if ( /^[ \t\r\n]+$/.test( c ) ) {
                             if ( qqStack.cache.get( "inQqLabel" ) )
                                 return ret( yoke, jsList(
                                     { type: "lurkVerify" },
-                                    { type: "rawWhiteCodePoint", val: element.val }
+                                    { type: "rawWhiteCodePoints", val: element.val }
                                 ) );
                             else if ( qqStack.cache.
                                 get( "normalizingWhitespace" ) )
                                 return ret( yoke, jsList(
                                     { type: "lurkNormalize" },
-                                    { type: "rawWhiteCodePoint", val: element.val }
+                                    { type: "rawWhiteCodePoints", val: element.val }
                                 ) );
                             else
                                 return ret( yoke, jsList(
-                                    { type: "rawWhiteCodePoint", val: element.val }
+                                    { type: "rawWhiteCodePoints", val: element.val }
                                 ) );
                         } else {
                             return ret( yoke, jsList( element ) );
@@ -1802,9 +1859,9 @@ function readSexpOrInfixOp( yoke, s,
                     else if ( element.type === "lurkVerify" )
                         return then( yoke, conditionalNextState );
                     else if ( element.type ===
-                        "rawWhiteCodePoint" )
+                        "rawWhiteCodePoints" )
                         return then( yoke, conditionalNextState );
-                    else if ( element.type === "codePoint" )
+                    else if ( element.type === "codePoints" )
                         return then( yoke, defaultNextState );
                     else if ( element.type === "interpolation" )
                         return then( yoke, defaultNextState );
@@ -1839,9 +1896,9 @@ function readSexpOrInfixOp( yoke, s,
                     else if ( element.type === "lurkVerify" )
                         return then( yoke, conditionalNextState );
                     else if ( element.type ===
-                        "rawWhiteCodePoint" )
+                        "rawWhiteCodePoints" )
                         return then( yoke, conditionalNextState );
-                    else if ( element.type === "codePoint" )
+                    else if ( element.type === "codePoints" )
                         return then( yoke, defaultNextState );
                     else if ( element.type === "interpolation" )
                         return then( yoke, defaultNextState );
@@ -1876,17 +1933,17 @@ function readSexpOrInfixOp( yoke, s,
                             revWhite: state.revWhite,
                             revProcessed: state.revProcessed
                         }, !"exitedEarly" );
-                    else if ( element.type === "rawWhiteCodePoint" )
+                    else if ( element.type === "rawWhiteCodePoints" )
                         return then( yoke, {
                             verifying: state.verifying,
                             normalizing: state.normalizing,
                             revWhite:
                                 { first:
-                                    { type: "codePoint", val: element.val },
+                                    { type: "codePoints", val: element.val },
                                     rest: state.revWhite },
                             revProcessed: state.revProcessed
                         }, !"exitedEarly" );
-                    else if ( element.type === "codePoint" )
+                    else if ( element.type === "codePoints" )
                         return bankAndAdd();
                     else if ( element.type === "interpolation" )
                         return bankAndAdd();
@@ -1977,20 +2034,26 @@ function readSexpOrInfixOp( yoke, s,
                             revElements,
                             function ( yoke, state, element, then ) {
                             
-                            if ( element.type === "codePoint" ) {
-                                if ( state.type === "stringNil" )
-                                    return then( yoke,
-                                        { type: "stringNil", string:
-                                            { first: element.val, rest: state.string } } );
-                                else if ( state.type ===
-                                    "stringCons" )
-                                    return then( yoke,
-                                        { type: "stringCons",
-                                            string: { first: element.val, rest: state.string },
-                                            interpolation: state.interpolation,
-                                            rest: state.rest } );
-                                else
-                                    throw new Error();
+                            if ( element.type === "codePoints" ) {
+                                return stringRevAppendToList( yoke,
+                                    element.val, 0, null,
+                                    function ( yoke, elementRevElements ) {
+                                    
+                                    return jsListRevAppend( yoke, elementRevElements, state.string,
+                                        function ( yoke, string ) {
+                                        
+                                        if ( state.type === "stringNil" )
+                                            return then( yoke, { type: "stringNil", string: string } );
+                                        else if ( state.type === "stringCons" )
+                                            return then( yoke,
+                                                { type: "stringCons",
+                                                    string: string,
+                                                    interpolation: state.interpolation,
+                                                    rest: state.rest } );
+                                        else
+                                            throw new Error();
+                                    } );
+                                } );
                             } else if ( element.type ===
                                 "interpolation" ) {
                                 return then( yoke,
@@ -2061,15 +2124,15 @@ function readSexpOrInfixOp( yoke, s,
         } else if ( result.val.val.type === "textSquareBrackets" ) {
             return continueListFromElements( yoke,
                 result.val.val.elements, "]" );
-        } else if ( result.val.val.type === "codePoint" ) {
+        } else if ( result.val.val.type === "codePoints" ) {
             var c = result.val.val.val;
-            if ( /^[ \t]$/.test( c ) ) {
+            if ( /^[ \t]+$/.test( c ) ) {
                 return readSexpOrInfixOp( yoke, s,
                     encompassingClosingBracket, then );
             } else if ( /^[\r\n]$/.test( c ) ) {
                 return then( yoke, s, { ok: true, val:
                     { val: { type: "infixNewline" } } } );
-            } else if ( /^[-*a-z01-9]$/i.test( c ) ) {
+            } else if ( /^[-*a-z01-9]+$/i.test( c ) ) {
                 // We read any number of code points in this set to
                 // build a string.
                 var loop = function ( yoke, s, revElements ) {
@@ -2080,17 +2143,21 @@ function readSexpOrInfixOp( yoke, s,
                             return then( yoke, s, result );
                         
                         if ( result.val !== null
-                            && result.val.val.type === "codePoint"
-                            && /^[-*a-z01-9]$/i.test(
+                            && result.val.val.type === "codePoints"
+                            && /^[-*a-z01-9]+$/i.test(
                                 result.val.val.val ) )
                             return s.read( yoke,
                                 function ( yoke, s, result ) {
                                 
                                 if ( !result.ok )
                                     return then( yoke, s, result );
-                                return loop( yoke, s,
-                                    { first: result.val.val.val,
-                                        rest: revElements } );
+                                
+                                return stringRevAppendToList( yoke,
+                                    result.val.val.val, 0, revElements,
+                                    function ( yoke, revElements ) {
+                                    
+                                    return loop( yoke, s, revElements );
+                                } );
                             } );
                         else
                             return jsListRev( yoke, revElements,
@@ -2101,7 +2168,11 @@ function readSexpOrInfixOp( yoke, s,
                             } );
                     } );
                 };
-                return loop( yoke, s, jsList( result.val.val.val ) );
+                return stringRevAppendToList( yoke, c, 0, null,
+                    function ( yoke, revElements ) {
+                    
+                    return loop( yoke, s, revElements );
+                } );
             } else if ( result.val.val.val === "/" ) {
                 if ( encompassingClosingBracket === null )
                     return then( yoke, s, { ok: false, msg:
@@ -2274,7 +2345,7 @@ function readAll( string ) {
         return exhaustStream( yoke, customStream(
             customStream(
                 customStream(
-                    stringToStream( string ),
+                    stringToClassifiedTokenStream( string ),
                     function ( yoke, s, then ) {
                         return readUnsophisticatedStringElement( yoke, s,
                             then );
