@@ -351,7 +351,8 @@ staccatoDeclarationState.macros.set( "let", function ( body ) {
                     thisRemainingBody.first );
             }, function () {
                 return stcBasicSave(
-                    processReaderExpr( thisRemainingBody.rest.first ) );
+                    processReaderExpr(
+                        thisRemainingBody.rest.first ) );
             } );
         })();
         remainingBody = remainingBody.rest.rest;
