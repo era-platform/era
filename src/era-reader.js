@@ -551,7 +551,7 @@ function stringToClassifiedTokenStream( string ) {
         if ( n <= i )
             return then( yoke, i, { ok: true, val: null } );
         var regex =
-            /[\r\n\(\)\[\]\\\/,`.\-=a-z]|[ \t]+|[*A-Z01-9]+|[^\r\n\(\)\[\]\\\/,`.\-=a-z \t*A-Z01-9]*/g;
+            /[\r\n\(\)\[\]\\\/]|[ \t]+|[\-*a-zA-Z01-9]+|[^\r\n\(\)\[\]\\\/ \t\-*a-zA-Z01-9]*/g;
         regex.lastIndex = i;
         var result = regex.exec( string )[ 0 ];
         return then( yoke, i + result.length, { ok: true, val:
