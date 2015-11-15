@@ -14,19 +14,6 @@
 // See era-staccato.js for more information about what Staccato is.
 
 
-function readerStringListToString( stringList ) {
-    var result = "";
-    var rest = stringList;
-    for ( ; rest !== null; rest = rest.rest )
-        result += rest.first;
-    return result;
-}
-
-function readerStringNilToString( stringNil ) {
-    return readerStringListToString( stringNil.string );
-}
-
-
 var stcNextGensymI = 0;
 function stcGensym() {
     return "gs-" + stcNextGensymI++;
@@ -189,8 +176,7 @@ function extractPattern( body ) {
     if ( tupleNameExpr.type !== "stringNil" )
         throw new Error(
             "Encountered a case branch with a tuple name that " +
-            "wasn't a string: " +
-            staccatoReaderExprPretty( tupleNameExpr ) );
+            "wasn't a string: " + readerExprPretty( tupleNameExpr ) );
     var tupleName = readerStringNilToString( tupleNameExpr );
     if ( !staccatoDeclarationState.types.has( tupleName ) )
         throw new Error( "No such type: " + tupleName );
@@ -282,7 +268,7 @@ function processFn( body ) {
     if ( body.first.type !== "stringNil" )
         throw new Error(
             "Called fn with a non-string variable name: " +
-            staccatoReaderExprPretty( body.first ) );
+            readerExprPretty( body.first ) );
     return stcFn( readerStringNilToString( body.first ),
         processFn( body.rest ) );
 }

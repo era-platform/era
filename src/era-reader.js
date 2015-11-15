@@ -2382,3 +2382,48 @@ function readAll( string ) {
         } );
     } ).result;
 }
+
+function readerStringListToString( stringList ) {
+    var result = "";
+    var rest = stringList;
+    for ( ; rest !== null; rest = rest.rest )
+        result += rest.first;
+    return result;
+}
+
+function readerStringNilToString( stringNil ) {
+    return readerStringListToString( stringNil.string );
+}
+
+function readerExprPretty( expr ) {
+    if ( expr.type === "nil" ) {
+        return "()";
+    } else if ( expr.type === "stringNil" ) {
+        // TODO: Output this in a syntax that can be read back in.
+        var string = readerStringNilToString( expr );
+        return /^[\-*a-zA-Z01-9]+$/.test( string ) ? string :
+            JSON.stringify( string );
+    } else if ( expr.type === "stringCons" ) {
+        // TODO: Output this in a syntax that can be read back in.
+        var string = readerStringListToString( expr.string );
+        return (/^[\-*a-zA-Z01-9]+$/.test( string ) ? string :
+            JSON.stringify( string )) + "...";
+    } else if ( expr.type === "cons" ) {
+        if ( expr.rest.type === "nil" ) {
+            if ( expr.first.type === "nil"
+                || expr.first.type === "cons" ) {
+                return "(/" +
+                    readerExprPretty( expr.first ).substring( 1 );
+            } else {
+                return "(" + readerExprPretty( expr.first ) + ")";
+            }
+        } else if ( expr.rest.type === "cons" ) {
+            return "(" + readerExprPretty( expr.first ) + " " +
+                readerExprPretty( expr.rest ).substring( 1 );
+        } else {
+            throw new Error();
+        }
+    } else {
+        throw new Error();
+    }
+}

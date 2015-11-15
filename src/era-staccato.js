@@ -505,54 +505,6 @@ function staccatoPretty( expr ) {
     }
 }
 
-function readerStringListToString( stringList ) {
-    var result = "";
-    var rest = stringList;
-    for ( ; rest !== null; rest = rest.rest )
-        result += rest.first;
-    return result;
-}
-
-function readerStringNilToString( stringNil ) {
-    return readerStringListToString( stringNil.string );
-}
-
-function staccatoReaderExprPretty( expr ) {
-    if ( expr.type === "nil" ) {
-        return "()";
-    } else if ( expr.type === "stringNil" ) {
-        // TODO: Output this in a syntax that can be read back in.
-        var string = readerStringNilToString( expr );
-        return /^[-a-z01-9]*$/i.test( string ) ? string :
-            JSON.stringify( string );
-    } else if ( expr.type === "stringCons" ) {
-        // TODO: Output this in a syntax that can be read back in.
-        var string = readerStringListToString( expr.string );
-        return (/^[-a-z01-9]*$/i.test( string ) ? string :
-            JSON.stringify( string )) + "...";
-    } else if ( expr.type === "cons" ) {
-        if ( expr.rest.type === "nil" ) {
-            if ( expr.first.type === "nil"
-                || expr.first.type === "cons" ) {
-                return "(/" +
-                    staccatoReaderExprPretty( expr.first )
-                        .substring( 1 );
-            } else {
-                return "(" + staccatoReaderExprPretty( expr.first ) +
-                    ")";
-            }
-        } else if ( expr.rest.type === "cons" ) {
-            return "(" + staccatoReaderExprPretty( expr.first ) +
-                " " +
-                staccatoReaderExprPretty( expr.rest ).substring( 1 );
-        } else {
-            throw new Error();
-        }
-    } else {
-        throw new Error();
-    }
-}
-
 var syntaxes = strMap();
 var nonterminals = strMap();
 function isValidNontermName( x ) {

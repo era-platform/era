@@ -130,8 +130,7 @@ function extractPattern( body ) {
     if ( tupleNameExpr.type !== "stringNil" )
         throw new Error(
             "Encountered a case branch with a tuple name that " +
-            "wasn't a string: " +
-            staccatoReaderExprPretty( tupleNameExpr ) );
+            "wasn't a string: " + readerExprPretty( tupleNameExpr ) );
     var tupleName = readerStringNilToString( tupleNameExpr );
     if ( !staccatoDeclarationState.types.has( tupleName ) )
         throw new Error( "No such type: " + tupleName );
@@ -216,7 +215,7 @@ function processFn( body ) {
     if ( body.first.type !== "stringNil" )
         throw new Error(
             "Called fn with a non-string variable name: " +
-            staccatoReaderExprPretty( body.first ) );
+            readerExprPretty( body.first ) );
     return stcFn( readerStringNilToString( body.first ),
         processFn( body.rest ) );
 }
