@@ -590,20 +590,6 @@ function exhaustStream( yoke, s, then ) {
     }
 }
 
-function stringRevAppendToList( yoke, string, i, target, then ) {
-    return runWaitOne( yoke, function ( yoke ) {
-        if ( string.length <= i )
-            return then( yoke, target );
-        
-        var charCodeInfo =
-            getUnicodeCodePointAtCodeUnitIndex( string, i );
-        var result = charCodeInfo.charString;
-        return stringRevAppendToList( yoke, string, i + result.length,
-            { first: result, rest: target },
-            then );
-    } );
-}
-
 // NOTE: For this, `s` must be a classified token stream.
 function readRestOfLine( yoke, s, revElements, then ) {
     return s.peek( yoke, function ( yoke, s, result ) {
@@ -1072,39 +1058,62 @@ function readUnsophisticatedEscapeSequenceSuffix( yoke, s, then ) {
     } );
 }
 
-function AsyncStrMap() {}
-AsyncStrMap.prototype.init_ = function ( rootVal, children ) {
+function readerStrMapNormalizeKey( k ) {
+    // NOTE: This only normalizes the first segment of the key. This
+    // is called repeatedly as the key is iterated over.
+    
+    var segmentSize = 1000;
+    var currentK = k;
+    var first = "";
+    while ( first.length < segmentSize && currentK !== null ) {
+        first += currentK.first;
+        currentK = currentK.rest;
+    }
+    if ( segmentSize < first.length ) {
+        currentK =
+            { first: first.substr( segmentSize ), rest: currentK };
+        first = first.substr( 0, segmentSize );
+    }
+    if ( first.length !== 0 )
+        currentK = { first: first, rest: currentK };
+    return currentK;
+}
+
+function ReaderStrMap() {}
+ReaderStrMap.prototype.init_ = function ( rootVal, children ) {
     this.rootVal_ = rootVal;
     this.children_ = children;
     return this;
 };
-function asyncStrMap() {
-    return new AsyncStrMap().init_( null, strMap() );
+function readerStrMap() {
+    return new ReaderStrMap().init_( null, strMap() );
 }
-AsyncStrMap.prototype.plusTruth = function ( yoke, k, then ) {
+ReaderStrMap.prototype.plusTruth = function ( yoke, origK, then ) {
     var self = this;
     return runWaitOne( yoke, function ( yoke ) {
+        var k = readerStrMapNormalizeKey( origK );
         if ( k === null )
             return then( yoke,
-                new AsyncStrMap().init_(
+                new ReaderStrMap().init_(
                     { val: true }, self.children_ ) );
         var newChild = self.children_.has( k.first ) ?
-            self.children_.get( k.first ) : asyncStrMap();
+            self.children_.get( k.first ) : readerStrMap();
         return newChild.plusTruth( yoke, k.rest,
             function ( yoke, newChild ) {
             
             return runWaitOne( yoke, function ( yoke ) {
                 return then( yoke,
-                    new AsyncStrMap().init_( self.rootVal_,
+                    new ReaderStrMap().init_( self.rootVal_,
                         self.children_.plusEntry( k.first,
                             newChild ) ) );
             } );
         } );
     } );
 };
-AsyncStrMap.prototype.has = function ( yoke, k, then ) {
+ReaderStrMap.prototype.has = function ( yoke, origK, then ) {
     var self = this;
     return runWaitOne( yoke, function ( yoke ) {
+        var k = readerStrMapNormalizeKey( origK );
         if ( k === null )
             return then( yoke, self.rootVal_ !== null );
         if ( !self.children_.has( k.first ) )
@@ -1144,7 +1153,7 @@ function readSexpOrInfixOp( yoke, s,
                             return withQqStack( yoke, {
                                 uq: qqStack,
                                 cache: qqStack.cache.plusObj( {
-                                    names: asyncStrMap()
+                                    names: readerStrMap()
                                 } )
                             }, esc.suffix );
                         } );
@@ -1602,7 +1611,7 @@ function readSexpOrInfixOp( yoke, s,
                                         return readEscapeLurking( yoke, prefix, esc.suffix, {
                                             uq: qqStack,
                                             cache: qqStack.cache.plusObj( {
-                                                names: asyncStrMap()
+                                                names: readerStrMap()
                                             } )
                                         }, then );
                                     } );
@@ -2035,25 +2044,17 @@ function readSexpOrInfixOp( yoke, s,
                             function ( yoke, state, element, then ) {
                             
                             if ( element.type === "codePoints" ) {
-                                return stringRevAppendToList( yoke,
-                                    element.val, 0, null,
-                                    function ( yoke, elementRevElements ) {
-                                    
-                                    return jsListRevAppend( yoke, elementRevElements, state.string,
-                                        function ( yoke, string ) {
-                                        
-                                        if ( state.type === "stringNil" )
-                                            return then( yoke, { type: "stringNil", string: string } );
-                                        else if ( state.type === "stringCons" )
-                                            return then( yoke,
-                                                { type: "stringCons",
-                                                    string: string,
-                                                    interpolation: state.interpolation,
-                                                    rest: state.rest } );
-                                        else
-                                            throw new Error();
-                                    } );
-                                } );
+                                var string = { first: element.val, rest: state.string };
+                                if ( state.type === "stringNil" )
+                                    return then( yoke, { type: "stringNil", string: string } );
+                                else if ( state.type === "stringCons" )
+                                    return then( yoke,
+                                        { type: "stringCons",
+                                            string: string,
+                                            interpolation: state.interpolation,
+                                            rest: state.rest } );
+                                else
+                                    throw new Error();
                             } else if ( element.type ===
                                 "interpolation" ) {
                                 return then( yoke,
@@ -2087,7 +2088,7 @@ function readSexpOrInfixOp( yoke, s,
                 return readString( yoke, elements, {
                     uq: qqStack.uq,
                     cache: qqStack.cache.plusObj( {
-                        names: asyncStrMap(),
+                        names: readerStrMap(),
                         encompassingClosingBracket:
                             encompassingClosingBracket,
                         
@@ -2110,7 +2111,7 @@ function readSexpOrInfixOp( yoke, s,
             return withQqStack( yoke, {
                 uq: null,
                 cache: strMap().plusObj( {
-                    names: asyncStrMap(),
+                    names: readerStrMap(),
                     encompassingClosingBracket:
                         encompassingClosingBracket,
                     encompassingClosingBracketIsInString: false,
@@ -2152,12 +2153,8 @@ function readSexpOrInfixOp( yoke, s,
                                 if ( !result.ok )
                                     return then( yoke, s, result );
                                 
-                                return stringRevAppendToList( yoke,
-                                    result.val.val.val, 0, revElements,
-                                    function ( yoke, revElements ) {
-                                    
-                                    return loop( yoke, s, revElements );
-                                } );
+                                return loop( yoke, s,
+                                    { first: result.val.val.val, rest: revElements } );
                             } );
                         else
                             return jsListRev( yoke, revElements,
@@ -2168,11 +2165,7 @@ function readSexpOrInfixOp( yoke, s,
                             } );
                     } );
                 };
-                return stringRevAppendToList( yoke, c, 0, null,
-                    function ( yoke, revElements ) {
-                    
-                    return loop( yoke, s, revElements );
-                } );
+                return loop( yoke, s, jsList( c ) );
             } else if ( result.val.val.val === "/" ) {
                 if ( encompassingClosingBracket === null )
                     return then( yoke, s, { ok: false, msg:

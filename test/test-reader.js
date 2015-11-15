@@ -12,6 +12,52 @@ function addReaderTest( code, expected ) {
         } );
         return jsListFromArr( codePoints );
     }
+    function convertEncounteredExpr( encounteredExpr ) {
+        if ( isArray( encounteredExpr ) ) {
+            return arrMap( encounteredExpr, convertEncounteredExpr );
+            
+        } else if ( likeObjectLiteral( encounteredExpr )
+            && encounteredExpr.type === "stringNil" ) {
+            
+            return { type: "stringNil",
+                string: readerStringNilToString( encounteredExpr ) };
+            
+        } else if ( likeObjectLiteral( encounteredExpr )
+            && encounteredExpr.type === "stringCons" ) {
+            
+            return {
+                type: "stringCons",
+                string: readerStringListToString(
+                    encounteredExpr.string ),
+                interpolation: convertEncounteredExpr(
+                    encounteredExpr.interpolation ),
+                rest: convertEncounteredExpr( encounteredExpr.rest )
+            };
+            
+        } else if ( likeObjectLiteral( encounteredExpr )
+            && encounteredExpr.type === "nil" ) {
+            
+            return encounteredExpr;
+            
+        } else if ( likeObjectLiteral( encounteredExpr )
+            && encounteredExpr.type === "cons" ) {
+            
+            return {
+                type: "cons",
+                first:
+                    convertEncounteredExpr( encounteredExpr.first ),
+                rest: convertEncounteredExpr( encounteredExpr.rest )
+            };
+            
+        } else if ( likeObjectLiteral( encounteredExpr )
+            && typeof encounteredExpr.ok === "boolean" ) {
+            
+            return { ok: encounteredExpr.ok,
+                val: convertEncounteredExpr( encounteredExpr.val ) };
+        } else {
+            throw new Error();
+        }
+    }
     function convertExpectedExpr( expectedExpr ) {
         if ( isArray( expectedExpr ) ) {
             if ( expectedExpr.length === 0 )
@@ -25,15 +71,14 @@ function addReaderTest( code, expected ) {
                 };
         } else if ( typeof expectedExpr === "string" ) {
             // TODO: Put an isString() utility somewhere.
-            return { type: "stringNil",
-                string: convertExpectedString( expectedExpr ) };
+            return { type: "stringNil", string: expectedExpr };
             
         } else if ( likeObjectLiteral( expectedExpr )
             && expectedExpr.type === "stringCons" ) {
             
             return {
                 type: "stringCons",
-                string: convertExpectedString( expectedExpr.string ),
+                string: expectedExpr.string,
                 interpolation:
                     convertExpectedExpr( expectedExpr.interpolation ),
                 rest: convertExpectedExpr( expectedExpr.rest )
@@ -44,7 +89,7 @@ function addReaderTest( code, expected ) {
     }
     
     addNaiveIsoUnitTest( function ( then ) {
-        return then( readAll( code ),
+        return then( convertEncounteredExpr( readAll( code ) ),
             [ { ok: true, val: convertExpectedExpr( expected ) } ] );
     } );
 }
