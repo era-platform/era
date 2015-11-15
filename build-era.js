@@ -30,30 +30,34 @@ process.chdir( __dirname );
 var argParser = new argparse.ArgumentParser( {
     version: "0.0.1",
     addHelp: true,
-    description: "Websites maintained by Ross Angle (rocketnia)."
+    description: "The Era programming systems."
 } );
-argParser.addArgument( [ "-t", "--test" ], {
+argParser.addArgument( [ "-p", "--build-penknife" ], {
     action: "storeTrue",
-    help: "Run unit tests of the module system."
-} );
-argParser.addArgument( [ "-b", "--build" ], {
-    action: "storeTrue",
-    help: "Compile dependencies of demos/penknife-compiled.html."
+    help:
+        "Penknife, a Lisp dialect: Compile dependencies of " +
+        "demos/penknife-compiled.html."
 } );
 argParser.addArgument( [ "-m", "--minify" ], {
     action: "storeTrue",
-    help: "Minify any compiled files."
+    help: "If there is any compiled JavaScript code, minify it."
 } );
-argParser.addArgument( [ "-s", "--staccato" ], {
+argParser.addArgument( [ "-E", "--test-era-modules" ], {
     action: "storeTrue",
-    help: "Test Staccato, an IR lisp."
+    help: "Era module system: Run unit tests."
+} );
+argParser.addArgument( [ "-R", "--test-raw-staccato" ], {
+    action: "storeTrue",
+    help:
+        "Raw Staccato, a sugar for constant time steps: Run unit " +
+        "tests."
 } );
 var args = argParser.parseArgs();
 
 var tasks = [];
 
 
-if ( args.test ) tasks.push( function ( then ) {
+if ( args.test_era_modules ) tasks.push( function ( then ) {
     Function( readFiles( [
         "src/era-misc-strmap-avl.js",
         "src/era-misc.js",
@@ -67,7 +71,7 @@ if ( args.test ) tasks.push( function ( then ) {
     ] ) )();
 } );
 
-if ( args.staccato ) tasks.push( function ( then ) {
+if ( args.test_raw_staccato ) tasks.push( function ( then ) {
     Function( readFiles( [
         "src/era-misc-strmap-avl.js",
         "src/era-misc.js",
@@ -78,7 +82,7 @@ if ( args.staccato ) tasks.push( function ( then ) {
 } );
 
 
-if ( args.build ) tasks.push( function ( then ) {
+if ( args.build_penknife ) tasks.push( function ( then ) {
     
     var $pk = Function(
         readFiles( [
