@@ -268,11 +268,11 @@
 //     // appropriate level.
 // explicit whitespace tokens:
 //   // NOTE: For most escape sequences, we avoid putting a letter at
-//   // the end of the escape sequence because it blend in with the
-//   // next part of the string. The exception to the rule are these
-//   // whitespace escapes. Their lurking commands for whitespace
-//   // postprocessing mean that they can always be followed by a raw
-//   // space if readability is needed.
+//   // the end of the escape sequence because it would blend in with
+//   // the next part of the string. The exceptions to the rule are
+//   // these whitespace escapes. Their lurking commands for
+//   // whitespace postprocessing mean that they can always be
+//   // followed by a raw space if readability is needed.
 //   \.s (meaning "space") means a space, and it leaves a lurking
 //     command to remove the surrounding raw whitespace and ignore its
 //     lurking commands
@@ -2389,30 +2389,78 @@ function readerStringNilToString( stringNil ) {
 }
 
 function readerExprPretty( expr ) {
+    function slashify( string ) {
+        var basicSlashes = string.
+            replace( /\\/g, "\\`" ).
+            replace( /\[/g, "\\.<" ).
+            replace( /\]/g, "\\.>" ).
+            replace( /\(/g, "\\.{" ).
+            replace( /\)/g, "\\.}" ).
+            replace( /[ \t\r\n]+[a-zA-Z]?/g, function ( whitespace ) {
+                if ( /^ [a-zA-Z]?$/.test( whitespace ) )
+                    return whitespace;
+                // NOTE: We insert an underscore as a placeholder, and
+                // then we safely convert it to a raw space after the
+                // spaces have been replaced with explicit whitespace
+                // escape sequences.
+                return whitespace.
+                    replace( /[a-zA-Z]/g, "_$&" ).
+                    replace( / /g, "\\.s" ).
+                    replace( /\t/g, "\\.t" ).
+                    replace( /\r/g, "\\.r" ).
+                    replace( /\n/g, "\\.n" ).
+                    replace( /_/g, " " );
+            } );
+        
+        var result = "";
+        eachUnicodeCodePoint( basicSlashes, function ( info ) {
+            if ( 0x20 <= info.codePoint && info.codePoint <= 0x7E )
+                result += info.charString;
+            else
+                result += "\\-ch[" +
+                    info.codePoint.toString( 16 ).toUpperCase() + "]";
+        } );
+        return result;
+    }
+    
     if ( expr.type === "nil" ) {
         return "()";
     } else if ( expr.type === "stringNil" ) {
-        // TODO: Output this in a syntax that can be read back in.
         var string = readerStringNilToString( expr );
         return /^[\-*a-zA-Z01-9]+$/.test( string ) ? string :
-            JSON.stringify( string );
+            "\\-qq[" + slashify( string ) + "]";
     } else if ( expr.type === "stringCons" ) {
-        // TODO: Output this in a syntax that can be read back in.
         var string = readerStringListToString( expr.string );
-        return (/^[\-*a-zA-Z01-9]+$/.test( string ) ? string :
-            JSON.stringify( string )) + "...";
+        var terp = readerExprPretty( expr.interpolation );
+        var n = terp.length;
+        if ( expr.interpolation.type === "nil"
+            || expr.interpolation.type === "cons" ) {
+            
+            var terpEscape =
+                "\\-uq-ls[/" + terp.substr( 1, n - 2 ) + "]";
+            
+        } else if ( expr.interpolation.type === "stringNil"
+            || expr.interpolation.type === "stringCons" ) {
+            
+            var terpEscape =
+                "\\-uq-ls[\-qq/" + terp.substr( 5, n - 6 ) + "]";
+        } else {
+            var terpEscape = "\\-uq-ls[" + terp + "]";
+        }
+        return "\\-qq[" + slashify( string ) + terpEscape +
+            readerExprPretty( expr.rest ).substring( 5 );
     } else if ( expr.type === "cons" ) {
         if ( expr.rest.type === "nil" ) {
             if ( expr.first.type === "nil"
                 || expr.first.type === "cons" ) {
                 return "(/" +
-                    readerExprPretty( expr.first ).substring( 1 );
+                    readerExprPretty( expr.first ).substr( 1 );
             } else {
                 return "(" + readerExprPretty( expr.first ) + ")";
             }
         } else if ( expr.rest.type === "cons" ) {
             return "(" + readerExprPretty( expr.first ) + " " +
-                readerExprPretty( expr.rest ).substring( 1 );
+                readerExprPretty( expr.rest ).substr( 1 );
         } else {
             throw new Error();
         }
