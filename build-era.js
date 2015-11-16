@@ -52,6 +52,12 @@ argParser.addArgument( [ "-R", "--test-raw-staccato" ], {
         "Raw Staccato, a sugar for constant time steps: Run unit " +
         "tests."
 } );
+argParser.addArgument( [ "-S", "--test-mini-staccato" ], {
+    action: "storeTrue",
+    help:
+        "Mini Staccato, a subset of a macro-capable Staccato: Run " +
+        "unit tests."
+} );
 var args = argParser.parseArgs();
 
 var tasks = [];
@@ -193,6 +199,52 @@ if ( args.build_penknife ) tasks.push( function ( then ) {
             then();
         } );
     }
+} );
+
+if ( args.test_mini_staccato ) tasks.push( function ( then ) {
+    
+    var $stc = Function(
+        readFiles( [
+            "src/era-misc-strmap-avl.js",
+            "src/era-misc.js",
+            "src/era-reader.js",
+            "src/era-staccato-lib-runner-mini.js"
+        ] ) + "\n" +
+        "\n" +
+        "\n" +
+        "return { readAll: readAll,\n" +
+        "    arrAny: arrAny,\n" +
+        "    processTopLevelReaderExpr:\n" +
+        "        processTopLevelReaderExpr };\n"
+    )();
+    
+    var startMillis = new Date().getTime();
+    
+    var code =
+        $stc.readAll( readFile( "src/era-staccato-lib.stc" ) );
+    var readMillis = new Date().getTime();
+    
+    $stc.arrAny( code, function ( tryExpr ) {
+        if ( !tryExpr.ok ) {
+            console.err( tryExpr.msg );
+            return true;
+        }
+        
+        $stc.processTopLevelReaderExpr( tryExpr.val );
+        return false;
+    } );
+    
+    var stopMillis = new Date().getTime();
+    var runMillis = stopMillis - startMillis;
+    console.log(
+        "Ran for " + (stopMillis - startMillis) / 1000 + " " +
+        "seconds, broken down as follows:" );
+    console.log(
+        "- Spent " + (readMillis - startMillis) / 1000 + " seconds " +
+        "reading the code." );
+    console.log(
+        "- Spent " + (stopMillis - readMillis) / 1000 + " seconds " +
+        "processing it." );
 } );
 
 

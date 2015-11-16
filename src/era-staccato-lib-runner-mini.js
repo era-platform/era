@@ -114,10 +114,17 @@ function stcType( tupleName, var_args ) {
     return stcTypeArr( tupleName, [].slice.call( arguments, 1 ) );
 }
 
+function stcExecute( expr ) {
+    return Function( "Stc", "StcFn", "return " + expr + ";" )(
+        Stc, StcFn );
+}
+
 function stcAddDefun( name, argName, body ) {
     var tupleTag = JSON.stringify( [ name, [] ] );
-    var func =
-        Function( stcIdentifier( argName ), "return " + body + ";" );
+    var func = stcExecute(
+        "function ( " + stcIdentifier( argName ) + " ) { " +
+            "return " + body + "; " +
+        "}" );
     defs[ tupleTag ] = function ( projectionVals, argVal ) {
         return func( argVal );
     }
@@ -159,7 +166,7 @@ StcFn.prototype.pretty = function () {
 var stcNil = stcType( "nil" );
 
 function testStcDef( expr ) {
-    var result = Function( "return " + expr + ";" )();
+    var result = stcExecute( expr );
     console.log( result.pretty() );
 }
 
