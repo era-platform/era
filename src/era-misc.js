@@ -137,11 +137,13 @@ function jsStr( string ) {
             replace( /\r/g, "\\r" ).replace( /\t/g, "\\t" ).
             replace( /\x08/g, "\\b" ).replace( /\f/g, "\\f" ).
             replace( /\0/g, "\\0" ).replace( /\v/g, "\\v" ).
-            replace( /[^\u0020-\u008F]/g, function ( cha ) {
+            replace( /[^\x20-\x7E]/g, function ( cha ) {
                 var code =
                     cha.charCodeAt( 0 ).toString( 16 ).toUpperCase();
-                return "\\u" +
-                    ("0000" + code).substring( 4 - code.length );
+                var n = code.length;
+                return n <= 2 ?
+                    "\\x" + ("00" + code).substr( n ) :
+                    "\\u" + ("0000" + code).substr( n );
             } );
     } ).join( "\\\\" ) + "\"";
 }
