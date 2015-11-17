@@ -239,9 +239,9 @@
             (string-ns definition-ns str.constructor-names)
             constructor-string)
           str.projection-names)
-        ; TODO: Fold over the `projection-list` to get the pattern
-        ; variables, and build a call to `(case ...)`.
-        -)
+        \ TODO: Fold over the `projection-list` to get the pattern
+        \ variables, and build a call to `(case ...)`.
+        /TODO)
       err.\-qq[Not enough arguments to cast])
     err.\-qq[Not enough arguments to cast]))
 
@@ -274,6 +274,39 @@
 (def-type stc-proj-pattern-nil)
 (def-type stc-proj-pattern-cons proj-name var proj-pattern)
 
+\ TODO: Organize these, and implement every TODO.
+(defn visitor-visit visitor visitee jsn-map /TODO)
+(defn jsn-map - /TODO)
+(def-type scope-policy-no-free-vars)
+(defn staccato-opt-proj-pattern-set opt-proj-pattern /TODO)
+(def-type visitor-visit-result result visitor)
+(defn visitor-redecorate /TODO)
+(def-type string val)
+(defn jsn-map-plus-truth jsn-map key /TODO)
+(def-type scope-policy-does-not-matter)
+(defn staccato-proj-pattern-vals-to-keys proj-pattern /TODO)
+(def-type scope-policy-not-root)
+(defn staccato-let-bindings-expr-keys let-bindings-expr /TODO)
+\ /TODO: Don't actually use (def-macro ...) for this -- at least, not
+\ yet. Just implement this as a built-in macro.
+(def-macro str /TODO)
+(def-type scope-policy-save-root save-root)
+(defn make-visitor body /TODO)
+(def-type method-visitor-visit part shadow scope-policy)
+(def-type method-visitor-redecorate extra-vars whole)
+(def-type desugared-save-expr expr)
+(def-type desugared-save-save
+  desugared-save-root call-tuple-name
+  call-func tuple-name opt-proj-pattern
+  call-arg var arg
+  tuple-body-expr)
+(defn string-compare a b /TODO)
+(defn get-free-vars expr /TODO)
+(defn opt-proj-pattern-or opt-proj-pattern default /TODO)
+(defn opt-proj-pattern-capture opt-proj-pattern /TODO)
+(def-type desugar-def-result defs expr)
+
+
 (defn staccato-visit expr visitor
   (case expr
     
@@ -284,7 +317,7 @@
           set
           (jsn-map/nil))
       /scope-policy-no-free-vars)
-      visitor-visit-completion visitor case-list
+      visitor-visit-result case-list visitor
       err.\-qq[Internal error]
     /visitor-redecorate visitor (jsn-map/nil)
     /stc-def tuple-name opt-proj-pattern case-list)
@@ -297,7 +330,7 @@
         (jsn-map-plus-truth (jsn-map/nil)
         /cons str.\-qq[va:va] /cons var /nil)
       /scope-policy-does-not-matter)
-      visitor-visit-completion visitor case-list
+      visitor-visit-result case-list visitor
       err.\-qq[Internal error]
     /visitor-redecorate visitor (jsn-map/nil)
     /stc-let-case var case-list)
@@ -307,12 +340,12 @@
       (visitor-visit visitor get-expr
         staccato-proj-pattern-vals-to-keys.proj-pattern
       /scope-policy-not-root)
-      visitor-visit-completion visitor get-expr
+      visitor-visit-result get-expr visitor
       err.\-qq[Internal error]
     /cast
       (visitor-visit visitor case-list (jsn-map/nil)
       /scope-policy-not-root)
-      visitor-visit-completion visitor case-list
+      visitor-visit-result case-list visitor
       err.\-qq[Internal error]
     /visitor-redecorate visitor (jsn-map/nil)
     /stc-match tuple-name proj-pattern get-expr case-list)
@@ -321,7 +354,7 @@
     (cast
       (visitor-visit visitor get-expr (jsn-map/nil)
       /scope-policy-not-root)
-      visitor-visit-completion visitor get-expr
+      visitor-visit-result get-expr visitor
       err.\-qq[Internal error]
     /visitor-redecorate visitor (jsn-map/nil)
     /stc-any get-expr)
@@ -334,12 +367,12 @@
     (cast
       (visitor-visit visitor get-expr (jsn-map/nil)
       /scope-policy-not-root)
-      visitor-visit-completion visitor get-expr
+      visitor-visit-result get-expr visitor
       err.\-qq[Internal error]
     /cast
       (visitor-visit visitor proj-expr (jsn-map/nil)
       /scope-policy-not-root)
-      visitor-visit-completion visitor proj-expr
+      visitor-visit-result proj-expr visitor
       err.\-qq[Internal error]
     /visitor-redecorate visitor (jsn-map/nil)
     /stc-let-bindings-cons var get-expr proj-expr)
@@ -352,12 +385,12 @@
     (cast
       (visitor-visit visitor get-expr (jsn-map/nil)
       /scope-policy-not-root)
-      visitor-visit-completion visitor get-expr
+      visitor-visit-result get-expr visitor
       err.\-qq[Internal error]
     /cast
       (visitor-visit visitor proj-expr (jsn-map/nil)
       /scope-policy-not-root)
-      visitor-visit-completion visitor proj-expr
+      visitor-visit-result proj-expr visitor
       err.\-qq[Internal error]
     /visitor-redecorate visitor (jsn-map/nil)
     /stc-proj-cons proj-name get-expr proj-expr)
@@ -366,12 +399,12 @@
     (cast
       (visitor-visit visitor def (jsn-map/nil)
       /scope-policy-does-not-matter)
-      visitor-visit-completion visitor def
+      visitor-visit-result def visitor
       err.\-qq[Internal error]
     /cast
       (visitor-visit visitor get-expr (jsn-map/nil)
       /scope-policy-not-root)
-      visitor-visit-completion visitor get-expr
+      visitor-visit-result get-expr visitor
       err.\-qq[Internal error]
     /visitor-redecorate visitor (jsn-map/nil)
     /stc-let-def def get-expr)
@@ -380,13 +413,13 @@
     (cast
       (visitor-visit visitor let-bindings-expr (jsn-map/nil)
       /scope-policy-not-root)
-      visitor-visit-completion visitor let-bindings-expr
+      visitor-visit-result let-bindings-expr visitor
       err.\-qq[Internal error]
     /cast
       (visitor-visit visitor get-expr
         staccato-let-bindings-expr-keys.let-bindings-expr
       /scope-policy-not-root)
-      visitor-visit-completion visitor get-expr
+      visitor-visit-result get-expr visitor
       err.\-qq[Internal error]
     /visitor-redecorate visitor (jsn-map/nil)
     /stc-let let-bindings-expr get-expr)
@@ -403,7 +436,7 @@
     (cast
       (visitor-visit visitor proj-expr (jsn-map/nil)
       /scope-policy-not-root)
-      visitor-visit-completion visitor proj-expr
+      visitor-visit-result proj-expr visitor
       err.\-qq[Internal error]
     /visitor-redecorate visitor (jsn-map/nil)
     /stc-tuple tuple-name proj-expr)
@@ -415,7 +448,7 @@
     /cast
       (visitor-visit visitor get-expr (jsn-map/nil)
       /scope-policy-save-root save-root)
-      visitor-visit-completion visitor get-expr
+      visitor-visit-result get-expr visitor
       err.\-qq[Internal error]
     /visitor-redecorate visitor (jsn-map/nil)
     /stc-save-root save-root get-expr)
@@ -459,14 +492,14 @@
           opt-proj-pattern call-arg var arg tuple-body-expr
           (cast (string-compare save-root desugared-save-root) nil
             desugared
-          /c loop /stc-get-expr /stc-save-root save-root
+          /c loop /stc-save-root save-root
           /stc-tuple call-tuple-name
-          /proj-cons call-func
+          /stc-proj-cons call-func
             (stc-fn tuple-name opt-proj-pattern
               (stc-let-case var
               /stc-any tuple-body-expr))
-          /proj-cons call-arg arg
-          /proj-nil)
+          /stc-proj-cons call-arg arg
+          /stc-proj-nil)
           
           err.\-qq[Internal error]))
       get-expr)
@@ -519,7 +552,7 @@
     (let inner-free-vars get-free-vars.case-list
     /stc-def tuple-name
       (opt-proj-pattern-or opt-proj-pattern inner-free-vars)
-      staccato-desugar-var-lists.case-list)
+      (c-new staccato-desugar-var-lists case-list))
     
     stc-save-root - -2
     err.\-qq[Called staccato-desugar-var-lists on a stc-save-root]
@@ -531,10 +564,10 @@
     (let inner-free-vars get-free-vars.case-list
     /stc-fn tuple-name
       (opt-proj-pattern-or opt-proj-pattern inner-free-vars)
-      staccato-desugar-var-lists.case-list)
+      (c-new staccato-desugar-var-lists case-list))
     
     (staccato-visit expr /id-visitor/fn part shadow scope-policy
-      staccato-desugar-var-lists.part)))
+      (c-new staccato-desugar-var-lists part))))
 
 (defn staccato-desugar-fn expr
   (case expr
@@ -548,18 +581,20 @@
     stc-fn tuple-name opt-proj-pattern case-list
     (stc-let-def
       (stc-def tuple-name opt-proj-pattern
-        desugar-fn.case-list)
+        (c-new staccato-desugar-fn case-list))
     /stc-tuple tuple-name opt-proj-pattern-capture.opt-proj-pattern)
     
     (staccato-visit expr /id-visitor/fn part shadow scope-policy
-      staccato-desugar-fn.part)))
+      (c-new staccato-desugar-fn part))))
 
 (defn staccato-desugar-def-including-self expr
   (cast expr stc-def tuple-name opt-proj-pattern case-list
-    qerr.\-qq[
+    err.\-qq[
       Called staccato-desugar-def-including-self on an expr that
       wasn't a stc-def]
-  /cast desugar-def.case-list desugar-def-result defs expr
+  /cast (c-new staccato-desugar-def case-list)
+    desugar-def-result defs expr
+    err.\-qq[Internal error]
   /append defs /cons (stc-def tuple-name opt-proj-pattern expr) /nil))
 
 (defn staccato-desugar-def expr
