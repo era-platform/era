@@ -40,7 +40,9 @@ argParser.addArgument( [ "-p", "--build-penknife" ], {
 } );
 argParser.addArgument( [ "-m", "--minify" ], {
     action: "storeTrue",
-    help: "If there is any compiled JavaScript code, minify it."
+    help:
+        "When compiling the Penknife demo, minify the compiled " +
+        "JavaScript code."
 } );
 argParser.addArgument( [ "-E", "--test-era" ], {
     action: "storeTrue",
@@ -62,7 +64,7 @@ var args = argParser.parseArgs();
 var tasks = [];
 
 
-if ( args.test_era_modules ) tasks.push( function ( then ) {
+if ( args.test_era ) tasks.push( function ( then ) {
     Function( readFiles( [
         "src/era-misc-strmap-avl.js",
         "src/era-misc.js",
@@ -74,6 +76,10 @@ if ( args.test_era_modules ) tasks.push( function ( then ) {
         "test/test-modules.js",
         "test/harness-last.js"
     ] ) )();
+    
+    process.nextTick( function () {
+        then();
+    } );
 } );
 
 if ( args.test_raw_staccato ) tasks.push( function ( then ) {
@@ -84,6 +90,10 @@ if ( args.test_raw_staccato ) tasks.push( function ( then ) {
         "src/era-staccato-builders.js",
         "src/era-staccato-lib.js"
     ] ) )();
+    
+    process.nextTick( function () {
+        then();
+    } );
 } );
 
 
@@ -244,6 +254,10 @@ if ( args.test_mini_staccato ) tasks.push( function ( then ) {
     console.log(
         "- Spent " + (stopMillis - readMillis) / 1000 + " seconds " +
         "processing it." );
+    
+    process.nextTick( function () {
+        then();
+    } );
 } );
 
 
