@@ -42,21 +42,20 @@ argParser.addArgument( [ "-m", "--minify" ], {
     action: "storeTrue",
     help: "If there is any compiled JavaScript code, minify it."
 } );
-argParser.addArgument( [ "-E", "--test-era-modules" ], {
+argParser.addArgument( [ "-E", "--test-era" ], {
     action: "storeTrue",
-    help: "Era module system: Run unit tests."
+    help: "Era reader and Era module system: Run unit tests."
 } );
 argParser.addArgument( [ "-R", "--test-raw-staccato" ], {
     action: "storeTrue",
     help:
-        "Raw Staccato, a sugar for constant time steps: Run unit " +
-        "tests."
+        "Raw Staccato, a sugar for constant time steps: Run a demo."
 } );
 argParser.addArgument( [ "-S", "--test-mini-staccato" ], {
     action: "storeTrue",
     help:
         "Mini Staccato, a subset of a macro-capable Staccato: Run " +
-        "unit tests."
+        "a demo."
 } );
 var args = argParser.parseArgs();
 
