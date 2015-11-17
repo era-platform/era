@@ -1,0 +1,190 @@
+[-.(<A <B) [-.
+
+[-.'
+
+[-.z$<(q x) z$<(q y)]
+
+
+''(a$<A <B{a}) < (c$<C <D{c})' <
+  ('A < C'
+    [-.a$!.A -.c$!.C -.!.'a !.A << c !.C' 'B{a} < D{c}'])'
+
+''(a$<A <B{a}) < (c$<C <D{c})' <
+  ([-.b$B -.c$!.C -.'a A << c C' 'B{a} < D{c}']
+    [-.a$A -.c$!.C -.'a A << c C' 'B{a} < D{c}'])'
+
+@s(a:!rs.A B{a})=@s(c:!rs.C D{c})
+- is defined as -
+@s(A=C
+   @s[-rst.a:!rs.A -rst.c:!rs.C -rst.!rs.<a !rs.A == c !rs.C> B{a}=D{c}])
+
+
+!.'(A B) < (C D)'
+!.[+ (+ 'A < C' 'B < D' +) (+ 'A < D' 'B < C' +) +]
+
+!.'(a$A B{a}) < (c$C D{c})'
+!.[+ (+ 'A < C' [-.a1$A -.c1$C -.!.'a1 !.A << c1 !.C' 'B{a1} < D{c1}'] +)
+     (+ [-.c2$C 'A < D{c2}'] [-.a2$A 'B{a2} < C'] +) +]
+!.('A < C'
+  [-.a$!.A -.c$!.C -.!.'a !.A << c !.C' 'B{a} < D{c}'])
+
+'(a$A{b} b$B{a}) < (c$C{d} d$D{c})'
+  'A{b} < C{d}'
+  'B{a} < D{c}'
+  'a A{b} << c C{d}'
+  'b B{a} << d D{c}'
+  'A{b} < D{c}'
+  'B{a} < C{d}'
+  'a A{b} << d D{c}'
+  'b B{a} << c C{d}'
+  a$A{b}
+  b$B{a}
+  c$C{d}
+  d$D{c}
+
+
+(# 'A -< B' 'C -< D' #)
+'(# A C #) -< [# B D #]'
+
+...where (# ... #) and [# ... #] are strong multiplicative connectives (i.e. you know which element is first and which is second) and 'A -< B' is a connective that means A is a coercing subtype of the complement of B. By taking the complement we make the connective covariant, so that deep inference can happen within the connective.
+
+(# 'A -< B' '-B -< -D' #)
+A -< D
+
+
+
+
+!.'(!.a$A (!.w$W{a} !.X{a}{w})) < (!.c$C (!.y$Y{c} !.Z{c}{y}))'
+!.('A < C'
+  [-.!.a$A -.!.c$C -.!.'a !.A << c !.C' '(!.w$W{a} !.X{a}{w}) < (!.y$Y{c} !.Z{c}{y})'])
+!.'(!.X{a}{w} (!.w$W{a} !.a$A)) < (!.Z{c}{y} (!.y$Y{c} !.c$C))'
+!.('X{a}{w} < Z{c}{y}'
+  [-.!.x$X{a}{w} -.!.z$Z{c}{y} -.!.'x !.X{a}{w} << z !.Z{c}{y}' '(!.w$W{a} !.a$A) < (!.y$Y{c} !.c$C)'])
+
+-
+
+
+
+
+
+C_ (C> -:[X, [+ +]], type A)
+C_ -:[-absurd- X, A]
+
+C_ (C> -:[X, (+ +)], -:[Y, [+ +]])
+C_ [X, Y]
+
+C_ (C> -:[X, []], -:[Y, ()])
+C_ [X, Y]
+
+C_ (C> -:[X, (A, B)], -:[Y, [C, D]])
+C_ (C> [X, Y], ((A, B), [C, D]))
+
+C_ ((A, B), [C, D])
+C_ [C< (A, C), (B, D)]
+
+C_ [A, B]
+C_ [-:[a, A], -:[-a, B]]
+
+C_ ()
+C_ -:[-unit, ()]
+
+C_ (C> -:[X, A], -:[Y, B])
+C_ -:[-pair- X Y, (C> A, B)]
+
+C_ (+ -:[X, A], -:[Y, B] +)
+C_ -:[(+ -inl- X, -inr- Y +), [+ A, B +]]
+
+C_ ()
+C_ type ()
+
+C_ ()
+C_ type []
+
+C_ ()
+C_ type (+ +)
+
+C_ ()
+C_ type [+ +]
+
+C_ ()
+C_ type unit
+
+C_ ()
+C_ type -unit
+
+C_ type A
+C_ type C> A
+
+C_ type A
+C_ type C< A
+
+C_ type A
+C_ type type A
+
+C_ type A
+C_ type -type- A
+
+C_ type A
+C_ type absurd A
+
+C_ type A
+C_ type -absurd- A
+
+C_ type A
+C_ type inl A
+
+C_ type A
+C_ type -inl- A
+
+C_ type A
+C_ type inr A
+
+C_ type A
+C_ type -inr- A
+
+C_ (C> type A, type B)
+C_ type (A, B)
+
+C_ (C> type A, type B)
+C_ type [A, B]
+
+C_ (C> type A, type B)
+C_ type -:(A, B)
+
+C_ (C> type A, type B)
+C_ type -:[A, B]
+
+C_ (C> type A, type B)
+C_ pair A B
+
+C_ (C> type A, type B)
+C_ -pair- A B
+
+
+
+
+
+commutative, associative, unit, dual (@ @) [@ @]  ; bunched multiplicative implication
+commutative, associative, unit, dual (* *) [* *]  ; bunched additive implication, linear multiplicative pair
+commutative, associative, unit, dual (+ +) [+ +]  ; linear additive pair
+idempotent, dual !.A ?.A
+C_ (@ @) ---> C_ [@ a, -a @]
+C_ (@ [@ A, B @], C @) ---> C_ [@ A, (@ B, C @) @]
+C_ (* *) ---> C_ (* a, -a *)
+C_ (* [* A, B *], C *) ---> C_ [* A, (* B, C *) *]
+C_ (+ [* A, B *], [* C, D *] +) ---> C_ [* (+ R, T +), [+ U, V +] *]
+C_ [+ +] ---> C_ a
+C_ [+ a, a +] ---> C_ a
+C_ [+ +] ---> [* [+ +], [+ +] *]
+C_ [+ [* A, B *], [* C, D *] +] ---> C_ [* [+ A, C +], [+ B, D +] *]
+C_ [+ +] ---> (* [+ +], [+ +] *)
+C_ [+ (* A, B *), (* C, D *) +] ---> C_ (* [+ A, C +], [+ B, D +] *)
+C_ [+ +] ---> (+ [+ +], [+ +] +)
+C_ [+ (+ A, B +), (+ C, D +) +] ---> C_ (+ [+ A, C +], [+ B, D +] +)
+C_ !.[* A, B *] ---> C_ [* !.A, ?.B *]
+C_ [+ +] ---> C_ ?.[+ +]
+C_ [+ ?.A, ?.B *] ---> C_ ?.[+ A, B +]
+C_ [+ +] ---> C_ !.[+ +]
+C_ [+ !.A, !.B *] ---> C_ !.[+ A, B +]
+C_ [* *] ---> C_ ?.[+ +]
+C_ [+ ?.A, B *] ---> C_ ?.[+ A, B +]

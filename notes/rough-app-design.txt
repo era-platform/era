@@ -1,0 +1,27 @@
+func( startMessage, fj
+
+
+- The application/state you get to when you load a URL.
+- The application/state you can undo and redo within a single visited URL, restored when you refocus or navigate back.
+- The state of scroll bars, cursors, and window positioning, so transient and noncommital that they don't even need undo support -- or do they?
+
+An application definition is:
+
+- A set of knowledge.
+- A set of extensions.
+  - A set of entrypoints that would bring the application checkpoint up to date.
+  - A set of entrypoints that would help the user act on the application state.
+
+An application state is:
+
+- An undo-redo history of up-to-date application checkpoints, actions, timestamps, and associated sensor data.
+  - Some actions may embed their own interpolable history segments.
+
+An application checkpoint is:
+
+- A set of knowledge.
+- A set of extensions.
+
+
+
+A set of extensions... is a set of {$willingToExtend extensionPublicKey hubPublicKey value} values, which together become an {$extensionSet} value. Anyone authorized for a hubPublicKey can get a function from an {$extensionSet} into their specific subset of {$willingToExtend ...} values. Rather than sharing this function directly, they can publish other functions that use it internally.
