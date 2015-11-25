@@ -270,30 +270,42 @@
 \ TODO: Make a note that this is a namespace from which the projection
 \ names can be derived as "<ns>/<projection name>/name".
 (def-type stc-proj-pattern-omitted namespace)
-(def-type stc-proj-pattern var-list)
+(def-type stc-proj-pattern proj-pattern)
 (def-type stc-proj-pattern-nil)
 (def-type stc-proj-pattern-cons proj-name var proj-pattern)
 
+
+(def-type visitor-object impl)
+(def-type method-visitor-visit part shadow scope-policy)
+(def-type method-visitor-redecorate extra-vars whole)
+(def-type visitor-visit-result result visitor)
+
+(defn make-visitor impl
+  visitor-object.impl)
+
+(defn visitor-visit visitor part shadow scope-policy
+  (cast visitor visitor-object impl
+    err.\-qq[Expected a visitor of type visitor-object]
+  /c impl /method-visitor-visit part shadow scope-policy))
+
+(defn visitor-redecorate visitor extra-vars whole
+  (cast visitor visitor-object impl
+    err.\-qq[Expected a visitor of type visitor-object]
+  /c impl /method-visitor-redecorate extra-vars whole))
+
+
 \ TODO: Organize these, and implement every TODO.
-(defn visitor-visit visitor visitee jsn-map /TODO)
 (defn jsn-map - /TODO)
 (def-type scope-policy-no-free-vars)
-(defn staccato-opt-proj-pattern-set opt-proj-pattern /TODO)
-(def-type visitor-visit-result result visitor)
-(defn visitor-redecorate /TODO)
 (def-type string val)
 (defn jsn-map-plus-truth jsn-map key /TODO)
+(defn jsn-map-foldl state jsn-map combiner /TODO)
 (def-type scope-policy-does-not-matter)
-(defn staccato-proj-pattern-vals-to-keys proj-pattern /TODO)
 (def-type scope-policy-not-root)
-(defn staccato-let-bindings-expr-keys let-bindings-expr /TODO)
-\ /TODO: Don't actually use (def-macro ...) for this -- at least, not
+\ TODO: Don't actually use (def-macro ...) for this -- at least, not
 \ yet. Just implement this as a built-in macro.
 (def-macro str /TODO)
 (def-type scope-policy-save-root save-root)
-(defn make-visitor body /TODO)
-(def-type method-visitor-visit part shadow scope-policy)
-(def-type method-visitor-redecorate extra-vars whole)
 (def-type desugared-save-expr expr)
 (def-type desugared-save-save
   desugared-save-root call-tuple-name
@@ -302,9 +314,113 @@
   tuple-body-expr)
 (defn string-compare a b /TODO)
 (defn get-free-vars expr /TODO)
-(defn opt-proj-pattern-or opt-proj-pattern default /TODO)
-(defn opt-proj-pattern-capture opt-proj-pattern /TODO)
 (def-type desugar-def-result defs expr)
+
+
+(defn staccato-let-bindings-expr-keys let-bindings-expr
+  (case let-bindings-expr
+    
+    let-bindings-nil
+    (jsn-map/nil)
+    
+    let-bindings-cons var get-expr let-bindings-expr
+    (jsn-map-plus-truth
+      (c-new staccato-let-bindings-expr-keys let-bindings-expr)
+    /cons str.\-qq[va:va] /cons var /nil)
+    
+    err.\-qq[
+      Called staccato-let-bindings-expr-keys on a value that wasn't a
+      let-bindings-expr syntax]))
+
+(defn staccato-proj-pattern-set proj-pattern
+  (case proj-pattern
+    
+    stc-proj-pattern-nil
+    (jsn-map/nil)
+    
+    stc-proj-pattern-cons proj-name var proj-pattern
+    (jsn-map-plus-truth (c-new staccato-proj-pattern-set proj-pattern)
+    /cons str.\-qq[va:va] /cons var /nil)
+    
+    err.\-qq[
+      Called staccato-proj-pattern-set on a value that wasn't a
+      proj-pattern syntax]))
+
+(defn staccato-opt-proj-pattern-set opt-proj-pattern
+  (case opt-proj-pattern
+    
+    stc-proj-pattern-omitted namespace
+    (nil)
+    
+    stc-proj-pattern proj-pattern
+    (yep staccato-proj-pattern-set.proj-pattern)
+    
+    err.\-qq[
+      Called staccato-opt-proj-pattern-set on a value that wasn't an
+      opt-proj-pattern syntax]))
+
+(defn opt-proj-pattern-or opt-proj-pattern default
+  (case opt-proj-pattern
+    
+    stc-proj-pattern-omitted namespace
+    (stc-proj-pattern
+    /jsn-map-foldl (proj-pattern-nil) default /fn state var truth
+      (cast var cons type rest
+        err.\-qq[
+          Called opt-proj-pattern-or with a default variable set that
+          contained a key that wasn't a list of length 2]
+      /cast rest cons name rest
+        err.\-qq[
+          Called opt-proj-pattern-or with a default variable set that
+          contained a key that wasn't a list of length 2]
+      /cast rest nil
+        err.\-qq[
+          Called opt-proj-pattern-or with a default variable set that
+          contained a key that wasn't a list of length 2]
+      /cast (string-compare type str.\-qq[va:va]) nil
+        err.\-qq[
+          Called opt-proj-pattern-or with a default variable set that
+          contained a non-va:va key]
+      \ TODO: Use args.namespace to derive the projection name, rather
+      \ than just using the variable name directly.
+      /stc-proj-pattern-cons name name state))
+    err.\-qq[
+      Called opt-proj-pattern-capture on a stc-proj-pattern-omitted]
+    
+    stc-proj-pattern proj-pattern
+    opt-proj-pattern
+    
+    err.\-qq[
+      Called opt-proj-pattern-or on a value that wasn't an
+      opt-proj-pattern syntax]))
+
+(defn proj-pattern-capture proj-pattern
+  (case proj-pattern
+    
+    stc-proj-pattern-nil
+    (stc-proj-nil)
+    
+    stc-proj-pattern-cons proj-name var proj-pattern
+    (stc-proj-cons proj-name (stc-local var)
+    /c-new proj-pattern-capture proj-pattern)
+    
+    err.\-qq[
+      Called proj-pattern-capture on a value that wasn't a
+      proj-pattern syntax]))
+
+(defn opt-proj-pattern-capture opt-proj-pattern
+  (case opt-proj-pattern
+    
+    stc-proj-pattern-omitted namespace
+    err.\-qq[
+      Called opt-proj-pattern-capture on a stc-proj-pattern-omitted]
+    
+    stc-proj-pattern proj-pattern
+    proj-pattern-capture.proj-pattern
+    
+    err.\-qq[
+      Called opt-proj-pattern-capture on a value that wasn't an
+      opt-proj-pattern syntax]))
 
 
 (defn staccato-visit expr visitor
@@ -338,7 +454,7 @@
     stc-match tuple-name proj-pattern get-expr case-list
     (cast
       (visitor-visit visitor get-expr
-        staccato-proj-pattern-vals-to-keys.proj-pattern
+        staccato-proj-pattern-set.proj-pattern
       /scope-policy-not-root)
       visitor-visit-result get-expr visitor
       err.\-qq[Internal error]
