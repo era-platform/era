@@ -302,6 +302,14 @@
 (defn free-var-set - /TODO)
 (defn free-var-set-plus-entry free-var-set free-var-entry /TODO)
 (defn free-var-set-foldl state free-var-set combiner /TODO)
+\ TODO: In order to implement `free-var-set-minus` and
+\ `free-var-set-has`, we'll need to be able to compare variable names
+\ for equality -- not to mention that we're already sort of assuming
+\ that the variables are being deduplicated on the way in. How do we
+\ reconcile this with our branching namespace approach to gensyms?
+(defn free-var-set-minus a b /TODO)
+(defn free-var-set-has free-var-set free-var-entry /TODO)
+(defn free-var-set-any free-var-set check /TODO)
 (def-type scope-policy-no-free-vars)
 (def-type string val)
 (def-type scope-policy-does-not-matter)
@@ -317,13 +325,16 @@
   call-arg var arg
   tuple-body-expr)
 (defn string-compare a b /TODO)
-(defn get-free-vars expr /TODO)
 (def-type desugar-def-result defs expr)
 
 
 (defn free-var-set-map free-var-set func
   (free-var-set-foldl (free-var-set/nil) free-var-set /fn state entry
     (free-var-set-plus-entry state /c func entry)))
+
+(defn free-var-set-plus a b
+  (free-var-set-foldl a b /fn state entry
+    (free-var-set-plus-entry state entry)))
 
 
 (defn staccato-let-bindings-expr-keys let-bindings-expr
@@ -542,7 +553,7 @@
     /visitor-redecorate visitor
       (free-var-set-plus-entry (free-var-set/nil)
         free-var-entry-var.var)
-    /stc-local)
+    /stc-local var)
     
     stc-tuple tuple-name proj-expr
     (cast
@@ -692,6 +703,97 @@
       desugared-save-expr.whole
       
       err.\-qq[Expected method to be a visitor method])))
+
+(defn get-free-vars expr
+  (staccato-visit expr /make-visitor/fix
+    (fn visitor-loop result method /case method
+      
+      method-visitor-visit part shadow scope-policy
+      (let shadowed
+        (free-var-set-minus (c-new get-free-vars part) shadow)
+      /let shadowed
+        (case
+          (and (isa scope-policy-no-free-vars scope-policy)
+          /free-var-set-any shadowed /fn entry
+            (not/isa free-var-entry-scope-error entry))
+          yep -
+          \ TODO: Use this error message: Encountered a use of
+          \ (def ...) with free variables
+          (free-var-set-plus-entry (free-var-set/nil)
+          /free-var-entry-scope-error)
+          shadowed)
+      /let shadowed
+        (case
+          (free-var-set-any shadowed /fn entry
+            (case entry free-var-entry-saved-input-var save-root name
+              (free-var-set-has shadow free-var-entry-var.name)
+              (nope/nil)))
+          yep -
+          \ TODO: Use this error message: Encountered a use of
+          \ (save ...) where the saved value's variable name was
+          \ locally bound somewhere between the save root and the
+          \ saved location
+          (free-var-set-plus-entry shadowed
+          /free-var-entry-scope-error)
+          shadowed)
+      /let use-shadowed
+        (fn shadowed
+          (visitor-visit-result part /make-visitor/c visitor-loop
+          /free-var-set-plus result shadowed))
+      /let sanitize-and-finish
+        (fn -
+          (case
+            (free-var-set-any shadowed /fn entry
+              (or (isa free-var-entry-saved-input-var entry)
+                (isa free-var-entry-saved-free-var entry)))
+            yep -
+            \ TODO: Write an error message for this.
+            err.\-qq[]
+          /c use-shadowed shadowed))
+      /case scope-policy
+        
+        scope-policy-save-root save-root
+        (let shadowed
+          (case
+            (free-var-set-any shadowed /fn entry
+              (cast entry
+                free-var-entry-saved-input-var save-root-2 name
+                (nope/nil)
+              /and (isa nil /string-compare save-root save-root-2)
+                (free-var-set-has shadowed free-var-entry-var.name)))
+            
+            \ TODO: Use this error message: Encountered a use of
+            \ (save ...) where the saved value's variable name was
+            \ used somewhere under the save root
+            (free-var-set-plus-entry shadowed
+            /free-var-entry-scope-error)
+            shadowed)
+        /let shadowed
+          (free-var-set-keep shadowed /fn entry
+            (cast entry
+              free-var-entry-saved-input-var save-root-2 name
+              (yep/nil)
+            /not/isa nil /string-compare save-root save-root-2))
+        /let shadowed
+          (free-var-set-map shadowed /fn entry
+            (cast entry free-var-entry-saved-free-var save-root-2 name
+              entry
+            /cast (string-compare save-root save-root-2) nil
+              entry
+              free-var-entry-var.name))
+        /c use-shadowed shadowed)
+        
+        scope-policy-not-root (c use-shadowed shadowed)
+        scope-policy-does-not-matter (c sanitize-and-finish /nil)
+        scope-policy-no-free-vars (c sanitize-and-finish /nil)
+        
+        err.\-qq[Internal error])
+      
+      method-visitor-redecorate extra-vars whole
+      (free-var-set-plus result extra-vars)
+      
+      err.\-qq[Expected method to be a visitor method])
+    (free-var-set/nil)))
 
 (defn staccato-desugar-var-lists expr
   (case expr
