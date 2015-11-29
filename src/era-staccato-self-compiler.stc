@@ -68,7 +68,7 @@
 \ These depend on a function `(ns-get ns)`, which blocks until the
 \ given namespace has a defined Staccato value and then returns it.
 \
-\ A macro could depend on a function `(ns-set ns value)`, which
+\ A macro could depend on a function `(ns-put ns value)`, which
 \ installs a definition so that the given namespace has a defined
 \ Staccato value, namely the given one. The return value is `(nil)`.
 \
@@ -299,17 +299,59 @@
 (def-type free-var-entry-scope-error)
 (def-type free-var-entry-saved-input-var save-root name)
 (def-type free-var-entry-saved-free-var save-root name)
-(defn free-var-set - /TODO)
-(defn free-var-set-plus-entry free-var-set free-var-entry /TODO)
-(defn free-var-set-foldl state free-var-set combiner /TODO)
-\ TODO: In order to implement `free-var-set-minus` and
-\ `free-var-set-has`, we'll need to be able to compare variable names
-\ for equality -- not to mention that we're already sort of assuming
-\ that the variables are being deduplicated on the way in. How do we
-\ reconcile this with our branching namespace approach to gensyms?
-(defn free-var-set-minus a b /TODO)
-(defn free-var-set-has free-var-set free-var-entry /TODO)
-(defn free-var-set-any free-var-set check /TODO)
+(defn free-vars - /TODO)
+(defn free-vars-plus-entry free-vars free-var-entry /TODO)
+\
+\ TODO: In order to implement `free-vars-minus` and `free-vars-has` at
+\ all, and if we want to deduplicate the variables by the time they're
+\ exposed from `free-vars-foldl`, we'll need to be able to compare
+\ variable names for equality.
+\
+\ Macros become more expressive if they
+\ can compare names for equality -- maybe a little too expressive for
+\ namespace sandboxing purposes -- but if we do this, we'll want an
+\ ordered comparison on names as well. An ordered comparison would let
+\ us implement more efficient name-indexed data structures.
+\
+\ Names have no natural ordering; even if they were ordered as
+\ strings, that would block capture-avoiding alpha-renaming! So
+\ whatever order we use, it will expose implementation details and
+\ make namespace sandboxing into a headache... unless the
+\ implementation details are hidden in the same way as we usually
+\ hide them: By using obscure naming (and enforcing the obscurity with
+\ code-signing).
+\
+\ We can refrain from exposing implementation details by defining
+\ "metacompare" operations that usually work like "compare"
+\ operations, but sometimes return values that user-defined macro code
+\ doesn't know how to deconstruct. (The "meta" stands for
+\ "metacircular", because there may be a few layers of the reflective
+\ tower all running as macros in the same macroexpansion phase. Each
+\ layer must be implemented with obscure names that its interpreted
+\ layer doesn't know about.) Once we have metacomparison operations,
+\ we can provide an encapsulated AVL tree data type that sorts its
+\ keys using a metacomparison.
+\
+\ The elegance of this encapsulated AVL tree data type will depend on
+\ whether it lets us implement general computation on unordered
+\ collections. In service of this goal, we may simply want a
+\ metacomparator that compares encapsulated AVL trees themselves. That
+\ way we can detect emptiness by comparing to the empty tree, and we
+\ can detect singletonhood by comparing to the singletons of each
+\ entry.
+\
+\ This potentially leads to a lot of ugliness, especially if we allow
+\ encapsulated AVL trees with different metacomparators to be
+\ concatenated together.
+\
+\ For now, we can start small, merely providing an equality check on
+\ names, and we can use inefficient association lists to track free
+\ variables.
+\
+(defn free-vars-foldl state free-vars combiner /TODO)
+(defn free-vars-minus a b /TODO)
+(defn free-vars-has free-vars free-var-entry /TODO)
+(defn free-vars-any free-vars check /TODO)
 (def-type scope-policy-no-free-vars)
 (def-type string val)
 (def-type scope-policy-does-not-matter)
@@ -328,23 +370,24 @@
 (def-type desugar-def-result defs expr)
 
 
-(defn free-var-set-map free-var-set func
-  (free-var-set-foldl (free-var-set/nil) free-var-set /fn state entry
-    (free-var-set-plus-entry state /c func entry)))
+(defn free-vars-map free-vars func
+  (free-vars-foldl (free-vars/nil) free-vars
+  /fn state entry
+    (free-vars-plus-entry state /c func entry)))
 
-(defn free-var-set-plus a b
-  (free-var-set-foldl a b /fn state entry
-    (free-var-set-plus-entry state entry)))
+(defn free-vars-plus a b
+  (free-vars-foldl a b /fn state entry
+    (free-vars-plus-entry state entry)))
 
 
 (defn staccato-let-bindings-expr-keys let-bindings-expr
   (case let-bindings-expr
     
     let-bindings-nil
-    (free-var-set/nil)
+    (free-vars/nil)
     
     let-bindings-cons var get-expr let-bindings-expr
-    (free-var-set-plus-entry
+    (free-vars-plus-entry
       (c-new staccato-let-bindings-expr-keys let-bindings-expr)
       free-var-entry-var.var)
     
@@ -352,43 +395,44 @@
       Called staccato-let-bindings-expr-keys on a value that wasn't a
       let-bindings-expr syntax]))
 
-(defn staccato-proj-pattern-set proj-pattern
+(defn staccato-proj-pattern-get-vars proj-pattern
   (case proj-pattern
     
     stc-proj-pattern-nil
-    (free-var-set/nil)
+    (free-vars/nil)
     
     stc-proj-pattern-cons proj-name var proj-pattern
-    (free-var-set-plus-entry
-      (c-new staccato-proj-pattern-set proj-pattern)
+    (free-vars-plus-entry
+      (c-new staccato-proj-pattern-get-vars proj-pattern)
       free-var-entry-var.var)
     
     err.\-qq[
-      Called staccato-proj-pattern-set on a value that wasn't a
+      Called staccato-proj-pattern-get-vars on a value that wasn't a
       proj-pattern syntax]))
 
-(defn staccato-opt-proj-pattern-set opt-proj-pattern
+(defn staccato-opt-proj-pattern-get-vars opt-proj-pattern
   (case opt-proj-pattern
     
     stc-proj-pattern-omitted namespace
     (nil)
     
     stc-proj-pattern proj-pattern
-    (yep staccato-proj-pattern-set.proj-pattern)
+    (yep staccato-proj-pattern-get-vars.proj-pattern)
     
     err.\-qq[
-      Called staccato-opt-proj-pattern-set on a value that wasn't an
-      opt-proj-pattern syntax]))
+      Called staccato-opt-proj-pattern-get-vars on a value that wasn't
+      an opt-proj-pattern syntax]))
 
 (defn opt-proj-pattern-or opt-proj-pattern default
   (case opt-proj-pattern
     
     stc-proj-pattern-omitted namespace
     (stc-proj-pattern
-    /free-var-set-foldl (proj-pattern-nil) default /fn state var truth
+    /free-vars-foldl (proj-pattern-nil) default
+    /fn state var truth
       (cast var free-var-entry-var name
         err.\-qq[
-          Called opt-proj-pattern-or with a default variable set that
+          Called opt-proj-pattern-or with a default variable list that
           contained a key that wasn't a free-var-entry-var]
       \ TODO: Use args.namespace to derive the projection name, rather
       \ than just using the variable name directly.
@@ -436,13 +480,13 @@
     stc-def tuple-name opt-proj-pattern case-list
     (cast
       (visitor-visit visitor case-list
-        (case staccato-opt-proj-pattern-set.opt-proj-pattern yep set
-          set
-          (free-var-set/nil))
+        (case staccato-opt-proj-pattern-get-vars.opt-proj-pattern
+          yep vars vars
+          (free-vars/nil))
       /scope-policy-no-free-vars)
       visitor-visit-result case-list visitor
       err.\-qq[Internal error]
-    /visitor-redecorate visitor (free-var-set/nil)
+    /visitor-redecorate visitor (free-vars/nil)
     /stc-def tuple-name opt-proj-pattern case-list)
     
     stc-let-case var case-list
@@ -450,91 +494,90 @@
       err.\-qq[Visited a stc-let-case where the var was not a string]
     /cast
       (visitor-visit visitor case-list
-        (free-var-set-plus-entry (free-var-set/nil)
-          free-var-entry-var.var)
+        (free-vars-plus-entry (free-vars/nil) free-var-entry-var.var)
       /scope-policy-does-not-matter)
       visitor-visit-result case-list visitor
       err.\-qq[Internal error]
-    /visitor-redecorate visitor (free-var-set/nil)
+    /visitor-redecorate visitor (free-vars/nil)
     /stc-let-case var case-list)
     
     stc-match tuple-name proj-pattern get-expr case-list
     (cast
       (visitor-visit visitor get-expr
-        staccato-proj-pattern-set.proj-pattern
+        staccato-proj-pattern-get-vars.proj-pattern
       /scope-policy-not-root)
       visitor-visit-result get-expr visitor
       err.\-qq[Internal error]
     /cast
-      (visitor-visit visitor case-list (free-var-set/nil)
+      (visitor-visit visitor case-list (free-vars/nil)
       /scope-policy-not-root)
       visitor-visit-result case-list visitor
       err.\-qq[Internal error]
-    /visitor-redecorate visitor (free-var-set/nil)
+    /visitor-redecorate visitor (free-vars/nil)
     /stc-match tuple-name proj-pattern get-expr case-list)
     
     stc-any get-expr
     (cast
-      (visitor-visit visitor get-expr (free-var-set/nil)
+      (visitor-visit visitor get-expr (free-vars/nil)
       /scope-policy-not-root)
       visitor-visit-result get-expr visitor
       err.\-qq[Internal error]
-    /visitor-redecorate visitor (free-var-set/nil)
+    /visitor-redecorate visitor (free-vars/nil)
     /stc-any get-expr)
     
     stc-let-bindings-nil
-    (visitor-redecorate visitor (free-var-set/nil)
+    (visitor-redecorate visitor (free-vars/nil)
     /stc-let-bindings-nil)
     
     stc-let-bindings-cons var get-expr proj-expr
     (cast
-      (visitor-visit visitor get-expr (free-var-set/nil)
+      (visitor-visit visitor get-expr (free-vars/nil)
       /scope-policy-not-root)
       visitor-visit-result get-expr visitor
       err.\-qq[Internal error]
     /cast
-      (visitor-visit visitor proj-expr (free-var-set/nil)
+      (visitor-visit visitor proj-expr (free-vars/nil)
       /scope-policy-not-root)
       visitor-visit-result proj-expr visitor
       err.\-qq[Internal error]
-    /visitor-redecorate visitor (free-var-set/nil)
+    /visitor-redecorate visitor (free-vars/nil)
     /stc-let-bindings-cons var get-expr proj-expr)
     
     stc-proj-nil
-    (visitor-redecorate visitor (free-var-set/nil)
+    (visitor-redecorate visitor (free-vars/nil)
     /stc-proj-nil)
     
     stc-proj-cons proj-name get-expr proj-expr
     (cast
-      (visitor-visit visitor get-expr (free-var-set/nil)
+      (visitor-visit visitor get-expr (free-vars/nil)
       /scope-policy-not-root)
       visitor-visit-result get-expr visitor
       err.\-qq[Internal error]
     /cast
-      (visitor-visit visitor proj-expr (free-var-set/nil)
+      (visitor-visit visitor proj-expr (free-vars/nil)
       /scope-policy-not-root)
       visitor-visit-result proj-expr visitor
       err.\-qq[Internal error]
-    /visitor-redecorate visitor (free-var-set/nil)
+    /visitor-redecorate visitor (free-vars/nil)
     /stc-proj-cons proj-name get-expr proj-expr)
     
     stc-let-def def get-expr
     (cast
-      (visitor-visit visitor def (free-var-set/nil)
+      (visitor-visit visitor def (free-vars/nil)
       /scope-policy-does-not-matter)
       visitor-visit-result def visitor
       err.\-qq[Internal error]
     /cast
-      (visitor-visit visitor get-expr (free-var-set/nil)
+      (visitor-visit visitor get-expr (free-vars/nil)
       /scope-policy-not-root)
       visitor-visit-result get-expr visitor
       err.\-qq[Internal error]
-    /visitor-redecorate visitor (free-var-set/nil)
+    /visitor-redecorate visitor (free-vars/nil)
     /stc-let-def def get-expr)
     
     stc-let let-bindings-expr get-expr
     (cast
-      (visitor-visit visitor let-bindings-expr (free-var-set/nil)
+      (visitor-visit visitor let-bindings-expr (free-vars/nil)
       /scope-policy-not-root)
       visitor-visit-result let-bindings-expr visitor
       err.\-qq[Internal error]
@@ -544,24 +587,23 @@
       /scope-policy-not-root)
       visitor-visit-result get-expr visitor
       err.\-qq[Internal error]
-    /visitor-redecorate visitor (free-var-set/nil)
+    /visitor-redecorate visitor (free-vars/nil)
     /stc-let let-bindings-expr get-expr)
     
     stc-local var
     (cast var string -
       err.\-qq[Visited a stc-local where the var was not a string]
     /visitor-redecorate visitor
-      (free-var-set-plus-entry (free-var-set/nil)
-        free-var-entry-var.var)
+      (free-vars-plus-entry (free-vars/nil) free-var-entry-var.var)
     /stc-local var)
     
     stc-tuple tuple-name proj-expr
     (cast
-      (visitor-visit visitor proj-expr (free-var-set/nil)
+      (visitor-visit visitor proj-expr (free-vars/nil)
       /scope-policy-not-root)
       visitor-visit-result proj-expr visitor
       err.\-qq[Internal error]
-    /visitor-redecorate visitor (free-var-set/nil)
+    /visitor-redecorate visitor (free-vars/nil)
     /stc-tuple tuple-name proj-expr)
     
     stc-save-root save-root get-expr
@@ -569,11 +611,11 @@
       err.\-qq[
         Visited a stc-local where the save-root was not a string]
     /cast
-      (visitor-visit visitor get-expr (free-var-set/nil)
+      (visitor-visit visitor get-expr (free-vars/nil)
       /scope-policy-save-root save-root)
       visitor-visit-result get-expr visitor
       err.\-qq[Internal error]
-    /visitor-redecorate visitor (free-var-set/nil)
+    /visitor-redecorate visitor (free-vars/nil)
     /stc-save-root save-root get-expr)
     
     stc-save
@@ -584,18 +626,21 @@
       err.\-qq[
         Visited a stc-save where the save-root was not a string]
     /cast
-      (visitor-visit visitor arg (free-var-set/nil)
+      (visitor-visit visitor arg (free-vars/nil)
       /scope-policy-save-root save-root)
       visitor-visit-result arg visitor
       err.\-qq[Internal error]
     /visitor-redecorate visitor
-      (free-var-set-plus-entry
-        (case staccato-opt-proj-pattern-set.opt-proj-pattern yep set
-          (free-var-set-map set /fn entry
+      (free-vars-plus-entry
+        (case staccato-opt-proj-pattern-get-vars.opt-proj-pattern
+          
+          yep vars
+          (free-vars-map vars /fn entry
             (cast entry free-var-entry-var name
               err.\-qq[Internal error]
             /free-var-entry-saved-free-var save-root name))
-          (free-var-set/nil))
+          
+          (free-vars/nil))
       /free-var-entry-saved-input-var save-root var)
     /stc-save
       save-root call-tuple-name
@@ -604,14 +649,14 @@
     
     stc-fn tuple-name opt-proj-pattern case-list
     (cast
-      (visitor-visit visitor case-list (free-var-set/nil)
+      (visitor-visit visitor case-list (free-vars/nil)
       /scope-policy-not-root)
       visitor-visit-result case-list visitor
       err.\-qq[Internal error]
     /visitor-redecorate visitor
-      (case staccato-opt-proj-pattern-set.opt-proj-pattern yep set
-        set
-        (free-var-set/nil))
+      (case staccato-opt-proj-pattern-get-vars.opt-proj-pattern
+        yep vars vars
+        (free-vars/nil))
     /stc-fn tuple-name opt-proj-pattern case-list)
     
     err.\-qq[
@@ -710,40 +755,39 @@
       
       method-visitor-visit part shadow scope-policy
       (let shadowed
-        (free-var-set-minus (c-new get-free-vars part) shadow)
+        (free-vars-minus (c-new get-free-vars part) shadow)
       /let shadowed
         (case
           (and (isa scope-policy-no-free-vars scope-policy)
-          /free-var-set-any shadowed /fn entry
+          /free-vars-any shadowed /fn entry
             (not/isa free-var-entry-scope-error entry))
           yep -
           \ TODO: Use this error message: Encountered a use of
           \ (def ...) with free variables
-          (free-var-set-plus-entry (free-var-set/nil)
+          (free-vars-plus-entry (free-vars/nil)
           /free-var-entry-scope-error)
           shadowed)
       /let shadowed
         (case
-          (free-var-set-any shadowed /fn entry
+          (free-vars-any shadowed /fn entry
             (case entry free-var-entry-saved-input-var save-root name
-              (free-var-set-has shadow free-var-entry-var.name)
+              (free-vars-has shadow free-var-entry-var.name)
               (nope/nil)))
           yep -
           \ TODO: Use this error message: Encountered a use of
           \ (save ...) where the saved value's variable name was
           \ locally bound somewhere between the save root and the
           \ saved location
-          (free-var-set-plus-entry shadowed
-          /free-var-entry-scope-error)
+          (free-vars-plus-entry shadowed /free-var-entry-scope-error)
           shadowed)
       /let use-shadowed
         (fn shadowed
           (visitor-visit-result part /make-visitor/c visitor-loop
-          /free-var-set-plus result shadowed))
+          /free-vars-plus result shadowed))
       /let sanitize-and-finish
         (fn -
           (case
-            (free-var-set-any shadowed /fn entry
+            (free-vars-any shadowed /fn entry
               (or (isa free-var-entry-saved-input-var entry)
                 (isa free-var-entry-saved-free-var entry)))
             yep -
@@ -755,27 +799,27 @@
         scope-policy-save-root save-root
         (let shadowed
           (case
-            (free-var-set-any shadowed /fn entry
+            (free-vars-any shadowed /fn entry
               (cast entry
                 free-var-entry-saved-input-var save-root-2 name
                 (nope/nil)
               /and (isa nil /string-compare save-root save-root-2)
-                (free-var-set-has shadowed free-var-entry-var.name)))
+                (free-vars-has shadowed free-var-entry-var.name)))
             
             \ TODO: Use this error message: Encountered a use of
             \ (save ...) where the saved value's variable name was
             \ used somewhere under the save root
-            (free-var-set-plus-entry shadowed
+            (free-vars-plus-entry shadowed
             /free-var-entry-scope-error)
             shadowed)
         /let shadowed
-          (free-var-set-keep shadowed /fn entry
+          (free-vars-keep shadowed /fn entry
             (cast entry
               free-var-entry-saved-input-var save-root-2 name
               (yep/nil)
             /not/isa nil /string-compare save-root save-root-2))
         /let shadowed
-          (free-var-set-map shadowed /fn entry
+          (free-vars-map shadowed /fn entry
             (cast entry free-var-entry-saved-free-var save-root-2 name
               entry
             /cast (string-compare save-root save-root-2) nil
@@ -790,34 +834,34 @@
         err.\-qq[Internal error])
       
       method-visitor-redecorate extra-vars whole
-      (free-var-set-plus result extra-vars)
+      (free-vars-plus result extra-vars)
       
       err.\-qq[Expected method to be a visitor method])
-    (free-var-set/nil)))
+    (free-vars/nil)))
 
-(defn staccato-desugar-var-lists expr
+(defn staccato-desugar-omitted expr
   (case expr
     
     stc-def tuple-name opt-proj-pattern case-list
     (let inner-free-vars get-free-vars.case-list
     /stc-def tuple-name
       (opt-proj-pattern-or opt-proj-pattern inner-free-vars)
-      (c-new staccato-desugar-var-lists case-list))
+      (c-new staccato-desugar-omitted case-list))
     
     stc-save-root - -2
-    err.\-qq[Called staccato-desugar-var-lists on a stc-save-root]
+    err.\-qq[Called staccato-desugar-omitted on a stc-save-root]
     
     stc-save - -2 -3 -4 -5 -6 -7 -8
-    err.\-qq[Called staccato-desugar-var-lists on a stc-save]
+    err.\-qq[Called staccato-desugar-omitted on a stc-save]
     
     stc-fn tuple-name opt-proj-pattern case-list
     (let inner-free-vars get-free-vars.case-list
     /stc-fn tuple-name
       (opt-proj-pattern-or opt-proj-pattern inner-free-vars)
-      (c-new staccato-desugar-var-lists case-list))
+      (c-new staccato-desugar-omitted case-list))
     
     (staccato-visit expr /id-visitor/fn part shadow scope-policy
-      (c-new staccato-desugar-var-lists part))))
+      (c-new staccato-desugar-omitted part))))
 
 (defn staccato-desugar-fn expr
   (case expr
