@@ -1062,7 +1062,7 @@
     /case (c compare key k)
       nope - (c-new avl-get-maybe nbranch k)
       yep - (c-new avl-get-maybe ybranch k)
-      yep.tree)
+      yep.val)
     err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
 
 (def-type
