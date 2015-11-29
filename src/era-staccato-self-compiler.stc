@@ -370,9 +370,11 @@
 (def-type desugar-def-result defs expr)
 
 
+(defn free-vars-just entry
+  (free-vars-plus-entry (free-vars/nil) entry))
+
 (defn free-vars-map free-vars func
-  (free-vars-foldl (free-vars/nil) free-vars
-  /fn state entry
+  (free-vars-foldl (free-vars/nil) free-vars /fn state entry
     (free-vars-plus-entry state /c func entry)))
 
 (defn free-vars-plus a b
@@ -428,8 +430,7 @@
     
     stc-proj-pattern-omitted namespace
     (stc-proj-pattern
-    /free-vars-foldl (proj-pattern-nil) default
-    /fn state var truth
+    /free-vars-foldl (proj-pattern-nil) default /fn state var truth
       (cast var free-var-entry-var name
         err.\-qq[
           Called opt-proj-pattern-or with a default variable list that
@@ -494,7 +495,7 @@
       err.\-qq[Visited a stc-let-case where the var was not a string]
     /cast
       (visitor-visit visitor case-list
-        (free-vars-plus-entry (free-vars/nil) free-var-entry-var.var)
+        (free-vars-just free-var-entry-var.var)
       /scope-policy-does-not-matter)
       visitor-visit-result case-list visitor
       err.\-qq[Internal error]
@@ -594,7 +595,7 @@
     (cast var string -
       err.\-qq[Visited a stc-local where the var was not a string]
     /visitor-redecorate visitor
-      (free-vars-plus-entry (free-vars/nil) free-var-entry-var.var)
+      (free-vars-just free-var-entry-var.var)
     /stc-local var)
     
     stc-tuple tuple-name proj-expr
@@ -764,8 +765,7 @@
           yep -
           \ TODO: Use this error message: Encountered a use of
           \ (def ...) with free variables
-          (free-vars-plus-entry (free-vars/nil)
-          /free-var-entry-scope-error)
+          (free-vars-just/free-var-entry-scope-error)
           shadowed)
       /let shadowed
         (case
