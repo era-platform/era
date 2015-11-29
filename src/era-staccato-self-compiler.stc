@@ -249,6 +249,16 @@
 
 \ ===== Reimplementation of the desugarer ============================
 
+
+(def-type string val)
+(defn string-compare a b /TODO)
+\ TODO: Don't actually use (def-macro ...) for this -- at least, not
+\ yet. Just implement this as a built-in macro.
+(def-macro str /TODO)
+(def-type name val)
+(defn name-metacompare a b /TODO)
+
+
 (def-type stc-def tuple-name opt-proj-pattern case-list)
 (def-type stc-let-case var case-list)
 (def-type stc-match tuple-name proj-pattern get-expr case-list)
@@ -275,6 +285,11 @@
 (def-type stc-proj-pattern-cons proj-name var proj-pattern)
 
 
+(def-type scope-policy-save-root save-root)
+(def-type scope-policy-not-root)
+(def-type scope-policy-does-not-matter)
+(def-type scope-policy-no-free-vars)
+
 (def-type visitor-object impl)
 (def-type method-visitor-visit part shadow scope-policy)
 (def-type method-visitor-redecorate extra-vars whole)
@@ -294,24 +309,16 @@
   /c impl /method-visitor-redecorate extra-vars whole))
 
 
-\ TODO: Organize these, and implement every TODO.
-(def-type free-var-entry-var name)
-(def-type free-var-entry-scope-error)
-(def-type free-var-entry-saved-input-var save-root name)
-(def-type free-var-entry-saved-free-var save-root name)
-(defn free-vars - /TODO)
-(defn free-vars-plus-entry free-vars free-var-entry /TODO)
+\ NOTE: In order to remove free variables as we cross binding forms
+\ (`free-vars-minus`) and in order to infer deduplicated capture lists
+\ (`free-vars-fold`), we need to be able to compare variable names for
+\ equality.
 \
-\ TODO: In order to implement `free-vars-minus` and `free-vars-has` at
-\ all, and if we want to deduplicate the variables by the time they're
-\ exposed from `free-vars-foldl`, we'll need to be able to compare
-\ variable names for equality.
-\
-\ Macros become more expressive if they
-\ can compare names for equality -- maybe a little too expressive for
-\ namespace sandboxing purposes -- but if we do this, we'll want an
-\ ordered comparison on names as well. An ordered comparison would let
-\ us implement more efficient name-indexed data structures.
+\ Macros become more expressive if they can compare names for
+\ equality -- maybe a little too expressive for namespace sandboxing
+\ purposes -- but if we do this, we'll want an ordered comparison on
+\ names as well. An ordered comparison would let us implement more
+\ efficient name-indexed data structures.
 \
 \ Names have no natural ordering; even if they were ordered as
 \ strings, that would block capture-avoiding alpha-renaming! So
@@ -319,7 +326,7 @@
 \ make namespace sandboxing into a headache... unless the
 \ implementation details are hidden in the same way as we usually
 \ hide them: By using obscure naming (and enforcing the obscurity with
-\ code-signing).
+\ code-signing if necessary).
 \
 \ We can refrain from exposing implementation details by defining
 \ "metacompare" operations that usually work like "compare"
@@ -334,51 +341,114 @@
 \
 \ The elegance of this encapsulated AVL tree data type will depend on
 \ whether it lets us implement general computation on unordered
-\ collections. In service of this goal, we may simply want a
-\ metacomparator that compares encapsulated AVL trees themselves. That
-\ way we can detect emptiness by comparing to the empty tree, and we
-\ can detect singletonhood by comparing to the singletons of each
-\ entry.
+\ collections, or whether we instead have to complicate the language
+\ design every time we need a new kind of computation. In service of
+\ general computation, we may get quite a range of abilities all at
+\ once if we simply add a metacomparator that compares the
+\ encapsulated AVL trees themselves. That way we can detect emptiness
+\ by comparing to the empty tree, and we can detect singletonhood by
+\ comparing to the singletons of each entry.
 \
-\ This potentially leads to a lot of ugliness, especially if we allow
-\ encapsulated AVL trees with different metacomparators to be
-\ concatenated together.
+\ In the process, a lot of ugliness may arise: If concatenation of
+\ encapsulated AVL trees doesn't somehow check that their
+\ metacomparators are equivalent, we may end up with malformed
+\ encapsulated AVL trees that leak implementation details. We could
+\ potentially avoid this situation by passing some sort of equality
+\ certifier to the concatenation operation, but then we'd need a
+\ specialized language (or at least a collection of combinators) for
+\ defining equality certifiers. An easier approach would be to use a
+\ specialized language (or combinators) for the metacomparators
+\ themselves. This language would quickly resemble a static type
+\ system, much like our "cmpd" utilities already resemble algebraic
+\ data type definitions. So, this probably isn't worth solving until
+\ we take a typed approach.
 \
-\ For now, we can start small, merely providing an equality check on
-\ names, and we can use inefficient association lists to track free
-\ variables.
-\
-(defn free-vars-foldl state free-vars combiner /TODO)
-(defn free-vars-minus a b /TODO)
-(defn free-vars-has free-vars free-var-entry /TODO)
-(defn free-vars-any free-vars check /TODO)
-(def-type scope-policy-no-free-vars)
-(def-type string val)
-(def-type scope-policy-does-not-matter)
-(def-type scope-policy-not-root)
-\ TODO: Don't actually use (def-macro ...) for this -- at least, not
-\ yet. Just implement this as a built-in macro.
-(def-macro str /TODO)
-(def-type scope-policy-save-root save-root)
-(def-type desugared-save-expr expr)
-(def-type desugared-save-save
-  desugared-save-root call-tuple-name
-  call-func tuple-name opt-proj-pattern
-  call-arg var arg
-  tuple-body-expr)
-(defn string-compare a b /TODO)
-(def-type desugar-def-result defs expr)
+\ For now, we can start small, merely providing specific features as
+\ built-ins, rather than aiming for general computation. As long as we
+\ can at least perform an equality check on names
+\ (`name-metacompare`), we can use inefficient association lists to
+\ track free variables (`free-vars-object`).
 
+(defn stringy-name-metacompare a b
+  (bimap (cmpd-compare) a b /fn it
+    (case it string -
+      (cmpd-cons (string-compare) it /cmpd-nil)
+    /cmpd-succ/case it name -
+      (cmpd-cons (name-metacompare) it /cmpd-nil)
+      err.\-qq[Expected a value of type string or name])))
+
+(def-type free-var-entry-var name)
+(def-type free-var-entry-saved-input-var save-root name)
+(def-type free-var-entry-saved-free-var save-root name)
+(def-type free-var-entry-scope-error)
+
+(defn free-vars-entry-metacompare a b
+  (bimap (cmpd-compare) a b /fn it
+    (case it free-var-entry-var name
+      (cmpd-cons (stringy-name-metacompare) name /cmpd-nil)
+    /cmpd-succ/case it free-var-entry-saved-input-var save-root name
+      (cmpd-cons (stringy-name-metacompare) save-root
+      /cmpd-cons (stringy-name-metacompare) name
+      /cmpd-nil)
+    /cmpd-succ/case it free-var-entry-saved-free-var save-root name
+      (cmpd-cons (stringy-name-metacompare) save-root
+      /cmpd-cons (stringy-name-metacompare) name
+      /cmpd-nil)
+    /cmpd-succ/case it free-var-entry-scope-error
+      (cmpd-nil)
+      err.\-qq[Expected a free variable entry])))
+
+(def-type free-vars-object list)
+
+(defn free-vars-any free-vars check
+  (cast free-vars free-vars-object list
+    err.\-qq[
+      Called free-vars-any with a free-vars that wasn't a
+      free-vars-object]
+  /any list check))
+
+(defn free-vars-fold state free-vars combiner
+  (cast free-vars free-vars-object list
+    err.\-qq[
+      Called free-vars-fold with a free-vars that wasn't a
+      free-vars-object]
+  /foldl state list combiner))
+
+(defn free-vars-has free-vars entry
+  (free-vars-any free-vars /fn entry2
+    (isa nil /free-vars-entry-metacompare entry entry2)))
+
+(defn free-vars-keep free-vars check
+  (cast free-vars free-vars-object list
+    err.\-qq[
+      Called free-vars-keep with a free-vars that wasn't a
+      free-vars-object]
+  /free-vars-object /keep list check))
+
+(defn free-vars-minus a b
+  (free-vars-keep a /fn entry /not/free-vars-has b entry))
+
+(defn free-vars-plus-entry free-vars entry
+  (cast free-vars free-vars-object list
+    err.\-qq[
+      Called free-vars-plus-entry with a free-vars that wasn't a
+      free-vars-object]
+  /case (free-vars-has free-vars entry)
+    yep - free-vars
+    (free-vars-object /cons entry list)))
+
+(defn free-vars -
+  (free-vars-object/nil))
 
 (defn free-vars-just entry
   (free-vars-plus-entry (free-vars/nil) entry))
 
 (defn free-vars-map free-vars func
-  (free-vars-foldl (free-vars/nil) free-vars /fn state entry
+  (free-vars-fold (free-vars/nil) free-vars /fn state entry
     (free-vars-plus-entry state /c func entry)))
 
 (defn free-vars-plus a b
-  (free-vars-foldl a b /fn state entry
+  (free-vars-fold a b /fn state entry
     (free-vars-plus-entry state entry)))
 
 
@@ -430,7 +500,7 @@
     
     stc-proj-pattern-omitted namespace
     (stc-proj-pattern
-    /free-vars-foldl (proj-pattern-nil) default /fn state var truth
+    /free-vars-fold (proj-pattern-nil) default /fn state var truth
       (cast var free-var-entry-var name
         err.\-qq[
           Called opt-proj-pattern-or with a default variable list that
@@ -682,6 +752,13 @@
     
     err.\-qq[Expected method to be a visitor method]))
 
+(def-type desugared-save-expr expr)
+(def-type desugared-save-save
+  desugared-save-root call-tuple-name
+  call-func tuple-name opt-proj-pattern
+  call-arg var arg
+  tuple-body-expr)
+
 (defn staccato-desugar-save expr
   (case expr
     
@@ -880,6 +957,8 @@
     
     (staccato-visit expr /id-visitor/fn part shadow scope-policy
       (c-new staccato-desugar-fn part))))
+
+(def-type desugar-def-result defs expr)
 
 (defn staccato-desugar-def-including-self expr
   (cast expr stc-def tuple-name opt-proj-pattern case-list
