@@ -39,12 +39,12 @@
 \ the name as serializable data, but it can still be passed to
 \ `(compile ...)`.
 \
-\ These depend on a macro `(name name)` which obtains a first-class
+\ These depend on a macro `(nam name)` which obtains a first-class
 \ representation of the given name. This is usually useless, but it is
 \ useful for `(compile ...)`.
 \
 \ These sort of depend on a macro `(new type)`, which creates a value
-\ of the given type. The type must be empty.
+\ of the given type. The type must have no projections.
 \
 \ These depend on a macro `(str string)`, which obtains a first-class
 \ string value with the given literal text.
@@ -179,15 +179,15 @@
     err.\-qq[Not enough arguments to c-new]
   /compile unique-ns definition-ns
   /c s
-  /cons (c s /foreign name.c)
-  /cons (c s /list (c s /foreign name.new) func-name)
+  /cons (c s /foreign nam.c)
+  /cons (c s /list (c s /foreign nam.new) func-name)
     args))
 
 (def-macro case unique-ns definition-ns my-stx-details args
   (let s (fn it /stx my-stx-details it)
   /compile (string-ns unique-ns str.body) definition-ns
   /c s
-  /cons (c s /foreign name.caselet)
+  /cons (c s /foreign nam.caselet)
   /cons (c s /foreign/string-ns unique-ns str.ignored)
     args))
 
