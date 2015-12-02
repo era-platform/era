@@ -1890,7 +1890,7 @@
   /case b ftree-empty meta
     (ftree-push-list a (yep/nil) middle)
   /case a ftree-single meta element
-    (ftree-push-list b (nope/nil) /rev-onto middle /cons element /nil)
+    (ftree-push-list b (nope/nil) /rev-onto (cons element /nil) middle)
   /case b ftree-single meta element
     (ftree-push-list a (yep/nil) /append middle /cons element /nil)
   /cast a ftree-deep a-meta a-digits a-lazy-next
