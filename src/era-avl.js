@@ -1676,7 +1676,7 @@ function avlMerge_( yoke, processBoth, a, b, then ) {
         
         // TODO: See if iterating over `balancedChangesSignedUnary`
         // makes avlMerge_() less efficient than it could be.
-        var polarity = a.branches_[ -1 ] === null ? 1 : -1;
+        var polarity = branchesToTest[ -1 ] === null ? 1 : -1;
         return signedUnaryPlusBigUnary( yoke,
             balancedChangesSignedUnary[ polarity ],
             subMergeChangesBigUnary[ polarity ],
