@@ -24,32 +24,28 @@
 (def-type nope val)
 (def-type nil)
 
-(defn short-foldl state list combiner
+(defn any-foldl state list combiner
   (cast list cons first rest nope.state
   /caselet combiner-result (c combiner state first)
     yep result combiner-result
-    nope result (c-new short-foldl result rest combiner)
+    nope result (c-new any-foldl result rest combiner)
     err.\-qq[Expected a combiner-result of type yep or nope]))
 
 (defn foldl state list combiner
   (cast list cons first rest state
   /c-new foldl (c combiner state first) rest combiner))
 
-(defn double-short-foldl state list-a list-b combiner
+(defn double-any-foldl state list-a list-b combiner
   (cast list-a cons first-a rest-a nope.state
   /cast list-b cons first-b rest-b nope.state
   /caselet combiner-result (c combiner state first-a first-b)
-    
     yep result combiner-result
-    
-    nope result
-    (c-new double-short-foldl result list-a list-b combiner)
-    
+    nope result (c-new double-any-foldl result list-a list-b combiner)
     err.\-qq[Expected a combiner-result of type yep or nope]))
 
 (defn double-foldl state list-a list-b combiner
   (proj1 nope
-  /double-short-foldl state list-a list-b /fn state elem-a elem-b
+  /double-any-foldl state list-a list-b /fn state elem-a elem-b
     (nope/c combiner state elem-a elem-b)))
 
 (defn rev-onto target source
@@ -65,14 +61,14 @@
   (rev/foldl (nil) list /fn state elem /cons (c func elem) state))
 
 (defn any list check
-  (short-foldl (nil) list /fn state elem
+  (any-foldl (nil) list /fn state elem
     (caselet check-result (c check elem)
       yep result check-result
       nope result (nope/nil)
       err.\-qq[Expected a check-result of type yep or nope])))
 
 (defn double-any list-a list-b check
-  (double-short-foldl (nil) list-a list-b /fn state elem-a elem-b
+  (double-any-foldl (nil) list-a list-b /fn state elem-a elem-b
     (caselet check-result (c check elem-a elem-b)
       yep result check-result
       nope result (nope/nil)
@@ -123,7 +119,7 @@
 
 (defn tails lists
   (case
-    (short-foldl (nil) lists /fn state list
+    (any-foldl (nil) lists /fn state list
       (cast list cons first rest (yep/nil)
       /nope/cons rest state))
     yep - lists
@@ -140,11 +136,11 @@
   (cast a lazy-cons a-first a-rest b
   /lazy-cons a-first /fn - /c-new lazy-append (c a-rest /nil) b))
 
-(defn lazy-short-foldl state lazy-list body
+(defn lazy-any-foldl state lazy-list body
   (cast lazy-list lazy-cons get-first get-rest nope.state
   /caselet body-result (c body state /c get-first /nil)
     yep - body-result
-    nope state (c-new lazy-short-foldl state (c get-rest /nil) body)
+    nope state (c-new lazy-any-foldl state (c get-rest /nil) body)
     err.\-qq[Expected a body-result of type yep or nope]))
 
 (defn lazy-list-compare-by a b elem-compare
@@ -1042,7 +1038,7 @@
 (def-type depth-modified depth-was-modified result)
 
 \ TODO: Find a better name for this.
-(def-type map-fold-state state val)
+(def-type folding state val)
 
 (defn avl-branches-swap polarity branches
   (case polarity yep - branches
@@ -1199,45 +1195,44 @@
     err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
 
 \ NOTE: This body takes its args as (state k v).
-(defn avl-short-fold-asc state tree body
-  (lazy-short-foldl state avl-lazy-entries-asc.tree /fn state entry
+(defn avl-any-fold-asc state tree body
+  (lazy-any-foldl state avl-lazy-entries-asc.tree /fn state entry
     (cast entry entry k v
       err.\-qq[Internal error]
     /c body state k v)))
 
 \ NOTE: This body takes its args as (state k v).
-(defn avl-map-short-fold-asc state tree body
+(defn avl-any-map-fold-asc state tree body
   (case tree avl-leaf fixops compare
-    (map-fold-state state tree)
+    (folding state tree)
   /case tree avl-branch fixops compare key val branches
     (cast branches avl-branches nub nbranch yub ybranch
       err.\-qq[Expected a branches value of type avl-branches]
     /caselet first-result
-      (c-new avl-map-short-fold-asc state nbranch body)
+      (c-new avl-any-map-fold-asc state nbranch body)
       
       yep - first-result
       
-      map-fold-state state result-nbranch
+      folding state result-nbranch
       (caselet second-result (c body state key val)
         
         yep - second-result
         
-        map-fold-state state result-val
+        folding state result-val
         (caselet third-result
-          (c-new avl-map-short-fold-asc state ybranch body)
+          (c-new avl-any-map-fold-asc state ybranch body)
           
           yep - third-result
           
-          map-fold-state state result-ybranch
-          (map-fold-state state
+          folding state result-ybranch
+          (folding state
           /avl-branch fixops compare key result-val
           /avl-branches nub result-nbranch yub result-ybranch)
           
           err.\-qq[Internal error])
         
         err.\-qq[
-          Expected body to return a value of type yep or
-          map-fold-state])
+          Expected body to return a value of type yep or folding])
       
       err.\-qq[Internal error])
     err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
@@ -1292,13 +1287,13 @@
     (fn a-branch
       (case maybe-process-both yep -
         a-branch
-        (avl-map-short-fold-asc (nil) a-branch /fn state k v
+        (avl-any-map-fold-asc (nil) a-branch /fn state k v
           (nope/c to-left v))))
   /let map-right
     (fn b-branch
       (case maybe-process-both yep -
         b-branch
-        (avl-map-short-fold-asc (nil) b-branch /fn state k v
+        (avl-any-map-fold-asc (nil) b-branch /fn state k v
           (nope/c to-right v))))
   /let combine-branch-changes
     (fn wub tub w-balanced-change t-balanced-change
@@ -1565,7 +1560,7 @@
 \ NOTE: This check takes its args as (k v).
 (defn avl-any tree check
   (caselet result
-    (avl-short-fold-asc (nil) tree /fn state k v /c check k v)
+    (avl-any-fold-asc (nil) tree /fn state k v /c check k v)
     nope - (nope/nil)
     result))
 
@@ -1584,15 +1579,15 @@
 
 \ NOTE: This body takes its args as (state k v).
 (defn avl-fold-asc state tree body
-  (proj1 nope /avl-short-fold-asc state tree /fn state k v
+  (proj1 nope /avl-any-fold-asc state tree /fn state k v
     (nope/c body state k v)))
 
 \ NOTE: This body takes its args as (k v).
 (defn avl-map tree body
   (case
-    (avl-map-short-fold-asc (nil) tree /fn state k v
-      (map-fold-state (nil) /c body k v))
-    map-fold-state state result result
+    (avl-any-map-fold-asc (nil) tree /fn state k v
+      (folding (nil) /c body k v))
+    folding state result result
     err.\-qq[Internal error]))
 
 (defn avl-plus a b
@@ -1815,7 +1810,7 @@
         /let digits-to-traverse
           (list-order-swap iterating-inward rev.t2-digits)
         /case
-          (short-foldl
+          (any-foldl
             (ftree-split-iter-state summary-so-far (nil)
               digits-to-traverse)
             digits-to-traverse
@@ -2167,14 +2162,14 @@
     err.\-qq[Expected a b value of type bag]
   /bag/avl-plus a-avl-tree b-avl-tree))
 
-(defn bag-short-fold-asc state bag body
+(defn bag-any-fold-asc state bag body
   (cast bag bag avl-tree
     err.\-qq[Expected a bag value of type bag]
-  /avl-short-fold-asc state avl-tree /fn state k v
+  /avl-any-fold-asc state avl-tree /fn state k v
     (c body state k)))
 
 (defn bag-fold-asc state bag body
-  (proj1 nope /bag-short-fold-asc state bag /fn state elem
+  (proj1 nope /bag-any-fold-asc state bag /fn state elem
     (nope/c body state elem)))
 
 (defn bag-mappend compare bag func
@@ -2191,7 +2186,7 @@
 
 (defn bag-only bag
   (case
-    (bag-short-fold-asc (nil) bag /fn state elem
+    (bag-any-fold-asc (nil) bag /fn state elem
       (case state yep -
         (yep/nil)
         (nope yep.elem)))

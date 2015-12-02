@@ -33,7 +33,7 @@ var stcNil = stcType( "nil" );
 var stcPassTo = stcAddDefun( "pass-to", "arg", "func",
     stcCall( "func", "arg" ) );
 
-var stcFoldlShortIter = stcAddDefun( "short-foldl-iter",
+var stcAnyFoldlIter = stcAddDefun( "any-foldl-iter",
     "list", "combiner", "state",
     stcCase( "list", "list", stcCons, "first", "rest",
         stcCase( "combiner-result",
@@ -42,7 +42,7 @@ var stcFoldlShortIter = stcAddDefun( "short-foldl-iter",
             stcYep, "result", "combiner-result",
             
             stcNope, "result",
-            stcCallTuple( "short-foldl-iter",
+            stcCallTuple( "any-foldl-iter",
                 "list", "rest", "combiner", "combiner", "result" ),
             
             stcErr(
@@ -60,11 +60,11 @@ var stcFoldlIter = stcAddDefun( "foldl-iter",
             stcCall( "combiner", "state", "first" ) ),
         "state" ) );
 
-// This implements `foldl-iter` in terms of `short-foldl-iter`.
+// This implements `foldl-iter` in terms of `any-foldl-iter`.
 var stcFoldlIter = stcAddDefun( "foldl-iter",
     "list", "combiner", "state",
-    stcCase( "short-result",
-        stcFoldlShortIter.of( "list",
+    stcCase( "any-result",
+        stcAnyFoldlIter.of( "list",
             stcFn( "state", "elem",
                 stcNope.of(
                     stcCall( "combiner", "state", "elem" ) ) ),
@@ -75,10 +75,10 @@ var stcFoldlIter = stcAddDefun( "foldl-iter",
         stcErr( "Internal error" ) ) );
 
 // TODO: Choose just one of these implementations of
-// `double-short-foldl-iter`.
+// `double-any-foldl-iter`.
 
-// This implements `double-short-foldl-iter` independently.
-var stcFoldlDoubleShortIter = stcAddDefun( "double-short-foldl-iter",
+// This implements `double-any-foldl-iter` independently.
+var stcDoubleAnyFoldlIter = stcAddDefun( "double-any-foldl-iter",
     "list-a", "list-b", "combiner", "state",
     stcCase( "list-a", "list-a", stcCons, "first-a", "rest-a",
         stcCase( "list-b", "list-b", stcCons, "first-b", "rest-b",
@@ -88,7 +88,7 @@ var stcFoldlDoubleShortIter = stcAddDefun( "double-short-foldl-iter",
                 stcYep, "result", "combiner-result",
                 
                 stcNope, "result",
-                stcCallTuple( "double-short-foldl-iter",
+                stcCallTuple( "double-any-foldl-iter",
                     "list-a", "rest-a",
                     "list-b", "rest-b",
                     "combiner", "combiner",
@@ -100,12 +100,12 @@ var stcFoldlDoubleShortIter = stcAddDefun( "double-short-foldl-iter",
             stcNope.of( "state" ) ),
         stcNope.of( "state" ) ) );
 
-// This implements `double-short-foldl-iter` in terms of
-// `short-foldl-iter`.
-var stcFoldlDoubleShortIter = stcAddDefun( "double-short-foldl-iter",
+// This implements `double-any-foldl-iter` in terms of
+// `any-foldl-iter`.
+var stcDoubleAnyFoldlIter = stcAddDefun( "double-any-foldl-iter",
     "list-a", "list-b", "combiner", "state",
-    stcCase( "short-result",
-        stcFoldlShortIter.of( "list-a",
+    stcCase( "fold-result",
+        stcAnyFoldlIter.of( "list-a",
             stcFn( "state", "elem-a",
                 stcCase( "state", "state", stcCons, "rest-b", "state",
                     stcCase( "rest-b", "rest-b",
@@ -130,7 +130,7 @@ var stcFoldlDoubleShortIter = stcAddDefun( "double-short-foldl-iter",
                     stcErr( "Internal error" ) ) ),
             stcCons.of( "list-b", "state" ) ),
         
-        stcYep, "result", "short-result",
+        stcYep, "result", "fold-result",
         
         stcNope, "result",
         stcCase( "result", "result", stcCons, "rest-b", "state",
@@ -143,7 +143,7 @@ var stcFoldlDoubleShortIter = stcAddDefun( "double-short-foldl-iter",
 // `double-foldl-iter`.
 
 // This implements `double-foldl-iter` independently.
-var stcFoldlDoubleIter = stcAddDefun( "double-foldl-iter",
+var stcDoubleFoldlIter = stcAddDefun( "double-foldl-iter",
     "list-a", "list-b", "combiner", "state",
     stcCase( "list-a", "list-a", stcCons, "first-a", "rest-a",
         stcCase( "list-b", "list-b", stcCons, "first-b", "rest-b",
@@ -157,11 +157,11 @@ var stcFoldlDoubleIter = stcAddDefun( "double-foldl-iter",
         "state" ) );
 
 // This implements `double-foldl-iter` in terms of
-// `double-short-foldl-iter`.
-var stcFoldlDoubleIter = stcAddDefun( "double-foldl-iter",
+// `double-any-foldl-iter`.
+var stcDoubleFoldlIter = stcAddDefun( "double-foldl-iter",
     "list-a", "list-b", "combiner", "state",
-    stcCase( "short-result",
-        stcFoldlDoubleShortIter.of( "list-a", "list-b",
+    stcCase( "abrupt-result",
+        stcDoubleAnyFoldlIter.of( "list-a", "list-b",
             stcFn( "state", "elem-a", "elem-b",
                 stcNope.of(
                     stcCall( "combiner",
@@ -241,9 +241,9 @@ var stcAnyIter = stcAddDefun( "any-iter", "check", "list",
             stcErr( "Expected a check-result of type yep or nope" ) ),
         stcNope.of( stcNil.of() ) ) );
 
-// This implements `any-iter` in terms of `short-foldl-iter`.
+// This implements `any-iter` in terms of `any-foldl-iter`.
 var stcAnyIter = stcAddDefun( "any-iter", "check", "list",
-    stcFoldlShortIter.of( "list",
+    stcAnyFoldlIter.of( "list",
         stcFn( "state", "elem",
             stcCase( "check-result", stcCall( "check", "elem" ),
                 
@@ -259,7 +259,7 @@ var stcAnyIter = stcAddDefun( "any-iter", "check", "list",
 // TODO: Choose just one of these implementations of `double-any`.
 
 // This implements `double-any` independently.
-var stcAnyDouble = stcAddDefun( "double-any",
+var stcDoubleAny = stcAddDefun( "double-any",
     "list-a", "list-b", "check",
     stcCase( "list-a", "list-a", stcCons, "first-a", "rest-a",
         stcCase( "list-b", "list-b", stcCons, "first-b", "rest-b",
@@ -279,10 +279,10 @@ var stcAnyDouble = stcAddDefun( "double-any",
             stcNope.of( stcNil.of() ) ),
         stcNope.of( stcNil.of() ) ) );
 
-// This implements `double-any` in terms of `double-short-foldl-iter`.
-var stcAnyDouble = stcAddDefun( "double-any",
+// This implements `double-any` in terms of `double-any-foldl-iter`.
+var stcDoubleAny = stcAddDefun( "double-any",
     "list-a", "list-b", "check",
-    stcFoldlDoubleShortIter.of( "list-a", "list-b",
+    stcDoubleAnyFoldlIter.of( "list-a", "list-b",
         stcFn( "state", "elem-a", "elem-b",
             stcCase( "check-result",
                 stcCall( "check", "elem-a", "elem-b" ),
@@ -312,18 +312,23 @@ var stcAllIter = stcAddDefun( "all-iter", "func", "list",
                 stcNotYepNope.of( stcCall( "func", "elem" ) ) ),
             "list" ) ) );
 
-var stcCut = stcAddDefun( "cut", "list-to-measure-by", "list-to-cut",
+var stcRevCutResult = stcType( "rev-cut-result", "rev-past", "rest" );
+
+var stcRevCut = stcAddDefun( "rev-cut",
+    "list-to-measure-by", "list-to-cut",
     stcFoldlIter.of( "list-to-measure-by",
         stcFn( "state", "ignored-elem",
-            stcCase( "state", "state", stcCons, "rev-before", "after",
+            stcCase( "state", "state",
+                stcRevCutResult, "rev-before", "after",
                 stcCase( "after", "after", stcCons, "first", "after",
-                    stcCons.of( stcCons.of( "first", "rev-before" ),
+                    stcRevCutResult.of(
+                        stcCons.of( "first", "rev-before" ),
                         "after" ),
                     stcErr(
                         "Expected a list-to-measure-by no larger " +
                         "than the list-to-cut" ) ),
                 stcErr( "Internal error" ) ) ),
-        stcCons.of( stcNil.of(), "list-to-cut" ) ) );
+        stcRevCutResult.of( stcNil.of(), "list-to-cut" ) ) );
 
 var stcTails = stcAddDefun( "tails", "lists",
     stcCase( "lists", "lists", stcCons, "list-a", "list-b",
