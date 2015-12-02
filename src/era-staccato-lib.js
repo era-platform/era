@@ -40,10 +40,10 @@ var stcNil = stcType( "nil" );
 stcAddYesDefAny( "pass-to", "arg", "func",
     stcCall( stcv( "func" ), stcRet( stcv( "arg" ) ) ) );
 
-stcAddYesDefAny( "foldl-short-iter", "list", "combiner", "state",
-    stcCons.cond( "foldl-short-iter-case1", "first", "rest",
+stcAddYesDefAny( "short-foldl-iter", "list", "combiner", "state",
+    stcCons.cond( "short-foldl-iter-case1", "first", "rest",
         stcRet( stcv( "list" ) ),
-        stcCase( "foldl-short-iter-case2", "combiner-result",
+        stcCase( "short-foldl-iter-case2", "combiner-result",
             stcCallTuple( "pass-to", "arg", stcv( "first" ),
                 stcCall( stcv( "combiner" ),
                     stcRet( stcv( "state" ) ) ) ),
@@ -51,7 +51,7 @@ stcAddYesDefAny( "foldl-short-iter", "list", "combiner", "state",
             stcYep, "result", stcRet( stcv( "combiner-result" ) ),
             
             stcNope, "result",
-            stcCallTuple( "foldl-short-iter",
+            stcCallTuple( "short-foldl-iter",
                 "list", stcv( "rest" ),
                 "combiner", stcv( "combiner" ),
                 stcRet( stcv( "result" ) ) ),
@@ -73,10 +73,10 @@ stcAddYesDefAny( "foldl-iter", "list", "combiner", "state",
                     stcRet( stcv( "state" ) ) ) ) ),
         stcRet( stcv( "state" ) ) ) );
 
-// This implements `foldl-iter` in terms of `foldl-short-iter`.
+// This implements `foldl-iter` in terms of `short-foldl-iter`.
 stcAddYesDefAny( "foldl-iter", "list", "combiner", "state",
     stcNope.cond( "foldl-iter-case", "result",
-        stcCallTuple( "foldl-short-iter", "list", stcv( "list" ),
+        stcCallTuple( "short-foldl-iter", "list", stcv( "list" ),
             "combiner",
             stcFnAny( "foldl-iter-adapter-1", "state",
                 stcRetFnAny( "foldl-iter-adapter-2", "elem",
@@ -92,18 +92,18 @@ stcAddYesDefAny( "foldl-iter", "list", "combiner", "state",
         stcRetErr( "Internal error" ) ) );
 
 // TODO: Choose just one of these implementations of
-// `foldl-double-short-iter`.
+// `double-short-foldl-iter`.
 
-// This implements `foldl-double-short-iter` independently.
-stcAddYesDefAny( "foldl-double-short-iter",
+// This implements `double-short-foldl-iter` independently.
+stcAddYesDefAny( "double-short-foldl-iter",
     "list-a", "list-b", "combiner", "state",
-    stcCons.cond( "foldl-double-short-iter-case1",
+    stcCons.cond( "double-short-foldl-iter-case1",
         "first-a", "rest-a",
         stcRet( stcv( "list-a" ) ),
-        stcCons.cond( "foldl-double-short-iter-case2",
+        stcCons.cond( "double-short-foldl-iter-case2",
             "first-b", "rest-b",
             stcRet( stcv( "list-b" ) ),
-            stcCase( "foldl-double-short-iter-case3",
+            stcCase( "double-short-foldl-iter-case3",
                 "combiner-result",
                 stcCallTuple( "pass-to", "arg", stcv( "first-b" ),
                     stcCallTuple( "pass-to", "arg", stcv( "first-a" ),
@@ -113,7 +113,7 @@ stcAddYesDefAny( "foldl-double-short-iter",
                 stcYep, "result", stcRet( stcv( "combiner-result" ) ),
                 
                 stcNope, "result",
-                stcCallTuple( "foldl-double-short-iter",
+                stcCallTuple( "double-short-foldl-iter",
                     "list-a", stcv( "rest-a" ),
                     "list-b", stcv( "rest-b" ),
                     "combiner", stcv( "combiner" ),
@@ -125,26 +125,26 @@ stcAddYesDefAny( "foldl-double-short-iter",
             stcRet( stcNope.make( stcv( "state" ) ) ) ),
         stcRet( stcNope.make( stcv( "state" ) ) ) ) );
 
-// This implements `foldl-double-short-iter` in terms of
-// `foldl-short-iter`.
-stcAddYesDefAny( "foldl-double-short-iter",
+// This implements `double-short-foldl-iter` in terms of
+// `short-foldl-iter`.
+stcAddYesDefAny( "double-short-foldl-iter",
     "list-a", "list-b", "combiner", "state",
-    stcCase( "foldl-double-short-iter-case1", "short-result",
-        stcCallTuple( "foldl-short-iter",
+    stcCase( "double-short-foldl-iter-case1", "short-result",
+        stcCallTuple( "short-foldl-iter",
             "list", stcv( "list-a" ),
             "combiner",
-            stcFnAny( "foldl-double-short-iter-adapter-1", "state",
-                stcRetFnAny( "foldl-double-short-iter-adapter-2",
+            stcFnAny( "double-short-foldl-iter-adapter-1", "state",
+                stcRetFnAny( "double-short-foldl-iter-adapter-2",
                     "elem-a",
-                    stcCons.cond( "foldl-double-short-iter-case2",
+                    stcCons.cond( "double-short-foldl-iter-case2",
                         "rest-b", "state",
                         stcRet( stcv( "state" ) ),
                         stcCons.cond(
-                            "foldl-double-short-iter-case4",
+                            "double-short-foldl-iter-case4",
                             "elem-b", "rest-b",
                             stcRet( stcv( "rest-b" ) ),
                             stcCase(
-                                "foldl-double-short-iter-case5",
+                                "double-short-foldl-iter-case5",
                                 "combiner-result",
                                 stcCallTuple( "pass-to",
                                     "arg", stcv( "elem-b" ),
@@ -170,7 +170,7 @@ stcAddYesDefAny( "foldl-double-short-iter",
         
         stcNope, "result",
         stcRet(
-            stcCons.cond( "foldl-double-short-iter-case6",
+            stcCons.cond( "double-short-foldl-iter-case6",
                 "rest-b", "state",
                 stcRet( stcv( "result" ) ),
                 stcRet( stcNope.make( stcv( "state" ) ) ),
@@ -179,16 +179,16 @@ stcAddYesDefAny( "foldl-double-short-iter",
         stcRetErr( "Internal error" ) ) );
 
 // TODO: Choose just one of these implementations of
-// `foldl-double-iter`.
+// `double-foldl-iter`.
 
-// This implements `foldl-double-iter` independently.
-stcAddYesDefAny( "foldl-double-iter",
+// This implements `double-foldl-iter` independently.
+stcAddYesDefAny( "double-foldl-iter",
     "list-a", "list-b", "combiner", "state",
-    stcCons.cond( "foldl-double-iter-case1", "first-a", "rest-a",
+    stcCons.cond( "double-foldl-iter-case1", "first-a", "rest-a",
         stcRet( stcv( "list-a" ) ),
-        stcCons.cond( "foldl-double-iter-case2", "first-b", "rest-b",
+        stcCons.cond( "double-foldl-iter-case2", "first-b", "rest-b",
             stcRet( stcv( "list-b" ) ),
-            stcCallTuple( "foldl-double-iter",
+            stcCallTuple( "double-foldl-iter",
                 "list-a", stcv( "rest-a" ),
                 "list-b", stcv( "rest-b" ),
                 "combiner", stcv( "combiner" ),
@@ -200,23 +200,23 @@ stcAddYesDefAny( "foldl-double-iter",
             stcRet( stcv( "state" ) ) ),
         stcRet( stcv( "state" ) ) ) );
 
-// This implements `foldl-double-iter` in terms of
-// `foldl-double-short-iter`.
-stcAddYesDefAny( "foldl-double-iter",
+// This implements `double-foldl-iter` in terms of
+// `double-short-foldl-iter`.
+stcAddYesDefAny( "double-foldl-iter",
     "list-a", "list-b", "combiner", "state",
-    stcNope.cond( "foldl-double-iter-case", "result",
-        stcCallTuple( "foldl-double-short-iter",
+    stcNope.cond( "double-foldl-iter-case", "result",
+        stcCallTuple( "double-short-foldl-iter",
             "list-a", stcv( "list-a" ),
             "list-b", stcv( "list-b" ),
             "combiner",
-            stcFnAny( "foldl-double-iter-adapter-1", "state",
-                stcRetFnAny( "foldl-double-iter-adapter-2", "elem-a",
-                    stcRetFnAny( "foldl-double-iter-adapter-3",
+            stcFnAny( "double-foldl-iter-adapter-1", "state",
+                stcRetFnAny( "double-foldl-iter-adapter-2", "elem-a",
+                    stcRetFnAny( "double-foldl-iter-adapter-3",
                         "elem-b",
                         stcSaveRoot(
                             stcRet(
                                 stcNope.make(
-                                    stcSave( "combiner-result", "foldl-double-iter-adapter-4",
+                                    stcSave( "combiner-result", "double-foldl-iter-adapter-4",
                                         stcCallTuple( "pass-to", "arg", stcv( "elem-b" ),
                                             stcCallTuple( "pass-to", "arg", stcv( "elem-a" ),
                                                 stcCall( stcv( "combiner" ),
@@ -315,91 +315,92 @@ stcAddYesDefAny( "map-iter", "func", "list",
 // TODO: Choose just one of these implementations of `any-iter`.
 
 // This implements `any-iter` independently.
-stcAddYesDef( "any-iter", "func",
+stcAddYesDef( "any-iter", "check",
     stcCons.match( "first", "rest",
-        stcCase( "any-iter-case", "func-result",
-            stcCall( stcv( "func" ), stcRet( stcv( "first" ) ) ),
+        stcCase( "any-iter-case", "check-result",
+            stcCall( stcv( "check" ), stcRet( stcv( "first" ) ) ),
             
-            stcYep, "result", stcRet( stcv( "func-result" ) ),
+            stcYep, "result", stcRet( stcv( "check-result" ) ),
             
             stcNope, "result",
-            stcCallTuple( "any-iter", "func", stcv( "func" ),
+            stcCallTuple( "any-iter", "func", stcv( "check" ),
                 stcRet( stcv( "rest" ) ) ),
             
             stcRetErr(
-                "Expected a func-result of type yep or nope" ) ),
+                "Expected a check-result of type yep or nope" ) ),
         jsList( "any", stcRet( stcNope.make( stcNil.make() ) ) ) ) );
 
-// This implements `any-iter` in terms of `foldl-short-iter`.
-stcAddYesDefAny( "any-iter", "func", "list",
-    stcCallTuple( "foldl-short-iter", "list", stcv( "list" ),
+// This implements `any-iter` in terms of `short-foldl-iter`.
+stcAddYesDefAny( "any-iter", "check", "list",
+    stcCallTuple( "short-foldl-iter", "list", stcv( "list" ),
         "combiner",
         stcFnAny( "any-iter-adapter-1", "state",
             stcRetFnAny( "any-iter-adapter-2", "elem",
-                stcCase( "any-iter-case", "func-result",
-                    stcCall( stcv( "func" ),
+                stcCase( "any-iter-case", "check-result",
+                    stcCall( stcv( "check" ),
                         stcRet( stcv( "elem" ) ) ),
                     
-                    stcYep, "result", stcRet( stcv( "func-result" ) ),
+                    stcYep, "result",
+                    stcRet( stcv( "check-result" ) ),
                     
                     stcNope, "result",
                     stcRet( stcNope.make( stcNil.make() ) ),
                     
                     stcRetErr(
-                        "Expected a func-result of type yep or nope"
+                        "Expected a check-result of type yep or nope"
                         ) ) ) ),
         stcRet( stcNil.make() ) ) );
 
-// TODO: Choose just one of these implementations of `any-double`.
+// TODO: Choose just one of these implementations of `double-any`.
 
-// This implements `any-double` independently.
-stcAddYesDefAny( "any-double", "list-a", "list-b", "func",
-    stcCons.cond( "any-double-case1", "first-a", "rest-a",
+// This implements `double-any` independently.
+stcAddYesDefAny( "double-any", "list-a", "list-b", "check",
+    stcCons.cond( "double-any-case1", "first-a", "rest-a",
         stcRet( stcv( "list-a" ) ),
-        stcCons.cond( "any-double-case2", "first-b", "rest-b",
+        stcCons.cond( "double-any-case2", "first-b", "rest-b",
             stcRet( stcv( "list-b" ) ),
-            stcCase( "any-double-case3", "func-result",
+            stcCase( "double-any-case3", "check-result",
                 stcCallTuple( "pass-to", "arg", stcv( "first-b" ),
-                    stcCall( stcv( "func" ),
+                    stcCall( stcv( "check" ),
                         stcRet( stcv( "first-a" ) ) ) ),
                 
-                stcYep, "result", stcRet( stcv( "func-result" ) ),
+                stcYep, "result", stcRet( stcv( "check-result" ) ),
                 
                 stcNope, "result",
-                stcCallTuple( "any-double",
+                stcCallTuple( "double-any",
                     "list-a", stcv( "rest-a" ),
                     "list-b", stcv( "rest-b" ),
-                    stcRet( stcv( "func" ) ) ),
+                    stcRet( stcv( "check" ) ) ),
                 
                 stcRetErr(
-                    "Expected a func-result of type yep or nope" ) ),
+                    "Expected a check-result of type yep or nope" ) ),
             stcRet( stcNope.make( stcNil.make() ) ) ),
         stcRet( stcNope.make( stcNil.make() ) ) ) );
 
-// This implements `any-double` in terms of `foldl-double-short-iter`.
-stcAddYesDefAny( "any-double", "list-a", "list-b", "func",
-    stcCallTuple( "foldl-double-short-iter",
+// This implements `double-any` in terms of `double-short-foldl-iter`.
+stcAddYesDefAny( "double-any", "list-a", "list-b", "check",
+    stcCallTuple( "double-short-foldl-iter",
         "list-a", stcv( "list-a" ),
         "list-b", stcv( "list-b" ),
         "combiner",
-        stcFnAny( "any-double-adapter-1", "state",
-            stcRetFnAny( "any-double-adapter-2", "elem-a",
-                stcRetFnAny( "any-double-adapter-3", "elem-b",
-                    stcCase( "any-double-case", "func-result",
+        stcFnAny( "double-any-adapter-1", "state",
+            stcRetFnAny( "double-any-adapter-2", "elem-a",
+                stcRetFnAny( "double-any-adapter-3", "elem-b",
+                    stcCase( "double-any-case", "check-result",
                         stcCallTuple( "pass-to",
                             "arg", stcv( "elem-b" ),
-                            stcCall( stcv( "func" ),
+                            stcCall( stcv( "check" ),
                                 stcRet( stcv( "elem-a" ) ) ) ),
                         
                         stcYep, "result",
-                        stcRet( stcv( "func-result" ) ),
+                        stcRet( stcv( "check-result" ) ),
                         
                         stcNope, "result",
                         stcRet( stcNope.make( stcNil.make() ) ),
                         
                         stcRetErr(
-                            "Expected a func-result of type yep or " +
-                            "nope" ) ) ) ) ),
+                            "Expected a check-result of type yep " +
+                            "or nope" ) ) ) ) ),
         stcRet( stcNil.make() ) ) );
 
 stcAddYesDef( "not-yep-nope",
@@ -410,27 +411,30 @@ stcAddYesDef( "not-yep-nope",
                     "Expected a yep-nope of type yep or nope"
                     ) ) ) ) );
 
-stcAddYesDefAny( "all-iter", "func", "list",
+stcAddYesDefAny( "all-iter", "check", "list",
     stcCallTuple( "not-yep-nope",
         stcCallTuple( "any-iter",
-            "func",
+            "check",
             stcFnAny( "all-iter-adapter-1", "elem",
                 stcCallTuple( "not-yep-nope",
-                    stcCall( stcv( "func" ),
+                    stcCall( stcv( "check" ),
                         stcRet( stcv( "elem" ) ) ) ) ),
             stcRet( stcv( "list" ) ) ) ) );
 
-stcAddYesDefAny( "cut", "list-to-measure-by", "list-to-cut",
+var stcRevCutResult = stcType( "rev-cut-result", "rev-past", "rest" );
+
+stcAddYesDefAny( "rev-cut", "list-to-measure-by", "list-to-cut",
     stcCallTuple( "foldl-iter", "list", stcv( "list-to-measure-by" ),
         "combiner",
-        stcFnAny( "cut-adapter-1", "state",
-            stcRetFnAny( "cut-adapter-2", "ignored-elem",
-                stcCons.cond( "cut-case1", "rev-before", "after",
+        stcFnAny( "rev-cut-adapter-1", "state",
+            stcRetFnAny( "rev-cut-adapter-2", "ignored-elem",
+                stcRevCutResult.cond( "rev-cut-case1",
+                    "rev-before", "after",
                     stcRet( stcv( "state" ) ),
-                    stcCons.cond( "cut-case2", "first", "after",
+                    stcCons.cond( "rev-cut-case2", "first", "after",
                         stcRet( stcv( "after" ) ),
                         stcRet(
-                            stcCons.make(
+                            stcRevCutResult.make(
                                 stcCons.make( stcv( "first" ),
                                     stcv( "rev-before" ) ),
                                 stcv( "after" ) ) ),
@@ -439,7 +443,7 @@ stcAddYesDefAny( "cut", "list-to-measure-by", "list-to-cut",
                             "longer than the list-to-cut" ) ),
                     stcRetErr( "Internal error" ) ) ) ),
         stcRet(
-            stcCons.make( stcNil.make(),
+            stcRevCutResult.make( stcNil.make(),
                 stcv( "list-to-cut" ) ) ) ) );
 
 stcAddYesDef( "tails",

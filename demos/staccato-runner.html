@@ -38,6 +38,7 @@ Nothing to see here.</p>
 
 \ ===== Lists and boolean tags =======================================
 
+(def-type pair first second)
 (def-type cons car cdr)
 (def-type yep val)
 (def-type nope val)
@@ -54,7 +55,7 @@ Nothing to see here.</p>
   (cast list cons first rest state
   /c-new foldl (c combiner state first) rest combiner))
 
-(defn foldl-double-short state list-a list-b combiner
+(defn double-short-foldl state list-a list-b combiner
   (cast list-a cons first-a rest-a nope.state
   /cast list-b cons first-b rest-b nope.state
   /caselet combiner-result (c combiner state first-a first-b)
@@ -62,13 +63,13 @@ Nothing to see here.</p>
     yep result combiner-result
     
     nope result
-    (c-new foldl-double-short result list-a list-b combiner)
+    (c-new double-short-foldl result list-a list-b combiner)
     
     err.\-qq[Expected a combiner-result of type yep or nope]))
 
-(defn foldl-double state list-a list-b combiner
+(defn double-foldl state list-a list-b combiner
   (proj1 nope
-  /foldl-double-short state list-a list-b /fn state elem-a elem-b
+  /double-short-foldl state list-a list-b /fn state elem-a elem-b
     (nope/c combiner state elem-a elem-b)))
 
 (defn rev-onto target source
@@ -83,19 +84,19 @@ Nothing to see here.</p>
 (defn map list func
   (rev/foldl (nil) list /fn state elem /cons (c func elem) state))
 
-(defn any list func
+(defn any list check
   (short-foldl (nil) list /fn state elem
-    (caselet func-result (c func elem)
-      yep result func-result
+    (caselet check-result (c check elem)
+      yep result check-result
       nope result (nope/nil)
-      err.\-qq[Expected a func-result of type yep or nope])))
+      err.\-qq[Expected a check-result of type yep or nope])))
 
-(defn any-double list-a list-b func
-  (foldl-double-short (nil) list-a list-b /fn state elem-a elem-b
-    (caselet func-result (c func elem-a elem-b)
-      yep result func-result
+(defn double-any list-a list-b check
+  (double-short-foldl (nil) list-a list-b /fn state elem-a elem-b
+    (caselet check-result (c check elem-a elem-b)
+      yep result check-result
       nope result (nope/nil)
-      err.\-qq[Expected a func-result of type yep or nope])))
+      err.\-qq[Expected a check-result of type yep or nope])))
 
 (defn not yep-nope
   (case yep-nope
@@ -125,28 +126,29 @@ Nothing to see here.</p>
 (defn yep-nope-swap a b
   (case a yep - b not.b))
 
-(defn all func list
-  (not/any list /fn elem /not/c func elem))
+(defn all list check
+  (not/any list /fn elem /not/c check elem))
 
-\ TODO: Rename this to `rev-cut`.
-(defn cut list-to-measure-by list-to-cut
-  \ TODO: Stop using cons as a pair here.
-  (foldl (cons (nil) list-to-cut) list-to-measure-by
+(def-type rev-cut-result rev-past rest)
+
+(defn rev-cut list-to-measure-by list-to-cut
+  (foldl (rev-cut-result (nil) list-to-cut) list-to-measure-by
   /fn state ignored-elem
-    (cast state cons rev-before after
+    (cast state rev-cut-result rev-before after
       err.\-qq[Internal error]
     /cast after cons first after
       err.\-qq[
         Expected a list-to-measure-by no longer than the list-to-cut]
-    /cons (cons first rev-before) after)))
+    /rev-cut-result (cons first rev-before) after)))
 
-\ TODO: Stop using cons as a pair here.
 (defn tails lists
-  (cast lists cons list-a list-b
-    err.\-qq[Expected a lists value of type cons]
-  /cast list-a cons elem-a list-a lists
-  /cast list-b cons elem-b list-b lists
-  /c-new tails /cons list-a list-b))
+  (case
+    (short-foldl (nil) lists /fn state list
+      (cast list cons first rest (yep/nil)
+      /nope/cons rest state))
+    yep - lists
+    nope rev-result rev.rev-result
+    err.\-qq[Internal error]))
 
 
 \ ===== Lazy lists ===================================================
@@ -1082,7 +1084,7 @@ Nothing to see here.</p>
     /case (c compare key k)
       nope - (c-new avl-get-maybe nbranch k)
       yep - (c-new avl-get-maybe ybranch k)
-      yep.tree)
+      yep.val)
     err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
 
 (def-type
@@ -1130,12 +1132,11 @@ Nothing to see here.</p>
     max-depth-decreased k v wbranch
     err.\-qq[Internal error]
   /cast
-    \ TODO: Stop using cons as a pair here.
     (case (c-new avl-plus-entry tbranch key val)
-      nope result (cons (nope/nil) result)
-      yep result (cons (yep/nil) result)
+      nope result (pair (nope/nil) result)
+      yep result (pair (yep/nil) result)
       err.\-qq[Internal error])
-    cons max-depth-increased tbranch
+    pair max-depth-increased tbranch
     err.\-qq[Internal error]
   /let wub
     (case max-depth-decreased yep - (c bigint-minus-one wub) wub)
@@ -1274,6 +1275,8 @@ Nothing to see here.</p>
       nbranch)
     err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
 
+(def-type avl-merge-val a b)
+
 (defn avl-merge a b maybe-process-both
   \ TOOD: Make sure this algorithm is near-optimal both when
   \ `maybe-process-both` is (yep ...) and when it's (nil). When it's
@@ -1289,23 +1292,22 @@ Nothing to see here.</p>
   \ (Yes, we're worrying about bigint operation complexity while not
   \ worrying about memory allocation complexity.)
   
-  \ TODO: Stop using cons as a pair here.
   (let to-left
     (fn val
       (case maybe-process-both yep -
         val
-        (cons yep.val (nil))))
+        (avl-merge-val yep.val (nil))))
   /let to-right
     (fn val
       (case maybe-process-both yep -
         val
-        (cons (nil) yep.val)))
+        (avl-merge-val (nil) yep.val)))
   /let to-both-keys (fn left right right)
   /let to-both
     (fn left right
       (case maybe-process-both yep process-both
         (c process-both left right)
-        (cons yep.left yep.right)))
+        (avl-merge-val yep.left yep.right)))
   /let map-left
     (fn a-branch
       (case maybe-process-both yep -
@@ -1461,12 +1463,11 @@ Nothing to see here.</p>
       avl-branches wub wbranch tub tbranch
       err.\-qq[Expected a branches value of type avl-branches]
     /cast
-      \ TODO: Stop using cons as a pair here.
       (case (c-new avl-plus-entry tbranch k v)
-        nope result (cons (nope/nil) result)
-        yep result (cons (yep/nil) result)
+        nope result (pair (nope/nil) result)
+        yep result (pair (yep/nil) result)
         err.\-qq[Internal error])
-      cons max-depth-increased tbranch
+      pair max-depth-increased tbranch
       err.\-qq[Internal error]
     /let new-tub
       (case max-depth-increased yep -
@@ -1515,12 +1516,11 @@ Nothing to see here.</p>
       avl-branches wub wbranch tub tbranch
       err.\-qq[Expected a branches value of type avl-branches]
     /cast
-      \ TODO: Stop using cons as a pair here.
       (case (c-new avl-minus-entry tbranch k)
-        nope result (cons (nope/nil) result)
-        yep result (cons (yep/nil) result)
+        nope result (pair (nope/nil) result)
+        yep result (pair (yep/nil) result)
         err.\-qq[Internal error])
-      cons max-depth-decreased tbranch
+      pair max-depth-decreased tbranch
       err.\-qq[Internal error]
     /let new-wub
       (case max-depth-decreased yep -
@@ -1582,17 +1582,17 @@ Nothing to see here.</p>
 (defn avl-plus-nils tree list
   (foldl tree list /avl-plus-nil))
 
-\ NOTE: This body takes its args as (k v).
-(defn avl-any tree body
+\ NOTE: This check takes its args as (k v).
+(defn avl-any tree check
   (caselet result
-    (avl-short-fold-asc (nil) tree /fn state k v /c body k v)
+    (avl-short-fold-asc (nil) tree /fn state k v /c check k v)
     nope - (nope/nil)
     result))
 
-\ NOTE: This body takes its args as (k v).
-(defn avl-all tree test
+\ NOTE: This check takes its args as (k v).
+(defn avl-all tree check
   (not/avl-any tree /fn k v
-    (not/c test k v)))
+    (not/c check k v)))
 
 \ NOTE: This body takes its args as (k v).
 (defn avl-each tree body
@@ -2171,11 +2171,11 @@ Nothing to see here.</p>
 
 (def-type bag avl-tree)
 
-(defn bag-all bag test
+(defn bag-all bag check
   (cast bag bag avl-tree
     err.\-qq[Expected a bag value of type bag]
   /avl-all avl-tree /fn k v
-    (c test k)))
+    (c check k)))
 
 (defn bag-empty compare
   (bag/avl-leaf (make-fixops-recommended/nil) compare))

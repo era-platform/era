@@ -33,7 +33,7 @@ var stcNil = stcType( "nil" );
 var stcPassTo = stcAddDefun( "pass-to", "arg", "func",
     stcCall( "func", "arg" ) );
 
-var stcFoldlShortIter = stcAddDefun( "foldl-short-iter",
+var stcFoldlShortIter = stcAddDefun( "short-foldl-iter",
     "list", "combiner", "state",
     stcCase( "list", "list", stcCons, "first", "rest",
         stcCase( "combiner-result",
@@ -42,7 +42,7 @@ var stcFoldlShortIter = stcAddDefun( "foldl-short-iter",
             stcYep, "result", "combiner-result",
             
             stcNope, "result",
-            stcCallTuple( "foldl-short-iter",
+            stcCallTuple( "short-foldl-iter",
                 "list", "rest", "combiner", "combiner", "result" ),
             
             stcErr(
@@ -60,7 +60,7 @@ var stcFoldlIter = stcAddDefun( "foldl-iter",
             stcCall( "combiner", "state", "first" ) ),
         "state" ) );
 
-// This implements `foldl-iter` in terms of `foldl-short-iter`.
+// This implements `foldl-iter` in terms of `short-foldl-iter`.
 var stcFoldlIter = stcAddDefun( "foldl-iter",
     "list", "combiner", "state",
     stcCase( "short-result",
@@ -75,10 +75,10 @@ var stcFoldlIter = stcAddDefun( "foldl-iter",
         stcErr( "Internal error" ) ) );
 
 // TODO: Choose just one of these implementations of
-// `foldl-double-short-iter`.
+// `double-short-foldl-iter`.
 
-// This implements `foldl-double-short-iter` independently.
-var stcFoldlDoubleShortIter = stcAddDefun( "foldl-double-short-iter",
+// This implements `double-short-foldl-iter` independently.
+var stcFoldlDoubleShortIter = stcAddDefun( "double-short-foldl-iter",
     "list-a", "list-b", "combiner", "state",
     stcCase( "list-a", "list-a", stcCons, "first-a", "rest-a",
         stcCase( "list-b", "list-b", stcCons, "first-b", "rest-b",
@@ -88,7 +88,7 @@ var stcFoldlDoubleShortIter = stcAddDefun( "foldl-double-short-iter",
                 stcYep, "result", "combiner-result",
                 
                 stcNope, "result",
-                stcCallTuple( "foldl-double-short-iter",
+                stcCallTuple( "double-short-foldl-iter",
                     "list-a", "rest-a",
                     "list-b", "rest-b",
                     "combiner", "combiner",
@@ -100,9 +100,9 @@ var stcFoldlDoubleShortIter = stcAddDefun( "foldl-double-short-iter",
             stcNope.of( "state" ) ),
         stcNope.of( "state" ) ) );
 
-// This implements `foldl-double-short-iter` in terms of
-// `foldl-short-iter`.
-var stcFoldlDoubleShortIter = stcAddDefun( "foldl-double-short-iter",
+// This implements `double-short-foldl-iter` in terms of
+// `short-foldl-iter`.
+var stcFoldlDoubleShortIter = stcAddDefun( "double-short-foldl-iter",
     "list-a", "list-b", "combiner", "state",
     stcCase( "short-result",
         stcFoldlShortIter.of( "list-a",
@@ -140,14 +140,14 @@ var stcFoldlDoubleShortIter = stcAddDefun( "foldl-double-short-iter",
         stcErr( "Internal error" ) ) );
 
 // TODO: Choose just one of these implementations of
-// `foldl-double-iter`.
+// `double-foldl-iter`.
 
-// This implements `foldl-double-iter` independently.
-var stcFoldlDoubleIter = stcAddDefun( "foldl-double-iter",
+// This implements `double-foldl-iter` independently.
+var stcFoldlDoubleIter = stcAddDefun( "double-foldl-iter",
     "list-a", "list-b", "combiner", "state",
     stcCase( "list-a", "list-a", stcCons, "first-a", "rest-a",
         stcCase( "list-b", "list-b", stcCons, "first-b", "rest-b",
-            stcCallTuple( "foldl-double-iter",
+            stcCallTuple( "double-foldl-iter",
                 "list-a", "rest-a",
                 "list-b", "rest-b",
                 "combiner", "combiner",
@@ -156,9 +156,9 @@ var stcFoldlDoubleIter = stcAddDefun( "foldl-double-iter",
             "state" ),
         "state" ) );
 
-// This implements `foldl-double-iter` in terms of
-// `foldl-double-short-iter`.
-var stcFoldlDoubleIter = stcAddDefun( "foldl-double-iter",
+// This implements `double-foldl-iter` in terms of
+// `double-short-foldl-iter`.
+var stcFoldlDoubleIter = stcAddDefun( "double-foldl-iter",
     "list-a", "list-b", "combiner", "state",
     stcCase( "short-result",
         stcFoldlDoubleShortIter.of( "list-a", "list-b",
@@ -229,70 +229,70 @@ var stcMapIter = stcAddDefun( "map-iter", "func", "list",
 // TODO: Choose just one of these implementations of `any-iter`.
 
 // This implements `any-iter` independently.
-var stcAnyIter = stcAddDefun( "any-iter", "func", "list",
+var stcAnyIter = stcAddDefun( "any-iter", "check", "list",
     stcCase( "list", "list", stcCons, "first", "rest",
-        stcCase( "func-result", stcCall( "func", "first" ),
+        stcCase( "check-result", stcCall( "check", "first" ),
             
-            stcYep, "result", "func-result",
+            stcYep, "result", "check-result",
             
             stcNope, "result",
-            stcCallTuple( "any-iter", "func", "func", "rest" ),
+            stcCallTuple( "any-iter", "func", "check", "rest" ),
             
-            stcErr( "Expected a func-result of type yep or nope" ) ),
+            stcErr( "Expected a check-result of type yep or nope" ) ),
         stcNope.of( stcNil.of() ) ) );
 
-// This implements `any-iter` in terms of `foldl-short-iter`.
-var stcAnyIter = stcAddDefun( "any-iter", "func", "list",
+// This implements `any-iter` in terms of `short-foldl-iter`.
+var stcAnyIter = stcAddDefun( "any-iter", "check", "list",
     stcFoldlShortIter.of( "list",
         stcFn( "state", "elem",
-            stcCase( "func-result", stcCall( "func", "elem" ),
+            stcCase( "check-result", stcCall( "check", "elem" ),
                 
-                stcYep, "result", "func-result",
+                stcYep, "result", "check-result",
                 
                 stcNope, "result", stcNope.of( stcNil.of() ),
                 
                 stcErr(
-                    "Expected a func-result of type yep or nope"
+                    "Expected a check-result of type yep or nope"
                     ) ) ),
         stcNil.of() ) );
 
-// TODO: Choose just one of these implementations of `any-double`.
+// TODO: Choose just one of these implementations of `double-any`.
 
-// This implements `any-double` independently.
-var stcAnyDouble = stcAddDefun( "any-double",
-    "list-a", "list-b", "func",
+// This implements `double-any` independently.
+var stcAnyDouble = stcAddDefun( "double-any",
+    "list-a", "list-b", "check",
     stcCase( "list-a", "list-a", stcCons, "first-a", "rest-a",
         stcCase( "list-b", "list-b", stcCons, "first-b", "rest-b",
-            stcCase( "func-result",
-                stcCall( "func", "first-a", "first-b" ),
+            stcCase( "check-result",
+                stcCall( "check", "first-a", "first-b" ),
                 
-                stcYep, "result", "func-result",
+                stcYep, "result", "check-result",
                 
                 stcNope, "result",
-                stcCallTuple( "any-double",
+                stcCallTuple( "double-any",
                     "list-a", "list-a",
                     "list-b", "list-b",
-                    "func" ),
+                    "check" ),
                 
                 stcErr(
-                    "Expected a func-result of type yep or nope" ) ),
+                    "Expected a check-result of type yep or nope" ) ),
             stcNope.of( stcNil.of() ) ),
         stcNope.of( stcNil.of() ) ) );
 
-// This implements `any-double` in terms of `foldl-double-short-iter`.
-var stcAnyDouble = stcAddDefun( "any-double",
-    "list-a", "list-b", "func",
+// This implements `double-any` in terms of `double-short-foldl-iter`.
+var stcAnyDouble = stcAddDefun( "double-any",
+    "list-a", "list-b", "check",
     stcFoldlDoubleShortIter.of( "list-a", "list-b",
         stcFn( "state", "elem-a", "elem-b",
-            stcCase( "func-result",
-                stcCall( "func", "elem-a", "elem-b" ),
+            stcCase( "check-result",
+                stcCall( "check", "elem-a", "elem-b" ),
                 
-                stcYep, "result", "func-result",
+                stcYep, "result", "check-result",
                 
                 stcNope, "result", stcNope.of( stcNil.of() ),
                 
                 stcErr(
-                    "Expected a func-result of type yep or nope"
+                    "Expected a check-result of type yep or nope"
                     ) ) ),
         stcNil.of() ) );
 
