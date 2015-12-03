@@ -172,26 +172,29 @@ var stcDoubleFoldlIter = stcAddDefun( "double-foldl-iter",
         
         stcErr( "Internal error" ) ) );
 
-// TODO: Choose just one of these implementations of `rev-onto`.
+// TODO: Choose just one of these implementations of
+// `rev-append-iter`.
 
-// This implements `rev-onto` independently.
-var stcRevOnto = stcAddDefun( "rev-onto", "target", "source",
+// This implements `rev-append-iter` independently.
+var stcRevOntoIter = stcAddDefun( "rev-append-iter",
+    "target", "source",
     stcCase( "source", "source", stcCons, "first", "rest",
-        stcCallTuple( "rev-onto",
+        stcCallTuple( "rev-append-iter",
             "target", stcCons.of( "first", "target" ), "rest" ),
         "target" ) );
 
-// This implements `rev-onto` in terms of `foldl-iter`.
-var stcRevOnto = stcAddDefun( "rev-onto", "target", "source",
+// This implements `rev-append-iter` in terms of `foldl-iter`.
+var stcRevOntoIter = stcAddDefun( "rev-append-iter",
+    "target", "source",
     stcFoldlIter.of( "source",
         stcFn( "state", "elem", stcCons.of( "elem", "state" ) ),
         "target" ) );
 
 var stcRev = stcAddDefun( "rev", "source",
-    stcRevOnto.of( stcNil.of(), "source" ) );
+    stcRevOntoIter.of( stcNil.of(), "source" ) );
 
 var stcAppend = stcAddDefun( "append", "past", "rest",
-    stcRevOnto.of( "rest", stcRev.of( "past" ) ) );
+    stcRevOntoIter.of( "rest", stcRev.of( "past" ) ) );
 
 // TODO: Choose just one of these implementations of `map-iter`.
 
@@ -205,10 +208,10 @@ var stcMapIter = stcAddDefun( "map-iter", "func", "list",
 
 // This implements `map-iter` independently and with bounded stack
 // size.
-var stcRevOntoMapIter = stcAddDefun( "rev-onto-map-iter",
+var stcRevOntoMapIter = stcAddDefun( "rev-append-map-iter",
     "func", "target", "source",
     stcCase( "source", "source", stcCons, "elem", "rest",
-        stcCallTuple( "rev-onto-map-iter", "func", "func",
+        stcCallTuple( "rev-append-map-iter", "func", "func",
             "target",
             stcCons.of( stcCall( "func", "elem" ), "target" ),
             "rest" ),

@@ -225,33 +225,34 @@ stcAddYesDefAny( "double-foldl-iter",
         stcRet( stcv( "result" ) ),
         stcRetErr( "Internal error" ) ) );
 
-// TODO: Choose just one of these implementations of `rev-onto`.
+// TODO: Choose just one of these implementations of
+// `rev-append-iter`.
 
-// This implements `rev-onto` independently.
-stcAddYesDef( "rev-onto", "target",
+// This implements `rev-append-iter` independently.
+stcAddYesDef( "rev-append-iter", "target",
     stcCons.match( "first", "rest",
-        stcCallTuple( "rev-onto", "target",
+        stcCallTuple( "rev-append-iter", "target",
             stcCons.make( stcv( "first" ), stcv( "target" ) ),
             stcRet( stcv( "rest" ) ) ),
         jsList( "any", stcRet( stcv( "target" ) ) ) ) );
 
-// This implements `rev-onto` in terms of `foldl-iter`.
-stcAddYesDefAny( "rev-onto", "target", "source",
+// This implements `rev-append-iter` in terms of `foldl-iter`.
+stcAddYesDefAny( "rev-append-iter", "target", "source",
     stcCallTuple( "foldl-iter", "list", stcv( "source" ),
         "combiner",
-        stcFnAny( "rev-onto-adapter-1", "state",
-            stcRetFnAny( "rev-onto-adapter-2", "elem",
+        stcFnAny( "rev-append-iter-adapter-1", "state",
+            stcRetFnAny( "rev-append-iter-adapter-2", "elem",
                 stcRet(
                     stcCons.make(
                         stcv( "elem" ), stcv( "state" ) ) ) ) ),
         stcRet( stcv( "target" ) ) ) );
 
 stcAddYesDefAny( "rev", "source",
-    stcCallTuple( "rev-onto", "target", stcNil.make(),
+    stcCallTuple( "rev-append-iter", "target", stcNil.make(),
         stcRet( stcv( "source" ) ) ) );
 
 stcAddYesDefAny( "append", "past", "rest",
-    stcCallTuple( "rev-onto", "target", stcv( "rest" ),
+    stcCallTuple( "rev-append-iter", "target", stcv( "rest" ),
         stcCallTuple( "rev", stcRet( stcv( "past" ) ) ) ) );
 
 // TODO: Choose just one of these implementations of `map-iter`.
@@ -276,22 +277,23 @@ stcAddYesDef( "map-iter", "func",
 // size.
 stcAddYesDefAny( "map-iter", "func", "list",
     jsList( "let-def",
-        stcYesDef( "rev-onto-map-iter", "func", "target",
+        stcYesDef( "rev-append-map-iter", "func", "target",
             stcCons.match( "elem", "rest",
                 stcSaveRoot(
-                    stcCallTuple( "rev-onto-map-iter",
+                    stcCallTuple( "rev-append-map-iter",
                         "func", stcv( "func" ),
                         "target",
                         stcCons.make(
                             stcSave( "func-result",
-                                "rev-onto-map-iter-inner-1",
+                                "rev-append-map-iter-inner-1",
                                 stcCall( stcv( "func" ),
                                     stcRet( stcv( "elem" ) ) ) ),
                             stcv( "target" ) ),
                         stcRet( stcv( "rest" ) ) ) ),
                 jsList( "any", stcRet( stcv( "target" ) ) ) ) ),
         stcCallTuple( "rev",
-            stcCallTuple( "rev-onto-map-iter", "func", stcv( "func" ),
+            stcCallTuple( "rev-append-map-iter",
+                "func", stcv( "func" ),
                 "target", stcNil.make(),
                 stcRet( stcv( "list" ) ) ) ) ) );
 

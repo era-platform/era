@@ -68,14 +68,14 @@ Nothing to see here.</p>
   /double-any-foldl state list-a list-b /fn state elem-a elem-b
     (nope/c combiner state elem-a elem-b)))
 
-(defn rev-onto target source
-  (foldl target source /fn state elem /cons elem state))
+(defn rev-append rev-past rest
+  (foldl rest rev-past /fn state elem /cons elem state))
 
 (defn rev source
-  (rev-onto (nil) source))
+  (rev-append source /nil))
 
 (defn append past rest
-  (rev-onto rest rev.past))
+  (rev-append rev.past rest))
 
 (defn map list func
   (rev/foldl (nil) list /fn state elem /cons (c func elem) state))
@@ -1910,9 +1910,11 @@ Nothing to see here.</p>
   /case b ftree-empty meta
     (ftree-push-list a (yep/nil) middle)
   /case a ftree-single meta element
-    (ftree-push-list b (nope/nil) /rev-onto (cons element /nil) middle)
+    (ftree-push-list b (nope/nil)
+    /rev-append middle /cons element /nil)
   /case b ftree-single meta element
-    (ftree-push-list a (yep/nil) /append middle /cons element /nil)
+    (ftree-push-list a (yep/nil)
+    /append middle /cons element /nil)
   /cast a ftree-deep a-meta a-digits a-lazy-next
     err.\-qq[
       Expected an a value of type ftree-empty, ftree-single, or
