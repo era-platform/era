@@ -448,24 +448,6 @@ stcAddYesDefAny( "rev-cut", "list-to-measure-by", "list-to-cut",
             stcRevCutResult.make( stcNil.make(),
                 stcv( "list-to-cut" ) ) ) ) );
 
-stcAddYesDef( "tails",
-    jsList( "let-case", "lists",
-        stcCons.match( "list-a", "list-b",
-            stcCons.cond( "tails-case1", "elem-a", "list-a",
-                stcRet( stcv( "list-a" ) ),
-                stcCons.cond( "tails-case2", "elem-b", "list-b",
-                    stcRet( stcv( "list-b" ) ),
-                    stcCallTuple( "tails",
-                        stcRet(
-                            stcCons.make(
-                                stcv( "list-a" ),
-                                stcv( "list-b" ) ) ) ),
-                    stcRet( stcv( "lists" ) ) ),
-                stcRet( stcv( "lists" ) ) ),
-            jsList( "any",
-                stcRetErr(
-                    "Expected a lists value of type cons" ) ) ) ) );
-
 
 // TODO: Move this testing code somewhere better.
 

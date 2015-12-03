@@ -333,16 +333,6 @@ var stcRevCut = stcAddDefun( "rev-cut",
                 stcErr( "Internal error" ) ) ),
         stcRevCutResult.of( stcNil.of(), "list-to-cut" ) ) );
 
-var stcTails = stcAddDefun( "tails", "lists",
-    stcCase( "lists", "lists", stcCons, "list-a", "list-b",
-        stcCase( "list-a", "list-a", stcCons, "elem-a", "list-a",
-            stcCase( "list-b", "list-b", stcCons, "elem-b", "list-b",
-                stcCallTuple( "tails",
-                    stcCons.of( "list-a", "list-b" ) ),
-                "lists" ),
-            "lists" ),
-        stcErr( "Expected a lists value of type cons" ) ) );
-
 
 // TODO: Move this testing code somewhere better.
 
