@@ -18,11 +18,40 @@
 
 \ ===== Lists and boolean tags =======================================
 
-(def-type pair first second)
 (def-type cons car cdr)
 (def-type yep val)
 (def-type nope val)
 (def-type nil)
+
+(def-type pair first second)
+
+\ TODO: Find a better name for this.
+(def-type folding state val)
+
+(defn map-any-foldl state list combiner
+  (cast list cons first rest (folding state list)
+  /caselet combiner-result (c combiner state first)
+    
+    yep result combiner-result
+    
+    folding state first
+    (caselet recur-result (c-new map-any-foldl state rest combiner)
+      yep result recur-result
+      folding state rest (folding state /cons first rest)
+      err.\-qq[Internal error])
+    
+    err.\-qq[Expected a combiner-result of type yep or folding]))
+
+(defn map-any list check
+  (caselet fold-result
+    (map-any-foldl (nil) list /fn - elem
+      (caselet check-result (c check elem)
+        yep - check-result
+        nope val (folding (nil) val)
+        err.\-qq[Expected a check-result of type yep or nope]))
+    yep - fold-result
+    folding - val nope.val
+    err.\-qq[Internal error]))
 
 (defn any-foldl state list combiner
   (cast list cons first rest nope.state
@@ -117,14 +146,15 @@
         Expected a list-to-measure-by no longer than the list-to-cut]
     /rev-cut-result (cons first rev-before) after)))
 
+(defn cdr list
+  (cast list cons first rest
+    err.\-qq[Expected a list of type cons]
+    rest))
+
 (defn tails lists
-  (case
-    (any-foldl (nil) lists /fn state list
-      (cast list cons first rest (yep/nil)
-      /nope/cons rest state))
-    yep - lists
-    nope rev-result rev.rev-result
-    err.\-qq[Internal error]))
+  (case (all lists /fn list /isa cons list) yep -
+    (c-new tails /map lists /cdr)
+    lists))
 
 
 \ ===== Lazy lists ===================================================
@@ -149,7 +179,9 @@
   /caselet comparison
     (c elem-compare (c a-first /nil) (c b-first /nil))
     
-    nil (c-new lazy-list-compare-by (c a-rest /nil) (c b-rest /nil))
+    nil
+    (c-new lazy-list-compare-by (c a-rest /nil) (c b-rest /nil)
+      elem-compare)
     
     comparison))
 
@@ -1036,9 +1068,6 @@
   avl-branches nope-unbalance nope-branch yep-unbalance yep-branch)
 (def-type avl-branch fixops compare key val branches)
 (def-type depth-modified depth-was-modified result)
-
-\ TODO: Find a better name for this.
-(def-type folding state val)
 
 (defn avl-branches-swap polarity branches
   (case polarity yep - branches
