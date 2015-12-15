@@ -24,6 +24,29 @@
 \ unqualified strings, but by fully qualified names.
 
 
+\ ===== Notes about dependencies =====================================
+
+\ (def-type string val)
+\ A reference to a string. The value inside is in a format user-level
+\ code does not know how to deconstruct.
+
+\ (defn string-compare a b ...)
+\ Compares two strings.
+
+\ (def-macro str ...)
+\ (str \-qq[example string])
+\ Obtains the given string syntax as a first-class string value.
+
+\ (def-type name val)
+\ A reference to a fully qualified name. The value inside is in a
+\ format user-level code does not know how to deconstruct.
+
+\ (defn name-metacompare a b ...)
+\ Compares two names. For inequal names, the result will be in a
+\ format user-level code does not know how to deconstruct. For equal
+\ names, the result will be (nil).
+
+
 \ ===== Notes and examples for using the macro system ================
 
 \ These depend on a type `(stx stx-details s-expr)` representing an
@@ -278,15 +301,6 @@
 \ ===== Reimplementation of the desugarer ============================
 
 
-(def-type string val)
-(defn string-compare a b /TODO)
-\ TODO: Don't actually use (def-macro ...) for this -- at least, not
-\ yet. Just implement this as a built-in macro.
-(def-macro str /TODO)
-(def-type name val)
-(defn name-metacompare a b /TODO)
-
-
 (def-type stc-def tuple-name opt-proj-pattern case-list)
 (def-type stc-let-case var case-list)
 (def-type stc-match tuple-name proj-pattern get-expr case-list)
@@ -336,6 +350,8 @@
     err.\-qq[Expected a visitor of type visitor-object]
   /c impl /method-visitor-redecorate extra-vars whole))
 
+\ (TODO: Move this rationale to the notes for `name-metacompare`.)
+\
 \ Names are somewhat useful for access control, and they're opaque
 \ external tokens to an extent, but they're not entirely opaque. They
 \ can be compared for equality.
@@ -364,9 +380,10 @@
 \ purpose that couldn't have been accomplished with an exhaustive
 \ suite of built-in syntaxes.
 \
-\ (TODO: Does nominal logic already support an equality check? If so,
-\ maybe we can rationalize this decision in terms of standard practice
-\ too.)
+\ (TODO: Do nominal types already support an equality check?
+\ James Cheney's "Simple Nominal Type Theory" presents systems with
+\ and without equality checks. If this is very common, maybe we can
+\ rationalize this decision in terms of standard practice too.)
 \
 \ So, macros will be able to compare names for equality. As long as
 \ they can do that, we could promote better efficiency by permitting
@@ -1063,6 +1080,12 @@
 \ ===== A reimplementation of the macro system =======================
 
 (defn compile mode unique-ns definition-ns stx
+  \ Macroexpands the given `stx`, allowing the macro calls to
+  \ monadically install definitions and produce a desugarable Staccato
+  \ expression. The given modality must be the current one.
+  \
+  \ TODO: See if we should actually validate the given modality.
+  
   (cast stx stx - s-expr
     err.\-qq[Expected a stx value of type stx]
   /let get-name
