@@ -49,13 +49,20 @@
 \ of the given type. The type must have no projections.
 \
 \ These depend on a function
+\ `(macro-stx-details mode unique-ns definition-ns stx)` which
+\ constructs a syntax details object for a macro call. The `stx` must
+\ be a located cons list whose first element is a string or foreign
+\ name referring to a macro.
+\
+\ These depend on a function
 \ `(compile mode unique-ns definition-ns stx)` which macroexpands the
 \ given `stx`, allowing the macro calls to monadically install
 \ definitions and produce a desugarable Staccato expression. The given
-\ modality must be the current one. (TODO: Actually implement this
-\ function using Staccato code. As long as we're writing the desugarer
-\ in Staccato, the language should not need to know what desugarable
-\ Staccato expressions look like.)
+\ modality must be the current one. (TODO: This is actually
+\ implemented metacircularly in this file, using Staccato code. Next
+\ we should write the `(defn ...)` macro, which should run the
+\ desugarer defined in this file so that the next-outer metacircular
+\ interpreter doesn't have to.)
 \
 \ These depend on a function `(ns-get-name name ns)` which obtains a
 \ sub-namespace determined by the given namespace, using the given
@@ -1051,3 +1058,46 @@
         
         err.\-qq[Expected method to be a visitor method])
       (nil))))
+
+
+\ ===== A reimplementation of the macro system =======================
+
+(defn compile mode unique-ns definition-ns stx
+  (cast stx stx - s-expr
+    err.\-qq[Expected a stx value of type stx]
+  /let get-name
+    (fn s-expr
+      (case s-expr
+        foreign foreign-val
+          (cast foreign-val name -
+            err.\-qq[Expected a foreign-val value of type name]
+            yep.foreign-val)
+        string - yep.s-expr
+        (nil)))
+  /case (c get-name s-expr) yep name stc-local.name
+  /cast s-expr cons first-stx rest-stxs
+    err.\-qq[
+      Expected an s-expr value of type foreign, string-nil, or cons])
+  /cast first-stx stx - first-expr
+    err.\-qq[Expected a first-stx value of type stx]
+  /cast (c get-name first-expr) yep name
+    err\-qq[Expected a first-expr value of type foreign or string-nil]
+  /let name
+    (case name
+      name - name
+      
+      string -
+      (procure-name mode
+      /ns-get-string str.name
+      /ns-get-string name
+      /ns-get-string str.macro-names definition-ns)
+      
+      err.\-qq[Internal error])
+  /let macro
+    (procure-defined mode
+    /ns-get-string str.function
+    /ns-get-name name
+    /ns-get-string str.macros definition-ns)
+  /c macro mode unique-ns definition-ns
+    (macro-stx-details mode unique-ns definition-ns stx)
+    rest-stxs)
