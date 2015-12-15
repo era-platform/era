@@ -33,9 +33,8 @@
 \ (defn string-compare a b ...)
 \ Compares two strings.
 
-\ (def-macro str ...)
-\ (str \-qq[example string])
-\ Obtains the given string syntax as a first-class string value.
+\ macro (str \-qq[example string])
+\ Obtains a first-class string value with the given literal text.
 
 \ (def-type name val)
 \ A reference to a fully qualified name. The value inside is in a
@@ -45,8 +44,6 @@
 \ Compares two names. For inequal names, the result will be in a
 \ format user-level code does not know how to deconstruct. For equal
 \ names, the result will be (nil).
-
-\ (TODO: Move this rationale to the notes for `name-metacompare`.)
 \
 \ Names are somewhat useful for access control, and they're opaque
 \ external tokens to an extent, but they're not entirely opaque. They
@@ -135,97 +132,91 @@
 \ can use inefficient association lists to track free variables
 \ (`free-vars-object`).
 
-\ These depend on a type `(stx stx-details s-expr)` representing an
-\ s-expression tagged with source location information.
-\
-\ These depend on a type `(string val)` representing a reference to a
-\ string. The value inside is in a format user-level code does not
-\ know how to deconstruct.
-\
-\ These depend on a type `(name val)` representing a reference to a
-\ fully qualified name. The value inside is in a format user-level
-\ code does not know how to deconstruct.
-\
-\ These depend on a type `(foreign val)` representing an s-expression
-\ that consists of an embedded value of any type, but usually a name.
-\ The program may not know of a way to encode the name as serializable
-\ data, but it can still be passed to `(compile ...)`.
-\
-\ These depend on a macro `(str string)`, which obtains a first-class
-\ string value with the given literal text.
-\
-\ These sort of depend on a macro `(new type)`, which creates a value
-\ of the given type. The type must have no projections.
-\
-\ These depend on a function
-\ `(macro-stx-details mode unique-ns definition-ns stx)` which
-\ constructs a syntax details object for a macro call. The `stx` must
+\ (def-type foreign val)
+\ An s-expression that consists of an embedded value of any type, but
+\ usually a name. The program may not know of a way to encode the name
+\ as serializable data, but it can still be passed to `(compile ...)`.
+
+\ macro (new type)
+\ Creates a value of the given type. The type must have no
+\ projections. (TODO: Stop depending on this one. It's just here for
+\ the example of how to write `c-new` as a user-level macro.)
+
+\ (def-type stx stx-details s-expr)
+\ An s-expression tagged with source location information.
+
+\ (defn macro-stx-details mode unique-ns definition-ns stx)
+\ Constructs a syntax details object that refers to a macro's input,
+\ so that the macro's output can be associated with it. The `stx` must
 \ be a located cons list whose first element is a string or foreign
 \ name referring to a macro.
-\
-\ These depend on a function
-\ `(compile mode unique-ns definition-ns stx)` which macroexpands the
-\ given `stx`, allowing the macro calls to monadically install
-\ definitions and produce a desugarable Staccato expression. The given
-\ modality must be the current one. (TODO: This is actually
-\ implemented metacircularly in this file, using Staccato code. Next
-\ we should write the `(defn ...)` macro, which should run the
-\ desugarer defined in this file so that the next-outer metacircular
-\ interpreter doesn't have to.)
-\
-\ These depend on a function `(ns-get-name name ns)` which obtains a
-\ sub-namespace determined by the given namespace, using the given
-\ name as a "folder name." Usually, distinct "folder names" will yield
-\ distinct sub-namespaces, but sometimes the interpreter may be
+
+\ (defn ns-get-name name ns)
+\ Obtains a sub-namespace determined by the given namespace, using the
+\ given name as a "folder name." Usually, distinct "folder names" will
+\ yield distinct sub-namespaces, but sometimes the interpreter may be
 \ configured so that this isn't the case.
-\
-\ These depend on a function `(ns-get-string string ns)` which obtains
-\ a sub-namespace determined by the first namespace, using the string
-\ as a "folder name." Usually, distinct "folder names" will yield
-\ distinct sub-namespaces, but sometimes the interpreter may be
-\ configured so that this isn't the case.
-\
-\ These depend on a function `(procure-name mode ns)` which uses the
-\ given namespace to obtain a first-class name value. The given
-\ modality must be the current one.
-\
-\ These depend on a function `(procure-defined mode ns)`, which blocks
-\ until the given namespace has a defined Staccato value and then
-\ returns it. The given modality must be the current one.
-\
-\ A macro could depend on a function
-\ `(procure-put-defined mode ns value /fn mode ...)`, which constructs
-\ a monad that, if invoked, installs a definition so that the given
-\ namespace has a defined Staccato value, namely the given one. The
-\ monad's result value is `(nil)`. In a later tick, once the
+
+\ (defn ns-get-string string ns)
+\ Obtains a sub-namespace determined by the first namespace, using the
+\ given string as a "folder name." Usually, distinct "folder names"
+\ will yield distinct sub-namespaces, but sometimes the interpreter
+\ may be configured so that this isn't the case.
+
+\ (defn procure-name mode ns)
+\ Uses the given namespace to obtain a first-class name value. The
+\ given modality must be the current one.
+
+\ (defn procure-defined mode ns)
+\ Blocks until the given namespace has a defined Staccato value and
+\ then returns it. The given modality must be the current one.
+
+\ (TODO: Use this.)
+\ (defn procure-put-defined mode ns value then)
+\ then (fn mode ...)
+\ Constructs a monad that, if invoked, installs a definition so that
+\ the given namespace has a defined Staccato value, namely the given
+\ one. The monad's result value is `(nil)`. In a later tick, once the
 \ definition has been installed, the callback is invoked, and its own
 \ monadic side effects occur. If the definition cannot be installed,
 \ the program is in error, and the callback may or may not be invoked;
 \ other computations that depend on the defined value may or may not
 \ be canceled or retroactively voided.
-\
-\ A macro could depend on a function `(no-effects val)`, which
-\ constructs a monad that, if invoked, does nothing. The monad's
+
+\ (TODO: Use this.)
+\ (defn no-effects val)
+\ Constructs a monad that, if invoked, does nothing. The monad's
 \ result value is the given value.
-\
-\ A macro could depend on a function
-\ `(bind-effects monad /fn result ...)`, which constructs a
-\ monad that, if invoked, calls the callback with the given monad's
-\ result value, obtains a monad as the result of that function, and
-\ performs the effects of both monads. The monad's result value is
-\ the result value of the monad returned by the callback.
-\
-\ A macro could depend on functions `(ns-shadow-name name ns ns)` and
-\ `(ns-shadow-string string ns ns)`. Each of these creates a new
-\ namespace that behaves like the second namespace in almost every
-\ way, except when the given name or string is requested as a
+
+\ (TODO: Use this.)
+\ (defn bind-effects monad then)
+\ then (fn result ...)
+\ Constructs a monad that, if invoked, calls the callback with the
+\ given monad's result value, obtains a monad as the result of that
+\ function, and performs the effects of both monads. The monad's
+\ result value is the result value of the monad returned by the
+\ callback.
+
+\ (TODO: Use this.)
+\ (ns-shadow-name name ns ns)
+\ Creates a new namespace that behaves like the second namespace in
+\ almost every way, except when the given name is requested as a
 \ "folder name", in which case the first namespace is returned
-\ instead. This can be used to establish local macros. The new
-\ namespace even works the same way as the old one when it's used
-\ directly in a `procure-...` primitive. This way, we can imagine that
-\ the namespace's own identity is stored under an entry somewhere in
-\ the namespace, just using a key that we don't have the ability to
-\ construct.
+\ instead.
+
+\ (TODO: Use this.)
+\ (ns-shadow-string string ns ns)
+\ Creates a new namespace that behaves like the second namespace in
+\ almost every way, except when the given string is requested as a
+\ "folder name", in which case the first namespace is returned
+\ instead.
+
+\ The `ns-shadow-name` and `ns-shadow-string` functions can be used to
+\ establish local macros. A namespace created this way even works the
+\ same way as the old one when it's used in a `procure-...` primitive.
+\ This way, we can imagine that the namespace's own identity is stored
+\ under an entry somewhere in the namespace, just using a key that we
+\ don't have the ability to construct.
 
 
 
@@ -938,16 +929,20 @@
           (cast foreign-val name -
             err.\-qq[Expected a foreign-val value of type name]
             yep.foreign-val)
-        string - yep.s-expr
+        istring-nil string
+          (cast string string -
+            err.\-qq[Expected a string value of type string]
+            yep.string)
         (nil)))
   /case (c get-name s-expr) yep name stc-local.name
   /cast s-expr cons first-stx rest-stxs
     err.\-qq[
-      Expected an s-expr value of type foreign, string-nil, or cons])
+      Expected an s-expr value of type foreign, istring-nil, or cons])
   /cast first-stx stx - first-expr
     err.\-qq[Expected a first-stx value of type stx]
   /cast (c get-name first-expr) yep name
-    err\-qq[Expected a first-expr value of type foreign or string-nil]
+    err\-qq[
+      Expected a first-expr value of type foreign or istring-nil]
   /let name
     (case name
       name - name
@@ -1126,3 +1121,7 @@
       /TODO)
       err.\-qq[Not enough arguments to cast])
     err.\-qq[Not enough arguments to cast]))
+
+\ TODO: Write the `(defn ...)` macro, which should run the desugarer
+\ defined in this file so that the next-outer metacircular interpreter
+\ doesn't have to.
