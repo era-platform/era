@@ -913,6 +913,20 @@
 
 \ ===== A reimplementation of the macro system =======================
 
+(defn s-expr-to-maybe-name s-expr
+  (case s-expr
+    foreign foreign-val
+    (cast foreign-val name -
+      err.\-qq[Expected a foreign-val value of type name]
+      yep.foreign-val)
+    
+    istring-nil string
+    (cast string string -
+      err.\-qq[Expected a string value of type string]
+      yep.string)
+    
+    (nil)))
+
 (defn compile mode unique-ns definition-ns stx
   \ Macroexpands the given `stx`, allowing the macro calls to
   \ monadically install definitions and produce a desugarable Staccato
@@ -922,25 +936,13 @@
   
   (cast stx stx - s-expr
     err.\-qq[Expected a stx value of type stx]
-  /let get-name
-    (fn s-expr
-      (case s-expr
-        foreign foreign-val
-          (cast foreign-val name -
-            err.\-qq[Expected a foreign-val value of type name]
-            yep.foreign-val)
-        istring-nil string
-          (cast string string -
-            err.\-qq[Expected a string value of type string]
-            yep.string)
-        (nil)))
-  /case (c get-name s-expr) yep name stc-local.name
+  /case s-expr-to-maybe-name.s-expr yep name stc-local.name
   /cast s-expr cons first-stx rest-stxs
     err.\-qq[
       Expected an s-expr value of type foreign, istring-nil, or cons])
   /cast first-stx stx - first-expr
     err.\-qq[Expected a first-stx value of type stx]
-  /cast (c get-name first-expr) yep name
+  /cast s-expr-to-maybe-name.first-expr yep name
     err\-qq[
       Expected a first-expr value of type foreign or istring-nil]
   /let name
@@ -1100,27 +1102,34 @@
     (fn mode constructor-name-or-string
       (case constructor-name-or-string
         name - constructor-name-or-string
+        
         string -
-          (procure-name mode
-          /ns-get-string str.name
-          /ns-get-string constructor-name-or-string
-          /ns-get-string str.constructor-names definition-ns)
+        (procure-name mode
+        /ns-get-string str.name
+        /ns-get-string constructor-name-or-string
+        /ns-get-string str.constructor-names definition-ns)
+        
         err.\-qq[
           Expected a constructor-name-or-string of type name or string
           ]))
-  /case args cons subject args
-    (case args cons constructor-name-or-string args
-      (let projection-list
-        (procure-defined mode /ns-get-string str.projection-names
-        /ns-get-name
-          (c constructor-name-or-string-to-name mode
-            constructor-name-or-string)
-        /ns-get-string str.constructors definition-ns)
-      \ TODO: Fold over the `projection-list` to get the pattern
-      \ variables, build a call to `(case ...)`, and compile it.
-      /TODO)
-      err.\-qq[Not enough arguments to cast])
-    err.\-qq[Not enough arguments to cast]))
+  /cast args cons subject args
+    err.\-qq[Not enough arguments to cast]
+  /case args cons constructor-name-or-string args
+    err.\-qq[Not enough arguments to cast]
+  /cast s-expr-to-maybe-name.constructor-name-or-string
+    yep constructor-name-or-string
+    err.\-qq[
+      Expected a constructor-name-or-string value of type foreign or
+      istring-nil]
+  /let projection-list
+    (procure-defined mode /ns-get-string str.projection-names
+    /ns-get-name
+      (c constructor-name-or-string-to-name mode
+        constructor-name-or-string)
+    /ns-get-string str.constructors definition-ns)
+  \ TODO: Fold over the `projection-list` to get the pattern
+  \ variables, build a call to `(case ...)`, and compile it.
+  /TODO))
 
 \ TODO: Write the `(defn ...)` macro, which should run the desugarer
 \ defined in this file so that the next-outer metacircular interpreter
