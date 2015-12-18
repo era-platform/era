@@ -132,6 +132,16 @@
 \ can use inefficient association lists to track free variables
 \ (`free-vars-object`).
 
+\ (def-type istring-nil string)
+\ An interpolated string s-expression that consists of a string with
+\ no interpolations.
+
+\ (TODO: Use this.)
+\ (def-type istring-cons string-past interpolated istring-rest)
+\ An interpolated string s-expression that consists of a string, a
+\ single interpolated value to go after that string, and a remaining
+\ interpolated string s-expression to go after that.
+
 \ (def-type foreign val)
 \ An s-expression that consists of an embedded value of any type, but
 \ usually a name. The program may not know of a way to encode the name
@@ -1068,11 +1078,29 @@
 \ values. The list is built out of `(cons car cdr)` and `(nil)`
 \ values.
 
-(defn macro-name mode definition-ns str
-  (procure-name mode
-  /ns-get-string str.name
-  /ns-get-string str
-  /ns-get-string str.macro-names definition-ns))
+(defn macro-name mode definition-ns name
+  (case name
+    name - name
+    
+    string -
+    (procure-name mode
+    /ns-get-string str.name
+    /ns-get-string str
+    /ns-get-string str.macro-names definition-ns)
+    
+    err.\-qq[Expected a name value of type name or string]))
+
+(defn constructor-name mode definition-ns name
+  (case name
+    name - name
+    
+    string -
+    (procure-name mode
+    /ns-get-string str.name
+    /ns-get-string str
+    /ns-get-string str.constructor-names definition-ns)
+    
+    err.\-qq[Expected a name value of type name or string]))
 
 \ TODO: Update this. We shouldn't really be defining a macro here, but
 \ defining a macro implementation function that a metacircular
@@ -1104,36 +1132,21 @@
   /let mac
     (fn str rest
       (cons (c s /foreign/macro-name mode definition-ns str) rest))
-  /let constructor-name-or-string-to-name
-    (fn mode constructor-name-or-string
-      (case constructor-name-or-string
-        name - constructor-name-or-string
-        
-        string -
-        (procure-name mode
-        /ns-get-string str.name
-        /ns-get-string constructor-name-or-string
-        /ns-get-string str.constructor-names definition-ns)
-        
-        err.\-qq[
-          Expected a constructor-name-or-string of type name or string
-          ]))
   /cast args cons subject args
     err.\-qq[Not enough arguments to cast]
-  /cast args cons constructor-name-or-string args
+  /cast args cons constructor-name args
     err.\-qq[Not enough arguments to cast]
-  /cast constructor-name-or-string stx - constructor-name-or-string
-    err.\-qq[Expected a constructor-name-or-string value of type stx]
-  /cast s-expr-to-maybe-name.constructor-name-or-string
-    yep constructor-name-or-string
+  /cast constructor-name stx - constructor-name
+    err.\-qq[Expected a constructor-name value of type stx]
+  /cast s-expr-to-maybe-name.constructor-name yep constructor-name
     err.\-qq[
-      Expected a constructor-name-or-string value of type foreign or
-      istring-nil]
+      Expected a constructor-name value of type foreign or istring-nil
+      ]
   /let constructor-name
-    (c constructor-name-or-string-to-name mode
-      constructor-name-or-string)
+    (constructor-name mode definition-ns constructor-name)
   /let projection-list
-    (procure-defined mode /ns-get-string str.projection-names
+    (procure-defined mode
+    /ns-get-string str.projection-names
     /ns-get-name constructor-name
     /ns-get-string str.constructors definition-ns)
   /cast (maybe-cut projection-list args) yep cut-result
@@ -1151,6 +1164,62 @@
   /cons (c s /foreign constructor-name) /append vars
   /cons then
   /cons else /nil))
+
+(defn core-mac-isa mode unique-ns definition-ns my-stx-details args
+  (let s (fn it /stx my-stx-details it)
+  /let mac
+    (fn str rest
+      (cons (c s /foreign/macro-name mode definition-ns str) rest))
+  /cast args cons constructor-name args
+    err.\-qq[Not enough arguments to isa]
+  /cast args cons val args
+    err.\-qq[Not enough arguments to isa]
+  /cast args nil
+    err.\-qq[Too many arguments to isa]
+  /cast constructor-name stx - constructor-name
+    err.\-qq[Expected a constructor-name value of type stx]
+  /cast s-expr-to-maybe-name.constructor-name yep constructor-name
+    err.\-qq[
+      Expected a constructor-name value of type foreign or istring-nil
+      ]
+  /let constructor-name
+    (constructor-name mode definition-ns constructor-name)
+  /let projection-list
+    (procure-defined mode
+    /ns-get-string str.projection-names
+    /ns-get-name constructor-name
+    /ns-get-string str.constructors definition-ns)
+  /compile mode (ns-get-string str.body unique-ns) definition-ns
+  /c s /c mac str.case /cons subject
+  /cons (c s /foreign constructor-name)
+  /append
+    (map projection-list /fn projection-name
+      (ns-get-string projection-name
+      /ns-get-string str.ignored unique-ns))
+  \ TODO: Either stop depending on `yep`, `nope`, and `nil` macros
+  \ here, or implement those as builtins.
+  /cons (c mac str.yep /cons (c mac str.nil /nil) /nil)
+  /cons (c mac str.nope /cons (c mac str.nil /nil) /nil) /nil))
+
+(defn core-mac-proj1 mode unique-ns definition-ns my-stx-details args
+  (let s (fn it /stx my-stx-details it)
+  /let mac
+    (fn str rest
+      (cons (c s /foreign/macro-name mode definition-ns str) rest))
+  /cast args cons constructor-name args
+    err.\-qq[Not enough arguments to proj1]
+  /cast args cons val args
+    err.\-qq[Not enough arguments to proj1]
+  /cast args nil
+    err.\-qq[Too many arguments to proj1]
+  /compile mode unique-ns definition-ns
+  /c s /c mac str.case /cons val
+  /cons constructor-name /cons (c s /istring-nil str.val)
+  /cons (c s /istring-nil str.val)
+  /cons
+    (c mac str.err
+    /cons (c s /istring-nil str.\-qq[Internal error]) /nil)
+  /nil))
 
 \ TODO: Write the `(defn ...)` macro, which should run the desugarer
 \ defined in this file so that the next-outer metacircular interpreter
