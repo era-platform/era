@@ -1074,6 +1074,9 @@
   /ns-get-string str
   /ns-get-string str.macro-names definition-ns))
 
+\ TODO: Update this. We shouldn't really be defining a macro here, but
+\ defining a macro implementation function that a metacircular
+\ interpreter can be implemented in terms of.
 (def-macro c-new mode unique-ns definition-ns my-stx-details args
   (let s (fn it /stx my-stx-details it)
   /let mac
@@ -1086,7 +1089,7 @@
   /cons (c s /c mac str.new /cons func-name /nil)
     args))
 
-(def-macro case mode unique-ns definition-ns my-stx-details args
+(defn core-mac-case mode unique-ns definition-ns my-stx-details args
   (let s (fn it /stx my-stx-details it)
   /let mac
     (fn str rest
@@ -1096,8 +1099,11 @@
   /cons (c s /foreign/ns-get-string str.ignored unique-ns)
     args))
 
-(def-macro cast mode unique-ns definition-ns my-stx-details args
+(defn core-mac-cast mode unique-ns definition-ns my-stx-details args
   (let s (fn it /stx my-stx-details it)
+  /let mac
+    (fn str rest
+      (cons (c s /foreign/macro-name mode definition-ns str) rest))
   /let constructor-name-or-string-to-name
     (fn mode constructor-name-or-string
       (case constructor-name-or-string
@@ -1114,22 +1120,37 @@
           ]))
   /cast args cons subject args
     err.\-qq[Not enough arguments to cast]
-  /case args cons constructor-name-or-string args
+  /cast args cons constructor-name-or-string args
     err.\-qq[Not enough arguments to cast]
+  /cast constructor-name-or-string stx - constructor-name-or-string
+    err.\-qq[Expected a constructor-name-or-string value of type stx]
   /cast s-expr-to-maybe-name.constructor-name-or-string
     yep constructor-name-or-string
     err.\-qq[
       Expected a constructor-name-or-string value of type foreign or
       istring-nil]
+  /let constructor-name
+    (c constructor-name-or-string-to-name mode
+      constructor-name-or-string)
   /let projection-list
     (procure-defined mode /ns-get-string str.projection-names
-    /ns-get-name
-      (c constructor-name-or-string-to-name mode
-        constructor-name-or-string)
+    /ns-get-name constructor-name
     /ns-get-string str.constructors definition-ns)
-  \ TODO: Fold over the `projection-list` to get the pattern
-  \ variables, build a call to `(case ...)`, and compile it.
-  /TODO))
+  /cast (maybe-cut projection-list args) yep cut-result
+    err.\-qq[Not enough arguments to cast to the given constructor]
+  /cast cut-result cut-result vars args
+    err.\-qq[Internal error]
+  /cast args cons else args
+    err.\-qq[Not enough arguments to cast to the given constructor]
+  /cast args cons then args
+    err.\-qq[Not enough arguments to cast to the given constructor]
+  /cast args nil
+    err.\-qq[Too many arguments to cast to the given constructor]
+  /compile mode unique-ns definition-ns
+  /c s /c mac str.case /cons subject
+  /cons (c s /foreign constructor-name) /append vars
+  /cons then
+  /cons else /nil))
 
 \ TODO: Write the `(defn ...)` macro, which should run the desugarer
 \ defined in this file so that the next-outer metacircular interpreter

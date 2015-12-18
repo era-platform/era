@@ -156,15 +156,33 @@ Nothing to see here.</p>
 
 (def-type rev-cut-result rev-past rest)
 
+(defn maybe-rev-cut list-to-measure-by list-to-cut
+  (case
+    (any-foldl (rev-cut-result (nil) list-to-cut) list-to-measure-by
+    /fn state ignored-elem
+      (cast state rev-cut-result rev-past rest
+        err.\-qq[Internal error]
+      /cast rest cons first rest (yep/nil)
+      /nope/rev-cut-result (cons first rev-before) after))
+    yep - (nil)
+    nope rev-cut-result yep.rev-cut-result
+    err.\-qq[Internal error]))
+
 (defn rev-cut list-to-measure-by list-to-cut
-  (foldl (rev-cut-result (nil) list-to-cut) list-to-measure-by
-  /fn state ignored-elem
-    (cast state rev-cut-result rev-before after
-      err.\-qq[Internal error]
-    /cast after cons first after
-      err.\-qq[
-        Expected a list-to-measure-by no longer than the list-to-cut]
-    /rev-cut-result (cons first rev-before) after)))
+  (cast (maybe-rev-cut list-to-measure-by list-to-cut) yep result
+    err.\-qq[
+      Expected a list-to-measure-by no longer than the list-to-cut]
+    result))
+
+(def-type cut-result past rest)
+
+(defn maybe-cut list-to-measure-by list-to-cut
+  (cast (maybe-rev-cut list-to-measure-by list-to-cut)
+    yep rev-cut-result
+    (nil)
+  /cast rev-cut-result rev-cut-result rev-past rest
+    err.\-qq[Internal error]
+  /yep/cut-result rev.rev-past rest))
 
 (defn cdr list
   (cast list cons first rest
