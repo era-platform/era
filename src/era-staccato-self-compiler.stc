@@ -230,6 +230,10 @@
 \ arbitrary first-class value, so that metacircular interpreters can
 \ encapsulate their implementation details.
 \
+\ The `(stc-foreign ...)` syntax allows an arbitrary first-class
+\ value, such as a string, to survive until run time. Most code
+\ serializers will not support most values.
+\
 \ The `(stc-proj-pattern-omitted ...)` syntax must contain a
 \ namespace. When the omitted projection names are inferred, they will
 \ be taken from "<ns>/<projection name>/name", where "<ns>" is that
@@ -247,6 +251,8 @@
 (def-type stc-let-def def get-expr)
 (def-type stc-let let-bindings-expr get-expr)
 (def-type stc-local var)
+(def-type stc-foreign foreign)
+(def-type stc-do-what-you-think-is-best)
 (def-type stc-tuple tuple-name proj-expr)
 (def-type stc-save-root save-root get-expr)
 (def-type stc-save
@@ -589,6 +595,14 @@
       (free-vars-just free-var-entry-var.var)
     /stc-local var)
     
+    stc-foreign foreign
+    (visitor-redecorate visitor (free-vars/nil)
+    /stc-foreign foreign)
+    
+    stc-do-what-you-think-is-best
+    (visitor-redecorate visitor (free-vars/nil)
+    /stc-do-what-you-think-is-best)
+    
     stc-tuple tuple-name proj-expr
     (cast
       (visitor-visit visitor proj-expr (free-vars/nil)
@@ -601,7 +615,7 @@
     stc-save-root save-root get-expr
     (cast save-root string -
       err.\-qq[
-        Visited a stc-local where the save-root was not a string]
+        Visited a stc-save-root where the save-root was not a string]
     /cast
       (visitor-visit visitor get-expr (free-vars/nil)
       /scope-policy-save-root save-root)
@@ -984,7 +998,7 @@
   (stc-proj-pattern-omitted
   /ns-get-string str.projection-names
   /ns-get-name constructor-name
-  /ns-get-string str.constructors definition-ns)
+  /ns-get-string str.constructors definition-ns))
 
 (defn compile-save mode unique-ns definition-ns val
   (let func-name (procure-name mode /ns-get-string str.func unique-ns)
@@ -1217,6 +1231,12 @@
   /cons then
   /cons else /nil))
 
+(defn compile-call mode definition-ns func arg
+  (compile-tuple mode definition-ns str.call
+  /cons (proj-entry str.func func)
+  /cons (proj-entry str.arg arg)
+  /nil))
+
 (defn core-mac-caselet
   mode unique-ns definition-ns my-stx-details args
   
@@ -1280,14 +1300,10 @@
     (c process-tail (ns-get-string str.body unique-ns) args)
   /fn body
   /no-effects/let function-name (ns-get-string str.func unique-ns)
-  /compile-tuple mode definition-ns str.call
-  /cons
-    (proj-entry str.func
-    /compile-ret mode definition-ns
-    /stc-fn function-name (no-projs definition-ns function-name)
+  /compile-call mode definition-ns
+    (stc-fn function-name (no-projs definition-ns function-name)
       (stc-let-case var body))
-  /cons (proj-entry str.arg compile-save-root.subject)
-  /nil))
+    compile-save-root.subject))
 
 (defn core-mac-isa mode unique-ns definition-ns my-stx-details args
   (let s (fn it /stx my-stx-details it)
@@ -1368,13 +1384,10 @@
           definition-ns arg)
       /fn arg
       /no-effects/pair
-        (compile-tuple mode definition-ns str.call
-        /cons
-          (proj-entry str.func
-          /compile-save mode (ns-get-string str.func unique-ns)
+        (compile-call mode definition-ns
+          (compile-save mode (ns-get-string str.func unique-ns)
             definition-ns func)
-        /cons (proj-entry str.arg arg)
-        /nil)
+          arg)
         (ns-get-string str.rest unique-ns)))
   /fn state
   /no-effects/cast state pair func unique-ns
@@ -1586,6 +1599,30 @@
     /stc-let-bindings-nil)
     body))
 
+(defn core-mac-str mode unique-ns definition-ns my-stx-details args
+  (cast args cons string args
+    err.\-qq[Not enough arguments to str]
+  /cast string istring-nil string
+    err.\-qq[Expected a string value of type istring-nil]
+  /cast string string -
+    err.\-qq[Expected a string value of type string]
+  /cast args nil
+    err.\-qq[Too many arguments to str]
+  /no-effects/stc-foreign string))
+
+(defn core-mac-err mode unique-ns definition-ns my-stx-details args
+  (cast args cons string args
+    err.\-qq[Not enough arguments to err]
+  /cast string istring-nil string
+    err.\-qq[Expected a string value of type istring-nil]
+  /cast string string -
+    err.\-qq[Expected a string value of type string]
+  /cast args nil
+    err.\-qq[Too many arguments to err]
+  /no-effects/compile-call mode definition-ns
+    (stc-do-what-you-think-is-best)
+    stc-foreign.string))
+
 (def-type type-declaration name projection-list)
 (def-type foreign-declaration name foreign)
 
@@ -1627,6 +1664,8 @@
     /c type str.stc-let
       (cons str.let-bindings-expr /cons str.get-expr /nil)
     /c type str.stc-local (cons str.var /nil)
+    /c type str.stc-foreign (cons str.foreign /nil)
+    /c type str.stc-do-what-you-think-is-best (nil)
     /c type str.stc-tuple
       (cons str.tuple-name /cons str.proj-expr /nil)
     \ sugar
@@ -1762,18 +1801,20 @@
           (fn mode /nil))
       /fn - next))
   \ TODO: Implement these macros, and add them here:
-  \ err run-defs test str def-macro
-  /c def-macro str.case core-mac-case
-  /c def-macro str.cast core-mac-cast
-  /c def-macro str.caselet core-mac-caselet
-  /c def-macro str.isa core-mac-isa
-  /c def-macro str.proj1 core-mac-proj1
-  /c def-macro str.c core-mac-c
-  /c def-macro str.c-new core-mac-c-new
-  /c def-macro str.def-type core-mac-def-type
-  /c def-macro str.defn core-mac-defn
-  /c def-macro str.fn core-mac-fn
-  /c def-macro str.let core-mac-let
+  \ run-defs test def-macro
+  /c def-macro str.case (core-mac-case)
+  /c def-macro str.cast (core-mac-cast)
+  /c def-macro str.caselet (core-mac-caselet)
+  /c def-macro str.isa (core-mac-isa)
+  /c def-macro str.proj1 (core-mac-proj1)
+  /c def-macro str.c (core-mac-c)
+  /c def-macro str.c-new (core-mac-c-new)
+  /c def-macro str.def-type (core-mac-def-type)
+  /c def-macro str.defn (core-mac-defn)
+  /c def-macro str.fn (core-mac-fn)
+  /c def-macro str.let (core-mac-let)
+  /c def-macro str.str (core-mac-str)
+  /c def-macro str.err (core-mac-err)
   
   \ NOTE: We've inherited all the built-in function implementations,
   \ but we haven't inherited the functions' names, constructors, or
