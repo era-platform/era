@@ -147,11 +147,6 @@
 \ usually a name. The program may not know of a way to encode the name
 \ as serializable data, but it can still be passed to `(compile ...)`.
 
-\ macro (new type)
-\ Creates a value of the given type. The type must have no
-\ projections. (TODO: Stop depending on this one. It's just here for
-\ the example of how to write `c-new` as a user-level macro.)
-
 \ (def-type stx stx-details s-expr)
 \ An s-expression tagged with source location information.
 
@@ -173,49 +168,14 @@
 \ will yield distinct sub-namespaces, but sometimes the interpreter
 \ may be configured so that this isn't the case.
 
-\ (defn procure-name mode ns)
-\ Uses the given namespace to obtain a first-class name value. The
-\ given modality must be the current one.
-
-\ (defn procure-defined mode ns)
-\ Blocks until the given namespace has a defined Staccato value and
-\ then returns it. The given modality must be the current one.
-
 \ (TODO: Use this.)
-\ (defn procure-put-defined mode ns value then)
-\ then (fn mode ...)
-\ Constructs a monad that, if invoked, installs a definition so that
-\ the given namespace has a defined Staccato value, namely the given
-\ one. The monad's result value is `(nil)`. In a later tick, once the
-\ definition has been installed, the callback is invoked, and its own
-\ monadic side effects occur. If the definition cannot be installed,
-\ the program is in error, and the callback may or may not be invoked;
-\ other computations that depend on the defined value may or may not
-\ be canceled or retroactively voided.
-
-\ (TODO: Use this.)
-\ (defn no-effects val)
-\ Constructs a monad that, if invoked, does nothing. The monad's
-\ result value is the given value.
-
-\ (TODO: Use this.)
-\ (defn bind-effects monad then)
-\ then (fn result ...)
-\ Constructs a monad that, if invoked, calls the callback with the
-\ given monad's result value, obtains a monad as the result of that
-\ function, and performs the effects of both monads. The monad's
-\ result value is the result value of the monad returned by the
-\ callback.
-
-\ (TODO: Use this.)
-\ (ns-shadow-name name ns ns)
+\ (defn ns-shadow-name name ns ns)
 \ Creates a new namespace that behaves like the second namespace in
 \ almost every way, except when the given name is requested as a
 \ "folder name", in which case the first namespace is returned
 \ instead.
 
-\ (TODO: Use this.)
-\ (ns-shadow-string string ns ns)
+\ (defn ns-shadow-string string ns ns)
 \ Creates a new namespace that behaves like the second namespace in
 \ almost every way, except when the given string is requested as a
 \ "folder name", in which case the first namespace is returned
@@ -228,11 +188,54 @@
 \ under an entry somewhere in the namespace, just using a key that we
 \ don't have the ability to construct.
 
+\ (defn procure-name mode ns)
+\ Uses the given namespace to obtain a first-class name value. The
+\ given modality must be the current one.
+
+\ (defn procure-defined mode ns)
+\ Blocks until the given namespace has a defined Staccato value and
+\ then returns it. The given modality must be the current one.
+
+\ (defn procure-put-defined mode ns value then)
+\ then (fn mode ...)
+\ Constructs a monad that, if invoked, installs a definition so that
+\ the given namespace has a defined Staccato value, namely the given
+\ one. The monad's result value is `(nil)`. In a later tick, once the
+\ definition has been installed, the callback is invoked, and its own
+\ monadic side effects occur. If the definition cannot be installed,
+\ the program is in error, and the callback may or may not be invoked;
+\ other computations that depend on the defined value may or may not
+\ be canceled or retroactively voided.
+
+\ (defn no-effects val)
+\ Constructs a monad that, if invoked, does nothing. The monad's
+\ result value is the given value.
+
+\ (defn bind-effects monad then)
+\ then (fn result ...)
+\ Constructs a monad that, if invoked, calls the callback with the
+\ given monad's result value, obtains a monad as the result of that
+\ function, and performs the effects of both monads. The monad's
+\ result value is the result value of the monad returned by the
+\ callback.
+
 
 
 \ ===== Reimplementation of the desugarer ============================
 
+\ Raw Staccato syntax has two places where the values involved are not
+\ necessarily serializable:
+\
+\ The `(stc-def-foreign ...)` syntax allows the definition to be an
+\ arbitrary first-class value, so that metacircular interpreters can
+\ encapsulate their implementation details.
+\
+\ The `(stc-proj-pattern-omitted ...)` syntax must contain a
+\ namespace. When the omitted projection names are inferred, they will
+\ be taken from "<ns>/<projection name>/name", where "<ns>" is that
+\ namespace.
 
+(def-type stc-def-foreign tuple-name foreign)
 (def-type stc-def tuple-name opt-proj-pattern case-list)
 (def-type stc-let-case var case-list)
 (def-type stc-match tuple-name proj-pattern get-expr case-list)
@@ -251,8 +254,6 @@
   call-func tuple-name opt-proj-pattern
   call-arg var arg)
 (def-type stc-fn tuple-name opt-proj-pattern case-list)
-\ TODO: Make a note that this is a namespace from which the projection
-\ names can be derived via "<ns>/<projection name>/name".
 (def-type stc-proj-pattern-omitted namespace)
 (def-type stc-proj-pattern proj-pattern)
 (def-type stc-proj-pattern-nil)
@@ -408,7 +409,7 @@
       Called staccato-opt-proj-pattern-get-vars on a value that wasn't
       an opt-proj-pattern syntax]))
 
-(defn opt-proj-pattern-or opt-proj-pattern default
+(defn opt-proj-pattern-or mode opt-proj-pattern default
   (case opt-proj-pattern
     
     stc-proj-pattern-omitted namespace
@@ -418,9 +419,12 @@
         err.\-qq[
           Called opt-proj-pattern-or with a default variable list that
           contained a key that wasn't a free-var-entry-var]
-      \ TODO: Use args.namespace to derive the projection name, rather
-      \ than just using the variable name directly.
-      /stc-proj-pattern-cons name name state))
+      /stc-proj-pattern-cons
+        (procure-name mode
+        /ns-get-string str.name
+        /ns-get-name name namespace)
+        name
+        state))
     
     stc-proj-pattern proj-pattern
     opt-proj-pattern
@@ -460,6 +464,10 @@
 
 (defn staccato-visit expr visitor
   (case expr
+    
+    stc-def-foreign tuple-name foreign
+    (visitor-redecorate visitor (free-vars/nil)
+    /stc-def-foreign tuple-name foreign)
     
     stc-def tuple-name opt-proj-pattern case-list
     (cast
@@ -829,14 +837,14 @@
       err.\-qq[Expected method to be a visitor method])
     (free-vars/nil)))
 
-(defn staccato-desugar-omitted expr
+(defn staccato-desugar-omitted mode expr
   (case expr
     
     stc-def tuple-name opt-proj-pattern case-list
     (let inner-free-vars get-free-vars.case-list
     /stc-def tuple-name
-      (opt-proj-pattern-or opt-proj-pattern inner-free-vars)
-      (c-new staccato-desugar-omitted case-list))
+      (opt-proj-pattern-or mode opt-proj-pattern inner-free-vars)
+      (c-new staccato-desugar-omitted mode case-list))
     
     stc-save-root - -2
     err.\-qq[Called staccato-desugar-omitted on a stc-save-root]
@@ -847,11 +855,11 @@
     stc-fn tuple-name opt-proj-pattern case-list
     (let inner-free-vars get-free-vars.case-list
     /stc-fn tuple-name
-      (opt-proj-pattern-or opt-proj-pattern inner-free-vars)
-      (c-new staccato-desugar-omitted case-list))
+      (opt-proj-pattern-or mode opt-proj-pattern inner-free-vars)
+      (c-new staccato-desugar-omitted mode case-list))
     
     (staccato-visit expr /id-visitor/fn part shadow scope-policy
-      (c-new staccato-desugar-omitted part))))
+      (c-new staccato-desugar-omitted mode part))))
 
 (defn staccato-desugar-fn expr
   (case expr
@@ -874,14 +882,21 @@
 (def-type desugar-def-result defs expr)
 
 (defn staccato-desugar-def-including-self expr
-  (cast expr stc-def tuple-name opt-proj-pattern case-list
+  (case expr
+    
+    stc-def-foreign tuple-name foreign
+    (append defs /cons expr /nil)
+    
+    stc-def tuple-name opt-proj-pattern case-list
+    (cast (c-new staccato-desugar-def case-list)
+      desugar-def-result defs case-list
+      err.\-qq[Internal error]
+    /append defs
+    /cons (stc-def tuple-name opt-proj-pattern case-list) /nil)
+    
     err.\-qq[
       Called staccato-desugar-def-including-self on an expr that
-      wasn't a stc-def]
-  /cast (c-new staccato-desugar-def case-list)
-    desugar-def-result defs expr
-    err.\-qq[Internal error]
-  /append defs /cons (stc-def tuple-name opt-proj-pattern expr) /nil))
+      wasn't a stc-def-foreign or a stc-def]))
 
 (defn staccato-desugar-def expr
   (case expr
@@ -923,8 +938,9 @@
 
 \ ===== A reimplementation of the macro system =======================
 
-(defn s-expr-to-maybe-name s-expr
-  (case s-expr
+(defn stx-to-maybe-name stx
+  (cast stx stx - s-expr (nil)
+  /case s-expr
     foreign foreign-val
     (cast foreign-val name -
       err.\-qq[Expected a foreign-val value of type name]
@@ -937,6 +953,49 @@
     
     (nil)))
 
+(defn compile-proj-pattern proj-entries
+  (foldr proj-entries (stc-proj-pattern-nil) /fn proj-entry state
+    (cast proj-entry proj-entry name var
+      err.\-qq[Expected a proj-entry value of type proj-entry]
+    /stc-proj-pattern-cons name var state)))
+
+(defn compile-tuple mode definition-ns constructor-name proj-entries
+  (let constructor-name
+    (constructor-name mode definition-ns constructor-name)
+  /stc-tuple constructor-name
+  /foldr proj-entries (stc-proj-nil) /fn proj-entry state
+    (cast proj-entry proj-entry name val
+      err.\-qq[Expected a proj-entry value of type proj-entry]
+    /stc-proj-cons
+      (projection-name mode definition-ns constructor-name name)
+      val)))
+
+(defn compile-ret mode definition-ns val
+  (compile-tuple mode definition-ns str.return
+  /cons (proj-entry str.val val) /nil))
+
+(defn compile-ret-tuple
+  mode definition-ns constructor-name proj-entries
+  
+  (compile-ret mode definition-ns
+  /compile-tuple mode definition-ns constructor-name proj-entries))
+
+(defn no-projs definition-ns constructor-name
+  (stc-proj-pattern-omitted
+  /ns-get-string str.projection-names
+  /ns-get-name constructor-name
+  /ns-get-string str.constructors definition-ns)
+
+(defn compile-save mode unique-ns definition-ns val
+  (let func-name (procure-name mode /ns-get-string str.func unique-ns)
+  /stc-save str.sr str.call
+    str.func func-name (no-projs definition-ns func-name)
+    str.arg (procure-name mode /ns-get-string str.arg unique-ns)
+    val))
+
+(defn compile-save-root val
+  (stc-save-root str.sr val))
+
 (defn compile mode unique-ns definition-ns stx
   \ Macroexpands the given `stx`, allowing the macro calls to
   \ monadically install definitions and produce a desugarable Staccato
@@ -946,15 +1005,13 @@
   
   (cast stx stx - s-expr
     err.\-qq[Expected a stx value of type stx]
-  /case s-expr-to-maybe-name.s-expr yep name stc-local.name
+  /case stx-to-maybe-name.stx yep name
+    (compile-ret mode definition-ns stc-local.name)
   /cast s-expr cons first-stx rest-stxs
     err.\-qq[
       Expected an s-expr value of type foreign, istring-nil, or cons])
-  /cast first-stx stx - first-expr
-    err.\-qq[Expected a first-stx value of type stx]
-  /cast s-expr-to-maybe-name.first-expr yep name
-    err\-qq[
-      Expected a first-expr value of type foreign or istring-nil]
+  /cast stx-to-maybe-name.first-stx yep name
+    err\-qq[Expected a first-stx value that was a syntactic name]
   /let name
     (case name
       name - name
@@ -977,7 +1034,7 @@
 
 
 
-\ ===== Notes and examples for using the macro system ================
+\ ===== Metacircular macro system ====================================
 
 \ Yes, we're using deterministic, referentially transparent side
 \ effects during macroexpansion. Since a macro will necessarily need
@@ -1000,11 +1057,10 @@
 \       constructor in everything except manually keyboarded code.
 \
 \   <definition-ns>/constructors/<ns-get-name: constructor identity>/
-\       projection-list
-\       = An ordered list of projection name strings. Projections
-\         should only be treated as an ordered list in manually
-\         keyboarded code and in macros catering to manually
-\         keyboarded code.
+\     projection-list
+\     = An ordered list of projection name strings. Projections should
+\       only be treated as an ordered list in manually keyboarded code
+\       and in macros catering to manually keyboarded code.
 \   <definition-ns>/constructors/<ns-get-name: constructor identity>/
 \     projection-names/<projection name string>/name
 \     = No defined value, but the proper identity to use for the
@@ -1085,7 +1141,7 @@
     string -
     (procure-name mode
     /ns-get-string str.name
-    /ns-get-string str
+    /ns-get-string name
     /ns-get-string str.macro-names definition-ns)
     
     err.\-qq[Expected a name value of type name or string]))
@@ -1097,25 +1153,24 @@
     string -
     (procure-name mode
     /ns-get-string str.name
-    /ns-get-string str
+    /ns-get-string name
     /ns-get-string str.constructor-names definition-ns)
     
     err.\-qq[Expected a name value of type name or string]))
 
-\ TODO: Update this. We shouldn't really be defining a macro here, but
-\ defining a macro implementation function that a metacircular
-\ interpreter can be implemented in terms of.
-(def-macro c-new mode unique-ns definition-ns my-stx-details args
-  (let s (fn it /stx my-stx-details it)
-  /let mac
-    (fn str rest
-      (cons (c s /foreign/macro-name mode definition-ns str) rest))
-  /cast args cons func-name args
-    err.\-qq[Not enough arguments to c-new]
-  /compile mode unique-ns definition-ns
-  /c s /c mac str.c
-  /cons (c s /c mac str.new /cons func-name /nil)
-    args))
+(defn projection-name mode definition-ns constructor-name name
+  (case name
+    name - name
+    
+    string -
+    (procure-name mode
+    /ns-get-string str.name
+    /ns-get-string name
+    /ns-get-string str.projection-names
+    /ns-get-name constructor-name
+    /ns-get-string str.constructors definition-ns)
+    
+    err.\-qq[Expected a name value of type name or string]))
 
 (defn core-mac-case mode unique-ns definition-ns my-stx-details args
   (let s (fn it /stx my-stx-details it)
@@ -1136,12 +1191,9 @@
     err.\-qq[Not enough arguments to cast]
   /cast args cons constructor-name args
     err.\-qq[Not enough arguments to cast]
-  /cast constructor-name stx - constructor-name
-    err.\-qq[Expected a constructor-name value of type stx]
-  /cast s-expr-to-maybe-name.constructor-name yep constructor-name
+  /cast stx-to-maybe-name.constructor-name yep constructor-name
     err.\-qq[
-      Expected a constructor-name value of type foreign or istring-nil
-      ]
+      Expected a constructor-name value that was a syntactic name]
   /let constructor-name
     (constructor-name mode definition-ns constructor-name)
   /let projection-list
@@ -1165,6 +1217,78 @@
   /cons then
   /cons else /nil))
 
+(defn core-mac-caselet
+  mode unique-ns definition-ns my-stx-details args
+  
+  (let s (fn it /stx my-stx-details it)
+  /let mac
+    (fn str rest
+      (cons (c s /foreign/macro-name mode definition-ns str) rest))
+  /cast args cons var args
+    err.\-qq[Not enough arguments to caselet]
+  /cast stx-to-maybe-name.var yep var
+    err.\-qq[Expected a var value that was a syntactic name]
+  /cast args cons subject args
+    err.\-qq[Not enough arguments to caselet]
+  /let process-tail
+    (fix/fn process-tail unique-ns args
+      (cast args cons first args
+        err.\-qq[Not enough arguments to caselet]
+      /case args nil
+        (bind-effects (compile mode unique-ns definition-ns first)
+        /fn first
+        /no-effects/stc-any/compile-save-root first)
+      /let constructor-name first
+      /cast stx-to-maybe-name.constructor-name yep constructor-name
+        err.\-qq[
+          Expected a constructor-name value that was a syntactic name]
+      /let constructor-name
+        (constructor-name mode definition-ns constructor-name)
+      /let projection-list
+        (procure-defined mode
+        /ns-get-string str.projection-names
+        /ns-get-name constructor-name
+        /ns-get-string str.constructors definition-ns)
+      /cast (maybe-cut projection-list args) yep cut-result
+        err.\-qq[Not enough arguments to match the given constructor]
+      /cast cut-result cut-result vars args
+        err.\-qq[Internal error]
+      /cast args cons then args
+        err.\-qq[Not enough arguments to match the given constructor]
+      /bind-effects
+        (compile mode (ns-get-string str.first unique-ns)
+          definition-ns then)
+      /fn then
+      /bind-effects
+        (c process-tail (ns-get-string str.rest unique-ns) args)
+      /fn else
+      /no-effects/stc-match constructor-name
+        (compile-proj-pattern
+        /map-double projection-list vars /fn name var
+          (let name
+            (projection-name mode definition-ns constructor-name name)
+          /cast stx-to-maybe-name.var yep var
+            err.\-qq[Expected a var value that was a syntactic name]
+          /proj-entry name var))
+        compile-save-root.then
+        else))
+  /bind-effects
+    (compile mode (ns-get-string str.subject unique-ns) definition-ns
+      subject)
+  /fn subject
+  /bind-effects
+    (c process-tail (ns-get-string str.body unique-ns) args)
+  /fn body
+  /no-effects/let function-name (ns-get-string str.func unique-ns)
+  /compile-tuple mode definition-ns str.call
+  /cons
+    (proj-entry str.func
+    /compile-ret mode definition-ns
+    /stc-fn function-name (no-projs definition-ns function-name)
+      (stc-let-case var body))
+  /cons (proj-entry str.arg compile-save-root.subject)
+  /nil))
+
 (defn core-mac-isa mode unique-ns definition-ns my-stx-details args
   (let s (fn it /stx my-stx-details it)
   /let mac
@@ -1176,12 +1300,9 @@
     err.\-qq[Not enough arguments to isa]
   /cast args nil
     err.\-qq[Too many arguments to isa]
-  /cast constructor-name stx - constructor-name
-    err.\-qq[Expected a constructor-name value of type stx]
-  /cast s-expr-to-maybe-name.constructor-name yep constructor-name
+  /cast stx-to-maybe-name.constructor-name yep constructor-name
     err.\-qq[
-      Expected a constructor-name value of type foreign or istring-nil
-      ]
+      Expected a constructor-name value that was a syntactic name]
   /let constructor-name
     (constructor-name mode definition-ns constructor-name)
   /let projection-list
@@ -1196,8 +1317,9 @@
     (map projection-list /fn projection-name
       (ns-get-string projection-name
       /ns-get-string str.ignored unique-ns))
-  \ TODO: Either stop depending on `yep`, `nope`, and `nil` macros
-  \ here, or implement those as builtins.
+  \ NOTE: We could reimplement this without depending on `yep`,
+  \ `nope`, and `nil` macros here, but we're treating those macros as
+  \ built-ins.
   /cons (c mac str.yep /cons (c mac str.nil /nil) /nil)
   /cons (c mac str.nope /cons (c mac str.nil /nil) /nil) /nil))
 
@@ -1221,6 +1343,483 @@
     /cons (c s /istring-nil str.\-qq[Internal error]) /nil)
   /nil))
 
-\ TODO: Write the `(defn ...)` macro, which should run the desugarer
-\ defined in this file so that the next-outer metacircular interpreter
-\ doesn't have to.
+(defn foldl-effects state rest combiner
+  (case rest cons first rest
+    (bind-effects (c combiner state first) /fn state
+    /c-new foldl-effects state rest combiner)
+    no-effects.state))
+
+(defn each-effects rest body
+  (bind-effects
+    (foldl-effects (nil) rest /fn state elem
+      (bind-effects (c body elem)
+      /no-effects/nil))
+  /no-effects/nil))
+
+(def-type proj-entry name val)
+
+(defn compile-curried-calls mode unique-ns definition-ns func args
+  (bind-effects
+    (foldl-effects (pair func unique-ns) args /fn state arg
+      (cast state pair func unique-ns
+        err.\-qq[Internal error]
+      /bind-effects
+        (compile mode (ns-get-string str.arg unique-ns)
+          definition-ns arg)
+      /fn arg
+      /no-effects/pair
+        (compile-tuple mode definition-ns str.call
+        /cons
+          (proj-entry str.func
+          /compile-save mode (ns-get-string str.func unique-ns)
+            definition-ns func)
+        /cons (proj-entry str.arg arg)
+        /nil)
+        (ns-get-string str.rest unique-ns)))
+  /fn state
+  /no-effects/cast state pair func unique-ns
+    err.\-qq[Internal error]
+    func))
+
+(defn core-mac-c mode unique-ns definition-ns my-stx-details args
+  (cast args cons func args
+    err.\-qq[Not enough arguments to c]
+  /bind-effects
+    (compile mode (ns-get-string str.first unique-ns) definition-ns
+      func)
+  /fn func
+  /compile-curried-calls mode (ns-get-string str.rest unique-ns)
+    definition-ns func args))
+
+(defn core-mac-c-new mode unique-ns definition-ns my-stx-details args
+  (cast args cons constructor-name args
+    err.\-qq[Not enough arguments to c-new]
+  /cast stx-to-maybe-name.constructor-name yep constructor-name
+    err.\-qq[
+      Expected a constructor-name value that was a syntactic name]
+  /let constructor-name
+    (constructor-name mode definition-ns constructor-name)
+  /compile-curried-calls mode unique-ns definition-ns
+    (stc-tuple constructor-name /stc-proj-nil)
+    args))
+
+(defn map-double list-a list-b func
+  (cast list-a cons first-a rest-a (nil)
+  /cast list-b cons first-b rest-b (nil)
+  /cons (c func first-a first-b) /map-double rest-a rest-b func))
+
+(defn map-foldl-effects state rest combiner
+  (case rest cons first rest
+    (bind-effects (combiner state first) /fn combiner-result
+    /cast combiner-result folding state elem
+      err.\-qq[Expected combiner-result to be a value of type folding]
+    /cast (map-foldl-effects state rest combiner) folding state list
+      err.\-qq[Internal error]
+    /folding state /cons elem list)
+    (folding state /nil)))
+
+(defn constructor-macro
+  constructor-name proj-names mode unique-ns definition-ns
+  my-stx-details args
+  
+  (cast (maybe-cut proj-names args) yep cut-result
+    err.\-qq[Not enough arguments to a constructor]
+  /cast cut-result cut-result proj-vals args
+    err.\-qq[Internal error]
+  /bind-effects
+    (map-foldl-effects unique-ns proj-vals /fn unique-ns proj-val
+      (bind-effects
+        (compile mode (ns-get-string str.first unique-ns)
+          definition-ns proj-val)
+      /fn proj-val
+      /folding (ns-get-string str.rest unique-ns)
+      /compile-save mode (ns-get-string str.save unique-ns)
+        definition-ns proj-val))
+  /fn folding-proj-vals
+  /cast folding-proj-vals folding unique-ns proj-vals
+    err.\-qq[Internal error]
+  /let proj-entries
+    (map-double proj-names proj-vals /fn name val
+      (proj-entry
+        (projection-name mode definition-ns constructor-name name)
+        val))
+  /compile-curried-calls mode unique-ns definition-ns
+    (compile-ret-tuple mode definition-ns
+    /map-double proj-names proj-vals /fn name val
+      (proj-entry
+        (projection-name mode definition-ns constructor-name name)
+        val))
+    args))
+
+(defn compile-def-type mode definition-ns name projection-list
+  (bind-effects
+    (procedure-put-defined
+      (ns-get-string str.projection-list
+      /ns-get-name (constructor-name mode definition-ns name)
+      /ns-get-name str.constructors definition-ns)
+      projection-list)
+  /fn -
+  /bind-effects
+    (procedure-put-defined
+      (ns-get-string str.function
+      /ns-get-name (macro-name mode definition-ns name)
+      /ns-get-name str.macros definition-ns)
+      constructor-macro.projection-list)
+  /fn -
+  /no-effects/compile-ret-tuple mode definition-ns str.nil /nil))
+
+(defn core-mac-def-type
+  mode unique-ns definition-ns my-stx-details args
+  
+  (let s (fn it /stx my-stx-details it)
+  /let mac
+    (fn str rest
+      (cons (c s /foreign/macro-name mode definition-ns str) rest))
+  /cast args cons name args
+    err.\-qq[Not enough arguments to def-type]
+  /cast stx-to-maybe-name.name yep name
+    err.\-qq[Expected a name value that was a syntactic name]
+  /let projection-list
+    (map args /fn proj-name
+      (cast stx-to-maybe-name.proj-name yep proj-name
+        err.\-qq[Expected a proj-name value that was a syntactic name]
+        proj-name))
+  /compile-def-type mode definition-ns name projection-list))
+
+\ NOTE: This metacircular implementation of the `(defn ...)` macro
+\ runs the desugarer defined in this file
+\ (`staccato-desugar-def-including-self`) so that the next-outer
+\ metacircular interpreter doesn't have to.
+(defn core-mac-defn mode unique-ns definition-ns my-stx-details args
+  (let s (fn it /stx my-stx-details it)
+  /let mac
+    (fn str rest
+      (cons (c s /foreign/macro-name mode definition-ns str) rest))
+  /cast args cons function-name args
+    err.\-qq[Not enough arguments to defn]
+  /cast stx-to-maybe-name.function-name yep function-name
+    err.\-qq[Expected a function-name value that was a syntactic name]
+  /let constructor-name
+    (constructor-name mode definition-ns function-name)
+  /cast args cons first-param args
+    err.\-qq[Not enough arguments to defn]
+  /cast stx-to-maybe-name.first-param yep first-param
+    err.\-qq[Expected a first-param value that was a syntactic name]
+  /bind-effects
+    (compile mode unique-ns definition-ns /c s /c mac str.fn args)
+  /fn body
+  /bind-effects
+    (each-effects
+      (staccato-desugar-def-including-self
+      /staccato-desugar-fn
+      /staccato-desugar-omitted mode
+      /staccato-desugar-save
+      /stc-def constructor-name (stc-proj-pattern-nil)
+      /stc-let-case first-param
+      /stc-any/compile-save-root body)
+    /fn def
+      (let tuple-name
+        (case def
+          stc-def-foreign tuple-name foreign tuple-name
+          stc-def tuple-name opt-proj-pattern case-list tuple-name
+          err.\-qq[
+            Expected a def value of type stc-def-foreign or stc-def])
+      /procure-put-defined mode
+        (ns-get-string str.staccato
+        /ns-get-name tuple-name
+        /ns-get-name str.functions definition-ns)
+        def
+        (fn mode /nil)))
+  /fn -
+  /compile-def-type mode definition-ns function-name /nil))
+
+(defn core-mac-fn mode unique-ns definition-ns my-stx-details args
+  (cast rev.args cons body rev-params
+    err.\-qq[Not enough arguments to fn]
+  /bind-effects
+    (foldl-effects
+      (pair (ns-get-string str.params unique-ns)
+      /compile-save-root/compile mode
+        (ns-get-string str.body-body unique-ns)
+        definition-ns body)
+      rev-params
+    /fn state param
+      (cast state pair unique-ns result
+        err.\-qq[Internal error]
+      /cast stx-to-maybe-name.param yep param
+        err.\-qq[Expected a param value that was a syntactic name]
+      /let func-name
+        (procure-name mode /ns-get-string str.func unique-ns)
+      /pair (ns-get-string str.rest unique-ns)
+      /compile-ret mode definition-ns
+      /stc-fn func-name (no-projs definition-ns func-name)
+      /stc-let-case param
+      /stc-any result))
+  /fn state
+  /cast state pair unique-ns result
+    err.\-qq[Internal error]
+  /no-effects result))
+
+(defn core-mac-let mode unique-ns definition-ns my-stx-details args
+  (cast args cons var args
+    err.\-qq[Not enough arguments to let]
+  /cast stx-to-maybe-name.var yep var
+    err.\-qq[Expected a var value that was a syntactic name]
+  /cast args cons val args
+    err.\-qq[Not enough arguments to let]
+  /cast args cons body args
+    err.\-qq[Not enough arguments to let]
+  /cast args nil
+    err.\-qq[Too many arguments to let]
+  /bind-effects
+    (compile mode (ns-get-string str.val-body unique-ns) definition-ns
+      val)
+  /fn val
+  /bind-effects
+    (compile mode (ns-get-string str.body unique-ns) definition-ns
+      body)
+  /fn body
+  /no-effects/stc-let
+    (stc-let-bindings-cons var
+      (compile-save mode (ns-get-string str.val-save unique-ns)
+        definition-ns val)
+    /stc-let-bindings-nil)
+    body))
+
+(def-type type-declaration name projection-list)
+(def-type foreign-declaration name foreign)
+
+(defn init-definition-ns
+  mode metacircular-definition-ns target-definition-ns
+  
+  \ TODO: Throughout the code, remove (or at least comment out) the
+  \ `def-type` declaration of each type that's inherited this way,
+  \ since it's supposedly already been inherited.
+  (let type
+    (fn name projection-list rest
+      (cons (type-declaration name projection-list) rest))
+  /let inherited-types
+    \ These constructors are needed so that macros can generate
+    \ raw Staccato code.
+    \ TODO: See if we should keep the ones marked "sugar".
+    (c type str.return (cons str.val /nil)
+    /c type str.call (cons str.func /cons str.arg /nil)
+    /c type str.stc-def-foreign
+      (cons str.tuple-name /cons str.foreign /nil)
+    /c type str.stc-def
+      (cons str.tuple-name /cons str.opt-proj-pattern
+      /cons str.case-list /nil)
+    /c type str.stc-let-case (cons str.var /cons str.case-list /nil)
+    /c type str.stc-match
+      (cons str.tuple-name /cons str.opt-proj-pattern
+      /cons str.get-expr /cons str.case-list /nil)
+    /c type str.stc-any (cons str.get-expr /nil)
+    /c type str.stc-let-bindings-nil (nil)
+    /c type str.stc-let-bindings-cons
+      (cons str.var /cons str.get-expr
+      /cons str.let-bindings-expr /nil)
+    /c type str.stc-proj-nil (nil)
+    /c type str.stc-proj-cons
+      (cons str.proj-name /cons str.get-expr
+      /cons str.proj-expr /nil)
+    \ sugar
+    /c type str.stc-let-def (cons str.def /cons str.get-expr /nil)
+    /c type str.stc-let
+      (cons str.let-bindings-expr /cons str.get-expr /nil)
+    /c type str.stc-local (cons str.var /nil)
+    /c type str.stc-tuple
+      (cons str.tuple-name /cons str.proj-expr /nil)
+    \ sugar
+    /c type str.stc-save-root
+      (cons str.save-root /cons str.get-expr /nil)
+    \ sugar
+    /c type str.stc-save
+      (cons str.save-root /cons str.call-tuple-name
+      
+      /cons str.call-func /cons str.tuple-name
+      /cons str.opt-proj-pattern
+      
+      /cons str.call-arg /cons str.var /cons str.arg /nil)
+    \ sugar
+    /c type str.stc-fn
+      (cons str.tuple-name /cons str.opt-proj-pattern
+      /cons str.case-list /nil)
+    \ sugar
+    /c type str.stc-proj-pattern-omitted (cons str.namespace /nil)
+    /c type str.stc-proj-pattern (cons str.proj-pattern /nil)
+    /c type str.stc-proj-pattern-nil (nil)
+    /c type str.stc-proj-pattern-cons
+      (cons str.proj-name /cons str.var /cons str.proj-pattern /nil)
+    
+    \ These constructors are needed for interpreting the results of
+    \ certain built-in operators, namely `isa` and `string-compare`.
+    /c type str.yep (cons str.val /nil)
+    /c type str.nope (cons str.val /nil)
+    
+    \ These s-expression constructors are needed so that macros can
+    \ parse their s-expression arguments. The `cons` and `nil`
+    \ constructors are also needed for parsing and generating
+    \ projection lists.
+    /c type str.nil (nil)
+    /c type str.cons (cons str.car /cons str.cdr /nil)
+    /c type str.istring-nil (nil)
+    /c type str.istring-cons
+      (cons str.string-past /cons str.interpolated /cons istring-rest
+      /nil)
+    /c type str.foreign (cons str.val /nil)
+    
+    \ This constructor is needed so that macros can parse their
+    \ located syntax arguments.
+    /c type str.stx (cons str.stx-details /cons str.s-expr /nil)
+    
+    \ These constructors aren't strictly needed, but several built-in
+    \ operators use these constructors so that it's more convenient
+    \ for user-level code to detect what type of value it's dealing
+    \ with.
+    /c type str.string (cons str.val /nil)
+    /c type str.name (cons str.val /nil)
+    
+    /nil)
+  
+  /let shadow-root
+    (fn name ns
+      (ns-shadow-string name
+        (ns-get-string name metacircular-definition-ns)
+        ns))
+  /let target-definition-ns
+    \ NOTE: We don't shadow `constructor-names` or `macro-names`. That
+    \ way, the interpreted code can put its definitions in the same
+    \ place as the metacircular interpreter does, but it can't obtain
+    \ the names that the interpreter wants to be obscure.
+    \
+    \ NOTE: We don't shadow `constructors` or `macros` either. What we
+    \ use from these, we define from scratch.
+    \
+    \ NOTE: The metacircular interpreter can't define everything in
+    \ `functions` from scratch. While it could transport every
+    \ built-in function it knows about, such as `string-compare`,
+    \ these functions might be implemented as `stc-def-foreign`,
+    \ delegating to another function whose type this interpreter
+    \ doesn't know about.
+    \
+    (c shadow-root str.functions
+      target-definition-ns)
+  
+  /let ns-get-stringy
+    (fn name ns
+      (case name
+        name - (ns-get-name name ns)
+        string - (ns-get-string name ns)
+        err.\-qq[Expected a name value of type name or string]))
+  /let ns-shadow-stringy
+    (fn name sub-ns ns
+      (case name
+        name - (ns-shadow-name name sub-ns ns)
+        string - (ns-shadow-string name sub-ns ns)
+        err.\-qq[Expected a name value of type name or string]))
+  /let ns-shadow-map
+    (fn name source target func
+      (ns-shadow-stringy name
+        (c func
+          (ns-get-stringy name source)
+          (ns-get-stringy name target))
+        target))
+  /let shadow-type
+    (fn name ns
+      (let source metacircular-definition-ns
+      /let ns
+        (ns-shadow-map str.constructor-names source ns /fn source ns
+          (ns-shadow-map name source ns /fn source ns source))
+      /let ns
+        (ns-shadow-map str.macro-names source ns /fn source ns
+          (ns-shadow-map name source ns /fn source ns source))
+        ns))
+  /let target-definition-ns
+    (foldl target-definition-ns inherited-types /fn ns type
+      (cast type type-declaration name proj-list
+        err.\-qq[Internal error]
+      /c shadow-type name ns))
+  
+  \ Define all the inherited constructors. Their names are inherited
+  \ metacircularly, but their projection list metadata and macros are
+  \ defined from scratch here.
+  /bind-effects
+    (each-effects inherited-types /fn type
+      (cast type type-declaration name proj-list
+        err.\-qq[Internal error]
+      /compile-def-type mode target-definition-ns name proj-list))
+  /fn -
+  
+  /let def-macro
+    (fn name function next
+      (bind-effects
+        (procure-put-defined mode
+          (procure-name mode
+          /ns-get-string str.function
+          /ns-get-name (macro-name mode target-definition-ns name)
+          /ns-get-string str.macros target-definition-ns)
+          function
+          (fn mode /nil))
+      /fn - next))
+  \ TODO: Implement these macros, and add them here:
+  \ err run-defs test str def-macro
+  /c def-macro str.case core-mac-case
+  /c def-macro str.cast core-mac-cast
+  /c def-macro str.caselet core-mac-caselet
+  /c def-macro str.isa core-mac-isa
+  /c def-macro str.proj1 core-mac-proj1
+  /c def-macro str.c core-mac-c
+  /c def-macro str.c-new core-mac-c-new
+  /c def-macro str.def-type core-mac-def-type
+  /c def-macro str.defn core-mac-defn
+  /c def-macro str.fn core-mac-fn
+  /c def-macro str.let core-mac-let
+  
+  \ NOTE: We've inherited all the built-in function implementations,
+  \ but we haven't inherited the functions' names, constructors, or
+  \ macros. Instead of reusing the old names, we obtain the new names
+  \ and define the constructors and macros from scratch. We define
+  \ functions under these new names by copying the old implementations
+  \ (which will usually be `stc-def-foreign` values).
+  /let def-foreign
+    (fn name next
+      (bind-effects
+        (compile-def-type mode target-definition-ns name /nil)
+      /fn -
+      /let constructor-name (constructor-name mode ns name)
+      /let get
+        (fn ns
+          (ns-get-string str.staccato
+          /ns-get-name constructor-name
+          /ns-get-string str.functions ns))
+      /let def
+        (case (procure-defined mode /c get metacircular-definition-ns)
+          
+          stc-def-foreign tuple-name foreign
+          (stc-def-foreign constructor-name foreign)
+          
+          stc-def tuple-name opt-proj-pattern case-list
+          (stc-def constructor-name opt-proj-pattern case-list)
+          
+          err.\-qq[
+            Expected a def value of type stc-def-foreign or stc-def])
+      /bind-effects
+        (procure-put-defined mode
+          (procure-name mode /c get target-definition-ns)
+          def
+          (fn mode /nil))
+      /fn - next))
+  /c def-foreign str.string-compare
+  /c def-foreign str.name-metacompare
+  /c def-foreign str.macro-stx-details
+  /c def-foreign str.ns-get-name
+  /c def-foreign str.ns-get-string
+  /c def-foreign str.ns-shadow-name
+  /c def-foreign str.ns-shadow-string
+  /c def-foreign str.procure-name
+  /c def-foreign str.procure-defined
+  /c def-foreign str.procure-put-defined
+  /c def-foreign str.no-effects
+  /c def-foreign str.bind-effects
+  
+  /no-effects target-definition-ns))
