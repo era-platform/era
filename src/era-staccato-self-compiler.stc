@@ -150,32 +150,32 @@
 \ (def-type stx stx-details s-expr)
 \ An s-expression tagged with source location information.
 
-\ (defn macro-stx-details mode unique-ns definition-ns stx)
+\ (defn macro-stx-details mode unique-ns definition-ns stx ...)
 \ Constructs a syntax details object that refers to a macro's input,
 \ so that the macro's output can be associated with it. The `stx` must
 \ be a located cons list whose first element is a string or foreign
 \ name referring to a macro.
 
-\ (defn ns-get-name name ns)
+\ (defn ns-get-name name ns ...)
 \ Obtains a sub-namespace determined by the given namespace, using the
 \ given name as a "folder name." Usually, distinct "folder names" will
 \ yield distinct sub-namespaces, but sometimes the interpreter may be
 \ configured so that this isn't the case.
 
-\ (defn ns-get-string string ns)
+\ (defn ns-get-string string ns ...)
 \ Obtains a sub-namespace determined by the first namespace, using the
 \ given string as a "folder name." Usually, distinct "folder names"
 \ will yield distinct sub-namespaces, but sometimes the interpreter
 \ may be configured so that this isn't the case.
 
 \ (TODO: Use this.)
-\ (defn ns-shadow-name name ns ns)
+\ (defn ns-shadow-name name ns ns ...)
 \ Creates a new namespace that behaves like the second namespace in
 \ almost every way, except when the given name is requested as a
 \ "folder name", in which case the first namespace is returned
 \ instead.
 
-\ (defn ns-shadow-string string ns ns)
+\ (defn ns-shadow-string string ns ns ...)
 \ Creates a new namespace that behaves like the second namespace in
 \ almost every way, except when the given string is requested as a
 \ "folder name", in which case the first namespace is returned
@@ -188,15 +188,15 @@
 \ under an entry somewhere in the namespace, just using a key that we
 \ don't have the ability to construct.
 
-\ (defn procure-name mode ns)
+\ (defn procure-name mode ns ...)
 \ Uses the given namespace to obtain a first-class name value. The
 \ given modality must be the current one.
 
-\ (defn procure-defined mode ns)
+\ (defn procure-defined mode ns ...)
 \ Blocks until the given namespace has a defined Staccato value and
 \ then returns it. The given modality must be the current one.
 
-\ (defn procure-put-defined mode ns value then)
+\ (defn procure-put-defined mode ns value then ...)
 \ then (fn mode ...)
 \ Constructs a monad that, if invoked, installs a definition so that
 \ the given namespace has a defined Staccato value, namely the given
@@ -207,17 +207,20 @@
 \ other computations that depend on the defined value may or may not
 \ be canceled or retroactively voided.
 
-\ (defn no-effects val)
+\ (defn no-effects val ...)
 \ Constructs a monad that, if invoked, does nothing. The monad's
 \ result value is the given value.
 
-\ (defn bind-effects monad then)
+\ (defn bind-effects monad then ...)
 \ then (fn result ...)
 \ Constructs a monad that, if invoked, calls the callback with the
 \ given monad's result value, obtains a monad as the result of that
 \ function, and performs the effects of both monads. The monad's
 \ result value is the result value of the monad returned by the
 \ callback.
+
+\ (defn assert-current-modality mode ...)
+\ Returns `(nil)`. The given modality must be the current one.
 
 
 
@@ -300,7 +303,7 @@
 (def-type free-var-entry-var name)
 (def-type free-var-entry-saved-input-var save-root name)
 (def-type free-var-entry-saved-free-var save-root name)
-(def-type free-var-entry-scope-error)
+(def-type free-var-entry-scope-error message)
 
 (defn free-vars-entry-metacompare a b
   (bimap (cmpd-compare) a b /fn it
@@ -314,8 +317,8 @@
       (cmpd-cons (stringy-name-metacompare) save-root
       /cmpd-cons (stringy-name-metacompare) name
       /cmpd-nil)
-    /cmpd-succ/case it free-var-entry-scope-error
-      (cmpd-nil)
+    /cmpd-succ/case it free-var-entry-scope-error message
+      (cmpd-cons (string-compare) message /cmpd-nil)
       err.\-qq[Expected a free variable entry])))
 
 (def-type free-vars-object list)
@@ -416,7 +419,8 @@
       an opt-proj-pattern syntax]))
 
 (defn opt-proj-pattern-or mode opt-proj-pattern default
-  (case opt-proj-pattern
+  (let - assert-current-modality.mode
+  /case opt-proj-pattern
     
     stc-proj-pattern-omitted namespace
     (stc-proj-pattern
@@ -775,9 +779,9 @@
           /free-vars-any shadowed /fn entry
             (not/isa free-var-entry-scope-error entry))
           yep -
-          \ TODO: Use this error message: Encountered a use of
-          \ (def ...) with free variables
-          (free-vars-just/free-var-entry-scope-error)
+          (free-vars-just/free-var-entry-scope-error
+            str.\-qq[
+              Encountered a use of (def ...) with free variables])
           shadowed)
       /let shadowed
         (case
@@ -786,11 +790,11 @@
               (free-vars-has shadow free-var-entry-var.name)
               (nope/nil)))
           yep -
-          \ TODO: Use this error message: Encountered a use of
-          \ (save ...) where the saved value's variable name was
-          \ locally bound somewhere between the save root and the
-          \ saved location
-          (free-vars-plus-entry shadowed /free-var-entry-scope-error)
+          (free-vars-plus-entry shadowed /free-var-entry-scope-error
+            str.\-qq[
+              Encountered a use of (save ...) where the saved value's
+              variable name was locally bound somewhere between the
+              save root and the saved location])
           shadowed)
       /let use-shadowed
         (fn shadowed
@@ -803,8 +807,9 @@
               (or (isa free-var-entry-saved-input-var entry)
                 (isa free-var-entry-saved-free-var entry)))
             yep -
-            \ TODO: Write an error message for this.
-            err.\-qq[]
+            err.\-qq[
+              Encountered a free variable or a save in an unexpected
+              context]
           /c use-shadowed shadowed))
       /case scope-policy
         
@@ -818,11 +823,11 @@
               /and (isa nil /string-compare save-root save-root-2)
                 (free-vars-has shadowed free-var-entry-var.name)))
             
-            \ TODO: Use this error message: Encountered a use of
-            \ (save ...) where the saved value's variable name was
-            \ used somewhere under the save root
-            (free-vars-plus-entry shadowed
-            /free-var-entry-scope-error)
+            (free-vars-plus-entry shadowed /free-var-entry-scope-error
+              str.\-qq[
+                Encountered a use of (save ...) where the saved
+                value's variable name was used somewhere under the
+                save root])
             shadowed)
         /let shadowed
           (free-vars-keep shadowed /fn entry
@@ -852,7 +857,8 @@
     (free-vars/nil)))
 
 (defn staccato-desugar-omitted mode expr
-  (case expr
+  (let - assert-current-modality.mode
+  /case expr
     
     stc-def tuple-name opt-proj-pattern case-list
     (let inner-free-vars get-free-vars.case-list
@@ -1014,8 +1020,6 @@
   \ Macroexpands the given `stx`, allowing the macro calls to
   \ monadically install definitions and produce a desugarable Staccato
   \ expression. The given modality must be the current one.
-  \
-  \ TODO: See if we should actually validate the given modality.
   
   (cast stx stx - s-expr
     err.\-qq[Expected a stx value of type stx]
@@ -1149,7 +1153,8 @@
 \ values.
 
 (defn macro-name mode definition-ns name
-  (case name
+  (let - assert-current-modality.mode
+  /case name
     name - name
     
     string -
@@ -1161,7 +1166,8 @@
     err.\-qq[Expected a name value of type name or string]))
 
 (defn constructor-name mode definition-ns name
-  (case name
+  (let - assert-current-modality.mode
+  /case name
     name - name
     
     string -
@@ -1173,7 +1179,8 @@
     err.\-qq[Expected a name value of type name or string]))
 
 (defn projection-name mode definition-ns constructor-name name
-  (case name
+  (let - assert-current-modality.mode
+  /case name
     name - name
     
     string -
@@ -1375,13 +1382,14 @@
 (def-type proj-entry name val)
 
 (defn compile-curried-calls mode unique-ns definition-ns func args
-  (bind-effects
+  (let - assert-current-modality.mode
+  /bind-effects
     (foldl-effects (pair func unique-ns) args /fn state arg
       (cast state pair func unique-ns
         err.\-qq[Internal error]
       /bind-effects
-        (compile mode (ns-get-string str.arg unique-ns)
-          definition-ns arg)
+        (compile mode (ns-get-string str.arg unique-ns) definition-ns
+          arg)
       /fn arg
       /no-effects/pair
         (compile-call mode definition-ns
@@ -1600,7 +1608,8 @@
     body))
 
 (defn core-mac-str mode unique-ns definition-ns my-stx-details args
-  (cast args cons string args
+  (let - assert-current-modality.mode
+  /cast args cons string args
     err.\-qq[Not enough arguments to str]
   /cast string istring-nil string
     err.\-qq[Expected a string value of type istring-nil]
@@ -1862,5 +1871,6 @@
   /c def-foreign str.procure-put-defined
   /c def-foreign str.no-effects
   /c def-foreign str.bind-effects
+  /c def-foreign str.assert-current-modality
   
   /no-effects target-definition-ns))
