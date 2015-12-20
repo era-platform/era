@@ -17,5 +17,8 @@
     "argparse": "*",
     "uglify-js": "*"
   },
+  "scripts": {
+    "test": "node build-era.js -ERS"
+  },
   "main": "build-era.js"
 }
