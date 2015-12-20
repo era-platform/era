@@ -8,6 +8,7 @@ var fs = require( "fs" );
 var argparse = require( "argparse" );
 var uglify = require( "uglify-js" );
 
+var _ = require( "./buildlib/lathe" );
 var ltf = require( "./buildlib/lathe-fs" );
 
 
@@ -18,6 +19,18 @@ function readFiles( filenames ) {
     return filenames.map( function ( filename ) {
         return readFile( filename );
     } ).join( "\n\n\n" );
+}
+
+function arrEachAsyncNodeExn( arr, asyncFunc, then ) {
+    loop( 0 );
+    function loop( i ) {
+        if ( arr.length <= i )
+            return void then();
+        return asyncFunc( i, arr[ i ], function ( e ) {
+            if ( e ) return void then( e );
+            loop( i + 1 );
+        } );
+    }
 }
 
 
@@ -37,6 +50,13 @@ argParser.addArgument( [ "-p", "--build-penknife" ], {
     help:
         "Penknife, a Lisp dialect: Compile dependencies of " +
         "demos/penknife-compiled.html."
+} );
+argParser.addArgument( [ "-s", "--build-staccato" ], {
+    action: "storeTrue",
+    help:
+        "Staccato: Compile dependencies of " +
+        "demos/staccato-runner.html and " +
+        "demos/staccato-runner-mini.html."
 } );
 argParser.addArgument( [ "-m", "--minify" ], {
     action: "storeTrue",
@@ -210,6 +230,33 @@ if ( args.build_penknife ) tasks.push( function ( then ) {
     }
 } );
 
+if ( args.build_staccato ) tasks.push( function ( then ) {
+    arrEachAsyncNodeExn( [
+        "era-staccato-lib.stc",
+        "era-staccato-self-compiler.stc"
+    ], function ( i, file, then ) {
+        ltf.readTextFile( "src/" + file, "utf-8",
+            function ( e, text ) {
+            
+            if ( e ) return void then( e );
+            if ( text === null ) return void then( new Error() );
+            
+            ltf.writeTextFile( "fin/" + file + ".js", "utf-8",
+                "\"use strict\";\n" +
+                "var rocketnia = rocketnia || {};\n" +
+                "rocketnia.eraFiles = rocketnia.eraFiles = {};\n" +
+                "rocketnia.eraFiles[ " + _.jsStr( file ) + " ] =\n" +
+                _.jsStr( text ) + ";\n",
+                then );
+        } );
+    }, function ( e ) {
+        if ( e ) return void then( e );
+        
+        console.log(
+            "Copied Staccato files to fin/ as JavaScript files." );
+    } );
+} );
+
 if ( args.test_mini_staccato ) tasks.push( function ( then ) {
     
     var $stc = Function(
@@ -264,17 +311,13 @@ if ( args.test_mini_staccato ) tasks.push( function ( then ) {
 if ( tasks.length === 0 ) {
     argParser.printHelp();
 } else {
-    var runTasksFrom = function ( i ) {
-        if ( !(i < tasks.length) )
-            return;
-        var task = tasks[ i ];
-        task( function ( e ) {
-            if ( e ) throw e;
-            
-            runTasksFrom( i + 1 );
-        } );
-    };
-    runTasksFrom( 0 );
+    arrEachAsyncNodeExn( tasks, function ( i, task, then ) {
+        task( then );
+    }, function ( e ) {
+        if ( e ) throw e;
+        
+        // Do nothing.
+    } );
 }
 
 

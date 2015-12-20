@@ -143,7 +143,7 @@
       (cast state rev-cut-result rev-past rest
         err.\-qq[Internal error]
       /cast rest cons first rest (yep/nil)
-      /nope/rev-cut-result (cons first rev-before) after))
+      /nope/rev-cut-result (cons first rev-past) rest))
     yep - (nil)
     nope rev-cut-result yep.rev-cut-result
     err.\-qq[Internal error]))
