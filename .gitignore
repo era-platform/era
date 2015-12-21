@@ -1,6 +1,10 @@
+# This .gitignore replaces the main one when Travis runs deploy.sh to
+# deploy to the gh-pages branch. This one comments out the /fin/
+# exclusion.
+
 # Added by external tools.
 /node_modules/
 /npm-debug.log
 
 # Added by the build process.
-/fin/
+#/fin/
