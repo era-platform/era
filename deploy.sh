@@ -11,14 +11,9 @@ set -o errexit -o nounset
 git config user.name "$(git log -1 --pretty=%an HEAD)"
 git config user.email "$(git log -1 --pretty=%ae HEAD)"
 
-echo blah1
-
 git remote add rocketnia-upstream "https://$ROCKETNIA_GH_TOKEN@github.com/rocketnia/era.git"
 git fetch rocketnia-upstream
-echo blah2
 git reset rocketnia-upstream/gh-pages || true
-
-echo blah3
 
 node build-era.js -pms
 cp gh-pages.gitignore .gitignore
@@ -27,4 +22,4 @@ touch .
 
 git add -A .
 git commit -m "$(git log -1 --pretty=%B HEAD)"
-git push -q rocketnia-upstream HEAD:gh-pages
+git push -q rocketnia-upstream HEAD:rocketnia-upstream/gh-pages
