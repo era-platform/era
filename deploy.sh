@@ -21,6 +21,7 @@ git reset rocketnia-upstream/gh-pages || true
 echo blah3
 
 node build-era.js -pms
+cp gh-pages.gitignore .gitignore
 
 touch .
 
