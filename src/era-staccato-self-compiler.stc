@@ -1474,14 +1474,14 @@
 
 (defn compile-def-type mode definition-ns name projection-list
   (bind-effects
-    (procedure-put-defined
+    (procure-put-defined
       (ns-get-string str.projection-list
       /ns-get-name (constructor-name mode definition-ns name)
       /ns-get-name str.constructors definition-ns)
       projection-list)
   /fn -
   /bind-effects
-    (procedure-put-defined
+    (procure-put-defined
       (ns-get-string str.function
       /ns-get-name (macro-name mode definition-ns name)
       /ns-get-name str.macros definition-ns)
