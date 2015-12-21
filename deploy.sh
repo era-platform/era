@@ -22,4 +22,4 @@ touch .
 
 git add -A .
 git commit -m "$(git log -1 --pretty=%B HEAD)"
-git push -q rocketnia-upstream HEAD:rocketnia-upstream/gh-pages
+git push -q rocketnia-upstream HEAD:refs/heads/gh-pages
