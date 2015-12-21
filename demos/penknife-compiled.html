@@ -19,18 +19,31 @@ textarea { display: block; }
 
 <p>This page loads the compiled Penknife code from a file called
 "fin/penknife-compiled.js" in the repo directory. To use this page,
-you must create penknife-compiled.js in one of two ways:</p>
+you must obtain penknife-compiled.js in one of four ways:</p>
 
 <ul>
     <li>Install Node.js. From the repo directory, run the command
-    "<code>npm install</code>" followed by the command
-    "<code>node build-era.js --build</code>".</li>
+    "<kbd>npm install</kbd>" followed by the command
+    "<kbd>node build-era.js --build-penknife</kbd>". This gives you
+    the unminified version of the file.</li>
+    <li>Install Node.js. From the repo directory, run the command
+    "<kbd>npm install</kbd>" followed by the command
+    "<kbd>node build-era.js --build-penknife --minify</kbd>". This
+    gives you the minified version of the file.</li>
     <li>Modify <a href="penknife.html">penknife.html</a> by
     uncommenting some lines that put the compiled string in a
     <code>&lt;textarea&gt;</code>. Then view that page, copy the
     string (which is currently over 500KB), and paste it into the
-    proper file.</li>
+    proper file. This gives you the unminified version of the
+    file.</li>
+    <li>Check out the <code>gh-pages</code> branch, which contains the
+    files automatically built by Travis CI. This gives you the
+    minified version of the file.</li>
 </ul>
+
+<p>Alternatively, you can view the latest version of this page
+<a href="http://rocketnia.github.io/era/demos/penknife-compiled.html"
+>online</a>.</p>
 
 <button id="go">Execute</button>
 <textarea id="result" disabled cols="80" rows="24"></textarea>
