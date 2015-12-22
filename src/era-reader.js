@@ -1454,6 +1454,10 @@ function readSexpOrInfixOp( yoke, s,
                         var readEscapeLurking = function ( yoke,
                             prefix, esc, qqStack, then ) {
                             
+                            function ret( yoke, val ) {
+                                return then( yoke, { ok: true, val:
+                                    val } );
+                            }
                             function unexpected( yoke, got ) {
                                 if ( qqStack.uq === null )
                                     return then( yoke, { ok: false, msg:
@@ -1564,24 +1568,25 @@ function readSexpOrInfixOp( yoke, s,
                                     return unexpected( yoke, readerJsStringPretty( "." + esc.name ) );
                                 }
                             } else if ( esc.type === "modifier" ) {
+                                var retWithModifier = function ( yoke, result ) {
+                                    if ( !result.ok )
+                                        return then( yoke, result );
+                                    
+                                    return jsListFlattenOnce( yoke, jsList(
+                                        prefix,
+                                        asciiToEl( "-" + esc.name ),
+                                        result.val
+                                    ), ret );
+                                };
+                                
                                 if ( esc.name === "rm" ) {
                                     if ( qqStack.uq === null )
                                         return unexpected( yoke, "-rm" );
                                     else if ( qqStack.uq.uq === null )
                                         return ret( yoke, jsList() );
                                     else
-                                        return readDelimitedStringLurking( yoke, esc.suffix, qqStack,
-                                            function ( yoke, result ) {
-                                            
-                                            if ( !result.ok )
-                                                return then( yoke, result );
-                                            
-                                            return jsListFlattenOnce( yoke, jsList(
-                                                prefix,
-                                                asciiToEl( "-rm" ),
-                                                result.val
-                                            ), ret );
-                                        } );
+                                        return readDelimitedStringLurking( yoke,
+                                            esc.suffix, qqStack, retWithModifier );
                                 } else if ( esc.name === "sp" ) {
                                     if ( qqStack.cache.get( "inQqLabel" ) )
                                         return then( yoke, { ok: false, msg:
@@ -1624,22 +1629,13 @@ function readSexpOrInfixOp( yoke, s,
                                                     "Expected an interpolation of exactly one " +
                                                     "s-expression, got more than one" } );
                                             
-                                            return then( yoke, { ok: true, val:
-                                                { type: "interpolation", val: result.val.first } } );
+                                            return ret( yoke,
+                                                jsList( { type: "interpolation",
+                                                    val: result.val.first } ) );
                                         } );
                                     } else {
-                                        return readDelimitedStringLurking( yoke, esc.suffix, qqStack,
-                                            function ( yoke, result ) {
-                                            
-                                            if ( !result.ok )
-                                                return then( yoke, result );
-                                            
-                                            return jsListFlattenOnce( yoke, jsList(
-                                                prefix,
-                                                asciiToEl( "-ls" ),
-                                                result.val
-                                            ), ret );
-                                        } );
+                                        return readDelimitedStringLurking( yoke,
+                                            esc.suffix, qqStack, retWithModifier );
                                     }
                                 } else if ( esc.name === "ch" ) {
                                     if ( qqStack.uq === null ) {
@@ -1683,18 +1679,8 @@ function readSexpOrInfixOp( yoke, s,
                                         return ret( yoke,
                                             jsList( { type: "codePoints", val: codePoint } ) );
                                     } else {
-                                        return readDelimitedStringLurking( yoke, esc.suffix, qqStack,
-                                            function ( yoke, result ) {
-                                            
-                                            if ( !result.ok )
-                                                return then( yoke, result );
-                                            
-                                            return jsListFlattenOnce( yoke, jsList(
-                                                prefix,
-                                                asciiToEl( "-ch" ),
-                                                result.val
-                                            ), ret );
-                                        } );
+                                        return readDelimitedStringLurking( yoke,
+                                            esc.suffix, qqStack, retWithModifier );
                                     }
                                 } else if ( esc.name === "qq" ) {
                                     if ( qqStack.cache.get( "inQqLabel" ) )
@@ -1732,7 +1718,7 @@ function readSexpOrInfixOp( yoke, s,
                                     return parseQqLabelEsc( esc, qqStack, function ( yoke, result ) {
                                         
                                         if ( !result.ok )
-                                            return then( yoke, s, result );
+                                            return then( yoke, result );
                                         
                                         var name = result.val;
                                         
@@ -1766,7 +1752,7 @@ function readSexpOrInfixOp( yoke, s,
                                     return parseQqLabelEsc( esc, qqStack, function ( yoke, result ) {
                                         
                                         if ( !result.ok )
-                                            return then( yoke, s, result );
+                                            return then( yoke, result );
                                         
                                         var name = result.val;
                                         
@@ -1839,7 +1825,7 @@ function readSexpOrInfixOp( yoke, s,
                             if ( !result.ok )
                                 return then( yoke,
                                     result, !!"exitedEarly" );
-                            return ret( yoke, jsList( result.val ) );
+                            return ret( yoke, result.val );
                         } );
                     } else if ( element.type === "textParens" ) {
                         return readStringLurking( yoke,
@@ -1862,7 +1848,7 @@ function readSexpOrInfixOp( yoke, s,
                         
                         return readStringLurking( yoke,
                             element.elements, qqStack,
-                            function ( yoke, elements ) {
+                            function ( yoke, result ) {
                             
                             if ( !result.ok )
                                 return then( yoke,

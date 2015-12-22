@@ -22,13 +22,17 @@ foo
 \ This is the string "12".
 12
 
-\ Strings can contain letters, numbers, and the '-' and '*'
-\ punctuation characters.
+\ Strings can usually only contain letters, numbers, and the '-' and
+\ '*' punctuation characters. If you need more characters than that,
+\ an alternative syntax makes it possible to express other characters.
+\ This is the string consisting of a tab, a percent sign, a left
+\ square bracket, and a right square bracket.
+\-qq[\.t%[]]
 
-\ This is the Array [ "a", "b", "c" ].
+\ This is the list containing the strings "a", "b", and "c".
 (a b c)
 
-\ This is the Array [ "a", "b" ] in binary infix notation. Lisp
+\ This is the list [ "a", "b" ] in binary infix notation. Lisp
 \ dialects usually use the '.' character for dotted lists, but this
 \ syntax uses it for infix instead.
 a.b
