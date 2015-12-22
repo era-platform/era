@@ -103,6 +103,9 @@ addReaderTest(
 addReaderTest( "\\-qq[abc def]",
     "abc def" );
 
+addReaderTest( "\\-qq[\\.t%[]]",
+    "\t%[]" );
+
 addReaderTest( "\\-qq[abc \\-qq[def\\-uq-ls[ghi]jkl] mno]",
     "abc \\-qq[def\\-uq-ls[ghi]jkl] mno" );
 
