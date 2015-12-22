@@ -63,7 +63,7 @@ window.onload = function () {
             function ( result ) {
             
             if ( result.ok )
-                return JSON.stringify( result.val, null, "    " );
+                return readerExprPretty( result.val );
             else
                 return "Error: " + result.msg;
         } ).join( "\n" );
