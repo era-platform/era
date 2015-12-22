@@ -26,19 +26,21 @@ foo
 \ '*' punctuation characters. If you need more characters than that,
 \ an alternative syntax makes it possible to express other characters.
 \ This is the string consisting of a tab, a percent sign, a left
-\ square bracket, and a right square bracket.
+\ square bracket, and a right square bracket. The string syntax
+\ supports many escape sequences, and this demo doesn't go over them
+\ all.
 \-qq[\.t%[]]
 
 \ This is the list containing the strings "a", "b", and "c".
 (a b c)
 
-\ This is the list [ "a", "b" ] in binary infix notation. Lisp
-\ dialects usually use the '.' character for dotted lists, but this
-\ syntax uses it for infix instead.
+\ This is the list (a b) in binary infix notation. Lisp dialects
+\ usually use the '.' character for dotted lists, but this syntax uses
+\ it for infix instead.
 a.b
 
-\ The "a.b" operator is left-associative, so this is
-\ [ [ "a", "b" ], "c" ].
+\ The "a.b" operator is left-associative, so this is shorthand for
+\ ((a b) c).
 a.b.c
 
 \ The / reader macro is like ( but doesn't consume ). Thus, the
