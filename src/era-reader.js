@@ -855,66 +855,8 @@ function readerStringNilToString( stringNil ) {
 }
 
 function readerExprPretty( expr ) {
-    function slashify( string ) {
-        var basicSlashes = string.
-            replace( /\\/g, "\\`" ).
-            replace( /\[/g, "\\.<" ).
-            replace( /\]/g, "\\.>" ).
-            replace( /\(/g, "\\.{" ).
-            replace( /\)/g, "\\.}" ).
-            replace( /[ \t\r\n]+[a-zA-Z]?/g, function ( whitespace ) {
-                if ( /^ [a-zA-Z]?$/.test( whitespace ) )
-                    return whitespace;
-                // NOTE: We insert an underscore as a placeholder, and
-                // then we safely convert it to a raw space after the
-                // spaces have been replaced with explicit whitespace
-                // escape sequences.
-                return whitespace.
-                    replace( /[a-zA-Z]/g, "_$&" ).
-                    replace( / /g, "\\.s" ).
-                    replace( /\t/g, "\\.t" ).
-                    replace( /\r/g, "\\.r" ).
-                    replace( /\n/g, "\\.n" ).
-                    replace( /_/g, " " );
-            } );
-        
-        var result = "";
-        eachUnicodeCodePoint( basicSlashes, function ( info ) {
-            if ( 0x20 <= info.codePoint && info.codePoint <= 0x7E )
-                result += info.charString;
-            else
-                result += "\\-ch[" +
-                    info.codePoint.toString( 16 ).toUpperCase() + "]";
-        } );
-        return result;
-    }
-    
     if ( expr.type === "nil" ) {
         return "()";
-    } else if ( expr.type === "stringNil" ) {
-        var string = readerStringNilToString( expr );
-        return /^[\-*a-zA-Z01-9]+$/.test( string ) ? string :
-            "\\-qq[" + slashify( string ) + "]";
-    } else if ( expr.type === "stringCons" ) {
-        var string = readerStringListToString( expr.string );
-        var terp = readerExprPretty( expr.interpolation );
-        var n = terp.length;
-        if ( expr.interpolation.type === "nil"
-            || expr.interpolation.type === "cons" ) {
-            
-            var terpEscape =
-                "\\-uq-ls[/" + terp.substr( 1, n - 2 ) + "]";
-            
-        } else if ( expr.interpolation.type === "stringNil"
-            || expr.interpolation.type === "stringCons" ) {
-            
-            var terpEscape =
-                "\\-uq-ls[\-qq/" + terp.substr( 5, n - 6 ) + "]";
-        } else {
-            var terpEscape = "\\-uq-ls[" + terp + "]";
-        }
-        return "\\-qq[" + slashify( string ) + terpEscape +
-            readerExprPretty( expr.rest ).substring( 5 );
     } else if ( expr.type === "cons" ) {
         if ( expr.rest.type === "nil" ) {
             if ( expr.first.type === "nil"
@@ -930,6 +872,76 @@ function readerExprPretty( expr ) {
         } else {
             throw new Error();
         }
+    } else if (
+        expr.type === "stringNil" || expr.type === "stringCons" ) {
+        
+        var s = "";
+        var terps = [];
+        var e = expr;
+        while ( e.type === "stringCons" ) {
+            s += readerStringListToString( e.string ).
+                replace( /\\/g, "\\`" );
+            // We temporarily represent interpolations using the
+            // invalid escape sequence \#~. This lets us put all the
+            // string contents into one JavaScript string, which lets
+            // us discover matching brackets even if they have an
+            // interpolation in between. Later on, we replace these
+            // invalid escape sequences with the proper
+            // interpolations.
+            s += "\\#~";
+            terps.push( readerExprPretty( e.interpolation ) );
+            e = e.rest;
+        }
+        if ( e.type !== "stringNil" )
+            throw new Error();
+        s += readerStringNilToString( e ).replace( /\\/g, "\\`" );
+        
+        while ( true ) {
+            // If there are matching brackets, we want to display them
+            // as raw brackets rather than escape sequences. To do so,
+            // we temporarily convert them to the invalid escape
+            // sequences \#< \#> \#{ \#}, then escape all the
+            // non-matching brackets, then replace these invalid
+            // escape sequences with raw brackets again.
+            var s2 = s.
+                replace( /\[([^\[\]\(\)]*)\]/g, "\\#<$1\\#>" ).
+                replace( /\(([^\[\]\(\)]*)\)/g, "\\#{$1\\#}" );
+            if ( s === s2 )
+                break;
+            s = s2;
+        }
+        s = s.
+            replace( /\[/g, "\\.<" ).replace( /\]/g, "\\.>" ).
+            replace( /\(/g, "\\.{" ).replace( /\)/g, "\\.}" ).
+            replace( /\\#</g, "[" ).replace( /\\#>/g, "]" ).
+            replace( /\\#{/g, "(" ).replace( /\\#}/g, ")" ).
+            replace( /[ \t\r\n]+[a-zA-Z]?/g, function ( whitespace ) {
+                if ( /^ [a-zA-Z]?$/.test( whitespace ) )
+                    return whitespace;
+                // NOTE: We insert an underscore as a placeholder, and
+                // then we safely convert it to a raw space after the
+                // spaces have been replaced with explicit whitespace
+                // escape sequences.
+                return whitespace.
+                    replace( /[a-zA-Z]/g, "_$&" ).
+                    replace( / /g, "\\.s" ).
+                    replace( /\t/g, "\\.t" ).
+                    replace( /\r/g, "\\.r" ).
+                    replace( /\n/g, "\\.n" ).
+                    replace( /_/g, " " );
+            } ).
+            replace( /\\#~/g, function () {
+                var terp = terps.shift();
+                var m;
+                if ( m = /^\\-qq\[(.*)\]$/.exec( terp ) )
+                    return "\\-uq-ls[\\-qq/" + m[ 1 ] + "]";
+                else if ( m = /^\((.*)\)$/.exec( terp ) )
+                    return "\\-uq-ls[/" + m[ 1 ] + "]";
+                else
+                    return "\\-uq-ls[" + terp + "]";
+            } );
+        return /^[\-*a-zA-Z01-9]+$/.test( s ) ? s :
+            "\\-qq[" + s + "]";
     } else {
         throw new Error();
     }
