@@ -895,6 +895,7 @@ function readerExprPretty( expr ) {
         if ( e.type !== "stringNil" )
             throw new Error();
         s += readerStringNilToString( e ).replace( /\\/g, "\\`" );
+        var lastTerpAtEnd = /\\#~$/.test( s );
         
         while ( true ) {
             // If there are matching brackets, we want to display them
@@ -934,11 +935,14 @@ function readerExprPretty( expr ) {
                 var terp = terps.shift();
                 var m;
                 if ( m = /^\\-qq\[(.*)\]$/.exec( terp ) )
-                    return "\\-uq-ls[\\-qq/" + m[ 1 ] + "]";
+                    var mid = "\\-qq/" + m[ 1 ];
                 else if ( m = /^\((.*)\)$/.exec( terp ) )
-                    return "\\-uq-ls[/" + m[ 1 ] + "]";
+                    var mid = "/" + m[ 1 ];
                 else
-                    return "\\-uq-ls[" + terp + "]";
+                    var mid = terp;
+                return lastTerpAtEnd && terps.length === 0 ?
+                    "\\-uq-ls/" + mid :
+                    "\\-uq-ls[" + mid + "]";
             } );
         return /^[\-*a-zA-Z01-9]+$/.test( s ) ? s :
             "\\-qq[" + s + "]";
