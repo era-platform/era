@@ -207,13 +207,18 @@
 \-
 \- The design we've settled on at this point is the following:
 
-<other> ::= ("." | "\" | "/" | "(" | ")" | "[" | "]")
+<other escape> ::= ("=" | ",")
+<other> ::=
+  (<other escape> | "." | "\" | "/" | "(" | ")" | "[" | "]")
+  \- NOTE: The only reason we have = and , in the <other> category is
+  \- that otherwise \=,qq=,qq... would read the identifier "qq=" and
+  \- \=,uq,foo would read the identifier "uq,foo".
 <tx> ::= ...any printable character except <other>
 <nl> ::= ...any line break character or CRLF
 <ws> ::= ...any whitespace character except <nl>
 <end> ::= ...the end of the document
 <wsnl> ::= (<ws> | <nl>)
-<string element> ::= (<tx> | "." | "/")*
+<string element> ::= (<tx> | <other escape> | "." | "/")*
   \- Ambiguity resolution: Doesn't matter. (Actually, the entire
   \- reader syntax should have no ambiguity that makes a difference,
   \- unless there's a bug. That's what all the lookaheads are here to
@@ -349,13 +354,10 @@
 \-  ; visually acts as a hard separator, and we haven't needed that
 \-    yet.
 
+<naive non-infix s-expression> ::= "[" <string element>* "]"
+<naive non-infix s-expression> ::= "(" <string element>* ")"
 <naive non-infix s-expression> ::=
-  "[" (<naive non-infix s-expression> | "." | <wsnl>)* "]"
-<naive non-infix s-expression> ::=
-  "(" (<naive non-infix s-expression> | "." | <wsnl>)* ")"
-<naive non-infix s-expression> ::=
-  "/" (<naive non-infix s-expression> | "." | <wsnl>)*
-  lookahead("]" | ")")
+  "/" <string element>* lookahead("]" | ")")
 <naive non-infix s-expression> ::=
   (<tx> | <string escape>)+ lookahead(<wsnl> | <other> | <end>)
 
