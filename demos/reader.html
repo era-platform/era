@@ -16,35 +16,35 @@ textarea { display: block; }
     >View the Era project on GitHub.</a></p>
 
 <textarea id="code" cols="80" rows="24">
-\ This reads as the string "foo".
+\; This reads as the string "foo".
 foo
 
-\ This is the string "12".
+\; This is the string "12".
 12
 
-\ Strings can usually only contain letters, numbers, and the '-' and
-\ '*' punctuation characters. If you need more characters than that,
-\ an alternative syntax makes it possible to express other characters.
-\ This is the string consisting of a tab, a percent sign, a left
-\ square bracket, and a right square bracket. The string syntax
-\ supports many escape sequences, and this demo doesn't go over them
-\ all.
+\; Strings can usually only contain letters, numbers, and the '-' and
+\; '*' punctuation characters. If you need more characters than that,
+\; an alternative syntax makes it possible to express other
+\; characters. This is the string consisting of a tab, a percent sign,
+\; a left square bracket, and a right square bracket. The string
+\; syntax supports many escape sequences, and this demo doesn't go
+\; over them all.
 \-qq[\.t%[]]
 
-\ This is the list containing the strings "a", "b", and "c".
+\; This is the list containing the strings "a", "b", and "c".
 (a b c)
 
-\ This is the list (a b) in binary infix notation. Lisp dialects
-\ usually use the '.' character for dotted lists, but this syntax uses
-\ it for infix instead.
+\; This is the list (a b) in binary infix notation. Lisp dialects
+\; usually use the '.' character for dotted lists, but this syntax
+\; uses it for infix instead.
 a.b
 
-\ The "a.b" operator is left-associative, so this is shorthand for
-\ ((a b) c).
+\; The "a.b" operator is left-associative, so this is shorthand for
+\; ((a b) c).
 a.b.c
 
-\ The / reader macro is like ( but doesn't consume ). Thus, the
-\ following is shorthand for (a b (c d)).
+\; The / reader macro is like ( but doesn't consume ). Thus, the
+\; following is shorthand for (a b (c d)).
 (a b /c d)
 </textarea>
 <button id="read">Read</button>

@@ -1,246 +1,248 @@
-\ era-staccato-lib.stc
-\ Copyright 2015 Ross Angle. Released under the MIT License.
+\; era-staccato-lib.stc
+\; Copyright 2015 Ross Angle. Released under the MIT License.
 
 
-\ Although this may look like source code, and it may even become full
-\ source code at some point, right now it mostly serves as a
-\ collection of notes.
-\
-\ One side of the notes explores a potential high-level design for
-\ Staccato macro definitions and ad hoc namespace manipulation. This
-\ is far more expressive than Staccato is likely to support for some
-\ time, but it means that I can begin writing Staccato code freely,
-\ safe in the knowledge that I won't be tied down to regretful name
-\ choices or ever-growing lists of syntactic primitives.
-\
-\ The other side of these notes begins the more immediate exercise of
-\ porting the era-stacato.js desugarer to Staccato. This could
-\ hypothetically be used to implement `(defn ...)` and
-\ `(def-type ...)` as macros someday, but what it ensures is that the
-\ design of the desugarer itself is something programmers can replace
-\ when needed. Furthermore, the port should ultimately support a
-\ slightly different syntax than before: In a raw Staccato AST,
-\ constructors and their projections will no longer be designated by
-\ unqualified strings, but by fully qualified names.
+\; Although this may look like source code, and it may even become
+\; full source code at some point, right now it mostly serves as a
+\; collection of notes.
+\;
+\; One side of the notes explores a potential high-level design for
+\; Staccato macro definitions and ad hoc namespace manipulation. This
+\; is far more expressive than Staccato is likely to support for some
+\; time, but it means that I can begin writing Staccato code freely,
+\; safe in the knowledge that I won't be tied down to regretful name
+\; choices or ever-growing lists of syntactic primitives.
+\;
+\; The other side of these notes begins the more immediate exercise of
+\; porting the era-stacato.js desugarer to Staccato. This could
+\; hypothetically be used to implement `(defn ...)` and
+\; `(def-type ...)` as macros someday, but what it ensures is that the
+\; design of the desugarer itself is something programmers can replace
+\; when needed. Furthermore, the port should ultimately support a
+\; slightly different syntax than before: In a raw Staccato AST,
+\; constructors and their projections will no longer be designated by
+\; unqualified strings, but by fully qualified names.
 
 
-\ ===== Notes about dependencies =====================================
+\; ===== Notes about dependencies ====================================
 
-\ (def-type string val)
-\ A reference to a string. The value inside is in a format user-level
-\ code does not know how to deconstruct.
+\; (def-type string val)
+\; A reference to a string. The value inside is in a format user-level
+\; code does not know how to deconstruct.
 
-\ (defn string-compare a b ...)
-\ Compares two strings.
+\; (defn string-compare a b ...)
+\; Compares two strings.
 
-\ macro (str \-qq[example string])
-\ Obtains a first-class string value with the given literal text.
+\; macro (str \-qq[example string])
+\; Obtains a first-class string value with the given literal text.
 
-\ (def-type name val)
-\ A reference to a fully qualified name. The value inside is in a
-\ format user-level code does not know how to deconstruct.
+\; (def-type name val)
+\; A reference to a fully qualified name. The value inside is in a
+\; format user-level code does not know how to deconstruct.
 
-\ (defn name-metacompare a b ...)
-\ Compares two names. For inequal names, the result will be in a
-\ format user-level code does not know how to deconstruct. For equal
-\ names, the result will be (nil).
-\
-\ Names are somewhat useful for access control, and they're opaque
-\ external tokens to an extent, but they're not entirely opaque. They
-\ can be compared for equality.
-\
-\ Macros would be less expressive if they had to treat names as
-\ uncomparable values, and what benefit would that bring? The macros
-\ would still have a range of expression close to that anyway: A macro
-\ could still dive into one of its syntax parameters and extract names
-\ from there into its own bag of tricks, so names wouldn't really be
-\ secrets between macros. A macro could still reconstruct a syntax
-\ parameter while inserting two occurrences of any name it likes, just
-\ to ensure that the two occurrences are equal. A macro could still do
-\ a hackish equality assertion by defining something by one name and
-\ looking up the definition by another. A macro could still do a
-\ hackish *inequality* assertion by installing two definitions under
-\ the (supposedly) two names.
-\
-\ If macros couldn't check names for equality, one thing a macro
-\ couldn't do... is to associate a variable binding site with a
-\ variable usage site. For instance, it couldn't act as a Staccato
-\ desugarer. It couldn't act as a compiler of some other DSL, unless
-\ that DSL completely forewent the namespace system and just used
-\ string names everywhere. So people who have adventurous new syntaxes
-\ to try would want to build new namespace systems for them, and this
-\ macro system would have complicated the Staccato language for no
-\ purpose that couldn't have been accomplished with an exhaustive
-\ suite of built-in syntaxes.
-\
-\ (TODO: Do nominal types already support an equality check?
-\ James Cheney's "Simple Nominal Type Theory" presents systems with
-\ and without equality checks. If this is very common, maybe we can
-\ rationalize this decision in terms of standard practice too.)
-\
-\ So, macros will be able to compare names for equality. As long as
-\ they can do that, we could promote better efficiency by permitting
-\ ordered comparisons instead of just equality checks. That way, names
-\ could be lookup keys in AVL trees and other efficiently indexed data
-\ structures.
-\
-\ It's tricky, because names have no natural ordering. Even if they
-\ were arbitrarily associated with strings and ordered that way, that
-\ ordering would not be stable in the face of capture-avoiding
-\ alpha-renaming! So whatever order we use, it will expose
-\ implementation details and make namespace sandboxing into a
-\ headache... unless, that is, the implementation details were hidden
-\ in a familiar way: By using obscure naming (and enforcing this
-\ obscurity with code-signing if necessary).
-\
-\ To wit, we can refrain from exposing implementation details by
-\ defining "metacompare" operations that usually work like "compare"
-\ operations, but sometimes return values that user-defined macro code
-\ doesn't know how to deconstruct. (The "meta" stands for
-\ "metacircular", under the idea that there may be a few layers of the
-\ reflective tower all running as macros in the same macroexpansion
-\ phase. Each layer must be implemented with obscure names that its
-\ interpreted layer doesn't know about.) Once we have metacomparison
-\ operations, we can provide encapsulated data types that sort their
-\ data using a metacomparison.
-\
-\ If we just support encapsulated AVL trees, that might go a long way,
-\ especially if it serves as a complete model of computation over
-\ unordered collections. We can get quite a range of computational
-\ ability all at once if we simply add a metacomparator over the
-\ AVL trees themselves. For instance, that lets us detect emptiness
-\ by comparing to the empty tree, and it lets us detect singletonhood
-\ by looping over the entries and comparing to the singletons of each.
-\
-\ In the process, a lot of ugliness may arise: If concatenation of
-\ encapsulated AVL trees doesn't somehow check that their
-\ metacomparators are equivalent, we may end up with malformed
-\ encapsulated AVL trees that leak implementation details. We could
-\ potentially avoid this situation by passing some sort of equality
-\ certifier to the concatenation operation, but then we'd need a
-\ specialized language (or at least a collection of combinators) for
-\ defining equality certifiers. An easier approach would be to use a
-\ specialized language (or combinators) for the metacomparators
-\ themselves. This language would quickly resemble a static type
-\ system, much like our "cmpd" utilities already resemble algebraic
-\ data type definitions. So, this probably isn't worth solving until
-\ we take a typed approach.
-\
-\ For now, we can start small, merely providing a single
-\ metacomparator over names (`name-metacompare`), rather than aiming
-\ for efficiency and general computation. As long as we have that, we
-\ can use inefficient association lists to track free variables
-\ (`free-vars-object`).
+\; (defn name-metacompare a b ...)
+\; Compares two names. For inequal names, the result will be in a
+\; format user-level code does not know how to deconstruct. For equal
+\; names, the result will be (nil).
+\;
+\; Names are somewhat useful for access control, and they're opaque
+\; external tokens to an extent, but they're not entirely opaque. They
+\; can be compared for equality.
+\;
+\; Macros would be less expressive if they had to treat names as
+\; uncomparable values, and what benefit would that bring? The macros
+\; would still have a range of expression close to that anyway: A
+\; macro could still dive into one of its syntax parameters and
+\; extract names from there into its own bag of tricks, so names
+\; wouldn't really be secrets between macros. A macro could still
+\; reconstruct a syntax parameter while inserting two occurrences of
+\; any name it likes, just to ensure that the two occurrences are
+\; equal. A macro could still do a hackish equality assertion by
+\; defining something by one name and looking up the definition by
+\; another. A macro could still do a hackish *inequality* assertion by
+\; installing two definitions under the (supposedly) two names.
+\;
+\; If macros couldn't check names for equality, one thing a macro
+\; couldn't do... is to associate a variable binding site with a
+\; variable usage site. For instance, it couldn't act as a Staccato
+\; desugarer. It couldn't act as a compiler of some other DSL, unless
+\; that DSL completely forewent the namespace system and just used
+\; string names everywhere. So people who have adventurous new
+\; syntaxes to try would want to build new namespace systems for them,
+\; and this macro system would have complicated the Staccato language
+\; for no purpose that couldn't have been accomplished with an
+\; exhaustive suite of built-in syntaxes.
+\;
+\; (TODO: Do nominal types already support an equality check?
+\; James Cheney's "Simple Nominal Type Theory" presents systems with
+\; and without equality checks. If this is very common, maybe we can
+\; rationalize this decision in terms of standard practice too.)
+\;
+\; So, macros will be able to compare names for equality. As long as
+\; they can do that, we could promote better efficiency by permitting
+\; ordered comparisons instead of just equality checks. That way,
+\; names could be lookup keys in AVL trees and other efficiently
+\; indexed data structures.
+\;
+\; It's tricky, because names have no natural ordering. Even if they
+\; were arbitrarily associated with strings and ordered that way, that
+\; ordering would not be stable in the face of capture-avoiding
+\; alpha-renaming! So whatever order we use, it will expose
+\; implementation details and make namespace sandboxing into a
+\; headache... unless, that is, the implementation details were hidden
+\; in a familiar way: By using obscure naming (and enforcing this
+\; obscurity with code-signing if necessary).
+\;
+\; To wit, we can refrain from exposing implementation details by
+\; defining "metacompare" operations that usually work like "compare"
+\; operations, but sometimes return values that user-defined macro
+\; code doesn't know how to deconstruct. (The "meta" stands for
+\; "metacircular", under the idea that there may be a few layers of
+\; the reflective tower all running as macros in the same
+\; macroexpansion phase. Each layer must be implemented with obscure
+\; names that its interpreted layer doesn't know about.) Once we have
+\; metacomparison operations, we can provide encapsulated data types
+\; that sort their data using a metacomparison.
+\;
+\; If we just support encapsulated AVL trees, that might go a long
+\; way, especially if it serves as a complete model of computation
+\; over unordered collections. We can get quite a range of
+\; computational ability all at once if we simply add a metacomparator
+\; over the AVL trees themselves. For instance, that lets us detect
+\; emptiness by comparing to the empty tree, and it lets us detect
+\; singletonhood by looping over the entries and comparing to the
+\; singletons of each.
+\;
+\; In the process, a lot of ugliness may arise: If concatenation of
+\; encapsulated AVL trees doesn't somehow check that their
+\; metacomparators are equivalent, we may end up with malformed
+\; encapsulated AVL trees that leak implementation details. We could
+\; potentially avoid this situation by passing some sort of equality
+\; certifier to the concatenation operation, but then we'd need a
+\; specialized language (or at least a collection of combinators) for
+\; defining equality certifiers. An easier approach would be to use a
+\; specialized language (or combinators) for the metacomparators
+\; themselves. This language would quickly resemble a static type
+\; system, much like our "cmpd" utilities already resemble algebraic
+\; data type definitions. So, this probably isn't worth solving until
+\; we take a typed approach.
+\;
+\; For now, we can start small, merely providing a single
+\; metacomparator over names (`name-metacompare`), rather than aiming
+\; for efficiency and general computation. As long as we have that, we
+\; can use inefficient association lists to track free variables
+\; (`free-vars-object`).
 
-\ (def-type istring-nil string)
-\ An interpolated string s-expression that consists of a string with
-\ no interpolations.
+\; (def-type istring-nil string)
+\; An interpolated string s-expression that consists of a string with
+\; no interpolations.
 
-\ (TODO: Use this.)
-\ (def-type istring-cons string-past interpolated istring-rest)
-\ An interpolated string s-expression that consists of a string, a
-\ single interpolated value to go after that string, and a remaining
-\ interpolated string s-expression to go after that.
+\; (TODO: Use this.)
+\; (def-type istring-cons string-past interpolated istring-rest)
+\; An interpolated string s-expression that consists of a string, a
+\; single interpolated value to go after that string, and a remaining
+\; interpolated string s-expression to go after that.
 
-\ (def-type foreign val)
-\ An s-expression that consists of an embedded value of any type, but
-\ usually a name. The program may not know of a way to encode the name
-\ as serializable data, but it can still be passed to `(compile ...)`.
+\; (def-type foreign val)
+\; An s-expression that consists of an embedded value of any type, but
+\; usually a name. The program may not know of a way to encode the
+\; name as serializable data, but it can still be passed to
+\; `(compile ...)`.
 
-\ (def-type stx stx-details s-expr)
-\ An s-expression tagged with source location information.
+\; (def-type stx stx-details s-expr)
+\; An s-expression tagged with source location information.
 
-\ (defn macro-stx-details mode unique-ns definition-ns stx ...)
-\ Constructs a syntax details object that refers to a macro's input,
-\ so that the macro's output can be associated with it. The `stx` must
-\ be a located cons list whose first element is a string or foreign
-\ name referring to a macro.
+\; (defn macro-stx-details mode unique-ns definition-ns stx ...)
+\; Constructs a syntax details object that refers to a macro's input,
+\; so that the macro's output can be associated with it. The `stx`
+\; must be a located cons list whose first element is a string or
+\; foreign name referring to a macro.
 
-\ (defn ns-get-name name ns ...)
-\ Obtains a sub-namespace determined by the given namespace, using the
-\ given name as a "folder name." Usually, distinct "folder names" will
-\ yield distinct sub-namespaces, but sometimes the interpreter may be
-\ configured so that this isn't the case.
+\; (defn ns-get-name name ns ...)
+\; Obtains a sub-namespace determined by the given namespace, using
+\; the given name as a "folder name." Usually, distinct "folder names"
+\; will yield distinct sub-namespaces, but sometimes the interpreter
+\; may be configured so that this isn't the case.
 
-\ (defn ns-get-string string ns ...)
-\ Obtains a sub-namespace determined by the first namespace, using the
-\ given string as a "folder name." Usually, distinct "folder names"
-\ will yield distinct sub-namespaces, but sometimes the interpreter
-\ may be configured so that this isn't the case.
+\; (defn ns-get-string string ns ...)
+\; Obtains a sub-namespace determined by the first namespace, using
+\; the given string as a "folder name." Usually, distinct "folder
+\; names" will yield distinct sub-namespaces, but sometimes the
+\; interpreter may be configured so that this isn't the case.
 
-\ (TODO: Use this.)
-\ (defn ns-shadow-name name ns ns ...)
-\ Creates a new namespace that behaves like the second namespace in
-\ almost every way, except when the given name is requested as a
-\ "folder name", in which case the first namespace is returned
-\ instead.
+\; (TODO: Use this.)
+\; (defn ns-shadow-name name ns ns ...)
+\; Creates a new namespace that behaves like the second namespace in
+\; almost every way, except when the given name is requested as a
+\; "folder name", in which case the first namespace is returned
+\; instead.
 
-\ (defn ns-shadow-string string ns ns ...)
-\ Creates a new namespace that behaves like the second namespace in
-\ almost every way, except when the given string is requested as a
-\ "folder name", in which case the first namespace is returned
-\ instead.
+\; (defn ns-shadow-string string ns ns ...)
+\; Creates a new namespace that behaves like the second namespace in
+\; almost every way, except when the given string is requested as a
+\; "folder name", in which case the first namespace is returned
+\; instead.
 
-\ The `ns-shadow-name` and `ns-shadow-string` functions can be used to
-\ establish local macros. A namespace created this way even works the
-\ same way as the old one when it's used in a `procure-...` primitive.
-\ This way, we can imagine that the namespace's own identity is stored
-\ under an entry somewhere in the namespace, just using a key that we
-\ don't have the ability to construct.
+\; The `ns-shadow-name` and `ns-shadow-string` functions can be used
+\; to establish local macros. A namespace created this way even works
+\; the same way as the old one when it's used in a `procure-...`
+\; primitive. This way, we can imagine that the namespace's own
+\; identity is stored under an entry somewhere in the namespace, just
+\; using a key that we don't have the ability to construct.
 
-\ (defn procure-name mode ns ...)
-\ Uses the given namespace to obtain a first-class name value. The
-\ given modality must be the current one.
+\; (defn procure-name mode ns ...)
+\; Uses the given namespace to obtain a first-class name value. The
+\; given modality must be the current one.
 
-\ (defn procure-defined mode ns ...)
-\ Blocks until the given namespace has a defined Staccato value and
-\ then returns it. The given modality must be the current one.
+\; (defn procure-defined mode ns ...)
+\; Blocks until the given namespace has a defined Staccato value and
+\; then returns it. The given modality must be the current one.
 
-\ (defn procure-put-defined mode ns value then ...)
-\ then (fn mode ...)
-\ Constructs a monad that, if invoked, installs a definition so that
-\ the given namespace has a defined Staccato value, namely the given
-\ one. The monad's result value is `(nil)`. In a later tick, once the
-\ definition has been installed, the callback is invoked, and its own
-\ monadic side effects occur. If the definition cannot be installed,
-\ the program is in error, and the callback may or may not be invoked;
-\ other computations that depend on the defined value may or may not
-\ be canceled or retroactively voided.
+\; (defn procure-put-defined mode ns value then ...)
+\; then (fn mode ...)
+\; Constructs a monad that, if invoked, installs a definition so that
+\; the given namespace has a defined Staccato value, namely the given
+\; one. The monad's result value is `(nil)`. In a later tick, once the
+\; definition has been installed, the callback is invoked, and its own
+\; monadic side effects occur. If the definition cannot be installed,
+\; the program is in error, and the callback may or may not be
+\; invoked; other computations that depend on the defined value may or
+\; may not be canceled or retroactively voided.
 
-\ (defn no-effects val ...)
-\ Constructs a monad that, if invoked, does nothing. The monad's
-\ result value is the given value.
+\; (defn no-effects val ...)
+\; Constructs a monad that, if invoked, does nothing. The monad's
+\; result value is the given value.
 
-\ (defn bind-effects monad then ...)
-\ then (fn result ...)
-\ Constructs a monad that, if invoked, calls the callback with the
-\ given monad's result value, obtains a monad as the result of that
-\ function, and performs the effects of both monads. The monad's
-\ result value is the result value of the monad returned by the
-\ callback.
+\; (defn bind-effects monad then ...)
+\; then (fn result ...)
+\; Constructs a monad that, if invoked, calls the callback with the
+\; given monad's result value, obtains a monad as the result of that
+\; function, and performs the effects of both monads. The monad's
+\; result value is the result value of the monad returned by the
+\; callback.
 
-\ (defn assert-current-modality mode ...)
-\ Returns `(nil)`. The given modality must be the current one.
+\; (defn assert-current-modality mode ...)
+\; Returns `(nil)`. The given modality must be the current one.
 
 
 
-\ ===== Reimplementation of the desugarer ============================
+\; ===== Reimplementation of the desugarer ===========================
 
-\ Raw Staccato syntax has two places where the values involved are not
-\ necessarily serializable:
-\
-\ The `(stc-def-foreign ...)` syntax allows the definition to be an
-\ arbitrary first-class value, so that metacircular interpreters can
-\ encapsulate their implementation details.
-\
-\ The `(stc-foreign ...)` syntax allows an arbitrary first-class
-\ value, such as a string, to survive until run time. Most code
-\ serializers will not support most values.
-\
-\ The `(stc-proj-pattern-omitted ...)` syntax must contain a
-\ namespace. When the omitted projection names are inferred, they will
-\ be taken from "<ns>/<projection name>/name", where "<ns>" is that
-\ namespace.
+\; Raw Staccato syntax has two places where the values involved are
+\; not necessarily serializable:
+\;
+\; The `(stc-def-foreign ...)` syntax allows the definition to be an
+\; arbitrary first-class value, so that metacircular interpreters can
+\; encapsulate their implementation details.
+\;
+\; The `(stc-foreign ...)` syntax allows an arbitrary first-class
+\; value, such as a string, to survive until run time. Most code
+\; serializers will not support most values.
+\;
+\; The `(stc-proj-pattern-omitted ...)` syntax must contain a
+\; namespace. When the omitted projection names are inferred, they
+\; will be taken from "<ns>/<projection name>/name", where "<ns>" is
+\; that namespace.
 
 (def-type stc-def-foreign tuple-name foreign)
 (def-type stc-def tuple-name opt-proj-pattern case-list)
@@ -956,7 +958,7 @@
 
 
 
-\ ===== A reimplementation of the macro system =======================
+\; ===== A reimplementation of the macro system ======================
 
 (defn stx-to-maybe-name stx
   (cast stx stx - s-expr (nil)
@@ -1017,9 +1019,9 @@
   (stc-save-root str.sr val))
 
 (defn compile mode unique-ns definition-ns stx
-  \ Macroexpands the given `stx`, allowing the macro calls to
-  \ monadically install definitions and produce a desugarable Staccato
-  \ expression. The given modality must be the current one.
+  \; Macroexpands the given `stx`, allowing the macro calls to
+  \; monadically install definitions and produce a desugarable
+  \; Staccato expression. The given modality must be the current one.
   
   (cast stx stx - s-expr
     err.\-qq[Expected a stx value of type stx]
@@ -1052,105 +1054,108 @@
 
 
 
-\ ===== Metacircular macro system ====================================
+\; ===== Metacircular macro system ===================================
 
-\ Yes, we're using deterministic, referentially transparent side
-\ effects during macroexpansion. Since a macro will necessarily need
-\ to *read* existing definitions in order for its implementation code
-\ to do anything at all, we're allowing other blocking reads by way of
-\ `procure-defined`. For referential transparency, the corresponding
-\ `procure-put-defined` writes are performed in a commutative monad.
-\ If two or more conflicting writes are performed, all definitions that
-\ depended on reading those writes will be retroactively updated.
-\ Usually, conflicting definitions are an error. However, at a REPL,
-\ definitions from a newer command may take the place of definitions
-\ from an older command without error. Errors or updates may cascade
-\ through several layers of other definitions that depended on them.
-\
-\ Common definitions are stored like so, where slashes represent
-\ `ns-get-string` except where marked as `ns-get-name`:
-\
-\   <definition-ns>/constructor-names/<constructor name string>/name
-\     = No defined value, but the proper identity to use for the
-\       constructor in everything except manually keyboarded code.
-\
-\   <definition-ns>/constructors/<ns-get-name: constructor identity>/
-\     projection-list
-\     = An ordered list of projection name strings. Projections should
-\       only be treated as an ordered list in manually keyboarded code
-\       and in macros catering to manually keyboarded code.
-\   <definition-ns>/constructors/<ns-get-name: constructor identity>/
-\     projection-names/<projection name string>/name
-\     = No defined value, but the proper identity to use for the
-\       projection in everything except manually keyboarded code.
-\
-\   <definition-ns>/macro-names/<macro name string>/name
-\     = No defined value, but the proper identity to use for the macro
-\       in everything except manually keyboarded code.
-\
-\   <definition-ns>/macros/<ns-get-name: macro identity>/function
-\     = A value that can be invoked with the arguments of a macro
-\       call.
-\
-\   <definition-ns>/functions/<ns-get-name: constructor identity>/
-\     staccato
-\     = An s-expression that can be compiled as a raw, sugarless
-\       Staccato function definition.
-\
-\ The usual definition forms generate several definitions all at once:
-\
-\   (def-type ...)
-\     * The constructor name information desired.
-\     * A macro so that the construction is easy to do.
-\     * The name information for that macro.
-\     * Constructor name information for a callable value which
-\       implements that macro.
-\     * A function implementation for that callable value.
-\
-\   (defn ...)
-\     * The function implementation desired.
-\     * Constructor name information for a first-class representation
-\       of the function.
-\     * A macro so that the function is easy to call. (Fortunately,
-\       every (defn ...) macro can reuse the same callable value
-\       constructor and function implementation.)
-\     * The name information for that macro.
-\
-\ A macro's `mode` parameter is the current modality. A modality must
-\ be passed to certain effectful primitives as a way to give the
-\ effects something to be deterministic by. (The terms "mode" and
-\ "modality" might be idiosyncrasies of this codebase. A more standard
-\ term is "world-passing style.")
-\
-\ A macro's `unique-ns` parameter is a namespace. It's useful in the
-\ way that gensyms are typically useful in other macro-capable
-\ languages, but the uniqueness is achieved by playing along: If the
-\ macro compiles more than one subexpression, each subexpression
-\ should be given a `unique-ns` derived in different ways from this
-\ one.
-\
-\ A macro's `definition-ns` parameter is a namespace. If the macro
-\ needs to install any definitions or look up any definitions, this is
-\ the namespace for that purpose. It should usually be passed as-is to
-\ any compiled subexpressions, except when defining a macro that's
-\ local to a certain subexpression.
-\
-\ A macro's `my-stx-details` parameter is a collection of source
-\ location information. There's no direct way to deconstruct this
-\ value, but it conveys information about this macro invocation, so
-\ the macro can use it to receive attribution for any `stx` values it
-\ creates.
-\
-\ (TODO: Figure out what the format of source location information
-\ actually is. For now, this is sort of just an unspecified area, but
-\ at least a language implementation can use this to hold filenames
-\ and line numbers in practice. An implementation should be able to
-\ treat this as a completely empty data structure; it's not needed for
-\ any variable scoping purposes.)
-\
-\ A macro's `args` parameter is a list of `(stx stx-details s-expr)`
-\ values. The list is built out of `(cons car cdr)` and `(nil)`
-\ values.
+\; Yes, we're using deterministic, referentially transparent side
+\; effects during macroexpansion. Since a macro will necessarily need
+\; to *read* existing definitions in order for its implementation code
+\; to do anything at all, we're allowing other blocking reads by way
+\; of `procure-defined`. For referential transparency, the
+\; corresponding `procure-put-defined` writes are performed in a
+\; commutative monad. If two or more conflicting writes are performed,
+\; all definitions that depended on reading those writes will be
+\; retroactively updated. Usually, conflicting definitions are an
+\; error. However, at a REPL, definitions from a newer command may
+\; take the place of definitions from an older command without error.
+\; Errors or updates may cascade through several layers of other
+\; definitions that depended on them.
+\;
+\; Common definitions are stored like so, where slashes represent
+\; `ns-get-string` except where marked as `ns-get-name`:
+\;
+\;   <definition-ns>/constructor-names/<constructor name string>/name
+\;     = No defined value, but the proper identity to use for the
+\;       constructor in everything except manually keyboarded code.
+\;
+\;   <definition-ns>/constructors/<ns-get-name: constructor identity>/
+\;     projection-list
+\;     = An ordered list of projection name strings. Projections
+\;       should only be treated as an ordered list in manually
+\;       keyboarded code and in macros catering to manually keyboarded
+\;       code.
+\;   <definition-ns>/constructors/<ns-get-name: constructor identity>/
+\;     projection-names/<projection name string>/name
+\;     = No defined value, but the proper identity to use for the
+\;       projection in everything except manually keyboarded code.
+\;
+\;   <definition-ns>/macro-names/<macro name string>/name
+\;     = No defined value, but the proper identity to use for the
+\;       macro in everything except manually keyboarded code.
+\;
+\;   <definition-ns>/macros/<ns-get-name: macro identity>/function
+\;     = A value that can be invoked with the arguments of a macro
+\;       call.
+\;
+\;   <definition-ns>/functions/<ns-get-name: constructor identity>/
+\;     staccato
+\;     = An s-expression that can be compiled as a raw, sugarless
+\;       Staccato function definition.
+\;
+\; The usual definition forms generate several definitions all at
+\; once:
+\;
+\;   (def-type ...)
+\;     * The constructor name information desired.
+\;     * A macro so that the construction is easy to do.
+\;     * The name information for that macro.
+\;     * Constructor name information for a callable value which
+\;       implements that macro.
+\;     * A function implementation for that callable value.
+\;
+\;   (defn ...)
+\;     * The function implementation desired.
+\;     * Constructor name information for a first-class representation
+\;       of the function.
+\;     * A macro so that the function is easy to call. (Fortunately,
+\;       every (defn ...) macro can reuse the same callable value
+\;       constructor and function implementation.)
+\;     * The name information for that macro.
+\;
+\; A macro's `mode` parameter is the current modality. A modality must
+\; be passed to certain effectful primitives as a way to give the
+\; effects something to be deterministic by. (The terms "mode" and
+\; "modality" might be idiosyncrasies of this codebase. A more
+\; standard term is "world-passing style.")
+\;
+\; A macro's `unique-ns` parameter is a namespace. It's useful in the
+\; way that gensyms are typically useful in other macro-capable
+\; languages, but the uniqueness is achieved by playing along: If the
+\; macro compiles more than one subexpression, each subexpression
+\; should be given a `unique-ns` derived in different ways from this
+\; one.
+\;
+\; A macro's `definition-ns` parameter is a namespace. If the macro
+\; needs to install any definitions or look up any definitions, this
+\; is the namespace for that purpose. It should usually be passed
+\; as-is to any compiled subexpressions, except when defining a macro
+\; that's local to a certain subexpression.
+\;
+\; A macro's `my-stx-details` parameter is a collection of source
+\; location information. There's no direct way to deconstruct this
+\; value, but it conveys information about this macro invocation, so
+\; the macro can use it to receive attribution for any `stx` values it
+\; creates.
+\;
+\; (TODO: Figure out what the format of source location information
+\; actually is. For now, this is sort of just an unspecified area, but
+\; at least a language implementation can use this to hold filenames
+\; and line numbers in practice. An implementation should be able to
+\; treat this as a completely empty data structure; it's not needed
+\; for any variable scoping purposes.)
+\;
+\; A macro's `args` parameter is a list of `(stx stx-details s-expr)`
+\; values. The list is built out of `(cons car cdr)` and `(nil)`
+\; values.
 
 (defn macro-name mode definition-ns name
   (let - assert-current-modality.mode
@@ -1340,9 +1345,9 @@
     (map projection-list /fn projection-name
       (ns-get-string projection-name
       /ns-get-string str.ignored unique-ns))
-  \ NOTE: We could reimplement this without depending on `yep`,
-  \ `nope`, and `nil` macros here, but we're treating those macros as
-  \ built-ins.
+  \; NOTE: We could reimplement this without depending on `yep`,
+  \; `nope`, and `nil` macros here, but we're treating those macros as
+  \; built-ins.
   /cons (c mac str.yep /cons (c mac str.nil /nil) /nil)
   /cons (c mac str.nope /cons (c mac str.nil /nil) /nil) /nil))
 
@@ -1507,10 +1512,10 @@
         proj-name))
   /compile-def-type mode definition-ns name projection-list))
 
-\ NOTE: This metacircular implementation of the `(defn ...)` macro
-\ runs the desugarer defined in this file
-\ (`staccato-desugar-def-including-self`) so that the next-outer
-\ metacircular interpreter doesn't have to.
+\; NOTE: This metacircular implementation of the `(defn ...)` macro
+\; runs the desugarer defined in this file
+\; (`staccato-desugar-def-including-self`) so that the next-outer
+\; metacircular interpreter doesn't have to.
 (defn core-mac-defn mode unique-ns definition-ns my-stx-details args
   (let s (fn it /stx my-stx-details it)
   /let mac
@@ -1638,16 +1643,16 @@
 (defn init-definition-ns
   mode metacircular-definition-ns target-definition-ns
   
-  \ TODO: Throughout the code, remove (or at least comment out) the
-  \ `def-type` declaration of each type that's inherited this way,
-  \ since it's supposedly already been inherited.
+  \; TODO: Throughout the code, remove (or at least comment out) the
+  \; `def-type` declaration of each type that's inherited this way,
+  \; since it's supposedly already been inherited.
   (let type
     (fn name projection-list rest
       (cons (type-declaration name projection-list) rest))
   /let inherited-types
-    \ These constructors are needed so that macros can generate
-    \ raw Staccato code.
-    \ TODO: See if we should keep the ones marked "sugar".
+    \; These constructors are needed so that macros can generate
+    \; raw Staccato code.
+    \; TODO: See if we should keep the ones marked "sugar".
     (c type str.return (cons str.val /nil)
     /c type str.call (cons str.func /cons str.arg /nil)
     /c type str.stc-def-foreign
@@ -1668,7 +1673,7 @@
     /c type str.stc-proj-cons
       (cons str.proj-name /cons str.get-expr
       /cons str.proj-expr /nil)
-    \ sugar
+    \; sugar
     /c type str.stc-let-def (cons str.def /cons str.get-expr /nil)
     /c type str.stc-let
       (cons str.let-bindings-expr /cons str.get-expr /nil)
@@ -1677,10 +1682,10 @@
     /c type str.stc-do-what-you-think-is-best (nil)
     /c type str.stc-tuple
       (cons str.tuple-name /cons str.proj-expr /nil)
-    \ sugar
+    \; sugar
     /c type str.stc-save-root
       (cons str.save-root /cons str.get-expr /nil)
-    \ sugar
+    \; sugar
     /c type str.stc-save
       (cons str.save-root /cons str.call-tuple-name
       
@@ -1688,26 +1693,26 @@
       /cons str.opt-proj-pattern
       
       /cons str.call-arg /cons str.var /cons str.arg /nil)
-    \ sugar
+    \; sugar
     /c type str.stc-fn
       (cons str.tuple-name /cons str.opt-proj-pattern
       /cons str.case-list /nil)
-    \ sugar
+    \; sugar
     /c type str.stc-proj-pattern-omitted (cons str.namespace /nil)
     /c type str.stc-proj-pattern (cons str.proj-pattern /nil)
     /c type str.stc-proj-pattern-nil (nil)
     /c type str.stc-proj-pattern-cons
       (cons str.proj-name /cons str.var /cons str.proj-pattern /nil)
     
-    \ These constructors are needed for interpreting the results of
-    \ certain built-in operators, namely `isa` and `string-compare`.
+    \; These constructors are needed for interpreting the results of
+    \; certain built-in operators, namely `isa` and `string-compare`.
     /c type str.yep (cons str.val /nil)
     /c type str.nope (cons str.val /nil)
     
-    \ These s-expression constructors are needed so that macros can
-    \ parse their s-expression arguments. The `cons` and `nil`
-    \ constructors are also needed for parsing and generating
-    \ projection lists.
+    \; These s-expression constructors are needed so that macros can
+    \; parse their s-expression arguments. The `cons` and `nil`
+    \; constructors are also needed for parsing and generating
+    \; projection lists.
     /c type str.nil (nil)
     /c type str.cons (cons str.car /cons str.cdr /nil)
     /c type str.istring-nil (nil)
@@ -1716,14 +1721,14 @@
       /nil)
     /c type str.foreign (cons str.val /nil)
     
-    \ This constructor is needed so that macros can parse their
-    \ located syntax arguments.
+    \; This constructor is needed so that macros can parse their
+    \; located syntax arguments.
     /c type str.stx (cons str.stx-details /cons str.s-expr /nil)
     
-    \ These constructors aren't strictly needed, but several built-in
-    \ operators use these constructors so that it's more convenient
-    \ for user-level code to detect what type of value it's dealing
-    \ with.
+    \; These constructors aren't strictly needed, but several built-in
+    \; operators use these constructors so that it's more convenient
+    \; for user-level code to detect what type of value it's dealing
+    \; with.
     /c type str.string (cons str.val /nil)
     /c type str.name (cons str.val /nil)
     
@@ -1735,21 +1740,21 @@
         (ns-get-string name metacircular-definition-ns)
         ns))
   /let target-definition-ns
-    \ NOTE: We don't shadow `constructor-names` or `macro-names`. That
-    \ way, the interpreted code can put its definitions in the same
-    \ place as the metacircular interpreter does, but it can't obtain
-    \ the names that the interpreter wants to be obscure.
-    \
-    \ NOTE: We don't shadow `constructors` or `macros` either. What we
-    \ use from these, we define from scratch.
-    \
-    \ NOTE: The metacircular interpreter can't define everything in
-    \ `functions` from scratch. While it could transport every
-    \ built-in function it knows about, such as `string-compare`,
-    \ these functions might be implemented as `stc-def-foreign`,
-    \ delegating to another function whose type this interpreter
-    \ doesn't know about.
-    \
+    \; NOTE: We don't shadow `constructor-names` or `macro-names`.
+    \; That way, the interpreted code can put its definitions in the
+    \; same place as the metacircular interpreter does, but it can't
+    \; obtain the names that the interpreter wants to be obscure.
+    \;
+    \; NOTE: We don't shadow `constructors` or `macros` either. What
+    \; we use from these, we define from scratch.
+    \;
+    \; NOTE: The metacircular interpreter can't define everything in
+    \; `functions` from scratch. While it could transport every
+    \; built-in function it knows about, such as `string-compare`,
+    \; these functions might be implemented as `stc-def-foreign`,
+    \; delegating to another function whose type this interpreter
+    \; doesn't know about.
+    \;
     (c shadow-root str.functions
       target-definition-ns)
   
@@ -1788,9 +1793,9 @@
         err.\-qq[Internal error]
       /c shadow-type name ns))
   
-  \ Define all the inherited constructors. Their names are inherited
-  \ metacircularly, but their projection list metadata and macros are
-  \ defined from scratch here.
+  \; Define all the inherited constructors. Their names are inherited
+  \; metacircularly, but their projection list metadata and macros are
+  \; defined from scratch here.
   /bind-effects
     (each-effects inherited-types /fn type
       (cast type type-declaration name proj-list
@@ -1809,8 +1814,8 @@
           function
           (fn mode /nil))
       /fn - next))
-  \ TODO: Implement these macros, and add them here:
-  \ run-defs test def-macro
+  \; TODO: Implement these macros, and add them here:
+  \; run-defs test def-macro
   /c def-macro str.case (core-mac-case)
   /c def-macro str.cast (core-mac-cast)
   /c def-macro str.caselet (core-mac-caselet)
@@ -1825,12 +1830,12 @@
   /c def-macro str.str (core-mac-str)
   /c def-macro str.err (core-mac-err)
   
-  \ NOTE: We've inherited all the built-in function implementations,
-  \ but we haven't inherited the functions' names, constructors, or
-  \ macros. Instead of reusing the old names, we obtain the new names
-  \ and define the constructors and macros from scratch. We define
-  \ functions under these new names by copying the old implementations
-  \ (which will usually be `stc-def-foreign` values).
+  \; NOTE: We've inherited all the built-in function implementations,
+  \; but we haven't inherited the functions' names, constructors, or
+  \; macros. Instead of reusing the old names, we obtain the new names
+  \; and define the constructors and macros from scratch. We define
+  \; functions under these new names by copying the old
+  \; implementations (which will usually be `stc-def-foreign` values).
   /let def-foreign
     (fn name next
       (bind-effects
