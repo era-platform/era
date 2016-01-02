@@ -213,6 +213,8 @@
   \- NOTE: The only reason we have = and , in the <other> category is
   \- that otherwise \=,qq=,qq... would read the identifier "qq=" and
   \- \=,uq,foo would read the identifier "uq,foo".
+  \- TODO: Redesign the reader syntax so that = , aren't an issue
+  \- here.
 <tx> ::= ...any printable character except <other>
 <nl> ::= ...any line break character or CRLF
 <ws> ::= ...any whitespace character except <nl>
