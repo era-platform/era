@@ -95,7 +95,7 @@ function addReaderTest( code, expected ) {
 }
 
 addReaderTest(
-    " (woo\\ comment\n b (\\-qq[c( woo( ) string)] / x//)/())",
+    " (woo\\; comment\n b (\\-qq[c( woo( ) string)] / x//)/())",
     [ "woo", "b",
         [ "c( woo( ) string)", [ "x", [ [] ] ] ],
         [ [] ] ] );

@@ -1,22 +1,22 @@
-\ era-staccato-lib.stc
-\ Copyright 2015 Ross Angle. Released under the MIT License.
-\
-\ These are utilities written in a macro layer over Staccato. For now,
-\ I'm porting the utilities from era-avl.js. (Many of the utilities
-\ were actually ported from era-staccato-lib.js and
-\ era-staccato-lib-gensym.js, which were ported from era-avl.js.)
-\
-\ See era-staccato.js for more information about what Staccato is.
+\; era-staccato-lib.stc
+\; Copyright 2015 Ross Angle. Released under the MIT License.
+\;
+\; These are utilities written in a macro layer over Staccato. For
+\; now, I'm porting the utilities from era-avl.js. (Many of the
+\; utilities were actually ported from era-staccato-lib.js and
+\; era-staccato-lib-gensym.js, which were ported from era-avl.js.)
+\;
+\; See era-staccato.js for more information about what Staccato is.
 
 
-\ NOTE: This file depends only on these macros, which are implemented
-\ in era-staccato-lib-runner.js:
-\
-\ def-type defn case caselet cast isa proj1 c c-new err fn run-defs
-\ test let
+\; NOTE: This file depends only on these macros, which are implemented
+\; in era-staccato-lib-runner.js:
+\;
+\; def-type defn case caselet cast isa proj1 c c-new err fn run-defs
+\; test let
 
 
-\ ===== Lists and boolean tags =======================================
+\; ===== Lists and boolean tags ======================================
 
 (def-type cons car cdr)
 (def-type yep val)
@@ -25,7 +25,7 @@
 
 (def-type pair first second)
 
-\ TODO: Find a better name for this.
+\; TODO: Find a better name for this.
 (def-type folding state val)
 
 (defn map-any-foldl state list combiner
@@ -175,7 +175,7 @@
     lists))
 
 
-\ ===== Lazy lists ===================================================
+\; ===== Lazy lists ==================================================
 
 (def-type lazy-cons get-first get-rest)
 (def-type lazy-nil)
@@ -204,10 +204,10 @@
     comparison))
 
 
-\ ===== "Fixnum operations," a generic interface for bigint digits ===
+\; ===== "Fixnum operations," a generic interface for bigint digits ==
 
-\ NOTE: Although they're separated into different sections, fixops and
-\ digpairs are actually interdependent.
+\; NOTE: Although they're separated into different sections, fixops
+\; and digpairs are actually interdependent.
 
 (def-type
   fixops zero one complement compare plus minus times div dual-div)
@@ -271,7 +271,7 @@
   (isa nil /fixops-compare fixops fixops-zero.fixops n))
 
 
-\ ===== "Digit pairs," fixnums built out of two smaller fixnums ======
+\; ===== "Digit pairs," fixnums built out of two smaller fixnums =====
 
 (def-type digpair fixops is-zero bdig ldig)
 
@@ -335,8 +335,8 @@
     err.\-qq[Expected an n value of type digpair]
   /cast m digpair - m-is-zero m-bdig m-ldig
     err.\-qq[Expected an m value of type digpair]
-  \ Optimization: If either thing to compare is zero, we can avoid
-  \ iterating over the digits.
+  \; Optimization: If either thing to compare is zero, we can avoid
+  \; iterating over the digits.
   /case n-is-zero yep -
     (case m-is-zero yep -
       (nil)
@@ -357,8 +357,8 @@
   /cast carry digpair - carry-is-zero -b cdig
     err.\-qq[Expected a carry value of type digpair]
   
-  \ Optimization: If either summand is zero and the carry is also
-  \ zero, we can just use the other as the result.
+  \; Optimization: If either summand is zero and the carry is also
+  \; zero, we can just use the other as the result.
   /case (and n-is-zero carry-is-zero) yep - (carried m carry)
   /case (and m-is-zero carry-is-zero) yep - (carried n carry)
   
@@ -381,8 +381,8 @@
   /cast carry digpair - carry-is-zero -b cdig
     err.\-qq[Expected a carry value of type digpair]
   
-  \ Optimization: If both things to subtract from this are zero, we
-  \ can just skip the subtraction.
+  \; Optimization: If both things to subtract from this are zero, we
+  \; can just skip the subtraction.
   /case (and m-is-zero carry-is-zero) yep - (carried n carry)
   
   /cast (fixops-minus fixops n-ldig /carried m-ldig cdig)
@@ -401,8 +401,8 @@
     err.\-qq[Expected an m-carried value of type carried]
   /let carry-is-zero (fixops-is-zero fixops carry)
   
-  \ Optimization: If either factor is zero and the carry is also zero,
-  \ we can just use a result of zero.
+  \; Optimization: If either factor is zero and the carry is also
+  \; zero, we can just use a result of zero.
   /case (and n-is-zero carry-is-zero) yep - (carried n carry)
   
   /case (and (fixops-is-zero fixops m) carry-is-zero) yep -
@@ -418,14 +418,14 @@
 (defn digpair-times n m-carried
   (cast n digpair fixops n-is-zero n-bdig n-ldig
     err.\-qq[Expected an n value of type digpair]
-  \ TODO: See if this can be more efficient.
+  \; TODO: See if this can be more efficient.
   /cast m-carried carried m carry
     err.\-qq[Expected an m-carried value of type carried]
   /cast m digpair - m-is-zero m-bdig m-ldig
     err.\-qq[Expected an m value of type digpair]
   
-  \ Optimization: If either factor is zero, we can just use the
-  \ carry as the result value.
+  \; Optimization: If either factor is zero, we can just use the
+  \; carry as the result value.
   /case n-is-zero yep - (carried carry n)
   /case m-is-zero yep - (carried carry m)
   
@@ -461,9 +461,9 @@
       err.\-qq[Internal error]
     /c four-digit carry dig zero-digit zero-digit)
   
-  \ NOTE: When the digits are 16-bit, the maximum value of `carry` is
-  \ 0xFFFFFFFF, and the maximum value of `n` times `m` plus the carry
-  \ is 0xFFFFFFFF00000000, so there's no excess.
+  \; NOTE: When the digits are 16-bit, the maximum value of `carry` is
+  \; 0xFFFFFFFF, and the maximum value of `n` times `m` plus the carry
+  \; is 0xFFFFFFFF00000000, so there's no excess.
   /cast
     (c plus-no-carry r-ll
     /c plus-no-carry r-lb
@@ -484,8 +484,8 @@
     err.\-qq[Called digpair-div-small with a zero divisor]
   /let carry-is-zero (fixops-is-zero fixops carry)
   
-  \ Optimization: If the dividend is zero and the carry is also zero,
-  \ we can just use a result of zero.
+  \; Optimization: If the dividend is zero and the carry is also zero,
+  \; we can just use a result of zero.
   /case (and n-is-zero carry-is-zero) yep - (carried n carry)
   
   /cast (fixops-div fixops n-bdig /carried m carry)
@@ -533,47 +533,47 @@
         result
         err.\-qq[Internal error]))
   /let mid1-result
-    \ We ignore the remainder because we're just going to calculate a
-    \ more accurate remainder by multiplying the full-precision
-    \ divisor.
+    \; We ignore the remainder because we're just going to calculate a
+    \; more accurate remainder by multiplying the full-precision
+    \; divisor.
     (c ignore-carry /c-new digpair-dual-div
       (c four-digits zdig n3 n2 n1)
     /carried
-      \ We ignore the carry because it must be zero.
+      \; We ignore the carry because it must be zero.
       (c ignore-carry /digpair-plus long-one
       /c four-digits zdig m3 m2 m1)
       long-zero)
   /let mid1-remainder
-    \ We ignore the subtraction carry because it must be zero.
+    \; We ignore the subtraction carry because it must be zero.
     (c ignore-carry /digpair-minus n3210
     /carried
-      \ We ignore the multiplication carry because it must be zero.
+      \; We ignore the multiplication carry because it must be zero.
       (c ignore-carry /digpair-times m3210
       /carried mid1-result long-zero)
       long-zero)
   
-  \ At this point, we might be *one* subtraction away from a fully
-  \ accurate result. (We can't be two or more subtractions away, since
-  \ the approximate divisor would have been small enough to fit in the
-  \ space of twice the accurate divisor. After all, the approximate
-  \ divisor is only too large by (1 + maxDigitValue) or less, and we
-  \ already know the divisor is at least (1 + maxDigitValue)^2.) So,
-  \ we do that subtraction if possible.
-  \
+  \; At this point, we might be *one* subtraction away from a fully
+  \; accurate result. (We can't be two or more subtractions away,
+  \; since the approximate divisor would have been small enough to fit
+  \; in the space of twice the accurate divisor. After all, the
+  \; approximate divisor is only too large by (1 + maxDigitValue) or
+  \; less, and we already know the divisor is at least
+  \; (1 + maxDigitValue)^2.) So, we do that subtraction if possible.
+  \;
   /case (digpair-compare mid1-remainder m3210) yep -
     (carried mid1-result mid1-remainder)
     (carried
       
-      \ We ignore the carry because it must be zero.
+      \; We ignore the carry because it must be zero.
       (c ignore-carry /digpair-plus mid1-result
       /carried long-one long-zero)
       
-      \ We ignore the carry because it must be zero.
+      \; We ignore the carry because it must be zero.
       (c ignore-carry /digpair-minus mid1-remainder
       /carried m3210 long-zero))))
 
 (defn digpair-dual-div n m-carried
-  \ TODO: See if this can be more efficient.
+  \; TODO: See if this can be more efficient.
   (cast n digpair fixops n-is-zero n-bdig n-ldig
     err.\-qq[Expected an n value of type digpair]
   /cast m-carried carried m carry
@@ -587,13 +587,13 @@
   /let zdig fixops-zero.fixops
   /case carry-is-zero yep -
     
-    \ If the carry is zero and the dividend is less than the divisor,
-    \ we return zero and a remainder equal to the dividend.
+    \; If the carry is zero and the dividend is less than the divisor,
+    \; we return zero and a remainder equal to the dividend.
     (case (fixops-compare fixops n m) yep -
       (carried digpair-as-zero.n n)
     
-    \ If the carry is zero and the first digit of the divisor is zero,
-    \ we can reduce this division to a division of the digits.
+    \; If the carry is zero and the first digit of the divisor is
+    \; zero, we can reduce this division to a division of the digits.
     /case (fixops-is-zero fixops m-bdig) yep -
       (cast (fixops-dual-div fixops n-bdig /carried m-ldig zdig)
         carried r-bdig intermediate1-carry
@@ -606,21 +606,21 @@
       /carried (digpair-with-digits n r-bdig r-ldig)
       /digpair-with-digits zdig carry)
     
-    \ If the carry is zero, if the divisor is less than or equal to
-    \ the dividend, and if the first digit of the divisor isn't zero,
-    \ then we split the digits into sub-digits and divide by an
-    \ approximation where we drop the least significant sub-digits.
-    \ The approximation may be off by one, so we check for this and
-    \ subtract one more time if necessary. We handle this in a
-    \ separate function.
+    \; If the carry is zero, if the divisor is less than or equal to
+    \; the dividend, and if the first digit of the divisor isn't zero,
+    \; then we split the digits into sub-digits and divide by an
+    \; approximation where we drop the least significant sub-digits.
+    \; The approximation may be off by one, so we check for this and
+    \; subtract one more time if necessary. We handle this in a
+    \; separate function.
     /digpair-dual-div-no-carry fixops n m)
   
-  \ If the carry isn't zero, we shift the carry-and-divisor
-  \ combination down by one digit, do a division from there, and then
-  \ do another division to account for the digit that was dropped.
-  \ This means the carry-and-divisor combination will have one fewer
-  \ nonzero digit, and it will take no more than two of these
-  \ reductions to wind up at the carry-is-zero case.
+  \; If the carry isn't zero, we shift the carry-and-divisor
+  \; combination down by one digit, do a division from there, and then
+  \; do another division to account for the digit that was dropped.
+  \; This means the carry-and-divisor combination will have one fewer
+  \; nonzero digit, and it will take no more than two of these
+  \; reductions to wind up at the carry-is-zero case.
   /cast
     (c-new digpair-dual-div (digpair-with-digits n c-ldig n-bdig)
     /carried m (digpair-with-digits n zdig c-bdig))
@@ -643,7 +643,7 @@
   /carried result carry))
 
 
-\ ===== One-bit fixnums in terms of (yep/nil) and (nope/nil) =========
+\; ===== One-bit fixnums in terms of (yep/nil) and (nope/nil) ========
 
 (defn make-fixops-yep-nope -
   (fixops
@@ -652,13 +652,13 @@
     (not)
     
     (fn n m
-      \ Compare
+      \; Compare
       (case n yep -
         (case m yep - (nil) (nope/nil))
         (case m yep - (yep/nil) (nil))))
     
     (fn n m-carried
-      \ Plus
+      \; Plus
       (cast m-carried carried m carry
         err.\-qq[Expected an m-carried value of type carried]
       /case (xor n m) yep -
@@ -666,7 +666,7 @@
         (carried carry n)))
     
     (fn n m-carried
-      \ Minus
+      \; Minus
       (cast m-carried carried m carry
         err.\-qq[Expected an m-carried value of type carried]
       /case (xor n m) yep -
@@ -674,7 +674,7 @@
         (carried carry carry)))
     
     (fn n m-carried
-      \ Times
+      \; Times
       (cast m-carried carried m carry
         err.\-qq[Expected an m-carried value of type carried]
       /case (and n m) yep -
@@ -682,19 +682,19 @@
         (carried carry /nope/nil)))
     
     (fn n m-carried
-      \ Div
+      \; Div
       (cast m-carried carried m carry
         err.\-qq[Expected an m-carried value of type carried]
       /case m nope -
-        \ Divide by zero.
+        \; Divide by zero.
         err.\-qq[
           Called make-fixops-yep-nope's div operation with a zero
           divisor]
-      \ Divide by one.
+      \; Divide by one.
       /carried n carry))
     
     (fn n m-carried
-      \ Dual-div
+      \; Dual-div
       (cast n digpair - n-is-zero n1 n0
         err.\-qq[Expected an n value of type digpair]
       /cast m-carried carried m carry
@@ -704,19 +704,19 @@
       /cast carry digpair - carry-is-zero n3 n2
         err.\-qq[Expected a carry value of type digpair]
       /case m-is-zero yep -
-        \ Divide by zero.
+        \; Divide by zero.
         err.\-qq[
           Called make-fixops-yep-nope's dual-div operation with a zero
           divisor]
       /case (and not.m1 m0) yep -
-        \ Divide by one.
+        \; Divide by one.
         (carried n carry)
       /case not.m0 yep -
-        \ Divide by two.
+        \; Divide by two.
         (carried (digpair-with-digits n n2 n1)
         /digpair-with-digits n (nope/nil) n0)
       
-      \ Divide by three.
+      \; Divide by three.
       /let r1 (or n3 /and n2 n1)
       /let n2b (case r1 nope - n2 /and n3 n1)
       /let n1b (case r1 nope - n1 not.n1)
@@ -728,7 +728,7 @@
         (case r0 nope - n0b not.n0b)))))
 
 
-\ ===== Big, zero-based natural numbers ==============================
+\; ===== Big, zero-based natural numbers =============================
 
 (def-type binat-internals depth fixnum)
 (def-type binat fixops maybe-internals)
@@ -930,10 +930,10 @@
   /carried improper-binat-reduce.result improper-binat-reduce.carry))
 
 
-\ ===== Big signed integers ==========================================
-\
-\ These might even be integers that carry a big sign. You can't say
-\ they aren't.
+\; ===== Big signed integers =========================================
+\;
+\; These might even be integers that carry a big sign. You can't say
+\; they aren't.
 
 (def-type bigint fixops nat)
 
@@ -1049,12 +1049,12 @@
       /carried (bigint fixops /c result-sign result)
       /bigint fixops /c carry-sign carry))
   
-  \ NOTE: These examples may clarify the following signs.
-  \
-  \   9  /   2  =   4  R   1  because   9  =   2  *   4  +   1
-  \   9  /  -2  =  -4  R   1  because   9  =  -2  *  -4  +   1
-  \  -9  /   2  =  -4  R  -1  because  -9  =   2  *  -4  +  -1
-  \  -9  /  -2  =   4  R  -1  because  -9  =  -2  *   4  +  -1
+  \; NOTE: These examples may clarify the following signs.
+  \;
+  \;   9  /   2  =   4  R   1  because   9  =   2  *   4  +   1
+  \;   9  /  -2  =  -4  R   1  because   9  =  -2  *  -4  +   1
+  \;  -9  /   2  =  -4  R  -1  because  -9  =   2  *  -4  +  -1
+  \;  -9  /  -2  =   4  R  -1  because  -9  =  -2  *   4  +  -1
   
   /case n
     
@@ -1072,14 +1072,14 @@
   
   /bigint fixops /nil))
 
-\ TODO: Port toStringInRadix and bigIntFromStringInRadix. We don't
-\ have string manipulation yet, though.
+\; TODO: Port toStringInRadix and bigIntFromStringInRadix. We don't
+\; have string manipulation yet, though.
 
 
-\ ===== AVL trees ====================================================
+\; ===== AVL trees ===================================================
 
-\ TODO: See if our use of binary bigints is less efficient than
-\ era-avl.js's use of unary bigints.
+\; TODO: See if our use of binary bigints is less efficient than
+\; era-avl.js's use of unary bigints.
 
 (def-type avl-leaf fixops compare)
 (def-type
@@ -1184,13 +1184,13 @@
   /depth-changed w-depth-change t-depth-change tree))
 
 (defn avl-branch-finish-minus fixops compare branches
-  \ NOTE: This effectively concatenates the branches. Like
-  \ `improper-avl-branch-balance`, this assumes all the elements are
-  \ already in the proper order, just not necessarily balanced between
-  \ the two branches. It's not a merge of arbitrary trees. For that,
-  \ see `avl-merge`. Furthermore, this can even rely on the fact that
-  \ the branches were initially balanced before the root key/value
-  \ entry was subtracted from the tree.
+  \; NOTE: This effectively concatenates the branches. Like
+  \; `improper-avl-branch-balance`, this assumes all the elements are
+  \; already in the proper order, just not necessarily balanced
+  \; between the two branches. It's not a merge of arbitrary trees.
+  \; For that, see `avl-merge`. Furthermore, this can even rely on the
+  \; fact that the branches were initially balanced before the root
+  \; key/value entry was subtracted from the tree.
   (cast branches avl-branches nub nbranch yub ybranch
     err.\-qq[Expected a branches value of type avl-branches]
   /let attempt-shift
@@ -1241,14 +1241,14 @@
     /lazy-cons (entry key val) /c-new avl-lazy-entries-asc ybranch)
     err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
 
-\ NOTE: This body takes its args as (state k v).
+\; NOTE: This body takes its args as (state k v).
 (defn avl-any-fold-asc state tree body
   (lazy-any-foldl state avl-lazy-entries-asc.tree /fn state entry
     (cast entry entry k v
       err.\-qq[Internal error]
     /c body state k v)))
 
-\ NOTE: This body takes its args as (state k v).
+\; NOTE: This body takes its args as (state k v).
 (defn avl-any-map-fold-asc state tree body
   (case tree avl-leaf fixops compare
     (folding state tree)
@@ -1300,19 +1300,19 @@
 (def-type avl-merge-val a b)
 
 (defn avl-merge a b maybe-process-both
-  \ TOOD: Make sure this algorithm is near-optimal both when
-  \ `maybe-process-both` is (yep ...) and when it's (nil). When it's
-  \ (nil), this algorithm certainly takes at least O( m + n ) time
-  \ because it transforms every element.
-  \
-  \ Online forum advice for merging AVL trees seems to recommend the
-  \ use of sorted vectors, building the tree by bisecting the vector.
-  \ We don't really have bigint-indexable vectors, and bisecting a
-  \ bigint would have its own time complexity to worry about, so
-  \ that's not an obvious way forward.
-  \
-  \ (Yes, we're worrying about bigint operation complexity while not
-  \ worrying about memory allocation complexity.)
+  \; TOOD: Make sure this algorithm is near-optimal both when
+  \; `maybe-process-both` is (yep ...) and when it's (nil). When it's
+  \; (nil), this algorithm certainly takes at least O( m + n ) time
+  \; because it transforms every element.
+  \;
+  \; Online forum advice for merging AVL trees seems to recommend the
+  \; use of sorted vectors, building the tree by bisecting the vector.
+  \; We don't really have bigint-indexable vectors, and bisecting a
+  \; bigint would have its own time complexity to worry about, so
+  \; that's not an obvious way forward.
+  \;
+  \; (Yes, we're worrying about bigint operation complexity while not
+  \; worrying about memory allocation complexity.)
   
   (let to-left
     (fn val
@@ -1345,10 +1345,10 @@
   /let combine-branch-changes
     (fn wub tub w-balanced-change t-balanced-change
       w-sub-merge-change t-sub-merge-change
-      \ TODO: This is one of the few places that actually adds two
-      \ depth numbers of non-constant size. See if there's an
-      \ alternative algorithm that avoids this. If there is, we should
-      \ switch to a unary bigint representation of depth.
+      \; TODO: This is one of the few places that actually adds two
+      \; depth numbers of non-constant size. See if there's an
+      \; alternative algorithm that avoids this. If there is, we
+      \; should switch to a unary bigint representation of depth.
       (case bigint-is-zero.wub yep -
         (bigint-plus t-balanced-change t-sub-merge-change)
         (bigint-plus w-balanced-change w-sub-merge-change)))
@@ -1387,10 +1387,10 @@
         b-nub b-yub n-change y-change bn-change by-change)
       tree)
     
-    \ TODO: See if this case would be more efficient if we sometimes
-    \ merged `a-wbranch` and `b` instead. We'd probably need to know
-    \ which of `a` and `b` is smallest, and then merge it with the
-    \ smallest branch of the other.
+    \; TODO: See if this case would be more efficient if we sometimes
+    \; merged `a-wbranch` and `b` instead. We'd probably need to know
+    \; which of `a` and `b` is smallest, and then merge it with the
+    \; smallest branch of the other.
     (cast (avl-branches-swap b-lt-a a-branches)
       avl-branches a-wub a-wbranch a-tub a-tbranch
       err.\-qq[Expected an a-branches value of type avl-branches]
@@ -1452,14 +1452,14 @@
         err.\-qq[Internal error]
       /avl-minus-extreme-entry-succeeded
         
-        \ There are two ways the overall max depth can decrease:
-        \
-        \  - Subtracting the entry from one side caused that side to
-        \    stop having more max depth than the other.
-        \  - Subtracting the entry from one side caused that side to
-        \    have much less max depth than the other, and the other
-        \    lost some depth during a rebalancing.
-        \
+        \; There are two ways the overall max depth can decrease:
+        \;
+        \;  - Subtracting the entry from one side caused that side to
+        \;    stop having more max depth than the other.
+        \;  - Subtracting the entry from one side caused that side to
+        \;    have much less max depth than the other, and the other
+        \;    lost some depth during a rebalancing.
+        \;
         (or
           (and-lazy (not bigint-is-zero.tub) /fn -
             bigint-is-zero.balanced-tub)
@@ -1510,14 +1510,14 @@
       err.\-qq[Internal error]
     /yep-nope-swap
       
-      \ There are two ways the overall max depth can increase:
-      \
-      \  - Adding the entry to one side caused that side to start
-      \    having more max depth than the other.
-      \  - Adding the entry to one side caused that side to have much
-      \    more max depth than the other, and it didn't lose that edge
-      \    during a rebalancing.
-      \
+      \; There are two ways the overall max depth can increase:
+      \;
+      \;  - Adding the entry to one side caused that side to start
+      \;    having more max depth than the other.
+      \;  - Adding the entry to one side caused that side to have much
+      \;    more max depth than the other, and it didn't lose that
+      \;    edge during a rebalancing.
+      \;
       (or
         (and-lazy bigint-is-zero.tub /fn -
         /not bigint-is-zero.balanced-tub)
@@ -1563,14 +1563,14 @@
       err.\-qq[Internal error]
     /yep-nope-swap
       
-      \ There are two ways the overall max depth can decrease:
-      \
-      \  - Subtracting the entry from one side caused that side to
-      \    stop having more max depth than the other.
-      \  - Subtracting the entry from one side caused that side to
-      \    have much less max depth than the other, and the other lost
-      \    some depth during a rebalancing.
-      \
+      \; There are two ways the overall max depth can decrease:
+      \;
+      \;  - Subtracting the entry from one side caused that side to
+      \;    stop having more max depth than the other.
+      \;  - Subtracting the entry from one side caused that side to
+      \;    have much less max depth than the other, and the other
+      \;    lost some depth during a rebalancing.
+      \;
       (or
         (and-lazy (not bigint-is-zero.tub) /fn -
           bigint-is-zero.balanced-tub)
@@ -1584,14 +1584,14 @@
 (defn avl-has-any tree
   (not/isa avl-leaf tree))
 
-\ TODO: Rename this to be more convenient to call.
+\; TODO: Rename this to be more convenient to call.
 (defn avl-minus-entry-ignoring-depth avl k
   (case (avl-minus-entry avl k)
     yep result result
     nope result result
     err.\-qq[Internal error]))
 
-\ TODO: Rename this to be more convenient to call.
+\; TODO: Rename this to be more convenient to call.
 (defn avl-plus-entry-ignoring-depth avl k
   (case (avl-plus-entry avl k)
     yep result result
@@ -1604,19 +1604,19 @@
 (defn avl-plus-nils tree list
   (foldl tree list /avl-plus-nil))
 
-\ NOTE: This check takes its args as (k v).
+\; NOTE: This check takes its args as (k v).
 (defn avl-any tree check
   (caselet result
     (avl-any-fold-asc (nil) tree /fn state k v /c check k v)
     nope - (nope/nil)
     result))
 
-\ NOTE: This check takes its args as (k v).
+\; NOTE: This check takes its args as (k v).
 (defn avl-all tree check
   (not/avl-any tree /fn k v
     (not/c check k v)))
 
-\ NOTE: This body takes its args as (k v).
+\; NOTE: This body takes its args as (k v).
 (defn avl-each tree body
   (let -
     (avl-any tree /fn k v
@@ -1624,12 +1624,12 @@
       /nope/nil))
   /nil))
 
-\ NOTE: This body takes its args as (state k v).
+\; NOTE: This body takes its args as (state k v).
 (defn avl-fold-asc state tree body
   (proj1 nope /avl-any-fold-asc state tree /fn state k v
     (nope/c body state k v)))
 
-\ NOTE: This body takes its args as (k v).
+\; NOTE: This body takes its args as (k v).
 (defn avl-map tree body
   (case
     (avl-any-map-fold-asc (nil) tree /fn state k v
@@ -1644,26 +1644,26 @@
     tree))
 
 
-\ ===== Finger trees =================================================
+\; ===== Finger trees ================================================
 
-\ NOTE: Finger trees don't have their best amortized computational
-\ complexity unless they can use lazy thunks, so they're not like the
-\ other, stateless utilities here.
+\; NOTE: Finger trees don't have their best amortized computational
+\; complexity unless they can use lazy thunks, so they're not like the
+\; other, stateless utilities here.
 
-\ The `ftree-meta` value's `make-lazy` and `force` should usually
-\ implement memoized thunks. However, they may also implement pure
-\ thunks that execute more than once. This finger tree implementation
-\ will only ever call them with thunks that are safe to execute more
-\ than once, and which have the same space footprint before and after
-\ the computation.
-\
-\ When `make-lazy` implements memoized thunks, the `ftree-push` and
-\ `ftree-pop` operations run in amortized constant time, and the
-\ `ftree-get-summary-stack` and `ftree-split` operations run in
-\ logarithmic time. (TODO: Is that true?)
-\
-\ When it implements pure thunks, all four of these operations run in
-\ logarithmic time. (TODO: Is that true?)
+\; The `ftree-meta` value's `make-lazy` and `force` should usually
+\; implement memoized thunks. However, they may also implement pure
+\; thunks that execute more than once. This finger tree implementation
+\; will only ever call them with thunks that are safe to execute more
+\; than once, and which have the same space footprint before and after
+\; the computation.
+\;
+\; When `make-lazy` implements memoized thunks, the `ftree-push` and
+\; `ftree-pop` operations run in amortized constant time, and the
+\; `ftree-get-summary-stack` and `ftree-split` operations run in
+\; logarithmic time. (TODO: Is that true?)
+\;
+\; When it implements pure thunks, all four of these operations run in
+\; logarithmic time. (TODO: Is that true?)
 
 (defn make-immediate-lazy make-lazy val
   (c make-lazy /fn - val))
@@ -1674,20 +1674,20 @@
 (def-type ftree-meta make-lazy force measure plus)
 (def-type ftree-node summary elements)
 
-\ NOTE: The values of `n-digits` and `y-digits` are lists of one to
-\ four elements. When used directly in an `ftree-deep`, the elements
-\ in `n-digits` are the first ones, and the keys in `y-digits` are the
-\ last ones.
+\; NOTE: The values of `n-digits` and `y-digits` are lists of one to
+\; four elements. When used directly in an `ftree-deep`, the elements
+\; in `n-digits` are the first ones, and the keys in `y-digits` are
+\; the last ones.
 (def-type ftree-digits n-digits y-digits)
 
 (def-type ftree-empty meta)
 (def-type ftree-single meta element)
 
-\ NOTE: The value of `lazy-next` is a `make-lazy` object that
-\ calculates a finger tree containing "nodes" containing the type of
-\ elements of this finger tree. A node is an object of the form
-\ (ftree-node summary elements), where `elements` is a list of two or
-\ three elements.
+\; NOTE: The value of `lazy-next` is a `make-lazy` object that
+\; calculates a finger tree containing "nodes" containing the type of
+\; elements of this finger tree. A node is an object of the form
+\; (ftree-node summary elements), where `elements` is a list of two or
+\; three elements.
 (def-type ftree-deep meta digits lazy-next)
 
 (defn ftree-digits-swap polarity digits
@@ -1734,16 +1734,17 @@
     /ftree-deep meta
       (ftree-digits-swap polarity
       /ftree-digits w-digits (cons d3 /cons new-element /nil))
-    \ NOTE: This `makeLazy()` isn't constant-time, so it's impure. It
-    \ does have the same space footprint before and after.
+    \; NOTE: This `makeLazy()` isn't constant-time, so it's impure. It
+    \; does have the same space footprint before and after.
     /c make-lazy /fn -
       (c-new ftree-push (c force lazy-next) polarity new-node))
     err.\-qq[
       Expected a tree value of type ftree-empty, ftree-single, or
       ftree-deep]))
 
-\ NOTE: If the `polarity` is `(nope/nil)`, this will push the elements
-\ so they're in the opposite order as they are in the original list.
+\; NOTE: If the `polarity` is `(nope/nil)`, this will push the
+\; elements so they're in the opposite order as they are in the
+\; original list.
 (defn ftree-push-list tree polarity list
   (foldl tree list /fn tree elem /ftree-push tree polarity elem))
 
@@ -1799,8 +1800,8 @@
       Expected a tree value of type ftree-empty, ftree-single, or
       ftree-deep]))
 
-\ This works like `(ftree-deep meta digits lazy-next)`, except that it
-\ allows one of the sides of digits to be empty.
+\; This works like `(ftree-deep meta digits lazy-next)`, except that
+\; it allows one of the sides of digits to be empty.
 (defn ftree-maybe-deep polarity meta digits lazy-next
   (cast meta ftree-meta make-lazy force measure plus
     err.\-qq[Expected a meta value of type ftree-meta]
@@ -1906,10 +1907,10 @@
           
           err.\-qq[Internal error]))
     
-    \ Try each of the `polarity`-side digits.
+    \; Try each of the `polarity`-side digits.
     /c try-side summary-so-far polarity /fn summary-so-far
     
-    \ Try a recursive call on the `lazy-next`.
+    \; Try a recursive call on the `lazy-next`.
     /case
       (c-new ftree-split-iter (c force lazy-next) summary-so-far
         summary-stack-rest polarity test-is-early)
@@ -1920,7 +1921,7 @@
         (ftree-push-list late-tree not.polarity w-digits))
       
       ftree-split-iter-result-fell-off summary-so-far
-      \ Try each of the digits on the side opposite to `polarity`.
+      \; Try each of the digits on the side opposite to `polarity`.
       (c try-side summary-so-far not.polarity
       /fn summary-so-far
       /ftree-split-iter-result-fell-off summary-so-far)
@@ -1957,8 +1958,8 @@
   /cast a-meta ftree-meta make-lazy force measure plus
     err.\-qq[Expected an a-meta value of type ftree-meta]
   /ftree-deep a-meta (ftree-digits an-digits by-digits)
-  \ NOTE: This `make-lazy` isn't constant-time, so it's impure. It
-  \ does have the same space footprint before and after.
+  \; NOTE: This `make-lazy` isn't constant-time, so it's impure. It
+  \; does have the same space footprint before and after.
   /c make-lazy /c-new ftree-append-with-middle
     (c force a-lazy-next)
     (append ay-digits /append middle bn-digits)
@@ -1966,32 +1967,33 @@
 
 (def-type ftree-split-result early-tree late-tree)
 
-\ This looks through every segment of the tree starting from the end
-\ that corresponds with `polarity` until it can drill down to the one
-\ element whose summary doesn't satisfy the predicate `test-is-early`.
-\ It returns `(ftree-split-result early-tree late-tree)` with a tree
-\ containing the early elements and a tree containing the rest. (Note
-\ that if the polarity is 1, the `earlyTree` will be a suffix of the
-\ original tree, and `lateTree` will be a prefix.)
-\
-\ The `test-is-early` function is expected to satisfy certain
-\ properties with regard to the measurement monoid:
-\
-\   early (a + b) -> early a
-\   early 0
-\
-\ This allows us to scan over aggregate summaries (the `summary`
-\ property of `(ftree-node summary elements)` node values) and
-\ determine they're fully early without having to drill down and scan
-\ them for exceptional prefixes.
-\
-\ NOTE: This operation doesn't follow quite the same contract as Hinze
-\ and Paterson's `splitTree`. In particular, where we use
-\ `test-is-early`, they use the complement of that predicate, and
-\ where we split the tree into two trees, they split it into two trees
-\ and a first non-early element in between, which their operation
-\ requires to exist.
-\
+\; This looks through every segment of the tree starting from the end
+\; that corresponds with `polarity` until it can drill down to the one
+\; element whose summary doesn't satisfy the predicate
+\; `test-is-early`. It returns
+\; `(ftree-split-result early-tree late-tree)` with a tree containing
+\; the early elements and a tree containing the rest. (Note that if
+\; the polarity is 1, the `earlyTree` will be a suffix of the original
+\; tree, and `lateTree` will be a prefix.)
+\;
+\; The `test-is-early` function is expected to satisfy certain
+\; properties with regard to the measurement monoid:
+\;
+\;   early (a + b) -> early a
+\;   early 0
+\;
+\; This allows us to scan over aggregate summaries (the `summary`
+\; property of `(ftree-node summary elements)` node values) and
+\; determine they're fully early without having to drill down and scan
+\; them for exceptional prefixes.
+\;
+\; NOTE: This operation doesn't follow quite the same contract as
+\; Hinze and Paterson's `splitTree`. In particular, where we use
+\; `test-is-early`, they use the complement of that predicate, and
+\; where we split the tree into two trees, they split it into two
+\; trees and a first non-early element in between, which their
+\; operation requires to exist.
+\;
 (defn ftree-split tree polarity test-is-early
   (let meta
     (case tree ftree-empty meta meta
@@ -2007,7 +2009,7 @@
       ftree-get-summary-stack.tree polarity test-is-early)
     
     ftree-split-iter-result-fell-off summary-so-far
-    \ Apparently everything is early.
+    \; Apparently everything is early.
     (ftree-split-result tree ftree-empty.meta)
     
     ftree-split-iter-result-completed early-tree late-tree
@@ -2016,14 +2018,14 @@
     err.\-qq[Internal error]))
 
 
-\ ===== Big finger trees =============================================
-\
-\ A native platform (namely, JavaScript) may provide an efficient
-\ finger-tree-like data structure with the exception that the size of
-\ the data is limited. These "big finger trees" are finger trees
-\ implemented as finger trees whose elements abstractly follow a
-\ finger-tree-style interface, with the anomaly that the elements'
-\ concatenation operation doesn't have to be total.
+\; ===== Big finger trees ============================================
+\;
+\; A native platform (namely, JavaScript) may provide an efficient
+\; finger-tree-like data structure with the exception that the size of
+\; the data is limited. These "big finger trees" are finger trees
+\; implemented as finger trees whose elements abstractly follow a
+\; finger-tree-style interface, with the anomaly that the elements'
+\; concatenation operation doesn't have to be total.
 
 (def-type fix-ftree-ops push pop maybe-plus split)
 (def-type bftree fix-ftree-ops ftree)
@@ -2115,7 +2117,7 @@
     (bftree fix-ftree-ops /ftree-push late-tree polarity late-elem)))
 
 
-\ ===== Comparison utilities =========================================
+\; ===== Comparison utilities ========================================
 
 (def-type comparable compare val)
 
@@ -2126,9 +2128,9 @@
     err.\-qq[Expected a b value of type comparable]
   /c compare a-val b-val))
 
-\ With the following utilities `bimap` and `cmpd-compare`, we can more
-\ easily define ordered abstract data types. For instance:
-\ -----
+\; With the following utilities `bimap` and `cmpd-compare`, we can
+\; more easily define ordered abstract data types. For instance:
+\; -----
 \-rm(
   (def-type foo x y)
   (def-type bar x)
@@ -2145,12 +2147,12 @@
       /cmpd-succ/case it baz (cmpd-nil)
         err.\-qq[Expected a value of type foo, bar, or baz])))
 )
-\ -----
+\; -----
 
 (defn bimap combine a b func
   (c combine (c func a) (c func b)))
 
-\ NOTE: The "cmpd" stands for "comparison delegate."
+\; NOTE: The "cmpd" stands for "comparison delegate."
 (def-type cmpd-succ rest)
 (def-type cmpd-cons compare val rest)
 (def-type cmpd-nil)
@@ -2182,7 +2184,7 @@
   /nil))
 
 
-\ ===== Recommended settings for performance =========================
+\; ===== Recommended settings for performance ========================
 
 (defn make-fixops-recommended -
   (make-fixops-yep-nope/nil))
@@ -2191,7 +2193,7 @@
   (bigint-zero-for-fixops/make-fixops-recommended/nil))
 
 
-\ ===== Sets (bags) ==================================================
+\; ===== Sets (bags) =================================================
 
 (def-type bag avl-tree)
 
@@ -2264,7 +2266,7 @@
     (bag-just compare /c func elem)))
 
 
-\ ===== Lenses =======================================================
+\; ===== Lenses ======================================================
 
 (def-type lens get replace)
 
@@ -2284,7 +2286,7 @@
   /c replace /c func /c get /nil))
 
 
-\ ===== Finishing up and some basic unit tests =======================
+\; ===== Finishing up and some basic unit tests ======================
 
 (run-defs)
 

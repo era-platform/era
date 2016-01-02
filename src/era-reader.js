@@ -70,7 +70,7 @@
 //       environment just to define those assets.
 //
 //     - Solution: Like lots of programming language syntaxes, Era's
-//       syntax supports string literals \-qq[...] and \-qq-sp[...]. A
+//       syntax supports string literals \-qq[...] and \-qq-pr[...]. A
 //       string literal can contain *practically* any text, and that
 //       text will be *mostly* reflected in the reader's final result.
 //
@@ -87,7 +87,7 @@
 //       ways that add or remove stages.
 //
 //     - Solution: This string syntax uses escape sequences
-//       \-qq[...] and \-qq-sp[...] that look exactly like the string
+//       \-qq[...] and \-qq-pr[...] that look exactly like the string
 //       syntaxes themselves, and the sole purpose of this escape
 //       sequence is for generating code that contains this string
 //       syntax. Escape sequences occurring inside these brackets are
@@ -153,7 +153,7 @@
 //       such as when I'm writing my natural-language prose in some
 //       kind of markdown format.
 //
-//     - Solution: The \-qq-sp[...] string syntax does not collapse
+//     - Solution: The \-qq-pr[...] string syntax does not collapse
 //       whitespace, so it can be used instad of \-qq[...] in that
 //       case.
 //
@@ -177,19 +177,21 @@
 //   carriage return, newline, or a sequence of carriage return and
 //     newline ignores itself, but in a command stream it prevents any
 //     . that may follow from consuming this command
-//   \ followed by peeking space, tab, or the end of the line or
-//     document reads until it peeks the end of the line or the
-//     document, and it ignores it all (for comments)
+//   \ followed by a spaced escape sequence suffix reads it, and it
+//     means whatever \ followed by that escape sequence suffix means
+//     here
+//   \; reads until it peeks the end of the line or the document, and
+//     it ignores it all (for comments)
 //   \-rm (or any other string escape sequence involving -qq -uq -wq
-//     -rq -sp and -rm which ends up meaning \-rm with a
-//     quasiquotation depth of zero) reads any unsophisticated string
-//     escape, and it ignores it all (for comments)
+//     -rq -pr -rm and -re which ends up meaning \-rm with a
+//     quasiquotation depth of zero) reads any spaced unsophisticated
+//     string escape suffix, and it ignores it all (for comments)
 //   any Basic Latin alphanumeric code point or - or * reads any
 //     number of code points in this set, and it means a string
 //
 //   \ followed by a delimited sequence of any number of s-expressions
 //     (or any other string escape sequence involving -qq -uq -wq -rq
-//     and -sp which ends up being a delimited string with a
+//     -pr and -re which ends up being a delimited string with a
 //     quasiquotation depth of zero) means a list of those
 //     s-expressions
 //     //
@@ -214,23 +216,35 @@
 //   . consumes a previously read s-expression, and it reads a second
 //     s-expression without . infix support and means a two-element
 //     list
-//   \-qq or \-qq-sp followed by a delimited string (or any other
-//     string escape sequence involving -qq -uq -wq -rq and -sp which
-//     ends up being a delimited string with a quasiquotation depth of
-//     one) reads that string while suppressing whitespace as
+//   \-qq or \-qq-pr followed by a delimited string (or any other
+//     string escape sequence involving -qq -uq -wq -rq -pr and -re
+//     which ends up being a delimited string with a quasiquotation
+//     depth of one) reads that string while suppressing whitespace as
 //     appropriate. If whitespace normalization is not suppressed, it
 //     prefixes the string contents with a lurking command to remove
 //     any successive raw whitespace and ignore its lurking commands,
-//     it suffixes the string contents with a lurking command to do
-//     the same thing to its preceding raw whitespace. It means the
+//     and it suffixes the string contents with a lurking command to
+//     do the same thing to its preceding raw whitespace. It means the
 //     string with its lurking commands processed, but it's an error
 //     for any escape sequence inside to have a quasiquotation depth
-//     of zero unless it's \-ls and it's an error for -sp to be used
+//     of zero unless it's \-ls and it's an error for -pr to be used
 //     at a depth of zero.
 //     // NOTE: A string's contents are not only text but also any
 //     // string interpolations occurring in the string.
 //
-// If any syntax is delimited, it means this:
+// If any syntax is spaced, it means this:
+//
+//   space, tab, carriage return, or newline reads a spaced instance
+//     of the syntax
+//   -re followed by a spaced = reads a spaced unsophisticated escape
+//     sequence suffix, ignores it, then reads a spaced instance of
+//     the syntax
+//     // NOTE: The "re" means "remark escape".
+//     // NOTE: This means -re=; can be used to write a comment in
+//     // the middle of a complicated escape sequence.
+//   any other code point is read as the syntax
+//
+// If any syntax is delimited, it means a spaced instance of this:
 //
 //   most code points are errors
 //   / reads the syntax until it peeks ) or ] and if it needs to be
@@ -240,6 +254,10 @@
 //
 // In a string, we have the following syntaxes:
 //
+// miscellaneous:
+//   \ followed by a spaced escape sequence suffix reads it, and it
+//     means whatever \ followed by that escape sequence suffix means
+//     here
 // raw whitespace tokens:
 //   // NOTE: When we normalize a span of raw whitespace, we replace
 //   // it with an empty string if it's at the ends of the string or
@@ -256,11 +274,10 @@
 //     whitespace needs no normalization, and otherwise if whitespace
 //     normalization is not being suppressed, it leaves a lurking
 //     command to normalize the surrounding whitespace
-//   \ followed by peeking space, tab, or the end of the line or
-//     document reads until it peeks the end of the line or the
+//   \; reads code points until it peeks the end of the line or the
 //     document, and it means empty string (for comments)
-//   \-rm (meaning "remark") reads any unsophisticated string escape
-//     and means empty string (for comments)
+//   \-rm (meaning "remark") reads any spaced unsophisticated string
+//     escape suffix, and it means empty string (for comments)
 //     // NOTE: This is especially good for commenting out a span of
 //     // text or for commenting out another escape sequence. When
 //     // commenting deep within a quasiquotation, remember to use
@@ -307,10 +324,8 @@
 //     raw whitespace and ignore its lurking commands, and they'll be
 //     suffixed with a lurking command to do the same thing to its
 //     preceding raw whitespace.
-//   \-sp (meaning "space") reads any escape sequence omitting the \
-//     while suppressing whitespace normalization
-//     // TODO: Stop using "space" as the name for both \-sp and \.s
-//     // at the same time.
+//   \-pr (meaning "preformatted") reads any escape sequence omitting
+//     the \ while suppressing whitespace normalization
 //   \-ls (meaning "lists and strings") reads a delimited s-expression
 //     and means an interpolation
 //   \-ch (meaning "code point in hexadecimal") reads a delimited
@@ -327,27 +342,27 @@
 //     and interprets that sequence according to the current
 //     quasiquotation depth minus one, and there's an error if the
 //     quasiquotation depth is zero to begin with
-//   \-wq= (meaning "with current quasiquotation level") reads a
-//     delimited string while discouraging whitespace and disallowing
-//     -sp -ls -qq -uq -wq -rq and peeking avoidance, it processes the
-//     lurking commands in that string, and then it reads any escape
-//     sequence omitting the \ and interprets that sequence with the
-//     given quasiquotation label bound to a fresh view of the current
-//     quasiquotation depth
-//   \-rq= (meaning "restore quasiquotation level") reads a delimited
-//     string while discouraging whitespace and disallowing -sp -ls
-//     -qq -uq -wq -rq and peeking avoidance, it processes the lurking
-//     commands in that string, and then it reads any escape sequence
-//     omitting the \ and interprets that sequence according to the
-//     quasiquotation depth rewound to the given quasiquotation label
-//     and deeming all labels passed this way to be non-fresh, but
-//     there's an error if the target label is unbound or if it's not
-//     fresh
+//   \-wq (meaning "with current quasiquotation level") followed by a
+//     spaced = reads a delimited string while discouraging whitespace
+//     and disallowing -pr -ls -qq -uq -wq -rq and peeking avoidance,
+//     it processes the lurking commands in that string, and then it
+//     reads any escape sequence omitting the \ and interprets that
+//     sequence with the given quasiquotation label bound to a fresh
+//     view of the current quasiquotation depth
+//   \-rq (meaning "restore quasiquotation level") followed by a
+//     spaced = reads a delimited string while discouraging whitespace
+//     and disallowing -pr -ls -qq -uq -wq -rq and peeking avoidance,
+//     it processes the lurking commands in that string, and then it
+//     reads any escape sequence omitting the \ and interprets that
+//     sequence according to the quasiquotation depth rewound to the
+//     given quasiquotation label and deeming all labels passed this
+//     way to be non-fresh, but there's an error if the target label
+//     is unbound or if it's not fresh
 //   // NOTE: We give most escape sequences two-letter names because
 //   // that makes them a little more mnemonic, lets us use "l" and
 //   // "o" without confusing them with digits, lets us avoid
 //   // resorting to idiosyncratic capitalization, and gives us a
-//   // three-letter string like "-sp" we can grep for. For escapes
+//   // three-letter string like "-pr" we can grep for. For escapes
 //   // dedicated to single code points, we use short escape sequences
 //   // with punctuation like "\.<" or letters like "\.t" depending
 //   // on whether the original code point was already punctuation.
@@ -367,14 +382,14 @@
 //
 //   most code points are errors
 //
-//   ) or ] is an error
+//   \ ) or ] is an error
 //     // NOTE: These would be particularly inconvenient characters no
-//     // matter what purpose they were put to. Any \) or \] escape
+//     // matter what purpose they were put to. Any \\ \) or \] escape
 //     // sequence would need to have both its characters escaped to
 //     // be represented as a string, since otherwise this syntax
-//     // would interpret the ) or ] in other ways.
+//     // would interpret the \ ) or ] in other ways.
 //
-//   ! " # $ % & ' * + : < > ? @ \ ^ _ { | } or ~ has behavior
+//   ! " # $ % & ' * + : < > ? @ ^ _ { | } or ~ has behavior
 //     reserved for future use
 //     //
 //     // NOTE: These are the Basic Latin punctuation characters we're
@@ -385,13 +400,6 @@
 //     // under - escape sequences: Imagine writing \-uqx to unquote
 //     // the \x escape sequence and then trying to look up what
 //     // "-uqx" means.
-//     //
-//     // TODO: An escape sequence \\ would have the same trouble as
-//     // \) and \] so maybe it should be an error. On the other hand,
-//     // \ could be good for writing comments *inside* complicated
-//     // escape sequences, especially if we also choose to change the
-//     // behavior of space and tab so our comments can have
-//     // whitespace around them. See if we should do that.
 //
 //   , reads two Basic Latin lowercase letters and then its behavior
 //     is reserved for future use
@@ -442,16 +450,13 @@
 //     // syntax, which is similar to the way we're actually using it.
 //     // Although : has the same qualifications, = is unshifted.
 //
-//   space or tab reads until it peeks the end of the line or document
-//     // NOTE: Commenting is a major use case for convenient syntax.
-//     // What could be more convenient than the kind of character
-//     // that would most likely be placed between \ heiroglyphics and
-//     // the natural language documentation anyway?
-//     //
-//     // TODO: Actually, figure out if it would be better to reserve
-//     // this so that we can give better error messages or so that
-//     // whitespace can be used in the middle of particularly
-//     // confusing escape sequences.
+//   ; reads code points until it peeks the end of the line or
+//     document
+//
+//   space, tab, carriage return, or newline reads another
+//     unsophisticated escape sequence suffix
+//     // NOTE: This way whitespace can be used in the middle of
+//     // particularly confusing escape sequences.
 //
 //   ( or [ reads unsophisticated string elements until it reads
 //     ) or ] respectively
@@ -727,8 +732,6 @@ function asciiToEl( ascii ) {
 // unsophisticatedStringEscapeSuffixToString() may encode a value in a
 // way that can't be parsed back in:
 //
-//   - The element contains a "comment" escape suffix, but it begins
-//     with a code point other than space or tab.
 //   - The element contains a "comment" escape suffix, but it is not
 //     in a context where its closing end-of-line or end-of-document
 //     will be in the expected place.
@@ -784,8 +787,11 @@ function unsophisticatedStringEscapeSuffixToString( yoke,
             
             } );
             } );
+        } else if ( esc.type === "spaced" ) {
+            return jsListAppend( yoke, esc.space, esc.suffix, then );
         } else if ( esc.type === "comment" ) {
-            return then( yoke, esc.elements );
+            return jsListAppend( yoke,
+                asciiToEl( ";" ), esc.elements, then );
         } else if ( esc.type === "escapeDelimited" ) {
             return unsophisticatedStringElementsToString( yoke,
                 esc.elements,
@@ -1020,16 +1026,28 @@ function readUnsophisticatedEscapeSequenceSuffix( yoke, s, then ) {
         if ( !result.ok )
             return then( yoke, s, result );
         
-        if ( result.val === null
-            || /^[ \t\r\n]+$/.test( result.val.val ) )
-            return readRestOfLine( yoke, s, null,
-                function ( yoke, s, result ) {
-                
+        if ( result.val === null )
+            return then( yoke, s, { ok: false, msg:
+                "Expected escape sequence suffix, got end of " +
+                "document" } );
+        if ( /^[ \t\r\n]+$/.test( result.val.val ) ) {
+            var space = result.val.val;
+            return s.read( yoke, function ( yoke, s, result ) {
                 if ( !result.ok )
                     return then( yoke, s, result );
-                return then( yoke, s, { ok: true, val:
-                    { type: "comment", elements: result.val } } );
+                return readUnsophisticatedEscapeSequenceSuffix( yoke,
+                    s, function ( yoke, s, result ) {
+                    
+                    if ( !result.ok )
+                        return then( yoke, s, result );
+                    return then( yoke, s,
+                        { ok: true, val:
+                            { type: "spaced",
+                                space: asciiToEl( space ),
+                                suffix: result.val } } );
+                } );
             } );
+        }
         
         
         return readCodePoint( yoke, s, function ( yoke, s, result ) {
@@ -1040,10 +1058,23 @@ function readUnsophisticatedEscapeSequenceSuffix( yoke, s, then ) {
         if ( /^[)\]]$/.test( c ) )
             return then( yoke, s, { ok: false, msg:
                 "Unmatched " + c + " in escape sequence suffix" } );
-        else if ( /^[!"#$%&'*+:<>?@\\^_{|}~]$/.test( c ) )
+        if ( c === "\\" )
+            return then( yoke, s, { ok: false, msg:
+                "Encountered escape sequence suffix " + c + " " +
+                "which is invalid" } );
+        else if ( /^[!"#$%&'*+:<>?@^_{|}~]$/.test( c ) )
             return then( yoke, s, { ok: false, msg:
                 "Encountered escape sequence suffix " + c + " " +
                 "which is reserved for future use" } );
+        else if ( c === ";" )
+            return readRestOfLine( yoke, s, null,
+                function ( yoke, s, result ) {
+                
+                if ( !result.ok )
+                    return then( yoke, s, result );
+                return then( yoke, s, { ok: true, val:
+                    { type: "comment", elements: result.val } } );
+            } );
         else if ( c === "," )
             return readTwoLowercaseBasicLatinCodePoints( yoke, s,
                 function ( yoke, s, result ) {
@@ -1060,7 +1091,8 @@ function readUnsophisticatedEscapeSequenceSuffix( yoke, s, then ) {
             return then( yoke, s, { ok: true, val:
                 { type: "veryShort" } } );
         else if ( c === "." )
-            return s.read( yoke, function ( yoke, s, result ) {
+            return readCodePoint( yoke, s,
+                function ( yoke, s, result ) {
                 
                 if ( !result.ok )
                     return then( yoke, s, result );
@@ -1172,6 +1204,43 @@ function readUnsophisticatedEscapeSequenceSuffix( yoke, s, then ) {
     } );
 }
 
+function traverseSpaced( yoke, prefix, esc, then ) {
+    return runWaitOne( yoke, function ( yoke ) {
+        if ( esc.type === "spaced" )
+            return jsListAppend( yoke, prefix, esc.space,
+                function ( yoke, prefix ) {
+                
+                return traverseSpaced( yoke,
+                    prefix, esc.suffix, then );
+            } );
+        else if ( esc.type === "modifier" && esc.name === "re" )
+            return jsListAppend( yoke, prefix, asciiToEl( "-re" ),
+                function ( yoke, newPrefix ) {
+            return traverseSpaced( yoke, newPrefix, esc.suffix,
+                function ( yoke, newPrefix, suffix ) {
+                
+                if ( suffix.type !== "pair" )
+                    return then( yoke, prefix, esc );
+            
+            return unsophisticatedStringEscapeSuffixToString( yoke,
+                suffix.first,
+                function ( yoke, first ) {
+            return jsListAppend( yoke, newPrefix, first,
+                function ( yoke, newPrefix ) {
+            
+            return traverseSpaced( yoke,
+                newPrefix, suffix.second, then );
+            
+            } );
+            } );
+            
+            } );
+            } );
+        else
+            return then( yoke, prefix, esc );
+    } );
+}
+
 function readerStrMapNormalizeKey( k ) {
     // NOTE: This only normalizes the first segment of the key. This
     // is called repeatedly as the key is iterated over.
@@ -1253,6 +1322,9 @@ function readSexpOrInfixOp( yoke, s,
             return then( yoke, s, result );
         } else if ( result.val.val.type === "escape" ) {
             var withQqStack = function ( yoke, qqStack, esc ) {
+                return traverseSpaced( yoke, jsList(), esc,
+                    function ( yoke, ignoredPrefix, esc ) {
+                
                 if ( esc.type === "veryShort" ) {
                     return then( yoke, s, { ok: false, msg:
                         "Expected s-expression escape suffix, got `"
@@ -1263,32 +1335,27 @@ function readSexpOrInfixOp( yoke, s,
                         "." + esc.name } );
                 } else if ( esc.type === "modifier" ) {
                     if ( esc.name === "qq" ) {
-                        return runWaitOne( yoke, function ( yoke ) {
-                            return withQqStack( yoke, {
-                                uq: qqStack,
-                                cache: qqStack.cache.plusObj( {
-                                    names: readerStrMap()
-                                } )
-                            }, esc.suffix );
-                        } );
+                        return withQqStack( yoke, {
+                            uq: qqStack,
+                            cache: qqStack.cache.plusObj( {
+                                names: readerStrMap()
+                            } )
+                        }, esc.suffix );
                     } else if ( esc.name === "uq" ) {
                         if ( qqStack.uq === null )
                             return then( yoke, s, { ok: false, msg:
                                 "Expected s-expression escape " +
                                 "suffix, got -uq at zero depth" } );
-                        return runWaitOne( yoke, function ( yoke ) {
-                            return withQqStack( yoke,
-                                qqStack.uq, esc.suffix );
-                        } );
+                        return withQqStack( yoke,
+                            qqStack.uq, esc.suffix );
                     } else if ( esc.name === "wq" ) {
-                        return parseQqLabelEsc( esc, qqStack,
+                        return parseQqLabelEsc( yoke, esc, qqStack,
                             function ( yoke, result ) {
                             
                             if ( !result.ok )
                                 return then( yoke, s, result );
-                            var name = result.val;
                             return qqStack.cache.get( "names" ).
-                                plusTruth( yoke, name,
+                                plusTruth( yoke, result.val.name,
                                     function ( yoke, names ) {
                                 
                                 return withQqStack( yoke, {
@@ -1296,25 +1363,24 @@ function readSexpOrInfixOp( yoke, s,
                                     cache: qqStack.cache.plusObj( {
                                         names: names
                                     } )
-                                }, esc.suffix.second );
+                                }, result.val.second );
                             } );
                         } );
                     } else if ( esc.name === "rq" ) {
-                        return parseQqLabelEsc( esc, qqStack,
+                        return parseQqLabelEsc( yoke, esc, qqStack,
                             function ( yoke, result ) {
                             
                             if ( !result.ok )
                                 return then( yoke, s, result );
-                            var name = result.val;
                             return unwindingQqStack( yoke, qqStack );
                             function unwindingQqStack( yoke,
                                 qqStack ) {
                                 
                                 return qqStack.cache.get( "names" ).
-                                    has( yoke, name, function ( yoke, had ) {
+                                    has( yoke, result.val.name, function ( yoke, had ) {
                                     
                                     if ( had )
-                                        return withQqStack( yoke, qqStack, esc.suffix.second );
+                                        return withQqStack( yoke, qqStack, result.val.second );
                                     else if ( qqStack.uq === null )
                                         return then( yoke, s, { ok: false, msg:
                                             "Expected s-expression escape suffix, encountered -rq= " +
@@ -1334,15 +1400,13 @@ function readSexpOrInfixOp( yoke, s,
                                 } );
                         return readSexpOrInfixOp( yoke, s,
                             encompassingClosingBracket, then );
-                    } else if ( esc.name === "sp" ) {
-                        return runWaitOne( yoke, function ( yoke ) {
-                            return withQqStack( yoke, {
-                                uq: qqStack.uq,
-                                cache: qqStack.cache.plusObj( {
-                                    normalizingWhitespace: false
-                                } )
-                            }, esc.suffix );
-                        } );
+                    } else if ( esc.name === "pr" ) {
+                        return withQqStack( yoke, {
+                            uq: qqStack.uq,
+                            cache: qqStack.cache.plusObj( {
+                                normalizingWhitespace: false
+                            } )
+                        }, esc.suffix );
                     } else {
                         return then( yoke, s, { ok: false, msg:
                             "Expected s-expression escape suffix, " +
@@ -1383,27 +1447,50 @@ function readSexpOrInfixOp( yoke, s,
                 } else {
                     throw new Error();
                 }
-            };
-            var parseQqLabelEsc = function ( esc, qqStack, then ) {
                 
-                if ( esc.suffix.type !== "pair" )
-                    return then( yoke, { ok: false, msg:
-                        "Expected s-expression escape suffix, " +
-                        "encountered -" + esc.name + " but not " +
-                        "-" + esc.name + "wq=" } );
-                else if ( esc.suffix.first.type !==
-                    "escapeDelimited" )
-                    return then( yoke, { ok: false, msg:
-                        "Expected s-expression escape suffix, " +
-                        "encountered -" + esc.name + "= but not " +
-                        "-" + esc.name + "=( or -" + esc.name + "=["
-                        } );
+                } );
+            };
+            var parseQqLabelEsc =
+                function ( yoke, esc, qqStack, then ) {
+                
+                return traverseSpaced( yoke, jsList(), esc.suffix,
+                    function ( yoke, pairPrefix, pair ) {
+                    
+                    if ( pair.type !== "pair" )
+                        return then( yoke, { ok: false, msg:
+                            "Expected s-expression escape suffix, " +
+                            "encountered -" + esc.name + " but not " +
+                            "-" + esc.name + "=" } );
+                
+                return traverseSpaced( yoke, jsList(), pair.first,
+                    function ( yoke, firstPrefix, first ) {
+                    
+                    if ( first.type !== "escapeDelimited" )
+                        return then( yoke, { ok: false, msg:
+                            "Expected s-expression escape suffix, " +
+                            "encountered -" + esc.name + "= but " +
+                            "not -" + esc.name + "=( or " +
+                            "-" + esc.name + "=[" } );
                 
                 return readQqLabel( yoke,
-                    qqStack,
-                    esc.suffix.first.close,
-                    esc.suffix.first.elements,
-                    then );
+                    qqStack, first.close, first.elements,
+                    function ( yoke, result ) {
+                    
+                    if ( !result.ok )
+                        return then( yoke, result );
+                    
+                    return then( yoke, { ok: true, val: {
+                        pairPrefix: pairPrefix,
+                        firstPrefix: firstPrefix,
+                        name: result.val,
+                        first: first,
+                        second: pair.second
+                    } } );
+                } );
+                
+                } );
+                
+                } );
             };
             var readStringLurking = function ( yoke,
                 elements, qqStack, then ) {
@@ -1558,6 +1645,11 @@ function readSexpOrInfixOp( yoke, s,
                                 } );
                             }
                             
+                            return traverseSpaced( yoke,
+                                jsList(), esc,
+                                function ( yoke,
+                                    ignoredPrefix, esc ) {
+                            
                             if ( esc.type === "veryShort" ) {
                                 return simpleEscape( yoke,
                                     "`", "\\" );
@@ -1603,14 +1695,14 @@ function readSexpOrInfixOp( yoke, s,
                                     else
                                         return readDelimitedStringLurking( yoke,
                                             esc.suffix, qqStack, retWithModifier );
-                                } else if ( esc.name === "sp" ) {
+                                } else if ( esc.name === "pr" ) {
                                     if ( qqStack.cache.get( "inQqLabel" ) )
                                         return then( yoke, { ok: false, msg:
-                                            "Encountered -sp inside a quasiquotation label" } );
+                                            "Encountered -pr inside a quasiquotation label" } );
                                     else if ( qqStack.uq === null )
-                                        return unexpected( yoke, "-sp" );
+                                        return unexpected( yoke, "-pr" );
                                     
-                                    return jsListAppend( yoke, prefix, asciiToEl( "-sp" ),
+                                    return jsListAppend( yoke, prefix, asciiToEl( "-pr" ),
                                         function ( yoke, prefix ) {
                                         
                                         return readEscapeLurking( yoke, prefix, esc.suffix, {
@@ -1731,25 +1823,28 @@ function readSexpOrInfixOp( yoke, s,
                                         return then( yoke, { ok: false, msg:
                                             "Encountered -wq inside a quasiquotation label" } );
                                     
-                                    return parseQqLabelEsc( esc, qqStack, function ( yoke, result ) {
+                                    return parseQqLabelEsc( yoke, esc, qqStack,
+                                        function ( yoke, result ) {
                                         
                                         if ( !result.ok )
                                             return then( yoke, result );
                                         
-                                        var name = result.val;
-                                        
                                         return unsophisticatedStringEscapeSuffixToString( yoke,
-                                            esc.suffix.first,
+                                            result.val.first,
                                             function ( yoke, labelCode ) {
                                         return jsListFlattenOnce( yoke, jsList(
                                             prefix,
-                                            asciiToEl( "-wq=" ),
+                                            asciiToEl( "-wq" ),
+                                            result.val.pairPrefix,
+                                            asciiToEl( "=" ),
+                                            result.val.firstPrefix,
                                             labelCode
                                         ), function ( yoke, prefix ) {
-                                        return qqStack.cache.get( "names" ).plusTruth( yoke, name,
+                                        return qqStack.cache.get( "names" ).plusTruth( yoke,
+                                            result.val.name,
                                             function ( yoke, names ) {
                                         
-                                        return readEscapeLurking( yoke, prefix, esc.suffix.second, {
+                                        return readEscapeLurking( yoke, prefix, result.val.second, {
                                             uq: qqStack.uq,
                                             cache: qqStack.cache.plusObj( {
                                                 names: names
@@ -1765,30 +1860,33 @@ function readSexpOrInfixOp( yoke, s,
                                         return then( yoke, { ok: false, msg:
                                             "Encountered -rq inside a quasiquotation label" } );
                                     
-                                    return parseQqLabelEsc( esc, qqStack, function ( yoke, result ) {
+                                    return parseQqLabelEsc( yoke, esc, qqStack,
+                                        function ( yoke, result ) {
                                         
                                         if ( !result.ok )
                                             return then( yoke, result );
                                         
-                                        var name = result.val;
-                                        
                                         return unsophisticatedStringEscapeSuffixToString( yoke,
-                                            esc.suffix.first,
+                                            result.val.first,
                                             function ( yoke, labelCode ) {
                                         return jsListFlattenOnce( yoke, jsList(
                                             prefix,
-                                            asciiToEl( "-rq=" ),
+                                            asciiToEl( "-rq" ),
+                                            result.val.pairPrefix,
+                                            asciiToEl( "=" ),
+                                            result.val.firstPrefix,
                                             labelCode
                                         ), function ( yoke, prefix ) {
                                         
                                         return unwindingQqStack( yoke, qqStack );
                                         function unwindingQqStack( yoke, qqStack ) {
-                                            return qqStack.cache.get( "names" ).has( yoke, name,
+                                            return qqStack.cache.get( "names" ).has( yoke,
+                                                result.val.name,
                                                 function ( yoke, had ) {
                                                 
                                                 if ( had )
                                                     return readEscapeLurking( yoke,
-                                                        prefix, esc.suffix.second, qqStack, then );
+                                                        prefix, result.val.second, qqStack, then );
                                                 else if ( qqStack.uq === null )
                                                     return unexpected( yoke,
                                                         // TODO: Describe the unbound label. We'll need
@@ -1814,7 +1912,8 @@ function readSexpOrInfixOp( yoke, s,
                                 else if ( qqStack.uq.uq === null )
                                     return ret( yoke, jsList() );
                                 else
-                                    return jsListAppend( yoke, prefix, esc.elements, ret );
+                                    return jsListFlattenOnce( yoke,
+                                        jsList( prefix, asciiToEl( ";" ), esc.elements ), ret );
                                 
                             } else if ( esc.type ===
                                 "escapeDelimited" ) {
@@ -1831,6 +1930,8 @@ function readSexpOrInfixOp( yoke, s,
                             } else {
                                 throw new Error();
                             }
+                            
+                            } );
                         };
                         return readEscapeLurking( yoke,
                             asciiToEl( "\\" ),
