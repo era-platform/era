@@ -98,7 +98,7 @@
 //     - Problem: The escape sequence \-qq[...] generates both "\-qq["
 //       and "]" in a single string, and sometimes I want to insert a
 //       value in the middle. I could write this as a concatenation
-//       bookended by one string that escapes \-qq[ as \.`-qq\.< and
+//       bookended by one string that escapes \-qq[ as \.^-qq\.< and
 //       one that escapes ] as \.> but I'd rather not make such a
 //       pervasive syntax replacement for such a focused insertion.
 //
@@ -308,7 +308,7 @@
 // non-whitespace tokens:
 //   any Unicode code point except space, tab, carriage return,
 //     newline, \ ( ) [ and ]
-//   \.` means backslash
+//   \.^ means backslash
 //   \.< or \.> means left or right square bracket, respectively
 //   \.{ or \.} means left or right parenthesis, respectively
 //   ) or ] is an error if unmatched
@@ -532,10 +532,8 @@ function stringToClassifiedTokenStream( string ) {
     return customStream( 0, function ( yoke, i, then ) {
         if ( n <= i )
             return then( yoke, i, { ok: true, val: null } );
-        // TODO NOW: Redesign the reader syntax so = , aren't an issue
-        // here.
         var regex =
-            /[ \t]+|[\r\n=,\.\\/()\[\]]|[^ \t\r\n=,\.\\/()\[\]]*/g;
+            /[ \t]+|[\r\n`=;',\.\\/()\[\]]|[^ \t\r\n`=;',\.\\/()\[\]]*/g;
         regex.lastIndex = i;
         var result = regex.exec( string )[ 0 ];
         return then( yoke, i + result.length, { ok: true, val:
@@ -715,9 +713,7 @@ function readNaiveSexpStringElements( yoke, s, revSoFar, then ) {
             return then( yoke, s, { ok: false, msg:
                 "Expected s-expression, encountered . outside an " +
                 "infix context" } );
-        // TODO NOW: Redesign the reader syntax so = , aren't an issue
-        // here.
-        else if ( /^[=,]$/.test( c ) )
+        else if ( /^[`=;']$/.test( c ) )
             return then( yoke, s, { ok: false, msg:
                 "Expected s-expression, encountered " + c } );
         else if ( /^[ \t\r\n]*$/.test( c ) )
@@ -780,8 +776,12 @@ function readNaiveSexpStringElements( yoke, s, revSoFar, then ) {
                         throw new Error();
                 } );
             } );
+        else if ( c === "," )
+            return s.read( yoke, function ( yoke, s, result ) {
+                return readIdentifier( yoke, s, !"any", revSoFar );
+            } );
         else
-            return readIdentifier( yoke, s, revSoFar );
+            return readIdentifier( yoke, s, !"any", revSoFar );
         
         function next( yoke, s, last ) {
             return jsListRev( yoke, { first: last, rest: revSoFar },
@@ -792,7 +792,7 @@ function readNaiveSexpStringElements( yoke, s, revSoFar, then ) {
         }
     } );
     
-    function readIdentifier( yoke, s, revSoFar ) {
+    function readIdentifier( yoke, s, any, revSoFar ) {
         return s.peek( yoke, function ( yoke, s, result ) {
             if ( !result.ok )
                 return then( yoke, s, result );
@@ -801,10 +801,12 @@ function readNaiveSexpStringElements( yoke, s, revSoFar, then ) {
                 return next( yoke, s );
             
             var c = result.val.val;
-            // TODO NOW: Redesign the reader syntax so = , aren't an
-            // issue here.
-            if ( /^[ \t\r\n=,\./()\[\]]*$/.test( c ) )
+            if ( /^[ \t\r\n`=;'\./()\[\]]*$/.test( c ) )
                 return next( yoke, s );
+            else if ( c === "," )
+                return s.read( yoke, function ( yoke, s, result ) {
+                    return next( yoke, s );
+                } );
             else if ( c === "\\" )
                 return s.read( yoke, function ( yoke, s, result ) {
                     return readEscape( yoke, s,
@@ -812,7 +814,7 @@ function readNaiveSexpStringElements( yoke, s, revSoFar, then ) {
                         
                         if ( !result.ok )
                             return then( yoke, s, result );
-                        return readIdentifier( yoke, s,
+                        return readIdentifier( yoke, s, !!"any",
                             { first:
                                 { type: "escape",
                                     suffix: result.val },
@@ -821,12 +823,16 @@ function readNaiveSexpStringElements( yoke, s, revSoFar, then ) {
                 } );
             else
                 return s.read( yoke, function ( yoke, s, result ) {
-                    return readIdentifier( yoke, s,
+                    return readIdentifier( yoke, s, !!"any",
                         { first: { type: "scalars", val: c },
                             rest: revSoFar } );
                 } );
             
             function next( yoke, s ) {
+                if ( !any )
+                    return then( yoke, s, { ok: false, msg:
+                        "Expected s-expression, encountered , with" +
+                        "no identifier or \\ after it" } );
                 return jsListRev( yoke, revSoFar,
                     function ( yoke, elements ) {
                     
@@ -984,7 +990,7 @@ function readerExprPretty( expr ) {
         var e = expr;
         while ( e.type === "stringCons" ) {
             s += readerStringListToString( e.string ).
-                replace( /\\/g, "\\.`" );
+                replace( /\\/g, "\\.^" );
             // We temporarily represent interpolations using the
             // invalid escape sequence \#~. This lets us put all the
             // string contents into one JavaScript string, which lets
@@ -998,7 +1004,7 @@ function readerExprPretty( expr ) {
         }
         if ( e.type !== "stringNil" )
             throw new Error();
-        s += readerStringNilToString( e ).replace( /\\/g, "\\.`" );
+        s += readerStringNilToString( e ).replace( /\\/g, "\\.^" );
         var lastTerpAtEnd = /\\#~$/.test( s );
         
         while ( true ) {
@@ -1735,8 +1741,8 @@ function readSexpOrInfixOp( yoke, s,
                                     return explicitWhite( yoke, ".n", "\n" );
                                 } else if ( esc.name === "c" ) {
                                     return explicitWhite( yoke, ".c", "" );
-                                } else if ( esc.name === "`" ) {
-                                    return simpleEscape( yoke, ".`", "\\" );
+                                } else if ( esc.name === "^" ) {
+                                    return simpleEscape( yoke, ".^", "\\" );
                                 } else if ( esc.name === "<" ) {
                                     return simpleEscape( yoke, ".<", "[" );
                                 } else if ( esc.name === ">" ) {
