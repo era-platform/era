@@ -684,7 +684,7 @@ function readNaiveSexpStringElements( yoke, s, revSoFar, then ) {
                 { first: { type: "scalars", val: c },
                     rest: revSoFar },
                 then );
-        else if ( /^[\(\[]$/.test( c ) )
+        else if ( /^[(\[]$/.test( c ) )
             return readStringElement( yoke, s,
                 function ( yoke, s, result ) {
                 
@@ -949,8 +949,8 @@ function readerExprPretty( expr ) {
             // non-matching brackets, then replace these invalid
             // escape sequences with raw brackets again.
             var s2 = s.
-                replace( /\[([^\[\]\(\)]*)\]/g, "\\'<$1\\'>" ).
-                replace( /\(([^\[\]\(\)]*)\)/g, "\\'{$1\\'}" );
+                replace( /\[([^()\[\]]*)\]/g, "\\'<$1\\'>" ).
+                replace( /\(([^()\[\]]*)\)/g, "\\'{$1\\'}" );
             if ( s === s2 )
                 break;
             s = s2;
@@ -997,8 +997,7 @@ function readerExprPretty( expr ) {
                         return "\\;uq;ls`" + terp;
                 }
             } );
-        // TODO: Support more identifier characters.
-        return /^[\-*a-zA-Z01-9]+$/.test( s ) ? s :
+        return /^[^ \t\r\n`=;',\./()\[\]]*$/.test( s ) ? s :
             "\\;qq[" + s + "]";
     } else {
         throw new Error();
@@ -2151,7 +2150,7 @@ function readSexpOrInfixOp( yoke, s,
                         return next( yoke, s, revElements );
                     
                     var c = result.val.val.val;
-                    if ( /^[ \t\r\n=;,'\./]*$/.test( c ) )
+                    if ( /^[ \t\r\n=;',\./]*$/.test( c ) )
                         return next( yoke, s, revElements );
                     else if ( c === "`" )
                         return s.read( yoke,
