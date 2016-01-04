@@ -98,8 +98,8 @@
 //     - Problem: The escape sequence \;qq[...] generates both "\;qq["
 //       and "]" in a single string, and sometimes I want to insert a
 //       value in the middle. I could write this as a concatenation
-//       bookended by one string that escapes \;qq[ as \^;qq\<, and
-//       one that escapes ] as \>, but I'd rather not make such a
+//       bookended by one string that escapes \;qq[ as \^;qq\<` and
+//       one that escapes ] as \>` but I'd rather not make such a
 //       pervasive syntax replacement for such a focused insertion.
 //
 //     - Solution: There's an interpolation escape sequence \;uq;ls...
@@ -174,10 +174,10 @@
 //
 // The design we've settled on at this point is the following:
 
-// <other safe> ::= ("`" | "=" | ";" | "'" | "." | "/")
+// <other safe> ::= ("=" | ";" | "'" | "," | "." | "/")
 // <other> ::= (<other safe> | "\" | "(" | ")" | "[" | "]")
-// <other comma> ::= (<other> | ",")
-// <tx> ::= ...any printable character except <other comma>
+// <other delim> ::= (<other> | "`")
+// <tx> ::= ...any printable character except <other delim>
 // <nl> ::= ...any line break character or CRLF
 // <ws> ::= ...any whitespace character except <nl>
 // <end> ::= ...the end of the document
@@ -276,10 +276,10 @@
 // <escape> ::= ";" <escape> <escape>
 //   // NOTE: The character ; suggests two-ness in its shape.
 // <escape> ::=
-//   lookahead("[" | "(" | "/" | "," | <tx>)
+//   lookahead("[" | "(" | "/" | "`" | <tx>)
 //   <naive non-infix s-expression>
 // <escape> ::=
-//   "=" (<tx> | <ws> | <other comma>)* lookahead(<nl> | <end>)
+//   "=" (<tx> | <ws> | <other delim>)* lookahead(<nl> | <end>)
 // // NOTE: We don't have escape sequences \) or \] because any such
 // // sequence would need to have both its characters escaped to be
 // // represented as a string, since otherwise this syntax would
@@ -295,7 +295,7 @@
 // //    well. Some identifiers are special-cased in escape sequences,
 // //    in the spirit of reserved words.
 // //
-// //  ` ' just haven't been used yet. However, they're specifically
+// //  ' , just haven't been used yet. However, they're specifically
 // //    invalid as identifier characters just in case.
 //
 // <naive non-infix s-expression> ::= "[" <string element>* "]"
@@ -303,8 +303,8 @@
 // <naive non-infix s-expression> ::=
 //   "/" <string element>* lookahead("]" | ")")
 // <naive non-infix s-expression> ::=
-//   ","? (<tx> | <string escape>)+
-//   ("," | lookahead(<wsnl> | <other> | <end>))
+//   "`"? (<tx> | <string escape>)+
+//   ("`" | lookahead(<wsnl> | <other> | <end>))
 //
 // <s-expression> ::=
 //   <s-expression> <rmnl>* "." <non-infix s-expression>
@@ -317,12 +317,12 @@
 // <non-infix s-expression> ::=
 //   "/" <s-expression>* <rmnl>* lookahead("]" | ")")
 // <non-infix s-expression> ::=
-//   ","? <tx>+ ("," | lookahead(<wsnl> | <other> | <end>))
+//   "`"? <tx>+ ("`" | lookahead(<wsnl> | <other> | <end>))
 //   // This represents a string s-expression. It can only express
 //   // certain strings.
 //
 // <non-infix s-expression> ::=
-//   ","? "\" <escape> ("," | lookahead(<wsnl> | <other> | <end>))
+//   "`"? "\" <escape> ("`" | lookahead(<wsnl> | <other> | <end>))
 //   // What this represents varies by the escape sequence.
 //   //
 //   // When processing an escape sequence, occurrences of whitespace
@@ -395,10 +395,10 @@
 // that's a little more mnemonic than the traditional one-letter
 // names. It also lets us use "l" and "o" without confusing them with
 // digits, lets us avoid resorting to idiosyncratic capitalization,
-// and gives us a four-letter string like "=,pr" we can grep for. For
-// escapes dedicated to single characters, we use short escape
-// sequences with punctuation like "\<" or letters like "\t" depending
-// on whether the original character was already punctuation. The
+// and gives us a three-character string like ";pr" we can grep for.
+// For escapes dedicated to single characters, we use short escape
+// sequences with punctuation like \< or letters like \t depending on
+// whether the original character was already punctuation. The
 // substitute punctuation helps it continue to stand out.
 
 // Whenever an s-expression is unflattened, for the initial state of
@@ -676,7 +676,7 @@ function readNaiveSexpStringElements( yoke, s, revSoFar, then ) {
             return then( yoke, s, { ok: false, msg:
                 "Expected s-expression, encountered . outside an " +
                 "infix context" } );
-        else if ( /^[`=;']$/.test( c ) )
+        else if ( /^[=;',]$/.test( c ) )
             return then( yoke, s, { ok: false, msg:
                 "Expected s-expression, encountered " + c } );
         else if ( /^[ \t\r\n]*$/.test( c ) )
@@ -719,7 +719,7 @@ function readNaiveSexpStringElements( yoke, s, revSoFar, then ) {
                         throw new Error();
                 } );
             } );
-        else if ( c === "," )
+        else if ( c === "`" )
             return s.read( yoke, function ( yoke, s, result ) {
                 return readIdentifier( yoke, s, !"any",
                     { first: { type: "scalars", val: c },
@@ -746,9 +746,9 @@ function readNaiveSexpStringElements( yoke, s, revSoFar, then ) {
                 return next( yoke, s, revSoFar );
             
             var c = result.val.val;
-            if ( /^[ \t\r\n`=;'\./()\[\]]*$/.test( c ) )
+            if ( /^[ \t\r\n=;',\./()\[\]]*$/.test( c ) )
                 return next( yoke, s, revSoFar );
-            else if ( c === "," )
+            else if ( c === "`" )
                 return s.read( yoke, function ( yoke, s, result ) {
                     return next( yoke, s,
                         { first: { type: "scalars", val: c },
@@ -922,43 +922,43 @@ function readerExprPretty( expr ) {
         var e = expr;
         while ( e.type === "stringCons" ) {
             s += readerStringListToString( e.string ).
-                // TODO: Remove the trailing comma when possible.
-                replace( /\\/g, "\\^," );
+                // TODO: Remove the trailing ` when possible.
+                replace( /\\/g, "\\^`" );
             // We temporarily represent interpolations using the
-            // invalid escape sequence \`~. This lets us put all the
+            // invalid escape sequence \'~. This lets us put all the
             // string contents into one JavaScript string, which lets
             // us discover matching brackets even if they have an
             // interpolation in between. Later on, we replace these
             // invalid escape sequences with the proper
             // interpolations.
-            s += "\\`~";
+            s += "\\'~";
             terps.push( readerExprPretty( e.interpolation ) );
             e = e.rest;
         }
         if ( e.type !== "stringNil" )
             throw new Error();
-        // TODO: Remove the trailing comma when possible.
-        s += readerStringNilToString( e ).replace( /\\/g, "\\^," );
-        var lastTerpAtEnd = /\\`~$/.test( s );
+        // TODO: Remove the trailing ` when possible.
+        s += readerStringNilToString( e ).replace( /\\/g, "\\^`" );
+        var lastTerpAtEnd = /\\'~$/.test( s );
         
         while ( true ) {
             // If there are matching brackets, we want to display them
             // as raw brackets rather than escape sequences. To do so,
             // we temporarily convert them to the invalid escape
-            // sequences \`< \`> \`{ \`}, then escape all the
+            // sequences \'< \'> \'{ \'}, then escape all the
             // non-matching brackets, then replace these invalid
             // escape sequences with raw brackets again.
             var s2 = s.
-                replace( /\[([^\[\]\(\)]*)\]/g, "\\`<$1\\`>" ).
-                replace( /\(([^\[\]\(\)]*)\)/g, "\\`{$1\\`}" );
+                replace( /\[([^\[\]\(\)]*)\]/g, "\\'<$1\\'>" ).
+                replace( /\(([^\[\]\(\)]*)\)/g, "\\'{$1\\'}" );
             if ( s === s2 )
                 break;
             s = s2;
         }
         s = s.
-            // TODO: Remove the trailing commas when possible.
-            replace( /\[/g, "\\<," ).replace( /\]/g, "\\>," ).
-            replace( /\(/g, "\\{," ).replace( /\)/g, "\\}," ).
+            // TODO: Remove the trailing ` when possible.
+            replace( /\[/g, "\\<`" ).replace( /\]/g, "\\>`" ).
+            replace( /\(/g, "\\{`" ).replace( /\)/g, "\\}`" ).
             replace( /\\#</g, "[" ).replace( /\\#>/g, "]" ).
             replace( /\\#{/g, "(" ).replace( /\\#}/g, ")" ).
             replace( /[ \t\r\n]+[a-zA-Z]?/g, function ( whitespace ) {
@@ -968,34 +968,33 @@ function readerExprPretty( expr ) {
                 // then we safely convert it to a raw space after the
                 // spaces have been replaced with explicit whitespace
                 // escape sequences.
-                // TODO: Remove the trailing commas when possible.
+                // TODO: Remove the trailing ` when possible.
                 return whitespace.
                     replace( /[a-zA-Z]/g, "_$&" ).
-                    replace( / /g, "\\s," ).
-                    replace( /\t/g, "\\t," ).
-                    replace( /\r/g, "\\r," ).
-                    replace( /\n/g, "\\n," ).
+                    replace( / /g, "\\s`" ).
+                    replace( /\t/g, "\\t`" ).
+                    replace( /\r/g, "\\r`" ).
+                    replace( /\n/g, "\\n`" ).
                     replace( /_/g, " " );
             } ).
-            replace( /\\`~/g, function () {
+            replace( /\\'~/g, function () {
                 var terp = terps.shift();
                 var m;
                 if ( lastTerpAtEnd && terps.length === 0 ) {
                     if ( m = /^\\;qq\[(.*)\]$/.exec( terp ) )
-                        return "\\;uq;ls,\\;qq/" + m[ 1 ];
+                        return "\\;uq;ls`\\;qq/" + m[ 1 ];
                     else if ( m = /^\((.*)\)$/.exec( terp ) )
                         return "\\;uq;ls/" + m[ 1 ];
                     else
-                        return "\\;uq;ls," + terp;
+                        return "\\;uq;ls`" + terp;
                 } else {
                     if ( /^\\;qq\[.*\]$/.test( terp ) )
-                        // TODO: Remove the trailing comma when
-                        // possible.
-                        return "\\;uq;ls," + terp + ",";
+                        // TODO: Remove the trailing ` when possible.
+                        return "\\;uq;ls`" + terp + "`";
                     else if ( m = /^\((.*)\)$/.exec( terp ) )
                         return "\\;uq;ls" + m[ 1 ];
                     else
-                        return "\\;uq;ls," + terp;
+                        return "\\;uq;ls`" + terp;
                 }
             } );
         // TODO: Support more identifier characters.
@@ -1047,7 +1046,7 @@ function readEscape( yoke, s, then ) {
         if ( /^[)\]]$/.test( c ) )
             return then( yoke, s, { ok: false, msg:
                 "Unmatched " + c + " in escape sequence suffix" } );
-        else if ( /^[`'\.]$/.test( c ) )
+        else if ( /^[',\.]$/.test( c ) )
             return then( yoke, s, { ok: false, msg:
                 "Expected escape sequence suffix, got " + c } );
         else if ( c === "\\" )
@@ -2152,9 +2151,9 @@ function readSexpOrInfixOp( yoke, s,
                         return next( yoke, s, revElements );
                     
                     var c = result.val.val.val;
-                    if ( /^[ \t\r\n`=;'\./]*$/.test( c ) )
+                    if ( /^[ \t\r\n=;,'\./]*$/.test( c ) )
                         return next( yoke, s, revElements );
-                    else if ( c === "," )
+                    else if ( c === "`" )
                         return s.read( yoke,
                             function ( yoke, s, result ) {
                             
@@ -2193,7 +2192,7 @@ function readSexpOrInfixOp( yoke, s,
             } else if ( /^[\r\n]$/.test( c ) ) {
                 return then( yoke, s, { ok: true, val:
                     { val: { type: "infixNewline" } } } );
-            } else if ( /^[`=;']$/.test( c ) ) {
+            } else if ( /^[=;',]$/.test( c ) ) {
                 return then( yoke, s, { ok: false, msg:
                     "Expected s-expression, got " + c } );
             } else if ( c === "/" ) {
@@ -2213,7 +2212,7 @@ function readSexpOrInfixOp( yoke, s,
             } else if ( c === "." ) {
                 return then( yoke, s, { ok: true, val:
                     { val: { type: "infixDot" } } } );
-            } else if ( c === "," ) {
+            } else if ( c === "`" ) {
                 return readIdentifier( yoke, s, jsList() );
             } else {
                 return readIdentifier( yoke, s, jsList( c ) );

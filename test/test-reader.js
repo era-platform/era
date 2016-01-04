@@ -105,27 +105,27 @@ addReaderTest(
 addReaderTest( "\\;qq[abc def]",
     "abc def" );
 
-addReaderTest( "\\;qq[\\t,%[]]",
+addReaderTest( "\\;qq[\\t`%[]]",
     "\t%[]" );
 
-addReaderTest( "\\;qq[abc \\;qq[def\\;uq;ls,ghi,jkl] mno]",
-    "abc \\;qq[def\\;uq;ls,ghi,jkl] mno" );
+addReaderTest( "\\;qq[abc \\;qq[def\\;uq;ls`ghi`jkl] mno]",
+    "abc \\;qq[def\\;uq;ls`ghi`jkl] mno" );
 
-addReaderTest( "\\;qq[abc \\;qq[def\\;uq;uq;ls,ghi,jkl] mno]",
+addReaderTest( "\\;qq[abc \\;qq[def\\;uq;uq;ls`ghi`jkl] mno]",
     { type: "stringCons",
         string: "abc \\;qq[def",
         interpolation: "ghi",
         rest: "jkl] mno" } );
 
 addReaderTest(
-    "\\;qq[abc \\;qq[def \\;qq[ghi\\;uq;uq;uq;ls,jkl,mno]pqr] stu]",
+    "\\;qq[abc \\;qq[def \\;qq[ghi\\;uq;uq;uq;ls`jkl`mno]pqr] stu]",
     { type: "stringCons",
         string: "abc \\;qq[def \\;qq[ghi",
         interpolation: "jkl",
         rest: "mno]pqr] stu" } );
 
 addReaderTest(
-    "\\;(wq my-label);qq[abc \\;qq[def \\;qq[ghi\\;(rq my-label);ls,jkl,mno]pqr] stu]",
+    "\\;(wq my-label);qq[abc \\;qq[def \\;qq[ghi\\;(rq my-label);ls`jkl`mno]pqr] stu]",
     { type: "stringCons",
         string: "abc \\;qq[def \\;qq[ghi",
         interpolation: "jkl",
