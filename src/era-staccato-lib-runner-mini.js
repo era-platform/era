@@ -345,7 +345,7 @@ staccatoDeclarationState.macros.set( "proj1", function ( body ) {
         throw new Error();
     return stcCast( body.rest.first,
         { type: "cons", first: body.first, rest:
-            readAll( "(val err.\\-qq[Internal error] val)" )[ 0 ].val
+            readAll( "(val err.\\;qq[Internal error] val)" )[ 0 ].val
         } );
 } );
 
