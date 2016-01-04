@@ -1,22 +1,22 @@
-\; era-staccato-lib.stc
-\; Copyright 2015 Ross Angle. Released under the MIT License.
-\;
-\; These are utilities written in a macro layer over Staccato. For
-\; now, I'm porting the utilities from era-avl.js. (Many of the
-\; utilities were actually ported from era-staccato-lib.js and
-\; era-staccato-lib-gensym.js, which were ported from era-avl.js.)
-\;
-\; See era-staccato.js for more information about what Staccato is.
+\= era-staccato-lib.stc
+\= Copyright 2015 Ross Angle. Released under the MIT License.
+\=
+\= These are utilities written in a macro layer over Staccato. For
+\= now, I'm porting the utilities from era-avl.js. (Many of the
+\= utilities were actually ported from era-staccato-lib.js and
+\= era-staccato-lib-gensym.js, which were ported from era-avl.js.)
+\=
+\= See era-staccato.js for more information about what Staccato is.
 
 
-\; NOTE: This file depends only on these macros, which are implemented
-\; in era-staccato-lib-runner.js:
-\;
-\; def-type defn case caselet cast isa proj1 c c-new err fn run-defs
-\; test let
+\= NOTE: This file depends only on these macros, which are implemented
+\= in era-staccato-lib-runner.js:
+\=
+\= def-type defn case caselet cast isa proj1 c c-new err fn run-defs
+\= test let
 
 
-\; ===== Lists and boolean tags ======================================
+\= ===== Lists and boolean tags ======================================
 
 (def-type cons car cdr)
 (def-type yep val)
@@ -25,7 +25,7 @@
 
 (def-type pair first second)
 
-\; TODO: Find a better name for this.
+\= TODO: Find a better name for this.
 (def-type folding state val)
 
 (defn map-any-foldl state list combiner
@@ -38,9 +38,9 @@
     (caselet recur-result (c-new map-any-foldl state rest combiner)
       yep result recur-result
       folding state rest (folding state /cons first rest)
-      err.\-qq[Internal error])
+      err.\;qq[Internal error])
     
-    err.\-qq[Expected a combiner-result of type yep or folding]))
+    err.\;qq[Expected a combiner-result of type yep or folding]))
 
 (defn map-any list check
   (caselet fold-result
@@ -48,17 +48,17 @@
       (caselet check-result (c check elem)
         yep - check-result
         nope val (folding (nil) val)
-        err.\-qq[Expected a check-result of type yep or nope]))
+        err.\;qq[Expected a check-result of type yep or nope]))
     yep - fold-result
     folding - val nope.val
-    err.\-qq[Internal error]))
+    err.\;qq[Internal error]))
 
 (defn any-foldl state list combiner
   (cast list cons first rest nope.state
   /caselet combiner-result (c combiner state first)
     yep result combiner-result
     nope result (c-new any-foldl result rest combiner)
-    err.\-qq[Expected a combiner-result of type yep or nope]))
+    err.\;qq[Expected a combiner-result of type yep or nope]))
 
 (defn foldl state list combiner
   (cast list cons first rest state
@@ -70,7 +70,7 @@
   /caselet combiner-result (c combiner state first-a first-b)
     yep result combiner-result
     nope result (c-new double-any-foldl result list-a list-b combiner)
-    err.\-qq[Expected a combiner-result of type yep or nope]))
+    err.\;qq[Expected a combiner-result of type yep or nope]))
 
 (defn double-foldl state list-a list-b combiner
   (proj1 nope
@@ -94,20 +94,20 @@
     (caselet check-result (c check elem)
       yep result check-result
       nope result (nope/nil)
-      err.\-qq[Expected a check-result of type yep or nope])))
+      err.\;qq[Expected a check-result of type yep or nope])))
 
 (defn double-any list-a list-b check
   (double-any-foldl (nil) list-a list-b /fn state elem-a elem-b
     (caselet check-result (c check elem-a elem-b)
       yep result check-result
       nope result (nope/nil)
-      err.\-qq[Expected a check-result of type yep or nope])))
+      err.\;qq[Expected a check-result of type yep or nope])))
 
 (defn not yep-nope
   (case yep-nope
     yep val nope.val
     nope val yep.val
-    err.\-qq[Expected a yep-nope of type yep or nope]))
+    err.\;qq[Expected a yep-nope of type yep or nope]))
 
 (defn or a b
   (case a yep - a
@@ -141,16 +141,16 @@
     (any-foldl (rev-cut-result (nil) list-to-cut) list-to-measure-by
     /fn state ignored-elem
       (cast state rev-cut-result rev-past rest
-        err.\-qq[Internal error]
+        err.\;qq[Internal error]
       /cast rest cons first rest (yep/nil)
       /nope/rev-cut-result (cons first rev-past) rest))
     yep - (nil)
     nope rev-cut-result yep.rev-cut-result
-    err.\-qq[Internal error]))
+    err.\;qq[Internal error]))
 
 (defn rev-cut list-to-measure-by list-to-cut
   (cast (maybe-rev-cut list-to-measure-by list-to-cut) yep result
-    err.\-qq[
+    err.\;qq[
       Expected a list-to-measure-by no longer than the list-to-cut]
     result))
 
@@ -161,12 +161,12 @@
     yep rev-cut-result
     (nil)
   /cast rev-cut-result rev-cut-result rev-past rest
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
   /yep/cut-result rev.rev-past rest))
 
 (defn cdr list
   (cast list cons first rest
-    err.\-qq[Expected a list of type cons]
+    err.\;qq[Expected a list of type cons]
     rest))
 
 (defn tails lists
@@ -175,7 +175,7 @@
     lists))
 
 
-\; ===== Lazy lists ==================================================
+\= ===== Lazy lists ==================================================
 
 (def-type lazy-cons get-first get-rest)
 (def-type lazy-nil)
@@ -189,7 +189,7 @@
   /caselet body-result (c body state /c get-first /nil)
     yep - body-result
     nope state (c-new lazy-any-foldl state (c get-rest /nil) body)
-    err.\-qq[Expected a body-result of type yep or nope]))
+    err.\;qq[Expected a body-result of type yep or nope]))
 
 (defn lazy-list-compare-by a b elem-compare
   (cast a lazy-cons a-first a-rest (yep/nil)
@@ -204,10 +204,10 @@
     comparison))
 
 
-\; ===== "Fixnum operations," a generic interface for bigint digits ==
+\= ===== "Fixnum operations," a generic interface for bigint digits ==
 
-\; NOTE: Although they're separated into different sections, fixops
-\; and digpairs are actually interdependent.
+\= NOTE: Although they're separated into different sections, fixops
+\= and digpairs are actually interdependent.
 
 (def-type
   fixops zero one complement compare plus minus times div dual-div)
@@ -216,62 +216,62 @@
 (defn fixops-zero fixops
   (cast fixops
     fixops zero one complement compare plus minus times div dual-div
-    err.\-qq[Expected a fixops value of type fixops]
+    err.\;qq[Expected a fixops value of type fixops]
     zero))
 
 (defn fixops-one fixops
   (cast fixops
     fixops zero one complement compare plus minus times div dual-div
-    err.\-qq[Expected a fixops value of type fixops]
+    err.\;qq[Expected a fixops value of type fixops]
     one))
 
 (defn fixops-complement fixops
   (cast fixops
     fixops zero one complement compare plus minus times div dual-div
-    err.\-qq[Expected a fixops value of type fixops]
+    err.\;qq[Expected a fixops value of type fixops]
     complement))
 
 (defn fixops-compare fixops
   (cast fixops
     fixops zero one complement compare plus minus times div dual-div
-    err.\-qq[Expected a fixops value of type fixops]
+    err.\;qq[Expected a fixops value of type fixops]
     compare))
 
 (defn fixops-plus fixops
   (cast fixops
     fixops zero one complement compare plus minus times div dual-div
-    err.\-qq[Expected a fixops value of type fixops]
+    err.\;qq[Expected a fixops value of type fixops]
     plus))
 
 (defn fixops-minus fixops
   (cast fixops
     fixops zero one complement compare plus minus times div dual-div
-    err.\-qq[Expected a fixops value of type fixops]
+    err.\;qq[Expected a fixops value of type fixops]
     minus))
 
 (defn fixops-times fixops
   (cast fixops
     fixops zero one complement compare plus minus times div dual-div
-    err.\-qq[Expected a fixops value of type fixops]
+    err.\;qq[Expected a fixops value of type fixops]
     times))
 
 (defn fixops-div fixops
   (cast fixops
     fixops zero one complement compare plus minus times div dual-div
-    err.\-qq[Expected a fixops value of type fixops]
+    err.\;qq[Expected a fixops value of type fixops]
     div))
 
 (defn fixops-dual-div fixops
   (cast fixops
     fixops zero one complement compare plus minus times div dual-div
-    err.\-qq[Expected a fixops value of type fixops]
+    err.\;qq[Expected a fixops value of type fixops]
     dual-div))
 
 (defn fixops-is-zero fixops n
   (isa nil /fixops-compare fixops fixops-zero.fixops n))
 
 
-\; ===== "Digit pairs," fixnums built out of two smaller fixnums =====
+\= ===== "Digit pairs," fixnums built out of two smaller fixnums =====
 
 (def-type digpair fixops is-zero bdig ldig)
 
@@ -283,12 +283,12 @@
 
 (defn digpair-with-digits n bdig ldig
   (cast n digpair fixops is-zero orig-bdig orig-ldig
-    err.\-qq[Expected an n value of type digpair]
+    err.\;qq[Expected an n value of type digpair]
   /make-digpair fixops bdig ldig))
 
 (defn digpair-promote-sub n digit
   (cast n digpair fixops is-zero bdig ldig
-    err.\-qq[Expected an n value of type digpair]
+    err.\;qq[Expected an n value of type digpair]
   /digpair-with-digits n fixops-zero.fixops digit))
 
 (defn make-fixops-digpair digit-fixops
@@ -306,37 +306,37 @@
 
 (defn digpair-carried-promote carried
   (cast carried carried n carry
-    err.\-qq[Expected a carried value of type carried]
+    err.\;qq[Expected a carried value of type carried]
   /cast n digpair fixops is-zero bdig ldig
-    err.\-qq[Expected an n value of type digpair]
+    err.\;qq[Expected an n value of type digpair]
   /make-digpair make-fixops-digpair.fixops carry n))
 
 (defn digpair-is-zero n
   (cast n digpair fixops is-zero bdig ldig
-    err.\-qq[Expected an n value of type digpair]
+    err.\;qq[Expected an n value of type digpair]
     is-zero))
 
 (defn digpair-as-zero n
   (cast n digpair fixops is-zero bdig ldig
-    err.\-qq[Expected an n value of type digpair]
+    err.\;qq[Expected an n value of type digpair]
   /case is-zero yep - n
   /let zero-digit fixops-zero.fixops
   /digpair-with-digits n zero-digit zero-digit))
 
 (defn digpair-complement n
   (cast n digpair fixops is-zero bdig ldig
-    err.\-qq[Expected an n value of type digpair]
+    err.\;qq[Expected an n value of type digpair]
   /digpair-with-digits n
     (fixops-complement fixops bdig)
     (fixops-complement fixops ldig)))
 
 (defn digpair-compare n m
   (cast n digpair fixops n-is-zero n-bdig n-ldig
-    err.\-qq[Expected an n value of type digpair]
+    err.\;qq[Expected an n value of type digpair]
   /cast m digpair - m-is-zero m-bdig m-ldig
-    err.\-qq[Expected an m value of type digpair]
-  \; Optimization: If either thing to compare is zero, we can avoid
-  \; iterating over the digits.
+    err.\;qq[Expected an m value of type digpair]
+  \= Optimization: If either thing to compare is zero, we can avoid
+  \= iterating over the digits.
   /case n-is-zero yep -
     (case m-is-zero yep -
       (nil)
@@ -349,83 +349,83 @@
 
 (defn digpair-plus n m-carried
   (cast n digpair fixops n-is-zero n-bdig n-ldig
-    err.\-qq[Expected an n value of type digpair]
+    err.\;qq[Expected an n value of type digpair]
   /cast m-carried carried m carry
-    err.\-qq[Expected an m-carried value of type carried]
+    err.\;qq[Expected an m-carried value of type carried]
   /cast m digpair - m-is-zero m-bdig m-ldig
-    err.\-qq[Expected an m value of type digpair]
+    err.\;qq[Expected an m value of type digpair]
   /cast carry digpair - carry-is-zero -b cdig
-    err.\-qq[Expected a carry value of type digpair]
+    err.\;qq[Expected a carry value of type digpair]
   
-  \; Optimization: If either summand is zero and the carry is also
-  \; zero, we can just use the other as the result.
+  \= Optimization: If either summand is zero and the carry is also
+  \= zero, we can just use the other as the result.
   /case (and n-is-zero carry-is-zero) yep - (carried m carry)
   /case (and m-is-zero carry-is-zero) yep - (carried n carry)
   
   /cast (fixops-plus fixops n-ldig /carried m-ldig cdig)
     carried r-ldig cdig
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
   /cast (fixops-plus fixops n-bdig /carried m-bdig cdig)
     carried r-bdig cdig
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
   /carried (digpair-with-digits n r-bdig r-ldig)
   /digpair-promote-sub n cdig))
 
 (defn digpair-minus n m-carried
   (cast n digpair fixops n-is-zero n-bdig n-ldig
-    err.\-qq[Expected an n value of type digpair]
+    err.\;qq[Expected an n value of type digpair]
   /cast m-carried carried m carry
-    err.\-qq[Expected an m-carried value of type carried]
+    err.\;qq[Expected an m-carried value of type carried]
   /cast m digpair - m-is-zero m-bdig m-ldig
-    err.\-qq[Expected an m value of type digpair]
+    err.\;qq[Expected an m value of type digpair]
   /cast carry digpair - carry-is-zero -b cdig
-    err.\-qq[Expected a carry value of type digpair]
+    err.\;qq[Expected a carry value of type digpair]
   
-  \; Optimization: If both things to subtract from this are zero, we
-  \; can just skip the subtraction.
+  \= Optimization: If both things to subtract from this are zero, we
+  \= can just skip the subtraction.
   /case (and m-is-zero carry-is-zero) yep - (carried n carry)
   
   /cast (fixops-minus fixops n-ldig /carried m-ldig cdig)
     carried r-ldig cdig
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
   /cast (fixops-minus fixops n-bdig /carried m-bdig cdig)
     carried r-bdig cdig
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
   /carried (digpair-with-digits n r-bdig r-ldig)
   /digpair-promote-sub n cdig))
 
 (defn digpair-times-small n m-carried
   (cast n digpair fixops n-is-zero n-bdig n-ldig
-    err.\-qq[Expected an n value of type digpair]
+    err.\;qq[Expected an n value of type digpair]
   /cast m-carried carried m carry
-    err.\-qq[Expected an m-carried value of type carried]
+    err.\;qq[Expected an m-carried value of type carried]
   /let carry-is-zero (fixops-is-zero fixops carry)
   
-  \; Optimization: If either factor is zero and the carry is also
-  \; zero, we can just use a result of zero.
+  \= Optimization: If either factor is zero and the carry is also
+  \= zero, we can just use a result of zero.
   /case (and n-is-zero carry-is-zero) yep - (carried n carry)
   
   /case (and (fixops-is-zero fixops m) carry-is-zero) yep -
     (carried digpair-as-zero.n carry)
   /cast (fixops-times fixops n-ldig /carried m carry)
     carried r-ldig carry
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
   /cast (fixops-times fixops n-bdig /carried m carry)
     carried r-bdig carry
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
   /carried (digpair-with-digits n r-bdig r-ldig) carry))
 
 (defn digpair-times n m-carried
   (cast n digpair fixops n-is-zero n-bdig n-ldig
-    err.\-qq[Expected an n value of type digpair]
-  \; TODO: See if this can be more efficient.
+    err.\;qq[Expected an n value of type digpair]
+  \= TODO: See if this can be more efficient.
   /cast m-carried carried m carry
-    err.\-qq[Expected an m-carried value of type carried]
+    err.\;qq[Expected an m-carried value of type carried]
   /cast m digpair - m-is-zero m-bdig m-ldig
-    err.\-qq[Expected an m value of type digpair]
+    err.\;qq[Expected an m value of type digpair]
   
-  \; Optimization: If either factor is zero, we can just use the
-  \; carry as the result value.
+  \= Optimization: If either factor is zero, we can just use the
+  \= carry as the result value.
   /case n-is-zero yep - (carried carry n)
   /case m-is-zero yep - (carried carry m)
   
@@ -438,7 +438,7 @@
     (fn a b
       (case (fixops-plus fixops a /carried b zero-digit)
         carried sum carry sum
-        err.\-qq[Internal error]))
+        err.\;qq[Internal error]))
   /let four-digit
     (fn a b c d
       (make-digpair zero
@@ -446,24 +446,24 @@
         (make-digpair zero-digit c d)))
   /let r-ll
     (cast (c digit-times n-ldig m-ldig) carried dig carry
-      err.\-qq[Internal error]
+      err.\;qq[Internal error]
     /c four-digit zero-digit zero-digit carry dig)
   /let r-lb
     (cast (c digit-times n-ldig m-bdig) carried dig carry
-      err.\-qq[Internal error]
+      err.\;qq[Internal error]
     /c four-digit zero-digit carry dig zero-digit)
   /let r-bl
     (cast (c digit-times n-bdig m-ldig) carried dig carry
-      err.\-qq[Internal error]
+      err.\;qq[Internal error]
     /c four-digit zero-digit carry dig zero-digit)
   /let r-bb
     (cast (c digit-times n-bdig m-bdig) carried dig carry
-      err.\-qq[Internal error]
+      err.\;qq[Internal error]
     /c four-digit carry dig zero-digit zero-digit)
   
-  \; NOTE: When the digits are 16-bit, the maximum value of `carry` is
-  \; 0xFFFFFFFF, and the maximum value of `n` times `m` plus the carry
-  \; is 0xFFFFFFFF00000000, so there's no excess.
+  \= NOTE: When the digits are 16-bit, the maximum value of `carry` is
+  \= 0xFFFFFFFF, and the maximum value of `n` times `m` plus the carry
+  \= is 0xFFFFFFFF00000000, so there's no excess.
   /cast
     (c plus-no-carry r-ll
     /c plus-no-carry r-lb
@@ -472,34 +472,34 @@
     /make-digpair zero zero carry)
     
     digpair fixops is-zero bdig ldig
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
   /carried ldig bdig))
 
 (defn digpair-div-small n m-carried
   (cast n digpair fixops n-is-zero n-bdig n-ldig
-    err.\-qq[Expected an n value of type digpair]
+    err.\;qq[Expected an n value of type digpair]
   /cast m-carried carried m carry
-    err.\-qq[Expected an m-carried value of type carried]
+    err.\;qq[Expected an m-carried value of type carried]
   /cast (fixops-is-zero fixops m) yep -
-    err.\-qq[Called digpair-div-small with a zero divisor]
+    err.\;qq[Called digpair-div-small with a zero divisor]
   /let carry-is-zero (fixops-is-zero fixops carry)
   
-  \; Optimization: If the dividend is zero and the carry is also zero,
-  \; we can just use a result of zero.
+  \= Optimization: If the dividend is zero and the carry is also zero,
+  \= we can just use a result of zero.
   /case (and n-is-zero carry-is-zero) yep - (carried n carry)
   
   /cast (fixops-div fixops n-bdig /carried m carry)
     carried r-bdig carry
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
   /cast (fixops-div fixops n-ldig /carried m carry)
     carried r-ldig carry
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
   /carried (digpair-with-digits n r-bdig r-ldig) carry))
 
 (defn digpair-dual-div-no-carry n3210 m3210
   (let long-zero digpair-as-zero.n3210
   /cast long-zero digpair long-fixops - -b short-zero
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
   /let make-short (fn a b /digpair-with-digits short-zero a b)
   /let long-one
     (digpair-with-digits long-zero short-zero fixops-one.long-fixops)
@@ -509,141 +509,141 @@
         (c make-short a b)
         (c make-short c d)))
   /case (digpair-compare n3210 m3210) yep -
-    err.\-qq[
+    err.\;qq[
       Called digpair-dual-div-no-carry with a smaller dividend than
       divisor]
   /cast n3210 digpair - -b n32 n10
-    err.\-qq[Expected an n3210 value of type digpair]
+    err.\;qq[Expected an n3210 value of type digpair]
   /cast m3210 digpair - -b m32 m10
-    err.\-qq[Expected an m3210 value of type digpair]
+    err.\;qq[Expected an m3210 value of type digpair]
   /case digpair-is-zero.m32 yep -
-    err.\-qq[Called digpair-dual-div-no-carry with a zero m32]
+    err.\;qq[Called digpair-dual-div-no-carry with a zero m32]
   /cast n32 digpair digit-fixops - n3 n2
-    err.\-qq[Expected an n32 value of type digpair]
+    err.\;qq[Expected an n32 value of type digpair]
   /cast n10 digpair - -b n1 n0
-    err.\-qq[Expected an n10 value of type digpair]
+    err.\;qq[Expected an n10 value of type digpair]
   /cast m32 digpair - -b m3 m2
-    err.\-qq[Expected an m32 value of type digpair]
+    err.\;qq[Expected an m32 value of type digpair]
   /cast m10 digpair - -b m1 m0
-    err.\-qq[Expected an m10 value of type digpair]
+    err.\;qq[Expected an m10 value of type digpair]
   /let zdig fixops-zero.digit-fixops
   /let ignore-carry
     (fn carried
       (case carried carried result carry
         result
-        err.\-qq[Internal error]))
+        err.\;qq[Internal error]))
   /let mid1-result
-    \; We ignore the remainder because we're just going to calculate a
-    \; more accurate remainder by multiplying the full-precision
-    \; divisor.
+    \= We ignore the remainder because we're just going to calculate a
+    \= more accurate remainder by multiplying the full-precision
+    \= divisor.
     (c ignore-carry /c-new digpair-dual-div
       (c four-digits zdig n3 n2 n1)
     /carried
-      \; We ignore the carry because it must be zero.
+      \= We ignore the carry because it must be zero.
       (c ignore-carry /digpair-plus long-one
       /c four-digits zdig m3 m2 m1)
       long-zero)
   /let mid1-remainder
-    \; We ignore the subtraction carry because it must be zero.
+    \= We ignore the subtraction carry because it must be zero.
     (c ignore-carry /digpair-minus n3210
     /carried
-      \; We ignore the multiplication carry because it must be zero.
+      \= We ignore the multiplication carry because it must be zero.
       (c ignore-carry /digpair-times m3210
       /carried mid1-result long-zero)
       long-zero)
   
-  \; At this point, we might be *one* subtraction away from a fully
-  \; accurate result. (We can't be two or more subtractions away,
-  \; since the approximate divisor would have been small enough to fit
-  \; in the space of twice the accurate divisor. After all, the
-  \; approximate divisor is only too large by (1 + maxDigitValue) or
-  \; less, and we already know the divisor is at least
-  \; (1 + maxDigitValue)^2.) So, we do that subtraction if possible.
-  \;
+  \= At this point, we might be *one* subtraction away from a fully
+  \= accurate result. (We can't be two or more subtractions away,
+  \= since the approximate divisor would have been small enough to fit
+  \= in the space of twice the accurate divisor. After all, the
+  \= approximate divisor is only too large by (1 + maxDigitValue) or
+  \= less, and we already know the divisor is at least
+  \= (1 + maxDigitValue)^2.) So, we do that subtraction if possible.
+  \=
   /case (digpair-compare mid1-remainder m3210) yep -
     (carried mid1-result mid1-remainder)
     (carried
       
-      \; We ignore the carry because it must be zero.
+      \= We ignore the carry because it must be zero.
       (c ignore-carry /digpair-plus mid1-result
       /carried long-one long-zero)
       
-      \; We ignore the carry because it must be zero.
+      \= We ignore the carry because it must be zero.
       (c ignore-carry /digpair-minus mid1-remainder
       /carried m3210 long-zero))))
 
 (defn digpair-dual-div n m-carried
-  \; TODO: See if this can be more efficient.
+  \= TODO: See if this can be more efficient.
   (cast n digpair fixops n-is-zero n-bdig n-ldig
-    err.\-qq[Expected an n value of type digpair]
+    err.\;qq[Expected an n value of type digpair]
   /cast m-carried carried m carry
-    err.\-qq[Expected an m-carried value of type carried]
+    err.\;qq[Expected an m-carried value of type carried]
   /cast m digpair - m-is-zero m-bdig m-ldig
-    err.\-qq[Expected an m value of type digpair]
+    err.\;qq[Expected an m value of type digpair]
   /case m-is-zero yep -
-    err.\-qq[Called digpair-dual-div with a zero divisor]
+    err.\;qq[Called digpair-dual-div with a zero divisor]
   /cast carry digpair - carry-is-zero c-bdig c-ldig
-    err.\-qq[Expected a carry value of type digpair]
+    err.\;qq[Expected a carry value of type digpair]
   /let zdig fixops-zero.fixops
   /case carry-is-zero yep -
     
-    \; If the carry is zero and the dividend is less than the divisor,
-    \; we return zero and a remainder equal to the dividend.
+    \= If the carry is zero and the dividend is less than the divisor,
+    \= we return zero and a remainder equal to the dividend.
     (case (fixops-compare fixops n m) yep -
       (carried digpair-as-zero.n n)
     
-    \; If the carry is zero and the first digit of the divisor is
-    \; zero, we can reduce this division to a division of the digits.
+    \= If the carry is zero and the first digit of the divisor is
+    \= zero, we can reduce this division to a division of the digits.
     /case (fixops-is-zero fixops m-bdig) yep -
       (cast (fixops-dual-div fixops n-bdig /carried m-ldig zdig)
         carried r-bdig intermediate1-carry
-        err.\-qq[Internal error]
+        err.\;qq[Internal error]
       /cast
         (fixops-dual-div fixops n-ldig
         /carried m-ldig intermediate1-carry)
         carried r-ldig carry
-        err.\-qq[Internal error]
+        err.\;qq[Internal error]
       /carried (digpair-with-digits n r-bdig r-ldig)
       /digpair-with-digits zdig carry)
     
-    \; If the carry is zero, if the divisor is less than or equal to
-    \; the dividend, and if the first digit of the divisor isn't zero,
-    \; then we split the digits into sub-digits and divide by an
-    \; approximation where we drop the least significant sub-digits.
-    \; The approximation may be off by one, so we check for this and
-    \; subtract one more time if necessary. We handle this in a
-    \; separate function.
+    \= If the carry is zero, if the divisor is less than or equal to
+    \= the dividend, and if the first digit of the divisor isn't zero,
+    \= then we split the digits into sub-digits and divide by an
+    \= approximation where we drop the least significant sub-digits.
+    \= The approximation may be off by one, so we check for this and
+    \= subtract one more time if necessary. We handle this in a
+    \= separate function.
     /digpair-dual-div-no-carry fixops n m)
   
-  \; If the carry isn't zero, we shift the carry-and-divisor
-  \; combination down by one digit, do a division from there, and then
-  \; do another division to account for the digit that was dropped.
-  \; This means the carry-and-divisor combination will have one fewer
-  \; nonzero digit, and it will take no more than two of these
-  \; reductions to wind up at the carry-is-zero case.
+  \= If the carry isn't zero, we shift the carry-and-divisor
+  \= combination down by one digit, do a division from there, and then
+  \= do another division to account for the digit that was dropped.
+  \= This means the carry-and-divisor combination will have one fewer
+  \= nonzero digit, and it will take no more than two of these
+  \= reductions to wind up at the carry-is-zero case.
   /cast
     (c-new digpair-dual-div (digpair-with-digits n c-ldig n-bdig)
     /carried m (digpair-with-digits n zdig c-bdig))
     carried intermediate1-result intermediate1-carry
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
   /cast intermediate1-result digpair - -b -c ir-ldig
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
   /cast intermediate1-carry digpair - -b ic-bdig ic-ldig
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
   /cast
     (c-new digpair-dual-div (digpair-with-digits n ic-ldig n-ldig)
     /carried m (digpair-with-digits n zdig ic-bdig))
     carried intermediate2-result carry
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
   /cast
     (digpair-plus (digpair-with-digits ir-ldig zdig)
     /carried intermediate2-result digpair-as-zero.n)
     carried result -
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
   /carried result carry))
 
 
-\; ===== One-bit fixnums in terms of (yep/nil) and (nope/nil) ========
+\= ===== One-bit fixnums in terms of (yep/nil) and (nope/nil) ========
 
 (defn make-fixops-yep-nope -
   (fixops
@@ -652,71 +652,71 @@
     (not)
     
     (fn n m
-      \; Compare
+      \= Compare
       (case n yep -
         (case m yep - (nil) (nope/nil))
         (case m yep - (yep/nil) (nil))))
     
     (fn n m-carried
-      \; Plus
+      \= Plus
       (cast m-carried carried m carry
-        err.\-qq[Expected an m-carried value of type carried]
+        err.\;qq[Expected an m-carried value of type carried]
       /case (xor n m) yep -
         (carried not.carry carry)
         (carried carry n)))
     
     (fn n m-carried
-      \; Minus
+      \= Minus
       (cast m-carried carried m carry
-        err.\-qq[Expected an m-carried value of type carried]
+        err.\;qq[Expected an m-carried value of type carried]
       /case (xor n m) yep -
         (carried not.carry m)
         (carried carry carry)))
     
     (fn n m-carried
-      \; Times
+      \= Times
       (cast m-carried carried m carry
-        err.\-qq[Expected an m-carried value of type carried]
+        err.\;qq[Expected an m-carried value of type carried]
       /case (and n m) yep -
         (carried not.carry carry)
         (carried carry /nope/nil)))
     
     (fn n m-carried
-      \; Div
+      \= Div
       (cast m-carried carried m carry
-        err.\-qq[Expected an m-carried value of type carried]
+        err.\;qq[Expected an m-carried value of type carried]
       /case m nope -
-        \; Divide by zero.
-        err.\-qq[
+        \= Divide by zero.
+        err.\;qq[
           Called make-fixops-yep-nope's div operation with a zero
           divisor]
-      \; Divide by one.
+      \= Divide by one.
       /carried n carry))
     
     (fn n m-carried
-      \; Dual-div
+      \= Dual-div
       (cast n digpair - n-is-zero n1 n0
-        err.\-qq[Expected an n value of type digpair]
+        err.\;qq[Expected an n value of type digpair]
       /cast m-carried carried m carry
-        err.\-qq[Expected an m-carried value of type carried]
+        err.\;qq[Expected an m-carried value of type carried]
       /cast m digpair - m-is-zero m1 m0
-        err.\-qq[Expected an m value of type digpair]
+        err.\;qq[Expected an m value of type digpair]
       /cast carry digpair - carry-is-zero n3 n2
-        err.\-qq[Expected a carry value of type digpair]
+        err.\;qq[Expected a carry value of type digpair]
       /case m-is-zero yep -
-        \; Divide by zero.
-        err.\-qq[
+        \= Divide by zero.
+        err.\;qq[
           Called make-fixops-yep-nope's dual-div operation with a zero
           divisor]
       /case (and not.m1 m0) yep -
-        \; Divide by one.
+        \= Divide by one.
         (carried n carry)
       /case not.m0 yep -
-        \; Divide by two.
+        \= Divide by two.
         (carried (digpair-with-digits n n2 n1)
         /digpair-with-digits n (nope/nil) n0)
       
-      \; Divide by three.
+      \= Divide by three.
       /let r1 (or n3 /and n2 n1)
       /let n2b (case r1 nope - n2 /and n3 n1)
       /let n1b (case r1 nope - n1 not.n1)
@@ -728,7 +728,7 @@
         (case r0 nope - n0b not.n0b)))))
 
 
-\; ===== Big, zero-based natural numbers =============================
+\= ===== Big, zero-based natural numbers =============================
 
 (def-type binat-internals depth fixnum)
 (def-type binat fixops maybe-internals)
@@ -738,23 +738,23 @@
 
 (defn binat-as-zero n
   (cast n binat fixops n-internals
-    err.\-qq[Expected an n value of type binat]
+    err.\;qq[Expected an n value of type binat]
     binat-zero-for-fixops.fixops))
 
 (defn binat-as-one n
   (cast n binat fixops n-internals
-    err.\-qq[Expected an n value of type binat]
+    err.\;qq[Expected an n value of type binat]
   /binat fixops
   /binat-internals (binat fixops /nil) fixops-one.fixops))
 
 (defn binat-is-zero n
   (cast n binat fixops n-internals
-    err.\-qq[Expected an n value of type binat]
+    err.\;qq[Expected an n value of type binat]
   /not/isa binat-internals n-internals))
 
 (defn improper-binat-is-zero n
   (cast n binat fixops n-internals
-    err.\-qq[Expected an n value of type binat]
+    err.\;qq[Expected an n value of type binat]
   /case n-internals binat-internals depth fixnum
     (case binat-is-zero.depth yep -
       (fixops-is-zero fixops fixnum)
@@ -763,9 +763,9 @@
 
 (defn binat-compare n m
   (cast n binat fixops n-internals
-    err.\-qq[Expected an n value of type binat]
+    err.\;qq[Expected an n value of type binat]
   /cast m binat - m-internals
-    err.\-qq[Expected an m value of type binat]
+    err.\;qq[Expected an m value of type binat]
   /case n-internals binat-internals n-depth nfix
     (case m-internals binat-internals m-depth mfix
       (caselet depth-comparison (c-new binat-compare n-depth m-depth)
@@ -781,7 +781,7 @@
 
 (defn improper-binat-reduce n
   (cast n binat fixops n-internals
-    err.\-qq[Expected an n value of type binat]
+    err.\;qq[Expected an n value of type binat]
   /cast n-internals binat-internals depth fixnum
     n
   /case binat-is-zero.depth yep -
@@ -789,7 +789,7 @@
       binat-as-zero.n
       n)
   /cast fixnum digpair digit-fixops is-zero bdig ldig
-    err.\-qq[Expected a fixnum value of type digpair]
+    err.\;qq[Expected a fixnum value of type digpair]
   /case is-zero yep -
     binat-as-zero.n
   /case (fixops-is-zero digit-fixops bdig) nope -
@@ -800,12 +800,12 @@
     (case (c-new binat-subtracted-from binat-as-one.depth depth)
       yep depth-minus-one depth-minus-one
       nil binat-as-zero.depth
-      err.\-qq[Internal error])
+      err.\;qq[Internal error])
     ldig))
 
 (defn improper-binat-promote-carried fixops depth carried
   (cast carried carried result carry
-    err.\-qq[Expected a carried value of type carried]
+    err.\;qq[Expected a carried value of type carried]
   /case
     (case binat-is-zero.depth yep -
       (fixops-is-zero fixops carry)
@@ -819,9 +819,9 @@
 
 (defn improper-binat-promote n
   (cast n binat fixops n-internals
-    err.\-qq[Expected an n value of type binat]
+    err.\;qq[Expected an n value of type binat]
   /cast n-internals binat-internals depth fixnum
-    err.\-qq[Expected an n value that wasn't zero]
+    err.\;qq[Expected an n value that wasn't zero]
   /binat fixops
   /binat-internals (c-new binat-plus depth binat-as-one.depth)
   /case binat-is-zero.depth yep -
@@ -831,9 +831,9 @@
 
 (defn improper-binat-plus n m
   (cast n binat fixops n-internals
-    err.\-qq[Expected an n value of type binat]
+    err.\;qq[Expected an n value of type binat]
   /cast m binat - m-internals
-    err.\-qq[Expected an m value of type binat]
+    err.\;qq[Expected an m value of type binat]
   /cast n-internals binat-internals n-depth nfix
     m
   /cast m-internals binat-internals m-depth mfix
@@ -854,13 +854,13 @@
     nil (nil)
     nope - (not/c-new improper-binat-subtracted-from m n)
   /cast n binat fixops n-internals
-    err.\-qq[Expected an n value of type binat]
+    err.\;qq[Expected an n value of type binat]
   /cast m binat - m-internals
-    err.\-qq[Expected an m value of type binat]
+    err.\;qq[Expected an m value of type binat]
   /cast n-internals binat-internals n-depth nfix
     yep.m
   /cast m-internals binat-internals m-depth mfix
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
   /case (binat-compare n-depth m-depth) yep -
     (c-new improper-binat-subtracted-from improper-binat-promote.n m)
   /cast
@@ -868,7 +868,7 @@
       (fixops-minus fixops mfix /carried nfix fixops-zero.fixops)
       (digpair-minus mfix /carried nfix digpair-as-zero.nfix))
     carried result carry
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
   /nope/binat fixops /binat-internals n-depth result))
 
 (defn binat-subtracted-from m n
@@ -879,9 +879,9 @@
 
 (defn improper-binat-times n m
   (cast n binat fixops n-internals
-    err.\-qq[Expected an n value of type binat]
+    err.\;qq[Expected an n value of type binat]
   /cast m binat - m-internals
-    err.\-qq[Expected an m value of type binat]
+    err.\;qq[Expected an m value of type binat]
   /cast n-internals binat-internals n-depth nfix
     n
   /cast m-internals binat-internals m-depth mfix
@@ -902,15 +902,15 @@
     nil (carried binat-as-one.n binat-as-zero.n)
     yep - (carried binat-as-zero.n n)
   /case improper-binat-is-zero.m yep -
-    err.\-qq[Called improper-binat-div with a zero divisor]
+    err.\;qq[Called improper-binat-div with a zero divisor]
   /cast n binat fixops n-internals
-    err.\-qq[Expected an n value of type binat]
+    err.\;qq[Expected an n value of type binat]
   /cast m binat - m-internals
-    err.\-qq[Expected an m value of type binat]
+    err.\;qq[Expected an m value of type binat]
   /cast n-internals binat-internals n-depth nfix
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
   /cast m-internals binat-internals m-depth mfix
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
   /case (binat-compare n-depth m-depth) nope -
     (c-new improper-binat-div n improper-binat-promote.m)
   /cast
@@ -920,20 +920,20 @@
       (fixops-dual-div fixops nfix /carried mfix digpair-as-zero.nfix)
       (digpair-dual-div nfix /carried mfix digpair-as-zero.nfix))
     carried result carry
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
   /carried (binat fixops /binat-internals n-depth result)
   /binat fixops /binat-internals n-depth carry))
 
 (defn binat-div m n
   (cast (improper-binat-div m n) carried result carry
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
   /carried improper-binat-reduce.result improper-binat-reduce.carry))
 
 
-\; ===== Big signed integers =========================================
-\;
-\; These might even be integers that carry a big sign. You can't say
-\; they aren't.
+\= ===== Big signed integers =========================================
+\=
+\= These might even be integers that carry a big sign. You can't say
+\= they aren't.
 
 (def-type bigint fixops nat)
 
@@ -942,33 +942,33 @@
 
 (defn bigint-as-zero n
   (cast n bigint fixops n-nat
-    err.\-qq[Expected an n value of type bigint]
+    err.\;qq[Expected an n value of type bigint]
     bigint-zero-for-fixops.fixops))
 
 (defn bigint-as-one n
   (cast n bigint fixops n-nat
-    err.\-qq[Expected an n value of type bigint]
+    err.\;qq[Expected an n value of type bigint]
   /bigint fixops /yep/binat-as-one binat-zero-for-fixops.fixops))
 
 (defn bigint-neg n
   (cast n bigint fixops n-nat
-    err.\-qq[Expected an n value of type bigint]
+    err.\;qq[Expected an n value of type bigint]
   /case n-nat nil
     n
   /bigint fixops not.n))
 
 (defn bigint-abs n
   (cast n bigint fixops n-nat
-    err.\-qq[Expected an n value of type bigint]
+    err.\;qq[Expected an n value of type bigint]
   /case n-nat nope -
     bigint-neg.n
     n))
 
 (defn bigint-compare n m
   (cast n bigint - n
-    err.\-qq[Expected an n value of type bigint]
+    err.\;qq[Expected an n value of type bigint]
   /cast m bigint - m
-    err.\-qq[Expected an m value of type bigint]
+    err.\;qq[Expected an m value of type bigint]
   /case n
     
     yep n
@@ -991,9 +991,9 @@
 
 (defn bigint-plus n m
   (cast n bigint fixops n
-    err.\-qq[Expected an n value of type bigint]
+    err.\;qq[Expected an n value of type bigint]
   /cast m bigint - m
-    err.\-qq[Expected an m value of type bigint]
+    err.\;qq[Expected an m value of type bigint]
   /case n
     
     yep n
@@ -1015,9 +1015,9 @@
 
 (defn bigint-times n m
   (cast n bigint fixops n
-    err.\-qq[Expected an n value of type bigint]
+    err.\;qq[Expected an n value of type bigint]
   /cast m bigint - m
-    err.\-qq[Expected an m value of type bigint]
+    err.\;qq[Expected an m value of type bigint]
   /case n
     
     yep n
@@ -1038,23 +1038,23 @@
   (let pos (fn n yep.n)
   /let neg (fn n nope.n)
   /cast n bigint fixops n
-    err.\-qq[Expected an n value of type bigint]
+    err.\;qq[Expected an n value of type bigint]
   /cast m bigint - m
-    err.\-qq[Expected an m value of type bigint]
+    err.\;qq[Expected an m value of type bigint]
   /let div
     (fn n m result-sign carry-sign
       (cast (binat-div n m) carried result carry
-        err.\-qq[Internal error]
+        err.\;qq[Internal error]
       /bigint fixops
       /carried (bigint fixops /c result-sign result)
       /bigint fixops /c carry-sign carry))
   
-  \; NOTE: These examples may clarify the following signs.
-  \;
-  \;   9  /   2  =   4  R   1  because   9  =   2  *   4  +   1
-  \;   9  /  -2  =  -4  R   1  because   9  =  -2  *  -4  +   1
-  \;  -9  /   2  =  -4  R  -1  because  -9  =   2  *  -4  +  -1
-  \;  -9  /  -2  =   4  R  -1  because  -9  =  -2  *   4  +  -1
+  \= NOTE: These examples may clarify the following signs.
+  \=
+  \=   9  /   2  =   4  R   1  because   9  =   2  *   4  +   1
+  \=   9  /  -2  =  -4  R   1  because   9  =  -2  *  -4  +   1
+  \=  -9  /   2  =  -4  R  -1  because  -9  =   2  *  -4  +  -1
+  \=  -9  /  -2  =   4  R  -1  because  -9  =  -2  *   4  +  -1
   
   /case n
     
@@ -1062,24 +1062,24 @@
     (case m
       yep m (c div n m pos pos)
       nope m (c div n m neg pos)
-      err.\-qq[Called bigint-div-toward-zero with a zero divisor])
+      err.\;qq[Called bigint-div-toward-zero with a zero divisor])
     
     nope n
     (case m
       yep m (c div n m neg neg)
       nope m (c div n m pos neg)
-      err.\-qq[Called bigint-div-toward-zero with a zero divisor])
+      err.\;qq[Called bigint-div-toward-zero with a zero divisor])
   
   /bigint fixops /nil))
 
-\; TODO: Port toStringInRadix and bigIntFromStringInRadix. We don't
-\; have string manipulation yet, though.
+\= TODO: Port toStringInRadix and bigIntFromStringInRadix. We don't
+\= have string manipulation yet, though.
 
 
-\; ===== AVL trees ===================================================
+\= ===== AVL trees ===================================================
 
-\; TODO: See if our use of binary bigints is less efficient than
-\; era-avl.js's use of unary bigints.
+\= TODO: See if our use of binary bigints is less efficient than
+\= era-avl.js's use of unary bigints.
 
 (def-type avl-leaf fixops compare)
 (def-type
@@ -1090,25 +1090,25 @@
 (defn avl-branches-swap polarity branches
   (case polarity yep - branches
   /cast branches avl-branches nub nbranch yub ybranch
-    err.\-qq[Expected a branches value of type avl-branches]
+    err.\;qq[Expected a branches value of type avl-branches]
   /avl-branches yub ybranch nub nbranch))
 
 (defn avl-comparer tree
   (case tree avl-leaf fixops compare compare
   /case tree avl-branch fixops compare key val branches compare
-    err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
+    err.\;qq[Expected a tree value of type avl-leaf or avl-branch]))
 
 (defn avl-get-maybe tree k
   (case tree avl-leaf fixops compare
     (nil)
   /case tree avl-branch fixops compare key val branches
     (cast branches avl-branches nub nbranch yub ybranch
-      err.\-qq[Expected a branches value of type avl-branches]
+      err.\;qq[Expected a branches value of type avl-branches]
     /case (c compare key k)
       nope - (c-new avl-get-maybe nbranch k)
       yep - (c-new avl-get-maybe ybranch k)
       yep.val)
-    err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
+    err.\;qq[Expected a tree value of type avl-leaf or avl-branch]))
 
 (def-type
   depth-changed nope-depth-change yep-depth-change balanced-tree)
@@ -1117,7 +1117,7 @@
   (case polarity yep - balance-result
   /cast balance-result
     depth-changed nope-depth-change yep-depth-change balanced-tree
-    err.\-qq[Expected a balance-result value of type depth-changed]
+    err.\;qq[Expected a balance-result value of type depth-changed]
   /depth-changed yep-depth-change nope-depth-change balanced-tree))
 
 (def-type avl-minus-extreme-entry-succeeded
@@ -1125,9 +1125,9 @@
 
 (defn improper-avl-branch-balance tree
   (cast tree avl-branch fixops compare key val branches
-    err.\-qq[Expected a tree value of type avl-branch]
+    err.\;qq[Expected a tree value of type avl-branch]
   /cast branches avl-branches nub nbranch yub ybranch
-    err.\-qq[Expected a branches value of type avl-branches]
+    err.\;qq[Expected a branches value of type avl-branches]
   /let bigint-minus-one (fn n /bigint-minus n bigint-as-one.n)
   /let bigint-plus-one (fn n /bigint-plus n bigint-as-one.n)
   /let bigint-lteq-one
@@ -1149,18 +1149,18 @@
   /let polarity y-is-zero
   /cast (avl-branches-swap polarity branches)
     avl-branches wub wbranch tub tbranch
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
   /cast (c-new avl-minus-extreme-entry wbranch polarity)
     avl-minus-extreme-entry-succeeded
     max-depth-decreased k v wbranch
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
   /cast
     (case (c-new avl-plus-entry tbranch key val)
       nope result (pair (nope/nil) result)
       yep result (pair (yep/nil) result)
-      err.\-qq[Internal error])
+      err.\;qq[Internal error])
     pair max-depth-increased tbranch
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
   /let wub
     (case max-depth-decreased yep - (c bigint-minus-one wub) wub)
   /let wub
@@ -1171,7 +1171,7 @@
     /avl-branches-swap polarity
     /avl-branches wub wbranch tub tbranch)
     depth-changed w-depth-change t-depth-change tree
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
   /let w-depth-change
     (case max-depth-decreased yep -
       (c bigint-minus-one w-depth-change)
@@ -1184,20 +1184,20 @@
   /depth-changed w-depth-change t-depth-change tree))
 
 (defn avl-branch-finish-minus fixops compare branches
-  \; NOTE: This effectively concatenates the branches. Like
-  \; `improper-avl-branch-balance`, this assumes all the elements are
-  \; already in the proper order, just not necessarily balanced
-  \; between the two branches. It's not a merge of arbitrary trees.
-  \; For that, see `avl-merge`. Furthermore, this can even rely on the
-  \; fact that the branches were initially balanced before the root
-  \; key/value entry was subtracted from the tree.
+  \= NOTE: This effectively concatenates the branches. Like
+  \= `improper-avl-branch-balance`, this assumes all the elements are
+  \= already in the proper order, just not necessarily balanced
+  \= between the two branches. It's not a merge of arbitrary trees.
+  \= For that, see `avl-merge`. Furthermore, this can even rely on the
+  \= fact that the branches were initially balanced before the root
+  \= key/value entry was subtracted from the tree.
   (cast branches avl-branches nub nbranch yub ybranch
-    err.\-qq[Expected a branches value of type avl-branches]
+    err.\;qq[Expected a branches value of type avl-branches]
   /let attempt-shift
     (fn polarity on-fail
       (cast (avl-branches-swap polarity branches)
         avl-branches wub wbranch tub tbranch
-        err.\-qq[Internal error]
+        err.\;qq[Internal error]
       /case (c-new avl-minus-extreme-entry wbranch polarity)
         
         nope - (c on-fail /nil)
@@ -1215,7 +1215,7 @@
           /avl-branches-swap polarity
           /avl-branches wub wbranch new-tub tbranch)
           depth-changed w-depth-change t-depth-change tree
-          err.\-qq[Internal error]
+          err.\;qq[Internal error]
         /yep-nope-swap
           (and-lazy max-depth-decreased /fn -
           /and-lazy (not bigint-is-zero.tub) /fn -
@@ -1223,7 +1223,7 @@
               w-depth-change))
           tree)
         
-        err.\-qq[Internal error]))
+        err.\;qq[Internal error]))
   
   /c attempt-shift (yep/nil) /fn -
   /c attempt-shift (nope/nil) /fn -
@@ -1236,25 +1236,25 @@
     (lazy-nil)
   /case tree avl-branch fixops compare key val branches
     (cast branches avl-branches nub nbranch yub ybranch
-      err.\-qq[Expected a branches value of type avl-branches]
+      err.\;qq[Expected a branches value of type avl-branches]
     /lazy-append (c-new avl-lazy-entries-asc nbranch)
     /lazy-cons (entry key val) /c-new avl-lazy-entries-asc ybranch)
-    err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
+    err.\;qq[Expected a tree value of type avl-leaf or avl-branch]))
 
-\; NOTE: This body takes its args as (state k v).
+\= NOTE: This body takes its args as (state k v).
 (defn avl-any-fold-asc state tree body
   (lazy-any-foldl state avl-lazy-entries-asc.tree /fn state entry
     (cast entry entry k v
-      err.\-qq[Internal error]
+      err.\;qq[Internal error]
     /c body state k v)))
 
-\; NOTE: This body takes its args as (state k v).
+\= NOTE: This body takes its args as (state k v).
 (defn avl-any-map-fold-asc state tree body
   (case tree avl-leaf fixops compare
     (folding state tree)
   /case tree avl-branch fixops compare key val branches
     (cast branches avl-branches nub nbranch yub ybranch
-      err.\-qq[Expected a branches value of type avl-branches]
+      err.\;qq[Expected a branches value of type avl-branches]
     /caselet first-result
       (c-new avl-any-map-fold-asc state nbranch body)
       
@@ -1276,43 +1276,43 @@
           /avl-branch fixops compare key result-val
           /avl-branches nub result-nbranch yub result-ybranch)
           
-          err.\-qq[Internal error])
+          err.\;qq[Internal error])
         
-        err.\-qq[
+        err.\;qq[
           Expected body to return a value of type yep or folding])
       
-      err.\-qq[Internal error])
-    err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
+      err.\;qq[Internal error])
+    err.\;qq[Expected a tree value of type avl-leaf or avl-branch]))
 
 (defn avl-get-max-depth tree
   (case tree avl-leaf fixops compare
     bigint-zero-for-fixops.fixops
   /case tree avl-branch fixops compare key val branches
     (cast branches avl-branches nub nbranch yub ybranch
-      err.\-qq[Expected a branches value of type avl-branches]
+      err.\;qq[Expected a branches value of type avl-branches]
     /let zero bigint-zero-for-fixops.fixops
     /let one bigint-as-one.zero
     /bigint-plus one /c-new avl-get-max-depth /case nub nil
       ybranch
       nbranch)
-    err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
+    err.\;qq[Expected a tree value of type avl-leaf or avl-branch]))
 
 (def-type avl-merge-val a b)
 
 (defn avl-merge a b maybe-process-both
-  \; TOOD: Make sure this algorithm is near-optimal both when
-  \; `maybe-process-both` is (yep ...) and when it's (nil). When it's
-  \; (nil), this algorithm certainly takes at least O( m + n ) time
-  \; because it transforms every element.
-  \;
-  \; Online forum advice for merging AVL trees seems to recommend the
-  \; use of sorted vectors, building the tree by bisecting the vector.
-  \; We don't really have bigint-indexable vectors, and bisecting a
-  \; bigint would have its own time complexity to worry about, so
-  \; that's not an obvious way forward.
-  \;
-  \; (Yes, we're worrying about bigint operation complexity while not
-  \; worrying about memory allocation complexity.)
+  \= TOOD: Make sure this algorithm is near-optimal both when
+  \= `maybe-process-both` is (yep ...) and when it's (nil). When it's
+  \= (nil), this algorithm certainly takes at least O( m + n ) time
+  \= because it transforms every element.
+  \=
+  \= Online forum advice for merging AVL trees seems to recommend the
+  \= use of sorted vectors, building the tree by bisecting the vector.
+  \= We don't really have bigint-indexable vectors, and bisecting a
+  \= bigint would have its own time complexity to worry about, so
+  \= that's not an obvious way forward.
+  \=
+  \= (Yes, we're worrying about bigint operation complexity while not
+  \= worrying about memory allocation complexity.)
   
   (let to-left
     (fn val
@@ -1345,10 +1345,10 @@
   /let combine-branch-changes
     (fn wub tub w-balanced-change t-balanced-change
       w-sub-merge-change t-sub-merge-change
-      \; TODO: This is one of the few places that actually adds two
-      \; depth numbers of non-constant size. See if there's an
-      \; alternative algorithm that avoids this. If there is, we
-      \; should switch to a unary bigint representation of depth.
+      \= TODO: This is one of the few places that actually adds two
+      \= depth numbers of non-constant size. See if there's an
+      \= alternative algorithm that avoids this. If there is, we
+      \= should switch to a unary bigint representation of depth.
       (case bigint-is-zero.wub yep -
         (bigint-plus t-balanced-change t-sub-merge-change)
         (bigint-plus w-balanced-change w-sub-merge-change)))
@@ -1361,16 +1361,16 @@
   /caselet b-lt-a (c a-compare b-key a-key) nil
     
     (cast a-branches avl-branches a-nub a-nbranch a-yub a-ybranch
-      err.\-qq[Expected an a-branches value of type avl-branches]
+      err.\;qq[Expected an a-branches value of type avl-branches]
     /cast b-branches avl-branches b-nub b-nbranch b-yub b-ybranch
-      err.\-qq[Expected a b-branches value of type avl-branches]
+      err.\;qq[Expected a b-branches value of type avl-branches]
     /cast (c-new avl-merge a-nbranch b-nbranch maybe-process-both)
       depth-changed an-change bn-change nbranch
-      err.\-qq[Internal error]
+      err.\;qq[Internal error]
     /let nub (bigint-plus a-nub an-change)
     /cast (c-new avl-merge a-ybranch b-ybranch maybe-process-both)
       depth-changed ay-change by-change ybranch
-      err.\-qq[Internal error]
+      err.\;qq[Internal error]
     /let yub (bigint-plus a-yub ay-change)
     /cast
       (improper-avl-branch-balance
@@ -1379,7 +1379,7 @@
         (c to-both a-val b-val)
       /avl-branches nub nbranch yub ybranch)
       depth-changed n-change y-change tree
-      err.\-qq[Internal error]
+      err.\;qq[Internal error]
     /depth-changed
       (c combine-branch-changes
         a-nub a-yub n-change y-change an-change ay-change)
@@ -1387,21 +1387,21 @@
         b-nub b-yub n-change y-change bn-change by-change)
       tree)
     
-    \; TODO: See if this case would be more efficient if we sometimes
-    \; merged `a-wbranch` and `b` instead. We'd probably need to know
-    \; which of `a` and `b` is smallest, and then merge it with the
-    \; smallest branch of the other.
+    \= TODO: See if this case would be more efficient if we sometimes
+    \= merged `a-wbranch` and `b` instead. We'd probably need to know
+    \= which of `a` and `b` is smallest, and then merge it with the
+    \= smallest branch of the other.
     (cast (avl-branches-swap b-lt-a a-branches)
       avl-branches a-wub a-wbranch a-tub a-tbranch
-      err.\-qq[Expected an a-branches value of type avl-branches]
+      err.\;qq[Expected an a-branches value of type avl-branches]
     /cast (avl-branches-swap b-lt-a b-branches)
       avl-branches b-wub b-wbranch b-tub b-tbranch
-      err.\-qq[Expected a b-branches value of type avl-branches]
+      err.\;qq[Expected a b-branches value of type avl-branches]
     /cast
       (depth-changed-swap b-lt-a
       /c-new avl-merge a b-tbranch maybe-process-both)
       depth-changed a-merge-change b-merge-change tbranch
-      err.\-qq[Internal error]
+      err.\;qq[Internal error]
     /let wbranch (c map-right b-wbranch)
     /let tub (bigint-plus b-tub b-merge-change)
     /cast
@@ -1411,7 +1411,7 @@
       /avl-branches-swap b-lt-a
       /avl-branches b-wub wbranch tub tbranch)
       depth-changed w-balance-change t-balance-change tree
-      err.\-qq[Internal error]
+      err.\;qq[Internal error]
     /depth-changed
       (bigint-plus t-balance-change a-merge-change)
       (c combine-branch-changes
@@ -1425,7 +1425,7 @@
   /case tree avl-branch fixops compare key val branches
     (cast (avl-branches-swap k-polarity branches)
       avl-branches wub wbranch tub tbranch
-      err.\-qq[Expected a branches value of type avl-branches]
+      err.\;qq[Expected a branches value of type avl-branches]
     /case (c-new avl-minus-extreme-entry tbranch k-polarity)
       
       nope -
@@ -1444,22 +1444,22 @@
         /avl-branches-swap k-polarity
         /avl-branches wub wbranch tub tbranch)
         depth-changed w-depth-change t-depth-change balanced-tree
-        err.\-qq[Internal error]
+        err.\;qq[Internal error]
       /cast balanced-tree avl-branch - -b -c -d balanced-branches
-        err.\-qq[Internal error]
+        err.\;qq[Internal error]
       /cast balanced-branches
         avl-branches balanced-wub - balanced-tub -b
-        err.\-qq[Internal error]
+        err.\;qq[Internal error]
       /avl-minus-extreme-entry-succeeded
         
-        \; There are two ways the overall max depth can decrease:
-        \;
-        \;  - Subtracting the entry from one side caused that side to
-        \;    stop having more max depth than the other.
-        \;  - Subtracting the entry from one side caused that side to
-        \;    have much less max depth than the other, and the other
-        \;    lost some depth during a rebalancing.
-        \;
+        \= There are two ways the overall max depth can decrease:
+        \=
+        \=  - Subtracting the entry from one side caused that side to
+        \=    stop having more max depth than the other.
+        \=  - Subtracting the entry from one side caused that side to
+        \=    have much less max depth than the other, and the other
+        \=    lost some depth during a rebalancing.
+        \=
         (or
           (and-lazy (not bigint-is-zero.tub) /fn -
             bigint-is-zero.balanced-tub)
@@ -1470,8 +1470,8 @@
         
         subtracted-key subtracted-val balanced-tree)
       
-      err.\-qq[Internal error])
-    err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
+      err.\;qq[Internal error])
+    err.\;qq[Expected a tree value of type avl-leaf or avl-branch]))
 
 (defn avl-plus-entry tree k v
   (case tree avl-leaf fixops compare
@@ -1483,14 +1483,14 @@
       (nope/avl-branch fixops compare k v branches)
     /cast (avl-branches-swap polarity branches)
       avl-branches wub wbranch tub tbranch
-      err.\-qq[Expected a branches value of type avl-branches]
+      err.\;qq[Expected a branches value of type avl-branches]
     /cast
       (case (c-new avl-plus-entry tbranch k v)
         nope result (pair (nope/nil) result)
         yep result (pair (yep/nil) result)
-        err.\-qq[Internal error])
+        err.\;qq[Internal error])
       pair max-depth-increased tbranch
-      err.\-qq[Internal error]
+      err.\;qq[Internal error]
     /let new-tub
       (case max-depth-increased yep -
         (bigint-plus tub bigint-as-one.tub)
@@ -1502,22 +1502,22 @@
       /avl-branches-swap polarity
       /avl-branches wub wbranch new-tub tbranch)
       depth-changed w-depth-change t-depth-change balanced-tree
-      err.\-qq[Internal error]
+      err.\;qq[Internal error]
     /cast balanced-tree avl-branch - -b -c -d balanced-branches
-      err.\-qq[Internal error]
+      err.\;qq[Internal error]
     /cast balanced-branches
       avl-branches balanced-wub - balanced-tub -b
-      err.\-qq[Internal error]
+      err.\;qq[Internal error]
     /yep-nope-swap
       
-      \; There are two ways the overall max depth can increase:
-      \;
-      \;  - Adding the entry to one side caused that side to start
-      \;    having more max depth than the other.
-      \;  - Adding the entry to one side caused that side to have much
-      \;    more max depth than the other, and it didn't lose that
-      \;    edge during a rebalancing.
-      \;
+      \= There are two ways the overall max depth can increase:
+      \=
+      \=  - Adding the entry to one side caused that side to start
+      \=    having more max depth than the other.
+      \=  - Adding the entry to one side caused that side to have much
+      \=    more max depth than the other, and it didn't lose that
+      \=    edge during a rebalancing.
+      \=
       (or
         (and-lazy bigint-is-zero.tub /fn -
         /not bigint-is-zero.balanced-tub)
@@ -1526,7 +1526,7 @@
           (not/isa yep /bigint-compare t-depth-change
             bigint-as-zero.t-depth-change)))
       yep.balanced-tree)
-    err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
+    err.\;qq[Expected a tree value of type avl-leaf or avl-branch]))
 
 (defn avl-minus-entry tree k
   (case tree avl-leaf fixops compare
@@ -1536,14 +1536,14 @@
       (avl-branch-finish-minus fixops compare branches)
     /cast (avl-branches-swap polarity branches)
       avl-branches wub wbranch tub tbranch
-      err.\-qq[Expected a branches value of type avl-branches]
+      err.\;qq[Expected a branches value of type avl-branches]
     /cast
       (case (c-new avl-minus-entry tbranch k)
         nope result (pair (nope/nil) result)
         yep result (pair (yep/nil) result)
-        err.\-qq[Internal error])
+        err.\;qq[Internal error])
       pair max-depth-decreased tbranch
-      err.\-qq[Internal error]
+      err.\;qq[Internal error]
     /let new-wub
       (case max-depth-decreased yep -
         (bigint-plus tub bigint-as-one.tub)
@@ -1555,22 +1555,22 @@
       /avl-branches-swap polarity
       /avl-branches new-wub wbranch tub tbranch)
       depth-changed w-depth-change t-depth-change balanced-tree
-      err.\-qq[Internal error]
+      err.\;qq[Internal error]
     /cast balanced-tree avl-branch - -b -c -d balanced-branches
-      err.\-qq[Internal error]
+      err.\;qq[Internal error]
     /cast balanced-branches
       avl-branches balanced-wub - balanced-tub -b
-      err.\-qq[Internal error]
+      err.\;qq[Internal error]
     /yep-nope-swap
       
-      \; There are two ways the overall max depth can decrease:
-      \;
-      \;  - Subtracting the entry from one side caused that side to
-      \;    stop having more max depth than the other.
-      \;  - Subtracting the entry from one side caused that side to
-      \;    have much less max depth than the other, and the other
-      \;    lost some depth during a rebalancing.
-      \;
+      \= There are two ways the overall max depth can decrease:
+      \=
+      \=  - Subtracting the entry from one side caused that side to
+      \=    stop having more max depth than the other.
+      \=  - Subtracting the entry from one side caused that side to
+      \=    have much less max depth than the other, and the other
+      \=    lost some depth during a rebalancing.
+      \=
       (or
         (and-lazy (not bigint-is-zero.tub) /fn -
           bigint-is-zero.balanced-tub)
@@ -1579,24 +1579,24 @@
           (isa yep /bigint-compare w-depth-change
             bigint-as-zero.w-depth-change)))
       yep.balanced-tree)
-    err.\-qq[Expected a tree value of type avl-leaf or avl-branch]))
+    err.\;qq[Expected a tree value of type avl-leaf or avl-branch]))
 
 (defn avl-has-any tree
   (not/isa avl-leaf tree))
 
-\; TODO: Rename this to be more convenient to call.
+\= TODO: Rename this to be more convenient to call.
 (defn avl-minus-entry-ignoring-depth avl k
   (case (avl-minus-entry avl k)
     yep result result
     nope result result
-    err.\-qq[Internal error]))
+    err.\;qq[Internal error]))
 
-\; TODO: Rename this to be more convenient to call.
+\= TODO: Rename this to be more convenient to call.
 (defn avl-plus-entry-ignoring-depth avl k
   (case (avl-plus-entry avl k)
     yep result result
     nope result result
-    err.\-qq[Internal error]))
+    err.\;qq[Internal error]))
 
 (defn avl-plus-nil tree k
   (avl-plus-entry tree k /nil))
@@ -1604,19 +1604,19 @@
 (defn avl-plus-nils tree list
   (foldl tree list /avl-plus-nil))
 
-\; NOTE: This check takes its args as (k v).
+\= NOTE: This check takes its args as (k v).
 (defn avl-any tree check
   (caselet result
     (avl-any-fold-asc (nil) tree /fn state k v /c check k v)
     nope - (nope/nil)
     result))
 
-\; NOTE: This check takes its args as (k v).
+\= NOTE: This check takes its args as (k v).
 (defn avl-all tree check
   (not/avl-any tree /fn k v
     (not/c check k v)))
 
-\; NOTE: This body takes its args as (k v).
+\= NOTE: This body takes its args as (k v).
 (defn avl-each tree body
   (let -
     (avl-any tree /fn k v
@@ -1624,46 +1624,46 @@
       /nope/nil))
   /nil))
 
-\; NOTE: This body takes its args as (state k v).
+\= NOTE: This body takes its args as (state k v).
 (defn avl-fold-asc state tree body
   (proj1 nope /avl-any-fold-asc state tree /fn state k v
     (nope/c body state k v)))
 
-\; NOTE: This body takes its args as (k v).
+\= NOTE: This body takes its args as (k v).
 (defn avl-map tree body
   (case
     (avl-any-map-fold-asc (nil) tree /fn state k v
       (folding (nil) /c body k v))
     folding state result result
-    err.\-qq[Internal error]))
+    err.\;qq[Internal error]))
 
 (defn avl-plus a b
   (cast (avl-merge a b /yep/fn a b b)
     depth-changed n-depth-change y-depth-change tree
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
     tree))
 
 
-\; ===== Finger trees ================================================
+\= ===== Finger trees ================================================
 
-\; NOTE: Finger trees don't have their best amortized computational
-\; complexity unless they can use lazy thunks, so they're not like the
-\; other, stateless utilities here.
+\= NOTE: Finger trees don't have their best amortized computational
+\= complexity unless they can use lazy thunks, so they're not like the
+\= other, stateless utilities here.
 
-\; The `ftree-meta` value's `make-lazy` and `force` should usually
-\; implement memoized thunks. However, they may also implement pure
-\; thunks that execute more than once. This finger tree implementation
-\; will only ever call them with thunks that are safe to execute more
-\; than once, and which have the same space footprint before and after
-\; the computation.
-\;
-\; When `make-lazy` implements memoized thunks, the `ftree-push` and
-\; `ftree-pop` operations run in amortized constant time, and the
-\; `ftree-get-summary-stack` and `ftree-split` operations run in
-\; logarithmic time. (TODO: Is that true?)
-\;
-\; When it implements pure thunks, all four of these operations run in
-\; logarithmic time. (TODO: Is that true?)
+\= The `ftree-meta` value's `make-lazy` and `force` should usually
+\= implement memoized thunks. However, they may also implement pure
+\= thunks that execute more than once. This finger tree implementation
+\= will only ever call them with thunks that are safe to execute more
+\= than once, and which have the same space footprint before and after
+\= the computation.
+\=
+\= When `make-lazy` implements memoized thunks, the `ftree-push` and
+\= `ftree-pop` operations run in amortized constant time, and the
+\= `ftree-get-summary-stack` and `ftree-split` operations run in
+\= logarithmic time. (TODO: Is that true?)
+\=
+\= When it implements pure thunks, all four of these operations run in
+\= logarithmic time. (TODO: Is that true?)
 
 (defn make-immediate-lazy make-lazy val
   (c make-lazy /fn - val))
@@ -1674,26 +1674,26 @@
 (def-type ftree-meta make-lazy force measure plus)
 (def-type ftree-node summary elements)
 
-\; NOTE: The values of `n-digits` and `y-digits` are lists of one to
-\; four elements. When used directly in an `ftree-deep`, the elements
-\; in `n-digits` are the first ones, and the keys in `y-digits` are
-\; the last ones.
+\= NOTE: The values of `n-digits` and `y-digits` are lists of one to
+\= four elements. When used directly in an `ftree-deep`, the elements
+\= in `n-digits` are the first ones, and the keys in `y-digits` are
+\= the last ones.
 (def-type ftree-digits n-digits y-digits)
 
 (def-type ftree-empty meta)
 (def-type ftree-single meta element)
 
-\; NOTE: The value of `lazy-next` is a `make-lazy` object that
-\; calculates a finger tree containing "nodes" containing the type of
-\; elements of this finger tree. A node is an object of the form
-\; (ftree-node summary elements), where `elements` is a list of two or
-\; three elements.
+\= NOTE: The value of `lazy-next` is a `make-lazy` object that
+\= calculates a finger tree containing "nodes" containing the type of
+\= elements of this finger tree. A node is an object of the form
+\= (ftree-node summary elements), where `elements` is a list of two or
+\= three elements.
 (def-type ftree-deep meta digits lazy-next)
 
 (defn ftree-digits-swap polarity digits
   (case polarity yep - digits
   /cast digits ftree-digits n-digits y-digits
-    err.\-qq[Expected a digits value of type ftree-digits]
+    err.\;qq[Expected a digits value of type ftree-digits]
   /ftree-digits y-digits n-digits))
 
 (defn ftree-push tree polarity new-element
@@ -1701,11 +1701,11 @@
     (ftree-single meta new-element)
   /case tree ftree-single meta element
     (cast meta ftree-meta make-lazy force measure plus
-      err.\-qq[Expected a meta value of type ftree-meta]
+      err.\;qq[Expected a meta value of type ftree-meta]
     /let sub-measure
       (fn node
         (cast node ftree-node summary elements
-          err.\-qq[Expected a node value of type ftree-node]
+          err.\;qq[Expected a node value of type ftree-node]
           summary))
     /ftree-deep meta
       (ftree-digits-swap polarity
@@ -1714,10 +1714,10 @@
     /ftree-empty/ftree-meta make-lazy force sub-measure plus)
   /case tree ftree-deep meta digits lazy-next
     (cast meta ftree-meta make-lazy force measure plus
-      err.\-qq[Expected a meta value of type ftree-meta]
+      err.\;qq[Expected a meta value of type ftree-meta]
     /cast (ftree-digits-swap polarity digits)
       ftree-digits w-digits t-digits
-      err.\-qq[Expected a digits value of type ftree-digits]
+      err.\;qq[Expected a digits value of type ftree-digits]
     /let not-four-digits
       (fn -
         (ftree-deep meta
@@ -1734,17 +1734,17 @@
     /ftree-deep meta
       (ftree-digits-swap polarity
       /ftree-digits w-digits (cons d3 /cons new-element /nil))
-    \; NOTE: This `makeLazy()` isn't constant-time, so it's impure. It
-    \; does have the same space footprint before and after.
+    \= NOTE: This `makeLazy()` isn't constant-time, so it's impure. It
+    \= does have the same space footprint before and after.
     /c make-lazy /fn -
       (c-new ftree-push (c force lazy-next) polarity new-node))
-    err.\-qq[
+    err.\;qq[
       Expected a tree value of type ftree-empty, ftree-single, or
       ftree-deep]))
 
-\; NOTE: If the `polarity` is `(nope/nil)`, this will push the
-\; elements so they're in the opposite order as they are in the
-\; original list.
+\= NOTE: If the `polarity` is `(nope/nil)`, this will push the
+\= elements so they're in the opposite order as they are in the
+\= original list.
 (defn ftree-push-list tree polarity list
   (foldl tree list /fn tree elem /ftree-push tree polarity elem))
 
@@ -1758,64 +1758,64 @@
   /case tree ftree-deep meta digits lazy-next
     (cast (ftree-digits-swap polarity digits)
       ftree-digits w-digits t-digits
-      err.\-qq[Expected a digits value of type ftree-digits]
+      err.\;qq[Expected a digits value of type ftree-digits]
     /cast rev.t-digits cons last rev-past
-      err.\-qq[Expected a t-digits value with at least one digit]
+      err.\;qq[Expected a t-digits value with at least one digit]
     /ftree-pop-result yep.last
     /c-new ftree-maybe-deep polarity meta
       (ftree-digits-swap polarity /ftree-digits w-digits rev.rev-past)
       lazy-next)
-    err.\-qq[
+    err.\;qq[
       Expected a tree value of type ftree-empty, ftree-single, or
       ftree-deep]))
 
 (defn ftree-get-summary-stack tree
   (case tree ftree-empty meta
     (cast meta ftree-meta make-lazy force measure plus
-      err.\-qq[Expected a meta value of type ftree-meta]
+      err.\;qq[Expected a meta value of type ftree-meta]
     /cons (c plus /nil) /nil)
   /case tree ftree-single meta element
     (cast meta ftree-meta make-lazy force measure plus
-      err.\-qq[Expected a meta value of type ftree-meta]
+      err.\;qq[Expected a meta value of type ftree-meta]
     /cons (c measure element) /nil)
   /case tree ftree-deep meta digits lazy-next
     (cast meta ftree-meta make-lazy force measure plus
-      err.\-qq[Expected a meta value of type ftree-meta]
+      err.\;qq[Expected a meta value of type ftree-meta]
     /let add-side
       (fn summary polarity
         (cast (ftree-digits-swap polarity digits)
           ftree-digits w-digits t-digits
-          err.\-qq[Expected a digits value of type ftree-digits]
+          err.\;qq[Expected a digits value of type ftree-digits]
         /foldl summary t-digits /fn summary digit
           (c plus /list-order-swap polarity
           /cons summary /cons (c measure digit) /nil)))
     /let parent-summary-stack
       (c-new ftree-get-summary-stack /c force lazy-next)
     /cast parent-summary-stack cons summary rest
-      err.\-qq[Internal error]
+      err.\;qq[Internal error]
     /let summary (c add-side summary /nope/nil)
     /let summary (c add-side summary /yep/nil)
     /cons summary parent-summary-stack)
-    err.\-qq[
+    err.\;qq[
       Expected a tree value of type ftree-empty, ftree-single, or
       ftree-deep]))
 
-\; This works like `(ftree-deep meta digits lazy-next)`, except that
-\; it allows one of the sides of digits to be empty.
+\= This works like `(ftree-deep meta digits lazy-next)`, except that
+\= it allows one of the sides of digits to be empty.
 (defn ftree-maybe-deep polarity meta digits lazy-next
   (cast meta ftree-meta make-lazy force measure plus
-    err.\-qq[Expected a meta value of type ftree-meta]
+    err.\;qq[Expected a meta value of type ftree-meta]
   /cast (ftree-digits-swap polarity digits)
     ftree-digits w-digits t-digits
-    err.\-qq[Expected a digits value of type ftree-digits]
+    err.\;qq[Expected a digits value of type ftree-digits]
   /case t-digits cons - -b (ftree-deep meta digits lazy-next)
   /cast (ftree-pop (c force lazy-next) polarity)
     ftree-pop-result maybe-node rest
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
   /cast maybe-node yep node
     (ftree-push-list ftree-empty.meta not.polarity w-digits)
   /cast node ftree-node summary elements
-    err.\-qq[
+    err.\;qq[
       Expected the finger tree in lazy-next to contain values of type
       ftree-node]
   /ftree-deep meta
@@ -1834,7 +1834,7 @@
     ftree-split-iter-result-fell-off.summary-so-far
   /case tree ftree-single meta element
     (cast meta ftree-meta make-lazy force measure plus
-      err.\-qq[Expected a meta value of type ftree-meta]
+      err.\;qq[Expected a meta value of type ftree-meta]
     /let summary-so-far
       (c plus /list-order-swap polarity
       /cons (c measure element) /cons summary-so-far /nil)
@@ -1843,18 +1843,18 @@
     /ftree-split-iter-result-completed ftree-empty.meta tree)
   /case tree ftree-deep meta digits lazy-next
     (cast meta ftree-meta make-lazy force measure plus
-      err.\-qq[Expected a meta value of type ftree-meta]
+      err.\;qq[Expected a meta value of type ftree-meta]
     /cast summary-stack cons summary-stack-first summary-stack-rest
-      err.\-qq[Expected a summary-stack value of type cons]
+      err.\;qq[Expected a summary-stack value of type cons]
     /cast (ftree-digits-swap polarity digits)
       ftree-digits w-digits t-digits
-      err.\-qq[Expected a digits value of type ftree-digits]
+      err.\;qq[Expected a digits value of type ftree-digits]
     /let try-side
       (fn summary-so-far side-polarity on-failed
         (let iterating-inward (not/xor polarity side-polarity)
         /cast (ftree-digits-swap polarity digits)
           ftree-digits w2-digits t2-digits
-          err.\-qq[Internal error]
+          err.\;qq[Internal error]
         /let digits-to-traverse
           (list-order-swap iterating-inward rev.t2-digits)
         /case
@@ -1865,9 +1865,9 @@
           /fn state elem
             (cast state
               ftree-split-iter-state summary-so-far rev-before after
-              err.\-qq[Internal error]
+              err.\;qq[Internal error]
             /cast after cons elem after
-              err.\-qq[Internal error]
+              err.\;qq[Internal error]
             /let summary-so-far
               (c plus /list-order-swap polarity
               /cons (c measure elem) /cons summary-so-far /nil)
@@ -1879,13 +1879,13 @@
           yep state
           (cast state
             ftree-split-iter-state summary-so-far rev-before after
-            err.\-qq[Internal error]
+            err.\;qq[Internal error]
           /c on-failed summary-so-far)
           
           nope state
           (cast state
             ftree-split-iter-state summary-so-far rev-before after
-            err.\-qq[Internal error]
+            err.\;qq[Internal error]
           /let w2t-digits
             (case iterating-inward yep -
               rev.after
@@ -1905,12 +1905,12 @@
             (ftree-split-iter-result-completed t2-tree w2-tree)
             (ftree-split-iter-result-completed w2-tree t2-tree))
           
-          err.\-qq[Internal error]))
+          err.\;qq[Internal error]))
     
-    \; Try each of the `polarity`-side digits.
+    \= Try each of the `polarity`-side digits.
     /c try-side summary-so-far polarity /fn summary-so-far
     
-    \; Try a recursive call on the `lazy-next`.
+    \= Try a recursive call on the `lazy-next`.
     /case
       (c-new ftree-split-iter (c force lazy-next) summary-so-far
         summary-stack-rest polarity test-is-early)
@@ -1921,14 +1921,14 @@
         (ftree-push-list late-tree not.polarity w-digits))
       
       ftree-split-iter-result-fell-off summary-so-far
-      \; Try each of the digits on the side opposite to `polarity`.
+      \= Try each of the digits on the side opposite to `polarity`.
       (c try-side summary-so-far not.polarity
       /fn summary-so-far
       /ftree-split-iter-result-fell-off summary-so-far)
       
-      err.\-qq[Internal error])
+      err.\;qq[Internal error])
     
-    err.\-qq[
+    err.\;qq[
       Expected a tree value of type ftree-empty, ftree-single, or
       ftree-deep]))
 
@@ -1944,22 +1944,22 @@
     (ftree-push-list a (yep/nil)
     /append middle /cons element /nil)
   /cast a ftree-deep a-meta a-digits a-lazy-next
-    err.\-qq[
+    err.\;qq[
       Expected an a value of type ftree-empty, ftree-single, or
       ftree-deep]
   /cast a-digits ftree-digits an-digits ay-digits
-    err.\-qq[Expected an a-digits value of type ftree-digits]
+    err.\;qq[Expected an a-digits value of type ftree-digits]
   /cast b ftree-deep b-meta b-digits b-lazy-next
-    err.\-qq[
+    err.\;qq[
       Expected a b value of type ftree-empty, ftree-single, or
       ftree-deep]
   /cast b-digits ftree-digits bn-digits by-digits
-    err.\-qq[Expected a b-digits value of type ftree-digits]
+    err.\;qq[Expected a b-digits value of type ftree-digits]
   /cast a-meta ftree-meta make-lazy force measure plus
-    err.\-qq[Expected an a-meta value of type ftree-meta]
+    err.\;qq[Expected an a-meta value of type ftree-meta]
   /ftree-deep a-meta (ftree-digits an-digits by-digits)
-  \; NOTE: This `make-lazy` isn't constant-time, so it's impure. It
-  \; does have the same space footprint before and after.
+  \= NOTE: This `make-lazy` isn't constant-time, so it's impure. It
+  \= does have the same space footprint before and after.
   /c make-lazy /c-new ftree-append-with-middle
     (c force a-lazy-next)
     (append ay-digits /append middle bn-digits)
@@ -1967,83 +1967,83 @@
 
 (def-type ftree-split-result early-tree late-tree)
 
-\; This looks through every segment of the tree starting from the end
-\; that corresponds with `polarity` until it can drill down to the one
-\; element whose summary doesn't satisfy the predicate
-\; `test-is-early`. It returns
-\; `(ftree-split-result early-tree late-tree)` with a tree containing
-\; the early elements and a tree containing the rest. (Note that if
-\; the polarity is 1, the `earlyTree` will be a suffix of the original
-\; tree, and `lateTree` will be a prefix.)
-\;
-\; The `test-is-early` function is expected to satisfy certain
-\; properties with regard to the measurement monoid:
-\;
-\;   early (a + b) -> early a
-\;   early 0
-\;
-\; This allows us to scan over aggregate summaries (the `summary`
-\; property of `(ftree-node summary elements)` node values) and
-\; determine they're fully early without having to drill down and scan
-\; them for exceptional prefixes.
-\;
-\; NOTE: This operation doesn't follow quite the same contract as
-\; Hinze and Paterson's `splitTree`. In particular, where we use
-\; `test-is-early`, they use the complement of that predicate, and
-\; where we split the tree into two trees, they split it into two
-\; trees and a first non-early element in between, which their
-\; operation requires to exist.
-\;
+\= This looks through every segment of the tree starting from the end
+\= that corresponds with `polarity` until it can drill down to the one
+\= element whose summary doesn't satisfy the predicate
+\= `test-is-early`. It returns
+\= `(ftree-split-result early-tree late-tree)` with a tree containing
+\= the early elements and a tree containing the rest. (Note that if
+\= the polarity is 1, the `earlyTree` will be a suffix of the original
+\= tree, and `lateTree` will be a prefix.)
+\=
+\= The `test-is-early` function is expected to satisfy certain
+\= properties with regard to the measurement monoid:
+\=
+\=   early (a + b) -> early a
+\=   early 0
+\=
+\= This allows us to scan over aggregate summaries (the `summary`
+\= property of `(ftree-node summary elements)` node values) and
+\= determine they're fully early without having to drill down and scan
+\= them for exceptional prefixes.
+\=
+\= NOTE: This operation doesn't follow quite the same contract as
+\= Hinze and Paterson's `splitTree`. In particular, where we use
+\= `test-is-early`, they use the complement of that predicate, and
+\= where we split the tree into two trees, they split it into two
+\= trees and a first non-early element in between, which their
+\= operation requires to exist.
+\=
 (defn ftree-split tree polarity test-is-early
   (let meta
     (case tree ftree-empty meta meta
     /case tree ftree-single meta element meta
     /case tree ftree-deep meta digits lazy-next meta
-      err.\-qq[
+      err.\;qq[
         Expected a tree value of type ftree-empty, ftree-single, or
         ftree-deep])
   /cast meta ftree-meta make-lazy force measure plus
-    err.\-qq[Expected a meta value of type ftree-meta]
+    err.\;qq[Expected a meta value of type ftree-meta]
   /case
     (ftree-split-iter (c plus /nil)
       ftree-get-summary-stack.tree polarity test-is-early)
     
     ftree-split-iter-result-fell-off summary-so-far
-    \; Apparently everything is early.
+    \= Apparently everything is early.
     (ftree-split-result tree ftree-empty.meta)
     
     ftree-split-iter-result-completed early-tree late-tree
     (ftree-split-result early-tree late-tree)
     
-    err.\-qq[Internal error]))
+    err.\;qq[Internal error]))
 
 
-\; ===== Big finger trees ============================================
-\;
-\; A native platform (namely, JavaScript) may provide an efficient
-\; finger-tree-like data structure with the exception that the size of
-\; the data is limited. These "big finger trees" are finger trees
-\; implemented as finger trees whose elements abstractly follow a
-\; finger-tree-style interface, with the anomaly that the elements'
-\; concatenation operation doesn't have to be total.
+\= ===== Big finger trees ============================================
+\=
+\= A native platform (namely, JavaScript) may provide an efficient
+\= finger-tree-like data structure with the exception that the size of
+\= the data is limited. These "big finger trees" are finger trees
+\= implemented as finger trees whose elements abstractly follow a
+\= finger-tree-style interface, with the anomaly that the elements'
+\= concatenation operation doesn't have to be total.
 
 (def-type fix-ftree-ops push pop maybe-plus split)
 (def-type bftree fix-ftree-ops ftree)
 
 (defn ftree-is-too-empty-to-pop elem pop
   (cast (c pop elem /yep/nil) ftree-pop-result maybe-popped -
-    err.\-qq[Expected pop to return a value of type ftree-pop-result]
+    err.\;qq[Expected pop to return a value of type ftree-pop-result]
   /isa nil maybe-popped))
 
 (defn bftree-push tree polarity elem
   (cast tree bftree fix-ftree-ops ftree
-    err.\-qq[Expected a tree value of type bftree]
+    err.\;qq[Expected a tree value of type bftree]
   /cast fix-ftree-ops fix-ftree-ops push pop maybe-plus split
-    err.\-qq[Expected a fix-ftree-ops value of type fix-ftree-ops]
+    err.\;qq[Expected a fix-ftree-ops value of type fix-ftree-ops]
   /case (ftree-is-too-empty-to-pop elem pop) yep - tree
   /cast (ftree-pop ftree polarity)
     ftree-pop-result maybe-popped diminished-ftree
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
   /bftree fix-ftree-ops
   /case
     (cast maybe-popped yep popped (nil)
@@ -2055,36 +2055,36 @@
 
 (defn bftree-pop tree polarity
   (cast tree bftree fix-ftree-ops ftree
-    err.\-qq[Expected a tree value of type bftree]
+    err.\;qq[Expected a tree value of type bftree]
   /cast fix-ftree-ops fix-ftree-ops push pop maybe-plus split
-    err.\-qq[Expected a fix-ftree-ops value of type fix-ftree-ops]
+    err.\;qq[Expected a fix-ftree-ops value of type fix-ftree-ops]
   /cast (ftree-pop ftree polarity) ftree-pop-result maybe-popped ftree
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
   /cast maybe-popped yep popped
     (ftree-pop-result (nil) ftree)
   /cast (c pop popped polarity) ftree-pop-result maybe-popped new-leaf
-    err.\-qq[
+    err.\;qq[
       Expected a fix-ftree-ops's pop function to return a value of
       type ftree-pop-result]
   /cast maybe-popped yep popped
-    err.\-qq[
+    err.\;qq[
       Expected a bftree's ftree to contain only nonempty leaves]
   /ftree-pop-result maybe-popped
   /bftree fix-ftree-ops /ftree-push ftree polarity new-leaf))
 
 (defn bftree-plus a b
   (cast a bftree fix-ftree-ops a
-    err.\-qq[Expected an a value of type bftree]
+    err.\;qq[Expected an a value of type bftree]
   /cast b bftree - b
-    err.\-qq[Expected a b value of type bftree]
+    err.\;qq[Expected a b value of type bftree]
   /cast fix-ftree-ops fix-ftree-ops push pop maybe-plus split
-    err.\-qq[Expected a fix-ftree-ops value of type fix-ftree-ops]
+    err.\;qq[Expected a fix-ftree-ops value of type fix-ftree-ops]
   /cast (ftree-pop a /yep/nil)
     ftree-pop-result a-maybe-popped a-diminished
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
   /cast (ftree-pop b /yep/nil)
     ftree-pop-result b-maybe-popped b-diminished
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
   /bftree fix-ftree-ops
   /cast a-maybe-popped yep a-elem (ftree-append-with-middle a (nil) b)
   /cast b-maybe-popped yep b-elem (ftree-append-with-middle a (nil) b)
@@ -2095,43 +2095,43 @@
 
 (defn bftree-split tree polarity test-is-early
   (cast tree bftree fix-ftree-ops ftree
-    err.\-qq[Expected a tree value of type bftree]
+    err.\;qq[Expected a tree value of type bftree]
   /cast fix-ftree-ops fix-ftree-ops push pop maybe-plus split
-    err.\-qq[Expected a fix-ftree-ops value of type fix-ftree-ops]
+    err.\;qq[Expected a fix-ftree-ops value of type fix-ftree-ops]
   /cast (ftree-split ftree polarity test-is-early)
     ftree-split-result early-tree late-tree
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
   /cast (ftree-pop late-tree polarity)
     ftree-pop-result maybe-popped late-tree
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
   /cast maybe-popped yep popped
     (ftree-split-result
       (bftree fix-ftree-ops early-tree)
       (bftree fix-ftree-ops late-tree))
   /cast (c split popped polarity test-is-early)
     ftree-split-result early-elem late-elem
-    err.\-qq[Internal error]
+    err.\;qq[Internal error]
   /ftree-split-result
     (bftree fix-ftree-ops
     /ftree-push early-tree not.polarity early-elem)
     (bftree fix-ftree-ops /ftree-push late-tree polarity late-elem)))
 
 
-\; ===== Comparison utilities ========================================
+\= ===== Comparison utilities ========================================
 
 (def-type comparable compare val)
 
 (defn comparable-compare a b
   (cast a comparable compare a-val
-    err.\-qq[Expected an a value of type comparable]
+    err.\;qq[Expected an a value of type comparable]
   /cast b comparable - b-val
-    err.\-qq[Expected a b value of type comparable]
+    err.\;qq[Expected a b value of type comparable]
   /c compare a-val b-val))
 
-\; With the following utilities `bimap` and `cmpd-compare`, we can
-\; more easily define ordered abstract data types. For instance:
-\; -----
-\-rm(
+\= With the following utilities `bimap` and `cmpd-compare`, we can
+\= more easily define ordered abstract data types. For instance:
+\= -----
+\;rm(
   (def-type foo x y)
   (def-type bar x)
   (def-type baz)
@@ -2145,14 +2145,14 @@
       /cmpd-succ/case it bar x
         (cmpd-cons (bigint-compare) x /cmpd-nil)
       /cmpd-succ/case it baz (cmpd-nil)
-        err.\-qq[Expected a value of type foo, bar, or baz])))
+        err.\;qq[Expected a value of type foo, bar, or baz])))
 )
-\; -----
+\= -----
 
 (defn bimap combine a b func
   (c combine (c func a) (c func b)))
 
-\; NOTE: The "cmpd" stands for "comparison delegate."
+\= NOTE: The "cmpd" stands for "comparison delegate."
 (def-type cmpd-succ rest)
 (def-type cmpd-cons compare val rest)
 (def-type cmpd-nil)
@@ -2168,23 +2168,23 @@
       (caselet comparison (c compare a-val b-val) nil
         (c-new compare a-rest b-rest)
         comparison)
-      err.\-qq[
+      err.\;qq[
         Expected a and b to be the same length since neither was a
         cmpd-succ])
   /case b cmpd-cons compare b-val b-rest
-    err.\-qq[
+    err.\;qq[
       Expected a and b to be the same length since neither was a
       cmpd-succ]
   /cast a cmpd-nil
-    err.\-qq[
+    err.\;qq[
       Expected an a value of type cmpd-succ, cmpd-cons, or cmpd-nil]
   /cast b cmpd-nil
-    err.\-qq[
+    err.\;qq[
       Expected a b value of type cmpd-succ, cmpd-cons, or cmpd-nil]
   /nil))
 
 
-\; ===== Recommended settings for performance ========================
+\= ===== Recommended settings for performance ========================
 
 (defn make-fixops-recommended -
   (make-fixops-yep-nope/nil))
@@ -2193,13 +2193,13 @@
   (bigint-zero-for-fixops/make-fixops-recommended/nil))
 
 
-\; ===== Sets (bags) =================================================
+\= ===== Sets (bags) =================================================
 
 (def-type bag avl-tree)
 
 (defn bag-all bag check
   (cast bag bag avl-tree
-    err.\-qq[Expected a bag value of type bag]
+    err.\;qq[Expected a bag value of type bag]
   /avl-all avl-tree /fn k v
     (c check k)))
 
@@ -2208,14 +2208,14 @@
 
 (defn bag-plus a b
   (cast a bag a-avl-tree
-    err.\-qq[Expected an a value of type bag]
+    err.\;qq[Expected an a value of type bag]
   /cast b bag b-avl-tree
-    err.\-qq[Expected a b value of type bag]
+    err.\;qq[Expected a b value of type bag]
   /bag/avl-plus a-avl-tree b-avl-tree))
 
 (defn bag-any-fold-asc state bag body
   (cast bag bag avl-tree
-    err.\-qq[Expected a bag value of type bag]
+    err.\;qq[Expected a bag value of type bag]
   /avl-any-fold-asc state avl-tree /fn state k v
     (c body state k)))
 
@@ -2229,9 +2229,9 @@
 
 (defn bag-minus a b
   (cast a bag a-avl-tree
-    err.\-qq[Expected an a value of type bag]
+    err.\;qq[Expected an a value of type bag]
   /cast b bag b-avl-tree
-    err.\-qq[Expected a b value of type bag]
+    err.\;qq[Expected a b value of type bag]
   /bag/bag-fold-asc a-avl-tree b /fn state elem
     (avl-minus-entry state elem)))
 
@@ -2246,7 +2246,7 @@
 
 (defn bag-plus-elem bag elem
   (cast bag bag avl-tree
-    err.\-qq[Expected a bag value of type bag]
+    err.\;qq[Expected a bag value of type bag]
   /bag/avl-plus-nil avl-tree elem))
 
 (defn bag-compare a b
@@ -2255,7 +2255,7 @@
   /fn a b
     (bimap compare a b /fn it
       (cast it entry k v
-        err.\-qq[Internal error]
+        err.\;qq[Internal error]
         k))))
 
 (defn bag-just compare elem
@@ -2266,27 +2266,27 @@
     (bag-just compare /c func elem)))
 
 
-\; ===== Lenses ======================================================
+\= ===== Lenses ======================================================
 
 (def-type lens get replace)
 
 (defn lens-get lens
   (cast lens lens get replace
-    err.\-qq[Expected a lens value of type lens]
+    err.\;qq[Expected a lens value of type lens]
   /c get /nil))
 
 (defn lens-replace lens val
   (cast lens lens get replace
-    err.\-qq[Expected a lens value of type lens]
+    err.\;qq[Expected a lens value of type lens]
   /c replace val))
 
 (defn lens-replace-by lens func
   (cast lens lens get replace
-    err.\-qq[Expected a lens value of type lens]
+    err.\;qq[Expected a lens value of type lens]
   /c replace /c func /c get /nil))
 
 
-\; ===== Finishing up and some basic unit tests ======================
+\= ===== Finishing up and some basic unit tests ======================
 
 (run-defs)
 
