@@ -1,9 +1,9 @@
-\ penknife-compiled-src.pk (part of Era)
-\ Copyright 2013, 2014 Ross Angle. Released under the MIT License.
+\= penknife-compiled-src.pk (part of Era)
+\= Copyright 2013, 2014 Ross Angle. Released under the MIT License.
 
 
 
-\ == Prelude =========================================================
+\= == Prelude ========================================================
 
 (defval qname.list /fn x x)
 
@@ -22,7 +22,7 @@
         (qualified-name-eq
           qname.string (nl-get-tag-name linear-as-nonlinear.msg))
       msg
-      quote.\-qq[Called err-fn with a message that wasn't a string])
+      quote.\;qq[Called err-fn with a message that wasn't a string])
   raise.str)
 
 (defmacro qname.err /fn args
@@ -54,27 +54,28 @@
 
 (defval qname.nl-isa /fn-with-args (tag-name nl)
 /if (not is-a-qualified-name.tag-name)
-  err.\-qq[Called nl-isa with a tag name that wasn't a qualified name]
+  err.\;qq[Called nl-isa with a tag name that wasn't a qualified name]
   (qualified-name-eq tag-name nl-get-tag-name.nl))
 
 (defval qname.nl-is-a-struct-with-tag /fn-with-args (tag-name nl)
 /if (not is-a-qualified-name.tag-name)
-  err.\-qq[
+  err.\;qq[
     Called nl-is-a-struct-with-tag with a tag name that wasn't a
     qualified name]
 /if (not/nl-is-a-struct nl)
   (nil)
   (nl-isa tag-name nl))
 
-\ TODO: We have another definition of `len` below that's much shorter.
-\ See if we should replace it with this method-based version.
-\
-\ (defmethod qname.len /list uqname.collection)
-\ (set-impl qname.len qname.nil /fn-with-args (collection)
-\   (nil))
-\ (set-impl qname.len qname.cons /fn-with-args (collection)
-\ /let-list (first rest) struct-get-args.collection
-\   (succ len.rest))
+\= TODO: We have another definition of `len` below that's much
+\= shorter. See if we should replace it with this method-based
+\= version.
+\=
+\= (defmethod qname.len /list uqname.collection)
+\= (set-impl qname.len qname.nil /fn-with-args (collection)
+\=   (nil))
+\= (set-impl qname.len qname.cons /fn-with-args (collection)
+\= /let-list (first rest) struct-get-args.collection
+\=   (succ len.rest))
 
 (defmacro qname.if-struct
 /fn-with-args (op-fork body get-fork gensym-base)
@@ -91,7 +92,7 @@
         g-nl-x)
     (list qname.let-list args (list qname.struct-get-args g-x)
       then)
-    \ Let `g-x` be dropped.
+    \= Let `g-x` be dropped.
     else)
   get-fork
   (pair-name gensym-base uqname.body-of-if-struct))
@@ -101,7 +102,7 @@
   (foldl-nat func.init pred func)
 /if-struct nil () nat
   init
-  err.\-qq[Called fold-nat with a non-nat number])
+  err.\;qq[Called fold-nat with a non-nat number])
 
 (defval qname.is-a-list /fn-with-args (x)
 /if-struct cons (first rest) x
@@ -122,7 +123,7 @@
   (foldl (func init first) rest func)
 /if-struct nil () lst
   init
-  err.\-qq[Called foldl with a non-list list])
+  err.\;qq[Called foldl with a non-list list])
 
 (defval qname.rev-append /fn-with-args (lst rev-lst)
   (foldl rev-lst lst /fn-with-args (rev-lst elem)
@@ -149,34 +150,34 @@
     (nat-eq pred-a pred-b)
   /if-struct nil () b
     (nil)
-    err.\-qq[Called nat-eq with a non-nat second argument])
+    err.\;qq[Called nat-eq with a non-nat second argument])
 /if-struct nil () a
   (if-struct succ (b-pred) b
     (nil)
   /if-struct nil () b
     (yep/nil)
-    err.\-qq[Called nat-eq with a non-nat second argument])
-  err.\-qq[Called nat-eq with a non-nat first argument])
+    err.\;qq[Called nat-eq with a non-nat second argument])
+  err.\;qq[Called nat-eq with a non-nat first argument])
 
-\ NOTE: Back when we used debuggableSyncYoke, this definition caused a
-\ JavaScript stack overflow error. Now the above code might cause it
-\ instead because it uses more layers of macros.
+\= NOTE: Back when we used debuggableSyncYoke, this definition caused
+\= a JavaScript stack overflow error. Now the above code might cause
+\= it instead because it uses more layers of macros.
 (defval qname.take /fix/fn-with-args (take num lst)
 /if-struct succ (pred) num
   (if-struct cons (first rest) lst
     (let-list (heads tail) (take pred rest)
       (list (cons first heads) tail))
   /if-struct nil () lst
-    err.\-qq[
+    err.\;qq[
       Called take with a number greater than the length of the list]
-    err.\-qq[Called take with a non-list list])
+    err.\;qq[Called take with a non-list list])
 /if-struct nil () num
   (if-struct cons (first rest) lst
     (list (nil) lst)
   /if-struct nil () lst
     (list (nil) lst)
-    err.\-qq[Called take with a non-list list])
-  err.\-qq[Called take with a non-nat number])
+    err.\;qq[Called take with a non-list list])
+  err.\;qq[Called take with a non-nat number])
 
 (defmacro qname.defmacro-codegen
 /fn-with-args (op-fork body get-fork gensym-base)
@@ -210,9 +211,9 @@
 
 (defmacro-codegen let-list-and-rest body (g-heads g-tail)
 /let-list (head-vars tail-var lst body) body
-  \ NOTE: We're inserting a natural number (a non-list, non-name
-  \ value) into code, but that's just fine. The compiler can process
-  \ simple data structures like this one.
+  \= NOTE: We're inserting a natural number (a non-list, non-name
+  \= value) into code, but that's just fine. The compiler can process
+  \= simple data structures like this one.
   (list qname.let-list (list g-heads g-tail)
       (list qname.take (list qname.quote len.head-vars) lst)
   /list qname.let-list head-vars g-heads
@@ -235,7 +236,8 @@
 (defval qname.string-eq /fn-with-args (a b)
   (unqualified-name-eq string-name.a string-name.b))
 
-\ TODO: See if this should just be internal to the definition of `qq`.
+\= TODO: See if this should just be internal to the definition of
+\= `qq`.
 (defval qname.expand-qq
 /fix/fn-with-args
   (expand-qq qq-str uq-str uqs-str return-list level x)
@@ -257,7 +259,8 @@
           (nil))
         (nil))
       (nil)))
-\ TODO: Remove some of the duplicate branches from the following code.
+\= TODO: Remove some of the duplicate branches from the following
+\= code.
 /if-struct nil () level
   (if-struct yep (x) parse-escape.qq-str
     (as-list/list qname.list (list qname.quote qq-str)
@@ -267,7 +270,7 @@
   /if-struct yep (x) parse-escape.uqs-str
     (if return-list
       x
-      err.\-qq[
+      err.\;qq[
         Called qq with a tree containing uqs in an incorrect place])
   /if is-a-list.x
     (as-list/cons qname.append /map x /fn-with-args (elem)
@@ -287,14 +290,14 @@
     (as-list/cons qname.append /map x /fn-with-args (elem)
       (recur (yep/nil) level elem))
     (as-list/list qname.qname x))
-  err.\-qq[Called expand-qq with a non-nat level])
+  err.\;qq[Called expand-qq with a non-nat level])
 
 (defmacro-codegen qq body ()
 /let-list (tree) body
   (expand-qq quote.qq quote.uq quote.uqs (nil) (nil) tree))
 
-\ TODO: See if this should just be internal to the definition of
-\ `qq2`.
+\= TODO: See if this should just be internal to the definition of
+\= `qq2`.
 (defval qname.expand-qq2
 /fix/fn-with-args
   ( expand-qq2 esc-str escesc-str startesc-str stopesc-str elem-str
@@ -342,7 +345,7 @@
       (list qname.list (build-uplevels pred-level x))
       x))
 /if (not is-a-nat.level)
-  err.\-qq[Called expand-qq2 with a non-nat level]
+  err.\;qq[Called expand-qq2 with a non-nat level]
 /if-struct yep (-) (parse-tag-rest esc-str x)
   (if-struct yep (x) (parse-tag-pair esc-str x)
     (if-struct yep (x) (parse-tag-pair startesc-str x)
@@ -361,13 +364,13 @@
         /if-struct yep (x) (parse-tag-pair splice-str x)
           (if return-list
             x
-            err.\-qq[Called qq2 with a splice in an incorrect place])
-          err.\-qq[
+            err.\;qq[Called qq2 with a splice in an incorrect place])
+          err.\;qq[
             Called qq2 with an unrecognized interpolation type])
-        err.\-qq[Called qq2 with an unrecognized escape sequence])
+        err.\;qq[Called qq2 with an unrecognized escape sequence])
     
-    \ Also parse unquotes of depth less than the current depth, and
-    \ subtract their depth during their interior.
+    \= Also parse unquotes of depth less than the current depth, and
+    \= subtract their depth during their interior.
     /as-list/if-struct nope (x) parsed-uplevels
       (let-list (levels-left levels-passed x) x
         (list qname.list (list qname.quote esc-str)
@@ -377,7 +380,7 @@
       (list qname.cons (list qname.quote esc-str)
         (recur (yep/nil) level x)))
     
-    err.\-qq[Called qq22 with an unrecognized escape sequence])
+    err.\;qq[Called qq22 with an unrecognized escape sequence])
 /as-list/if-struct istring-cons (prefix interpolation rest) x
   (list qname.istring-cons
     (list qname.quote prefix)
@@ -386,9 +389,9 @@
 /if is-a-list.x
   (cons qname.append /map x /fn-with-args (elem)
     (recur (yep/nil) level elem))
-  \ NOTE: On the first level, we resolve atoms as names and insert the
-  \ qualified names. On deeper levels, we insert them as they were
-  \ originally (usually strings).
+  \= NOTE: On the first level, we resolve atoms as names and insert
+  \= the qualified names. On deeper levels, we insert them as they
+  \= were originally (usually strings).
   (list (if level qname.quote qname.qname) x))
 
 (defmacro-codegen qq2 body ()
@@ -420,7 +423,7 @@
     (nil)
     (nil)
     tree)
-  err.\-qq[Called qq2 without the right opening escape sequence])
+  err.\;qq[Called qq2 without the right opening escape sequence])
 
 (defval qname.call-with-local-linearity /fn-with-args (body)
 /call-with-mbox-env/fn-with-args (mbox-env)
@@ -433,16 +436,16 @@
     /nonlinear-as-linear
       (list (mbox-new mbox-env (nil)) local-inner-val)
       
-      \ duplicator
+      \= duplicator
       (fn-with-args (inner-val num-dups)
       /let-list (used-mbox local-inner-val) inner-val
       /if mget.used-mbox
-        err.\-qq[
+        err.\;qq[
           Can't duplicate a local linear value that was already used]
       /let - (mset used-mbox (yep/nil))
       /let - (if-struct succ (pred) mget.num-strays-mbox
                (mset num-strays-mbox pred)
-               err.\-qq[
+               err.\;qq[
                  Internal error when duplicating a local linear value
                  ])
         (map (local-duplicator local-inner-val num-dups)
@@ -450,19 +453,19 @@
           (let - (mset num-strays-mbox (succ mget.num-strays-mbox))
             (list (mbox-new mbox-env (nil)) local-inner-val))))
       
-      \ unwrapper
+      \= unwrapper
       (fn-with-args (inner-val)
       /let-list (used-mbox local-inner-val) inner-val
         local-unwrapper.local-inner-val)))
 /if-struct succ (pred) mget.num-strays-mbox
-  err.\-qq[
+  err.\;qq[
     Didn't consume all local linear values in a call to
     call-with-local-linearity]
   result)
 
 
 
-\ == Examples ========================================================
+\= == Examples =======================================================
 
 (nil)
 (yep (nil))
@@ -516,9 +519,9 @@
 
 (map (list (nil) (succ/nil) (succ/succ/nil)) succ)
 
-\ NOTE: These tests work, but they take a little too much time to
-\ execute.
-\ TODO: Speed 'em up.
+\= NOTE: These tests work, but they take a little too much time to
+\= execute.
+\= TODO: Speed 'em up.
 qq.(foo bar)
 qq.(foo uq.(succ/succ/nil))
 qq.(foo uq.(succ/succ/nil) (uqs quote.(a b c)))
@@ -533,8 +536,8 @@ qq.(foo ((qq (uq uq.(succ/succ/nil))) (qq (uqs quote.(a b c))) bar))
 (qq2/t/foo ((qq2/t (qq2/x/x (qq2/x/x/succ/succ/nil))) (qq2/t (qq2/x/s quote.(a b c))) bar))
 (qq2/t/foo ((qq2/t (qq2//x/x/succ/succ/nil)) (qq2/t (qq2/x/s quote.(a b c))) bar))
 
-\ Test that we we don't let local names hijack the qualified names
-\ used by macro-generated code.
+\= Test that we we don't let local names hijack the qualified names
+\= used by macro-generated code.
 (let append list qq.(a b c))
 (let append list (qq2/t/a b c))
 
@@ -554,8 +557,8 @@ qq.(foo ((qq (uq uq.(succ/succ/nil))) (qq (uqs quote.(a b c))) bar))
   (body/local-nonlinear-as-linear
     (get-next-node-num)
     
-    \ Duplicating this value causes it to record a junction in the
-    \ graph.
+    \= Duplicating this value causes it to record a junction in the
+    \= graph.
     (fn-with-args (inner-val num-dups)
     /let result
       (rev/fold-nat (nil) num-dups /fn-with-args (rev-result)
@@ -564,12 +567,12 @@ qq.(foo ((qq (uq uq.(succ/succ/nil))) (qq (uqs quote.(a b c))) bar))
              (cons (list inner-val result) mget.rev-junctions-mbox))
       result)
     
-    \ Unwrapping this value is useless.
+    \= Unwrapping this value is useless.
     (fn-with-args (inner-val)
       (nil)))
   (rev mget.rev-junctions-mbox))
 
-\ Build a flow graph for some example code.
+\= Build a flow graph for some example code.
 (call-with-flow-grapher/fn-with-args (n)
 /let m (list n n)
   (list m m m))

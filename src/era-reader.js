@@ -2,12 +2,6 @@
 // Copyright 2013-2015 Ross Angle. Released under the MIT License.
 "use strict";
 
-// TODO NOW: Convert the existing Staccato code, including the code in
-// the readme, to use the new escape sequence syntaxes, including the
-// new comment syntax.
-
-// TODO NOW: Test that the modifications to the reader actually work.
-
 // TODO NOW: Replace the following documentation with the contents of
 // notes/era-reader-2.txt.
 
@@ -1058,62 +1052,6 @@ function readerJsStringPretty( jsString ) {
 }
 
 // NOTE: For this, `s` must be a classified token stream.
-function readScalar( yoke, s, then ) {
-    return s.read( yoke, function ( yoke, s, result ) {
-        
-        if ( !result.ok || result.val === null )
-            return then( yoke, s, result );
-        
-        var scalar =
-            getUnicodeCodePointAtCodeUnitIndex(
-                result.val.val, 0 ).charString;
-        if ( scalar.length === result.val.val.length )
-            return then( yoke, s, result );
-        
-        return then( yoke,
-            streamPrepend( s,
-                result.val.val.substr( scalar.length ) ),
-            { ok: true, val: { val: scalar } } );
-    } );
-}
-// NOTE: For this, `s` must be a classified token stream.
-function readLowercaseBasicLatinLetter( yoke, s, then ) {
-    return readScalar( yoke, s, function ( yoke, s, result ) {
-        
-        if ( !result.ok )
-            return then( yoke, s, result );
-        
-        if ( result.val === null )
-            return then( yoke, s, { ok: false, msg:
-                "Expected lowercase Basic Latin code point, got " +
-                "end of document" } );
-        else if ( !/^[a-z]$/.test( result.val.val ) )
-            return then( yoke, s, { ok: false, msg:
-                "Expected lowercase Basic Latin code point, got " +
-                readerJsStringPretty( result.val.val ) } );
-        
-        return then( yoke, s, { ok: true, val: result.val.val } );
-    } );
-}
-// NOTE: For this, `s` must be a classified token stream.
-function readTwoLowercaseBasicLatinLetters( yoke, s, then ) {
-    return readLowercaseBasicLatinLetter( yoke, s,
-        function ( yoke, s, result ) {
-        
-        if ( !result.ok )
-            return then( yoke, s, result );
-        var c1 = result.val;
-        return readLowercaseBasicLatinLetter( yoke, s,
-            function ( yoke, s, result ) {
-            
-            if ( !result.ok )
-                return then( yoke, s, result );
-            var c2 = result.val;
-            return then( yoke, s, { ok: true, val: c1 + c2 } );
-        } );
-    } );
-}
-// NOTE: For this, `s` must be a classified token stream.
 function readEscape( yoke, s, then ) {
     return s.peek( yoke, function ( yoke, s, result ) {
         
@@ -1144,10 +1082,6 @@ function readEscape( yoke, s, then ) {
         }
         
         
-        return readScalar( yoke, s, function ( yoke, s, result ) {
-            if ( !result.ok )
-                return then( yoke, s, result );
-        
         var c = result.val.val;
         if ( /^[)\]]$/.test( c ) )
             return then( yoke, s, { ok: false, msg:
@@ -1156,6 +1090,7 @@ function readEscape( yoke, s, then ) {
             return then( yoke, s, { ok: false, msg:
                 "Expected escape sequence suffix, got " + c } );
         else if ( c === "\\" )
+            return s.read( yoke, function ( yoke, s, result ) {
             return readEscape( yoke, s, function ( yoke, result ) {
                 if ( !result.ok )
                     return then( yoke, s, result );
@@ -1172,7 +1107,9 @@ function readEscape( yoke, s, then ) {
                                 suffix: result.val } } );
                 } );
             } );
+            } );
         else if ( c === "=" )
+            return s.read( yoke, function ( yoke, s, result ) {
             return readRestOfLine( yoke, s, null,
                 function ( yoke, s, result ) {
                 
@@ -1181,7 +1118,9 @@ function readEscape( yoke, s, then ) {
                 return then( yoke, s, { ok: true, val:
                     { type: "comment", elements: result.val } } );
             } );
+            } );
         else if ( c === ";" )
+            return s.read( yoke, function ( yoke, s, result ) {
             return readEscape( yoke, s,
                 function ( yoke, s, result ) {
                 
@@ -1200,6 +1139,7 @@ function readEscape( yoke, s, then ) {
                                 second: result.val } } );
                 } );
             } );
+            } );
         else
             return readNaiveSexpStringElements( yoke, s, null,
                 function ( yoke, s, result ) {
@@ -1209,8 +1149,6 @@ function readEscape( yoke, s, then ) {
                 return then( yoke, s, { ok: true, val:
                     { type: "naiveSexp", elements: result.val } } );
             } );
-        
-        } );
     } );
 }
 
@@ -1226,14 +1164,14 @@ function traverseSpaced( yoke, prefix, esc, then ) {
         } else if ( esc.type === "commented"
             && esc.comment.type === "pair" ) {
             
-            function invalidComment( yoke ) {
+            var invalidComment = function ( yoke ) {
                 return then( yoke, { ok: false, msg:
                     // TODO: Describe the invalid escape. We'll need
                     // an error string that can get larger than
                     // JavaScript's strings.
                     "Expected a comment, got a different escape " +
                     "sequence" } );
-            }
+            };
             
             if ( !(esc.comment.type === "pair"
                 && esc.comment.first.type === "naiveSexp") )
@@ -1373,12 +1311,13 @@ function readSexpOrInfixOp( yoke, s,
                     
                     var isNameOp = function ( name ) {
                         return op.type === "stringNil" &&
-                            readerStringNilToString( op ) === "qq";
+                            readerStringNilToString( op ) === name;
                     };
                     var isStringOp = function ( name ) {
                         return (
                             op.type === "cons"
-                            && op.rest.type === "nil"
+                            && op.rest.type === "cons"
+                            && op.rest.rest.type === "nil"
                             && op.first.type === "stringNil"
                             && readerStringNilToString( op.first ) ===
                                 name
@@ -1389,7 +1328,8 @@ function readSexpOrInfixOp( yoke, s,
                         return (
                             op.type === "cons"
                             && op.rest.type === "cons"
-                            && op.rest.rest.type === "nil"
+                            && op.rest.rest.type === "cons"
+                            && op.rest.rest.rest.type === "nil"
                             && op.first.type === "stringNil"
                             && readerStringNilToString( op.first ) ===
                                 name
@@ -1443,8 +1383,7 @@ function readSexpOrInfixOp( yoke, s,
                         return withQqStack( yoke,
                             qqStack.uq, esc.second );
                     } else if ( isStringOp( "wq" ) ) {
-                        var name =
-                            readerStringNilToString( op.rest.first );
+                        var name = op.rest.first.string;
                         return qqStack.cache.get( "names" ).
                             plusTruth( yoke, name,
                                 function ( yoke, names ) {
@@ -1457,10 +1396,8 @@ function readSexpOrInfixOp( yoke, s,
                             }, esc.second );
                         } );
                     } else if ( isDoubleStringOp( "lq" ) ) {
-                        var va =
-                            readerStringNilToString( op.rest.first );
-                        var val = readerStringNilToString(
-                            op.rest.rest.first );
+                        var va = op.rest.first.string;
+                        var val = op.rest.rest.first.string;
                         // TODO: Implement this. We don't actually
                         // store "values" in the `names` map, but
                         // we'll have to start doing so.
@@ -1469,8 +1406,7 @@ function readSexpOrInfixOp( yoke, s,
                             "got ;(lq ...) which hasn't been " +
                             "implemented yet" } );
                     } else if ( isStringOp( "rq" ) ) {
-                        var name =
-                            readerStringNilToString( op.rest.first );
+                        var name = op.rest.first.string;
                         var unwindingQqStack = function ( yoke,
                             qqStack ) {
                             
@@ -1642,8 +1578,7 @@ function readSexpOrInfixOp( yoke, s,
                                         "Expected suppressed escape suffix, got " + got } );
                             }
                             
-                            return traverseSpaced( yoke,
-                                jsList(), esc,
+                            return traverseSpaced( yoke, prefix, esc,
                                 function ( yoke, result ) {
                                 
                                 if ( !result.ok )
@@ -1657,30 +1592,30 @@ function readSexpOrInfixOp( yoke, s,
                                     function ( yoke, result ) {
                                     
                                     if ( !result.ok )
-                                        return then( yoke, s, result );
+                                        return then( yoke, result );
                                     var op = result.val;
                                 
                                 var isNameOp = function ( name ) {
                                     return op.type === "stringNil" &&
-                                        readerStringNilToString( op ) === "qq";
+                                        readerStringNilToString( op ) === name;
                                 };
                                 var isStringOp = function ( name ) {
                                     return (
                                         op.type === "cons"
-                                        && op.rest.type === "nil"
+                                        && op.rest.type === "cons"
+                                        && op.rest.rest.type === "nil"
                                         && op.first.type === "stringNil"
                                         && readerStringNilToString( op.first ) ===
                                             name
                                         && op.rest.first.type === "stringNil"
                                     );
                                 };
-                                var isDoubleStringOp =
-                                    function ( name ) {
-                                    
+                                var isDoubleStringOp = function ( name ) {
                                     return (
                                         op.type === "cons"
                                         && op.rest.type === "cons"
-                                        && op.rest.rest.type === "nil"
+                                        && op.rest.rest.type === "cons"
+                                        && op.rest.rest.rest.type === "nil"
                                         && op.first.type === "stringNil"
                                         && readerStringNilToString( op.first ) ===
                                             name
@@ -1692,7 +1627,7 @@ function readSexpOrInfixOp( yoke, s,
                                 return jsListFlattenOnce( yoke, jsList(
                                     prefix,
                                     asciiToEl( ";" ),
-                                    esc.first.elements,
+                                    esc.first.elements
                                 ), function ( yoke, prefix ) {
                                 
                                 var retWithModifier = function ( yoke, result ) {
@@ -1728,24 +1663,30 @@ function readSexpOrInfixOp( yoke, s,
                                     // TODO: Implement this.
                                     return unexpected( yoke, ";in which hasn't been implemented yet" );
                                 } else if ( isNameOp( "ls" ) ) {
+                                    if ( esc.second.type !== "naiveSexp" )
+                                        return unexpected( yoke,
+                                            ";ls followed by a non-s-expression" );
+                                    
                                     if ( qqStack.uq === null ) {
-                                        if ( esc.second.type !== "naiveSexp" )
-                                            return unexpected( yoke,
-                                                ";ls followed by a non-s-expression" );
-                                        
                                         return readNaiveSexp( yoke, esc.second.elements,
                                             encompassingClosingBracket,
                                             function ( yoke, result ) {
                                             
                                             if ( !result.ok )
-                                                return then( yoke, s, result );
+                                                return then( yoke, result );
                                             
                                             return ret( yoke,
                                                 jsList( { type: "interpolation", val: result.val } ) );
                                         } );
                                     } else {
-                                        return readEscapeLurking( yoke,
-                                            prefix, esc.second, qqStack, then );
+                                        return readStringLurking( yoke, esc.second.elements, qqStack,
+                                            function ( yoke, result ) {
+                                            
+                                            if ( !result.ok )
+                                                return then( yoke, result );
+                                            
+                                            return jsListAppend( yoke, prefix, result.val, ret );
+                                        } );
                                     }
                                 } else if ( isNameOp( "qq" ) ) {
                                     return readEscapeLurking( yoke, prefix, esc.second, {
@@ -1761,7 +1702,7 @@ function readSexpOrInfixOp( yoke, s,
                                     return readEscapeLurking( yoke,
                                         prefix, esc.second, qqStack.uq, then );
                                 } else if ( isStringOp( "wq" ) ) {
-                                    var name = readerStringNilToString( op.rest.first );
+                                    var name = op.rest.first.string;
                                     return qqStack.cache.get( "names" ).plusTruth( yoke, name,
                                         function ( yoke, names ) {
                                         
@@ -1773,14 +1714,14 @@ function readSexpOrInfixOp( yoke, s,
                                         }, then );
                                     } );
                                 } else if ( isDoubleStringOp( "lq" ) ) {
-                                    var va = readerStringNilToString( op.rest.first );
-                                    var val = readerStringNilToString( op.rest.rest.first );
+                                    var va = op.rest.first.string;
+                                    var val = op.rest.rest.first.string;
                                     // TODO: Implement this. We don't actually store "values" in the
                                     // `names` map, but we'll have to start doing so.
                                     return unexpected( yoke,
                                         ";(lq ...) which hasn't been implemented yet" );
                                 } else if ( isStringOp( "rq" ) ) {
-                                    var name = readerStringNilToString( op.rest.first );
+                                    var name = op.rest.first.string;
                                     var unwindingQqStack = function ( yoke, qqStack ) {
                                         return qqStack.cache.get( "names" ).has( yoke, name,
                                             function ( yoke, had ) {
@@ -1806,6 +1747,8 @@ function readSexpOrInfixOp( yoke, s,
                                 }
                                 
                                 } );
+                                
+                                } );
                             } else if ( esc.type === "comment" ) {
                                 if ( qqStack.uq === null )
                                     return unexpected( yoke, "comment" );
@@ -1815,16 +1758,6 @@ function readSexpOrInfixOp( yoke, s,
                                     return jsListFlattenOnce( yoke,
                                         jsList( prefix, asciiToEl( "=" ), esc.elements ), ret );
                             } else if ( esc.type === "naiveSexp" ) {
-                                var suppress = function ( yoke ) {
-                                    return readStringLurking( yoke, esc.elements, qqStack,
-                                        function ( yoke, result ) {
-                                        
-                                        if ( !result.ok )
-                                            return then( yoke, result );
-                                        
-                                        return jsListAppend( yoke, prefix, result.val, ret );
-                                    } );
-                                };
                                 if ( qqStack.uq === null ) {
                                     // TODO: Describe the s-expression. We'll need an error string that
                                     // can get larger than JavaScript's strings.
@@ -1835,20 +1768,20 @@ function readSexpOrInfixOp( yoke, s,
                                         function ( yoke, result ) {
                                         
                                         if ( !result.ok )
-                                            return then( yoke, s, result );
+                                            return then( yoke, result );
                                         var op = result.val;
                                     
                                     var isNameOp = function ( name ) {
                                         return op.type === "stringNil" &&
-                                            readerStringNilToString( op ) === "qq";
+                                            readerStringNilToString( op ) === name;
                                     };
                                     var isStringOp = function ( name ) {
                                         return (
                                             op.type === "cons"
-                                            && op.rest.type === "nil"
+                                            && op.rest.type === "cons"
+                                            && op.rest.rest.type === "nil"
                                             && op.first.type === "stringNil"
-                                            && readerStringNilToString( op.first ) ===
-                                                name
+                                            && readerStringNilToString( op.first ) === name
                                             && op.rest.first.type === "stringNil"
                                         );
                                     };
@@ -1860,7 +1793,7 @@ function readSexpOrInfixOp( yoke, s,
                                             jsList( { type: "lurkObliterateFollowing" } )
                                         ), ret );
                                     };
-                                    var simpleEscape = function ( yoke,, meaning ) {
+                                    var simpleEscape = function ( yoke, meaning ) {
                                         return ret( yoke, asciiToEl( meaning ) );
                                     };
                                     
@@ -1896,9 +1829,8 @@ function readSexpOrInfixOp( yoke, s,
                                         
                                         if ( scalar === null )
                                             return then( yoke, { ok: false, msg:
-                                                "Encountered ;(ch ...) denoting either a UTF-16 " +
-                                                "surrogate or a code point outside the Unicode range"
-                                                } );
+                                                "Encountered ;(ch ...) denoting a number outside the " +
+                                                "Unicode scalar range, such as a UTF-16 surrogate" } );
                                         
                                         return ret( yoke, jsList( { type: "scalars", val: scalar } ) );
                                     } else {
@@ -1909,7 +1841,14 @@ function readSexpOrInfixOp( yoke, s,
                                     
                                     } );
                                 } else {
-                                    return suppress();
+                                    return readStringLurking( yoke, esc.elements, qqStack,
+                                        function ( yoke, result ) {
+                                        
+                                        if ( !result.ok )
+                                            return then( yoke, result );
+                                        
+                                        return jsListAppend( yoke, prefix, result.val, ret );
+                                    } );
                                 }
                             } else {
                                 throw new Error();
@@ -2241,46 +2180,62 @@ function readSexpOrInfixOp( yoke, s,
             } );
         } else if ( result.val.val.type === "scalars" ) {
             var c = result.val.val.val;
+            
+            var readIdentifier = function ( yoke, s, revElements ) {
+                return s.peek( yoke, function ( yoke, s, result ) {
+                    if ( !result.ok )
+                        return then( yoke, s, result );
+                    
+                    if ( result.val === null
+                        || result.val.val.type !== "scalars" )
+                        return next( yoke, s, revElements );
+                    
+                    var c = result.val.val.val;
+                    if ( /^[ \t\r\n`=;'\./]*$/.test( c ) )
+                        return next( yoke, s, revElements );
+                    else if ( c === "," )
+                        return s.read( yoke,
+                            function ( yoke, s, result ) {
+                            
+                            if ( !result.ok )
+                                return then( yoke, s, result );
+                            
+                            return next( yoke, s, revElements );
+                        } );
+                    else
+                        return s.read( yoke,
+                            function ( yoke, s, result ) {
+                            
+                            if ( !result.ok )
+                                return then( yoke, s, result );
+                            
+                            return readIdentifier( yoke, s,
+                                { first: result.val.val.val,
+                                    rest: revElements } );
+                        } );
+                    
+                    function next( yoke, s, revElements ) {
+                        return jsListRev( yoke, revElements,
+                            function ( yoke, elements ) {
+                            
+                            return then( yoke, s, { ok: true, val:
+                                { val:
+                                    { type: "stringNil", string: elements } } } );
+                        } );
+                    }
+                } );
+            };
+            
             if ( /^[ \t]+$/.test( c ) ) {
                 return readSexpOrInfixOp( yoke, s,
                     encompassingClosingBracket, then );
             } else if ( /^[\r\n]$/.test( c ) ) {
                 return then( yoke, s, { ok: true, val:
                     { val: { type: "infixNewline" } } } );
-            } else if ( /^[-*a-z01-9]+$/i.test( c ) ) {
-                // We read any number of code points in this set to
-                // build a string.
-                var loop = function ( yoke, s, revElements ) {
-                    return s.peek( yoke,
-                        function ( yoke, s, result ) {
-                        
-                        if ( !result.ok )
-                            return then( yoke, s, result );
-                        
-                        if ( result.val !== null
-                            && result.val.val.type === "scalars"
-                            && /^[-*a-z01-9]+$/i.test(
-                                result.val.val.val ) )
-                            return s.read( yoke,
-                                function ( yoke, s, result ) {
-                                
-                                if ( !result.ok )
-                                    return then( yoke, s, result );
-                                
-                                return loop( yoke, s,
-                                    { first: result.val.val.val, rest: revElements } );
-                            } );
-                        else
-                            return jsListRev( yoke, revElements,
-                                function ( yoke, elements ) {
-                                
-                                return then( yoke, s, { ok: true, val:
-                                    { val: { type: "stringNil", string: elements } } } );
-                            } );
-                    } );
-                };
-                return loop( yoke, s, jsList( c ) );
-            } else if ( result.val.val.val === "/" ) {
+            } else if ( /^[`=;']$/.test( c ) ) {
+                return then( yoke, s, { ok: false, msg:
+                    "Expected s-expression, got " + c } );
+            } else if ( c === "/" ) {
                 if ( encompassingClosingBracket === null )
                     return then( yoke, s, { ok: false, msg:
                         "Expected s-expression, got / with no " +
@@ -2294,14 +2249,13 @@ function readSexpOrInfixOp( yoke, s,
                     return then( yoke, s, { ok: true, val:
                         { val: result.val } } );
                 } );
-            } else if ( result.val.val.val === "." ) {
+            } else if ( c === "." ) {
                 return then( yoke, s, { ok: true, val:
                     { val: { type: "infixDot" } } } );
+            } else if ( c === "," ) {
+                return readIdentifier( yoke, s, jsList() );
             } else {
-                return then( yoke, s, { ok: false, msg:
-                    "Expected s-expression, got unrecognized code " +
-                    "point " +
-                    readerJsStringPretty( result.val.val.val ) } );
+                return readIdentifier( yoke, s, jsList( c ) );
             }
         } else {
             throw new Error();

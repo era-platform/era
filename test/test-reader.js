@@ -52,7 +52,9 @@ function addReaderTest( code, expected ) {
         } else if ( likeObjectLiteral( encounteredExpr )
             && typeof encounteredExpr.ok === "boolean" ) {
             
-            return { ok: encounteredExpr.ok,
+            if ( !encounteredExpr.ok )
+                return { ok: false, msg: encounteredExpr.msg };
+            return { ok: true,
                 val: convertEncounteredExpr( encounteredExpr.val ) };
         } else {
             throw new Error();
@@ -95,36 +97,36 @@ function addReaderTest( code, expected ) {
 }
 
 addReaderTest(
-    " (woo\\; comment\n b (\\-qq[c( woo( ) string)] / x//)/())",
+    " (woo\\= comment\n b (\\;qq[c( woo( ) string)] / x//)/())",
     [ "woo", "b",
         [ "c( woo( ) string)", [ "x", [ [] ] ] ],
         [ [] ] ] );
 
-addReaderTest( "\\-qq[abc def]",
+addReaderTest( "\\;qq[abc def]",
     "abc def" );
 
-addReaderTest( "\\-qq[\\.t%[]]",
+addReaderTest( "\\;qq[\\t,%[]]",
     "\t%[]" );
 
-addReaderTest( "\\-qq[abc \\-qq[def\\-uq-ls[ghi]jkl] mno]",
-    "abc \\-qq[def\\-uq-ls[ghi]jkl] mno" );
+addReaderTest( "\\;qq[abc \\;qq[def\\;uq;ls,ghi,jkl] mno]",
+    "abc \\;qq[def\\;uq;ls,ghi,jkl] mno" );
 
-addReaderTest( "\\-qq[abc \\-qq[def\\-uq-uq-ls[ghi]jkl] mno]",
+addReaderTest( "\\;qq[abc \\;qq[def\\;uq;uq;ls,ghi,jkl] mno]",
     { type: "stringCons",
-        string: "abc \\-qq[def",
+        string: "abc \\;qq[def",
         interpolation: "ghi",
         rest: "jkl] mno" } );
 
 addReaderTest(
-    "\\-qq[abc \\-qq[def \\-qq[ghi\\-uq-uq-uq-ls[jkl]mno]pqr] stu]",
+    "\\;qq[abc \\;qq[def \\;qq[ghi\\;uq;uq;uq;ls,jkl,mno]pqr] stu]",
     { type: "stringCons",
-        string: "abc \\-qq[def \\-qq[ghi",
+        string: "abc \\;qq[def \\;qq[ghi",
         interpolation: "jkl",
         rest: "mno]pqr] stu" } );
 
 addReaderTest(
-    "\\-wq=[my-label]-qq[abc \\-qq[def \\-qq[ghi\\-rq=[my-label]-ls[jkl]mno]pqr] stu]",
+    "\\;(wq my-label);qq[abc \\;qq[def \\;qq[ghi\\;(rq my-label);ls,jkl,mno]pqr] stu]",
     { type: "stringCons",
-        string: "abc \\-qq[def \\-qq[ghi",
+        string: "abc \\;qq[def \\;qq[ghi",
         interpolation: "jkl",
         rest: "mno]pqr] stu" } );
