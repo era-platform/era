@@ -1,5 +1,5 @@
 // test-reader.js (part of Era)
-// Copyright 2013-2015 Ross Angle. Released under the MIT License.
+// Copyright 2013-2016 Ross Angle. Released under the MIT License.
 "use strict";
 
 
