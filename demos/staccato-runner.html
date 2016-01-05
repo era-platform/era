@@ -97,12 +97,16 @@ window.onload = function () {
             "- - Evaluating test expressions: " +
             timeSpentEvaluatingForTest / 1000 + " seconds" );
         console.log(
+            "- - Desugaring defn: " +
+            timeSpentDesugaringDefn / 1000 + " seconds" );
+        console.log(
             "- - Other: " +
             (stopMillis - readMillis -
                 timeSpentParsing -
                 timeSpentCompiling -
                 timeSpentInstalling -
-                timeSpentEvaluatingForTest) / 1000 +
+                timeSpentEvaluatingForTest -
+                timeSpentDesugaringDefn) / 1000 +
             " " +
             "seconds" );
     }
