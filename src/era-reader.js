@@ -1,5 +1,5 @@
 // era-reader.js
-// Copyright 2013-2015 Ross Angle. Released under the MIT License.
+// Copyright 2013-2016 Ross Angle. Released under the MIT License.
 "use strict";
 
 // This is a reader for Era's own dialect of s-expressions.
@@ -959,8 +959,8 @@ function readerExprPretty( expr ) {
             // TODO: Remove the trailing ` when possible.
             replace( /\[/g, "\\<`" ).replace( /\]/g, "\\>`" ).
             replace( /\(/g, "\\{`" ).replace( /\)/g, "\\}`" ).
-            replace( /\\#</g, "[" ).replace( /\\#>/g, "]" ).
-            replace( /\\#{/g, "(" ).replace( /\\#}/g, ")" ).
+            replace( /\\'</g, "[" ).replace( /\\'>/g, "]" ).
+            replace( /\\'{/g, "(" ).replace( /\\'}/g, ")" ).
             replace( /[ \t\r\n]+[a-zA-Z]?/g, function ( whitespace ) {
                 if ( /^ [a-zA-Z]?$/.test( whitespace ) )
                     return whitespace;

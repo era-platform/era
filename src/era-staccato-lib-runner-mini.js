@@ -1,5 +1,5 @@
 // era-staccato-lib-runner-mini.js
-// Copyright 2015 Ross Angle. Released under the MIT License.
+// Copyright 2015, 2016 Ross Angle. Released under the MIT License.
 //
 // This is alternative JavaScript code to support running
 // era-staccato-lib.stc. Most of it comes from

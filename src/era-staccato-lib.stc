@@ -1,5 +1,5 @@
 \= era-staccato-lib.stc
-\= Copyright 2015 Ross Angle. Released under the MIT License.
+\= Copyright 2015, 2016 Ross Angle. Released under the MIT License.
 \=
 \= These are utilities written in a macro layer over Staccato. For
 \= now, I'm porting the utilities from era-avl.js. (Many of the
