@@ -254,6 +254,20 @@ function processFn( body ) {
         processFn( body.rest ) );
 }
 
+var inDesugarDefExpr = false;
+var oldDesugarDefExpr = desugarDefExpr;
+desugarDefExpr = function ( var_args ) {
+    if ( inDesugarDefExpr )
+        return oldDesugarDefExpr.apply( this, arguments );
+    var startTime = new Date().getTime();
+    var inDesugarDefExpr = true;
+    var result = oldDesugarDefExpr.apply( this, arguments );
+    var inDesugarDefExpr = false;
+    var stopTime = new Date().getTime();
+    timeSpentDesugaringDefn += stopTime - startTime;
+    return result;
+};
+
 function mapReaderExprToArr( readerExpr, func ) {
     var result = [];
     for ( var e = readerExpr; e.type === "cons"; e = e.rest )
@@ -484,7 +498,6 @@ function processTopLevelReaderExpr( readerExpr ) {
         if ( staccatoDeclarationState.hasRunDefs )
             throw new Error();
         
-        var startTime = new Date().getTime();
         
         var name = readerStringNilToString( readerExpr.rest.first );
         var firstArg =
@@ -492,9 +505,6 @@ function processTopLevelReaderExpr( readerExpr ) {
         stcAddDefun( name, firstArg,
             stcCall( processFn( readerExpr.rest.rest ), firstArg ) );
         processDefType( name, [] );
-        
-        var stopTime = new Date().getTime();
-        timeSpentDesugaringDefn += stopTime - startTime;
     } else if ( macroName === "test" ) {
         if ( readerExpr.rest.type !== "cons" )
             throw new Error();
