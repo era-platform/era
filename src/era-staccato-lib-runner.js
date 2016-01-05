@@ -46,6 +46,7 @@ var timeSpentParsing = 0;
 var timeSpentCompiling = 0;
 var timeSpentInstalling = 0;
 var timeSpentEvaluatingForTest = 0;
+var timeSpentDesugaringDefn = 0;
 function runDefs( newDefs ) {
     arrEach( newDefs, function ( def ) {
         var startMillis = new Date().getTime();
@@ -483,12 +484,17 @@ function processTopLevelReaderExpr( readerExpr ) {
         if ( staccatoDeclarationState.hasRunDefs )
             throw new Error();
         
+        var startTime = new Date().getTime();
+        
         var name = readerStringNilToString( readerExpr.rest.first );
         var firstArg =
             readerStringNilToString( readerExpr.rest.rest.first );
         stcAddDefun( name, firstArg,
             stcCall( processFn( readerExpr.rest.rest ), firstArg ) );
         processDefType( name, [] );
+        
+        var stopTime = new Date().getTime();
+        timeSpentDesugaringDefn += stopTime - startTime;
     } else if ( macroName === "test" ) {
         if ( readerExpr.rest.type !== "cons" )
             throw new Error();
