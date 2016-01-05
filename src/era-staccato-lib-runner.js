@@ -254,19 +254,27 @@ function processFn( body ) {
         processFn( body.rest ) );
 }
 
-var inDesugarDefExpr = false;
-var oldDesugarDefExpr = desugarDefExpr;
-desugarDefExpr = function ( var_args ) {
-    if ( inDesugarDefExpr )
-        return oldDesugarDefExpr.apply( this, arguments );
-    var startTime = new Date().getTime();
-    var inDesugarDefExpr = true;
-    var result = oldDesugarDefExpr.apply( this, arguments );
-    var inDesugarDefExpr = false;
-    var stopTime = new Date().getTime();
-    timeSpentDesugaringDefn += stopTime - startTime;
-    return result;
-};
+function profile( func, logTime ) {
+    var inFunc = false;
+    return function ( var_args ) {
+        if ( inFunc )
+            return func.apply( this, arguments );
+        var startTime = new Date().getTime();
+        inFunc = true;
+        var result = func.apply( this, arguments );
+        inFunc = false;
+        var stopTime = new Date().getTime();
+        logTime( stopTime - startTime );
+        return result;
+    };
+}
+var timeSpentParsingSyntax = 0;
+parseSyntax = profile( parseSyntax, function ( millis ) {
+    timeSpentParsingSyntax += millis;
+} );
+desugarDefExpr = profile( desugarDefExpr, function ( millis ) {
+    timeSpentDesugaringDefn += millis;
+} );
 
 function mapReaderExprToArr( readerExpr, func ) {
     var result = [];

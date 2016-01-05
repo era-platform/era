@@ -100,6 +100,14 @@ window.onload = function () {
             "- - Desugaring defn: " +
             timeSpentDesugaringDefn / 1000 + " seconds" );
         console.log(
+            "- - - Calling parseSyntax: " +
+            timeSpentParsingSyntax / 1000 + " seconds" );
+        console.log(
+            "- - - Other: " +
+            (timeSpentDesugaringDefn - timeSpentParsingSyntax) /
+                1000 + " " +
+            "seconds" );
+        console.log(
             "- - Other: " +
             (stopMillis - readMillis -
                 timeSpentParsing -
