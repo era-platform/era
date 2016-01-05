@@ -299,7 +299,7 @@ if ( args.test_mini_staccato ) tasks.push( function ( then ) {
     }
     
     if ( runCode( mainCode ) ) {
-        $stc.runDefs();
+        $stc.runAllDefs();
         runCode( testCode );
     }
     
