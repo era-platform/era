@@ -232,20 +232,22 @@ if ( args.build_penknife ) tasks.push( function ( then ) {
 
 if ( args.build_staccato ) tasks.push( function ( then ) {
     arrEachAsyncNodeExn( [
-        "era-staccato-lib.stc",
-        "era-staccato-self-compiler.stc"
+        { dir: "src/", name: "era-staccato-lib.stc" },
+        { dir: "src/", name: "era-staccato-self-compiler.stc" },
+        { dir: "test/", name: "test.stc" }
     ], function ( i, file, then ) {
-        ltf.readTextFile( "src/" + file, "utf-8",
+        ltf.readTextFile( file.dir + file.name, "utf-8",
             function ( e, text ) {
             
             if ( e ) return void then( e );
             if ( text === null ) return void then( new Error() );
             
-            ltf.writeTextFile( "fin/" + file + ".js", "utf-8",
+            ltf.writeTextFile( "fin/" + file.name + ".js", "utf-8",
                 "\"use strict\";\n" +
                 "var rocketnia = rocketnia || {};\n" +
-                "rocketnia.eraFiles = rocketnia.eraFiles = {};\n" +
-                "rocketnia.eraFiles[ " + _.jsStr( file ) + " ] =\n" +
+                "rocketnia.eraFiles = rocketnia.eraFiles || {};\n" +
+                "rocketnia.eraFiles[ " +
+                    _.jsStr( file.name ) + " ] =\n" +
                 _.jsStr( text ) + ";\n",
                 then );
         } );
@@ -254,6 +256,7 @@ if ( args.build_staccato ) tasks.push( function ( then ) {
         
         console.log(
             "Copied Staccato files to fin/ as JavaScript files." );
+        then();
     } );
 } );
 
@@ -271,27 +274,36 @@ if ( args.test_mini_staccato ) tasks.push( function ( then ) {
         "return { readAll: readAll,\n" +
         "    arrAny: arrAny,\n" +
         "    processTopLevelReaderExpr:\n" +
-        "        processTopLevelReaderExpr };\n"
+        "        processTopLevelReaderExpr,\n" +
+        "    runAllDefs: runAllDefs };\n"
     )();
     
     var startMillis = new Date().getTime();
     
-    var code =
+    var mainCode =
         $stc.readAll( readFile( "src/era-staccato-lib.stc" ) );
+    var testCode =
+        $stc.readAll( readFile( "test/test.stc" ) );
     var readMillis = new Date().getTime();
     
-    $stc.arrAny( code, function ( tryExpr ) {
-        if ( !tryExpr.ok ) {
-            console.err( tryExpr.msg );
-            return true;
-        }
-        
-        $stc.processTopLevelReaderExpr( tryExpr.val );
-        return false;
-    } );
+    function runCode( code ) {
+        return !$stc.arrAny( code, function ( tryExpr ) {
+            if ( !tryExpr.ok ) {
+                console.err( tryExpr.msg );
+                return true;
+            }
+            
+            $stc.processTopLevelReaderExpr( tryExpr.val );
+            return false;
+        } );
+    }
+    
+    if ( runCode( mainCode ) ) {
+        $stc.runAllDefs();
+        runCode( testCode );
+    }
     
     var stopMillis = new Date().getTime();
-    var runMillis = stopMillis - startMillis;
     console.log(
         "Ran for " + (stopMillis - startMillis) / 1000 + " " +
         "seconds, broken down as follows:" );

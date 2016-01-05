@@ -1814,8 +1814,9 @@
           function
           (fn mode /nil))
       /fn - next))
-  \= TODO: Implement these macros, and add them here:
-  \= run-defs test def-macro
+  \= TODO: Implement this macro, and add it here:
+  \= def-macro
+  \= TODO: Also consider adding the `test` macro used in test.stc.
   /c def-macro str.case (core-mac-case)
   /c def-macro str.cast (core-mac-cast)
   /c def-macro str.caselet (core-mac-caselet)

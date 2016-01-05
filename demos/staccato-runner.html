@@ -34,6 +34,7 @@ you must obtain era-staccato-lib.stc.js in one of two ways:</p>
 
 <script type="text/javascript" src="../fin/era-staccato-lib.stc.js">
     </script>
+<script type="text/javascript" src="../fin/test.stc.js"></script>
 <script type="text/javascript" src="../src/era-misc-strmap-avl.js">
     </script>
 <script type="text/javascript" src="../src/era-misc.js"></script>
@@ -49,23 +50,31 @@ window.onload = function () {
     function generateOutput() {
         var startMillis = new Date().getTime();
         
-        var code =
+        var mainCode =
             readAll( rocketnia.eraFiles[ "era-staccato-lib.stc" ] );
+        var testCode =
+            readAll( rocketnia.eraFiles[ "test.stc" ] );
         var readMillis = new Date().getTime();
         
-        arrAny( code, function ( tryExpr ) {
-            if ( !tryExpr.ok ) {
-                console.err( tryExpr.msg );
-                return true;
-            }
-            
-            processTopLevelReaderExpr( tryExpr.val );
-            return false;
-        } );
+        function runCode( code ) {
+            return !arrAny( code, function ( tryExpr ) {
+                if ( !tryExpr.ok ) {
+                    console.err( tryExpr.msg );
+                    return true;
+                }
+                
+                processTopLevelReaderExpr( tryExpr.val );
+                return false;
+            } );
+        }
+        
+        if ( runCode( mainCode ) ) {
+            runAllDefs();
+            runCode( testCode );
+        }
         
         
         var stopMillis = new Date().getTime();
-        var runMillis = stopMillis - startMillis;
         // TODO: Either remove this or display it more prominently.
         console.log(
             "Ran for " + (stopMillis - startMillis) / 1000 + " " +
@@ -82,7 +91,20 @@ window.onload = function () {
             "- - Compiling: " + timeSpentCompiling / 1000 + " " +
             "seconds" );
         console.log(
-            "- - Running: " + timeSpentRunning / 1000 + " seconds" );
+            "- - Installing: " + timeSpentInstalling / 1000 + " " +
+            "seconds" );
+        console.log(
+            "- - Evaluating test expressions: " +
+            timeSpentEvaluatingForTest / 1000 + " seconds" );
+        console.log(
+            "- - Other: " +
+            (stopMillis - readMillis -
+                timeSpentParsing -
+                timeSpentCompiling -
+                timeSpentInstalling -
+                timeSpentEvaluatingForTest) / 1000 +
+            " " +
+            "seconds" );
     }
     generateOutput();
 };
