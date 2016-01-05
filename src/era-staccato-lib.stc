@@ -12,8 +12,7 @@
 \= NOTE: This file depends only on these macros, which are implemented
 \= in era-staccato-lib-runner.js:
 \=
-\= def-type defn case caselet cast isa proj1 c c-new err fn run-defs
-\= test let
+\= def-type defn case caselet cast isa proj1 c c-new err fn let
 
 
 \= ===== Lists and boolean tags ======================================
@@ -2284,19 +2283,3 @@
   (cast lens lens get replace
     err.\;qq[Expected a lens value of type lens]
   /c replace /c func /c get /nil))
-
-
-\= ===== Finishing up and some basic unit tests ======================
-
-(run-defs)
-
-(test/rev/cons (yep/nil) /cons (nope/nil) /nil)
-
-(test/rev/nil)
-
-(test/not/yep/nil)
-
-(test
-  (let x (nope/nil) y (yep/nil)
-  /let x y y x
-  /cons x y))

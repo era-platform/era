@@ -1,0 +1,26 @@
+\= test.stc
+\= Copyright 2015, 2016 Ross Angle. Released under the MIT License.
+\=
+\= These are some tests for Staccato. They depend on
+\= era-staccato-lib.stc as well as the `test` macro implemented in
+\= era-staccato-lib-runner.js.
+\=
+\= See era-staccato.js for more information about what Staccato is.
+
+(test
+  (rev/cons (yep/nil) /cons (nope/nil) /nil)
+  (cons (nope/nil) /cons (yep/nil) /nil))
+
+(test
+  (rev/nil)
+  (nil))
+
+(test
+  (not/yep/nil)
+  (nope/nil))
+
+(test
+  (let x (nope/nil) y (yep/nil)
+  /let x y y x
+  /cons x y)
+  (cons (yep/nil) (nope/nil)))

@@ -44,7 +44,8 @@ Stc.prototype.pretty = function () {
 
 var timeSpentParsing = 0;
 var timeSpentCompiling = 0;
-var timeSpentRunning = 0;
+var timeSpentInstalling = 0;
+var timeSpentEvaluatingForTest = 0;
 function runDefs( newDefs ) {
     arrEach( newDefs, function ( def ) {
         var startMillis = new Date().getTime();
@@ -57,13 +58,13 @@ function runDefs( newDefs ) {
         
         timeSpentParsing += parseMillis - startMillis;
         timeSpentCompiling += compileMillis - parseMillis;
-        timeSpentRunning += stopMillis - compileMillis;
+        timeSpentInstalling += stopMillis - compileMillis;
     } );
 }
 
 var stcNil = stcType( "nil" );
 
-function testStcDef( expr ) {
+function evalStcForTest( expr ) {
     
     var testName = stcGensym();
     var ignoredVar = stcGensym();
@@ -71,6 +72,8 @@ function testStcDef( expr ) {
     var stcTest = stcDefun( testName, ignoredVar, expr );
     stcDefs = stcDefs.concat( stcTest.defs );
     runDefs( stcTest.defs );
+    
+    var startMillis = new Date().getTime();
     
     var callProjNames = makeProjNames( strMap().plusArrTruth( [
         [ "va:va", "func" ],
@@ -111,10 +114,40 @@ function testStcDef( expr ) {
         calls++;
     }
     
-    console.log( result.pretty() );
-    console.log(
-        "in " + calls + " " + (calls === 1 ? "call" : "calls") + " " +
-        "with a maximum stack depth of " + maxStackDepth );
+    var stopMillis = new Date().getTime();
+    timeSpentEvaluatingForTest += stopMillis - startMillis;
+    
+    // TODO: Either do something with this information, or stop
+    // tracking it.
+//    console.log(
+//        "Took " + calls + " " +
+//        (calls === 1 ? "call" : "calls") + " and reached a maximum " +
+//        "stack depth of " + maxStackDepth );
+    
+    return result;
+}
+
+function compareStc( a, b ) {
+    var incomparableAtBest = false;
+    var queue = [ { a: a, b: b } ];
+    while ( queue.length !== 0 ) {
+        var entry = queue.shift();
+        if ( !(entry.a instanceof Stc && entry.b instanceof Stc) ) {
+            incomparableAtBest = true;
+            continue;
+        }
+        if ( entry.a.tupleTag !== entry.b.tupleTag )
+            return false;
+        var n = entry.a.projNames.length;
+        if ( n !== entry.b.projNames.length )
+            throw new Error();
+        for ( var i = 0; i < n; i++ )
+            queue.push( {
+                a: entry.a.projNames[ i ],
+                b: entry.b.projNames[ i ]
+            } );
+    }
+    return incomparableAtBest ? null : true;
 }
 
 
@@ -456,27 +489,37 @@ function processTopLevelReaderExpr( readerExpr ) {
         stcAddDefun( name, firstArg,
             stcCall( processFn( readerExpr.rest.rest ), firstArg ) );
         processDefType( name, [] );
-    } else if ( macroName === "run-defs" ) {
-        if ( readerExpr.rest.type === "cons" )
-            throw new Error();
-        if ( staccatoDeclarationState.hasRunDefs )
-            throw new Error();
-        
-        console.log( arrMap( stcDefs, function ( def ) {
-            return staccatoPretty( def );
-        } ) );
-        runDefs( stcDefs );
-        staccatoDeclarationState.hasRunDefs = true;
     } else if ( macroName === "test" ) {
         if ( readerExpr.rest.type !== "cons" )
             throw new Error();
-        if ( readerExpr.rest.rest.type === "cons" )
+        if ( readerExpr.rest.rest.type !== "cons" )
+            throw new Error();
+        if ( readerExpr.rest.rest.rest.type === "cons" )
             throw new Error();
         if ( !staccatoDeclarationState.hasRunDefs )
             throw new Error();
         
-        testStcDef( processReaderExpr( readerExpr.rest.first ) );
+        var a = evalStcForTest(
+            processReaderExpr( readerExpr.rest.first ) );
+        var b = evalStcForTest(
+            processReaderExpr( readerExpr.rest.rest.first ) );
+        var match = compareStc( a, b );
+        // NOTE: This can be true, false, or null.
+        if ( match === true )
+            console.log( "Test succeeded" );
+        else
+            console.log(
+                "Test failed: Expected " + b.pretty() + ", got " +
+                a.pretty() );
     } else {
         throw new Error();
     }
+}
+
+function runAllDefs() {
+    if ( staccatoDeclarationState.hasRunDefs )
+        throw new Error();
+    
+    runDefs( stcDefs );
+    staccatoDeclarationState.hasRunDefs = true;
 }

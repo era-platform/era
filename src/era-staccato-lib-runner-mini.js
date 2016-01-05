@@ -165,9 +165,31 @@ StcFn.prototype.pretty = function () {
 
 var stcNil = stcType( "nil" );
 
-function testStcDef( expr ) {
-    var result = stcExecute( expr );
-    console.log( result.pretty() );
+function evalStcForTest( expr ) {
+    return stcExecute( expr );
+}
+
+function compareStc( a, b ) {
+    var incomparableAtBest = false;
+    var queue = [ { a: a, b: b } ];
+    while ( queue.length !== 0 ) {
+        var entry = queue.shift();
+        if ( !(entry.a instanceof Stc && entry.b instanceof Stc) ) {
+            incomparableAtBest = true;
+            continue;
+        }
+        if ( entry.a.tupleTag !== entry.b.tupleTag )
+            return false;
+        var n = entry.a.projNames.length;
+        if ( n !== entry.b.projNames.length )
+            throw new Error();
+        for ( var i = 0; i < n; i++ )
+            queue.push( {
+                a: entry.a.projNames[ i ],
+                b: entry.b.projNames[ i ]
+            } );
+    }
+    return incomparableAtBest ? null : true;
 }
 
 
@@ -498,23 +520,36 @@ function processTopLevelReaderExpr( readerExpr ) {
             stcCall( processFn( readerExpr.rest.rest ),
                 stcIdentifier( firstArg ) ) );
         processDefType( name, [] );
-    } else if ( macroName === "run-defs" ) {
-        if ( readerExpr.rest.type === "cons" )
-            throw new Error();
-        if ( staccatoDeclarationState.hasRunDefs )
-            throw new Error();
-        
-        staccatoDeclarationState.hasRunDefs = true;
     } else if ( macroName === "test" ) {
         if ( readerExpr.rest.type !== "cons" )
             throw new Error();
-        if ( readerExpr.rest.rest.type === "cons" )
+        if ( readerExpr.rest.rest.type !== "cons" )
+            throw new Error();
+        if ( readerExpr.rest.rest.rest.type === "cons" )
             throw new Error();
         if ( !staccatoDeclarationState.hasRunDefs )
             throw new Error();
         
-        testStcDef( processReaderExpr( readerExpr.rest.first ) );
+        var a = evalStcForTest(
+            processReaderExpr( readerExpr.rest.first ) );
+        var b = evalStcForTest(
+            processReaderExpr( readerExpr.rest.rest.first ) );
+        var match = compareStc( a, b );
+        // NOTE: This can be true, false, or null.
+        if ( match === true )
+            console.log( "Test succeeded" );
+        else
+            console.log(
+                "Test failed: Expected " + b.pretty() + ", got " +
+                a.pretty() );
     } else {
         throw new Error();
     }
+}
+
+function runAllDefs() {
+    if ( staccatoDeclarationState.hasRunDefs )
+        throw new Error();
+    
+    staccatoDeclarationState.hasRunDefs = true;
 }
