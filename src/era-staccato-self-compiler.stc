@@ -222,7 +222,34 @@
 \= callback.
 
 \= (defn assert-current-modality mode ...)
-\= Returns `(nil)`. The given modality must be the current one.
+\= Returns `(nil)`. The given modality must be the current one. If it
+\= isn't, this causes an error.
+
+\= (defn new-promise then ...)
+\= then (fn mode promise ...)
+\=
+\= Constructs a monad with a result value of `(nil)`. If invoked, it
+\= calls the callback in a later tick with the then-current modality
+\= and a fresh promise value, and it performs the callback's monadic
+\= side effects. The promise is not yet fulfilled.
+
+\= (defn promise-fulfillment promise then ...)
+\= then (fn mode fulfillment ...)
+\=
+\= Constructs a monad with a result value of `(nil)`. If invoked, it
+\= calls the callback in a later tick with the then-current modality
+\= and the promise's fulfillment value, and it performs the callback's
+\= monadic side effects. If the promise is never actually fulfilled,
+\= this callback will not be called.
+
+\= (defn promise-put-fulfillment promise fulfillment ...)
+\=
+\= Constructs a monad with a result value of `(nil)`. If invoked, it
+\= installs the given value as the fulfillment value of the promise,
+\= or it causes an error if a fulfillment value has already been
+\= installed for the promise. (The meaning of "already" may depend on
+\= how the current modality works. For modalities that are temporal in
+\= the concrete sense of a wall clock, it has its usual meaning.)
 
 
 
