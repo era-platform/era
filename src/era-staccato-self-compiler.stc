@@ -225,6 +225,20 @@
 \= Returns `(nil)`. The given modality must be the current one. If it
 \= isn't, this causes an error.
 
+\= TODO: See if we should add this. Currently we're using monads only
+\= for collecting outputs from subcomputations, rather than using them
+\= as a convenience to avoid passing around modalities, namespaces,
+\= etc. as inputs to subcomputations.
+\=
+\= TODO: On the other hand, if we don't add this, all our monadic
+\= built-ins have `(nil)` as their result value. See if we should
+\= redesign everything to use an opaque set collection rather than a
+\= commutative monad.
+\=
+\= (defn get-current-modality ...)
+\=
+\= Constructs a monad with the current modality as its result value.
+
 \= (defn new-promise then ...)
 \= then (fn mode promise ...)
 \=
