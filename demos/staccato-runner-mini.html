@@ -35,6 +35,8 @@ you must obtain era-staccato-lib.stc.js in one of two ways:</p>
 
 <script type="text/javascript" src="../fin/era-staccato-lib.stc.js">
     </script>
+<script type="text/javascript"
+    src="../fin/era-staccato-self-compiler.stc.js"></script>
 <script type="text/javascript" src="../fin/test.stc.js"></script>
 <script type="text/javascript" src="../src/era-misc-strmap-avl.js">
     </script>
@@ -48,11 +50,21 @@ window.onload = function () {
     function generateOutput() {
         var startMillis = new Date().getTime();
         
-        var mainCode =
+        var libCode =
             readAll( rocketnia.eraFiles[ "era-staccato-lib.stc" ] );
+        var selfCompilerCode = readAll(
+            rocketnia.eraFiles[ "era-staccato-self-compiler.stc" ] );
         var testCode =
             readAll( rocketnia.eraFiles[ "test.stc" ] );
         var readMillis = new Date().getTime();
+        
+        var nss = {
+            definitionNs: stcNsGet( "definition-ns", stcNsRoot() ),
+            uniqueNs: stcNsGet( "unique-ns", stcNsRoot() )
+        };
+        
+        stcAddCoreMacros( nss.definitionNs );
+        processCoreTypes( nss.definitionNs );
         
         function runCode( code ) {
             return !arrAny( code, function ( tryExpr ) {
@@ -61,12 +73,15 @@ window.onload = function () {
                     return true;
                 }
                 
-                processTopLevelReaderExpr( tryExpr.val );
+                macroexpandTopLevel( stcNsRoot(),
+                    readerExprToStc( nssGet( nss, "first" ),
+                        stcTrivialStxDetails(), tryExpr.val ) );
+                nss = nssGet( nss, "rest" );
                 return false;
             } );
         }
         
-        if ( runCode( mainCode ) ) {
+        if ( runCode( libCode ) && runCode( selfCompilerCode ) ) {
             runAllDefs();
             runCode( testCode );
         }

@@ -280,8 +280,10 @@ if ( args.test_mini_staccato ) tasks.push( function ( then ) {
     
     var startMillis = new Date().getTime();
     
-    var mainCode =
+    var libCode =
         $stc.readAll( readFile( "src/era-staccato-lib.stc" ) );
+    var selfCompilerCode = $stc.readAll(
+        readFile( "src/era-staccato-self-compiler.stc" ) );
     var testCode =
         $stc.readAll( readFile( "test/test.stc" ) );
     var readMillis = new Date().getTime();
@@ -298,7 +300,7 @@ if ( args.test_mini_staccato ) tasks.push( function ( then ) {
         } );
     }
     
-    if ( runCode( mainCode ) ) {
+    if ( runCode( libCode ) && runCode( selfCompilerCode ) ) {
         $stc.runAllDefs();
         runCode( testCode );
     }
