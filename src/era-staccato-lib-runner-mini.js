@@ -703,6 +703,18 @@ function stcAddCoreMacros( macroDefNs ) {
     function mac( name, body ) {
         stcAddMacro( macroDefNs, name, body );
     }
+    function fun( name, body ) {
+        var tupleTagName = stcNameTupleTagAlreadySorted( name, [] );
+        var tupleTag = JSON.stringify( tupleTagName );
+        // TODO: Also add an entry to `namespaceDefs`. We should
+        // create an appropriate `stc-def-foreign`.
+        staccatoDeclarationState.functionDefs[ tupleTag ] =
+            function ( projectionVals, argVal ) {
+            
+            return body( argVal );
+        };
+        processDefType( macroDefNs, name, [] );
+    }
     
     mac( "case", function ( nss, myStxDetails, body ) {
         if ( body.tupleTag !== stcCons.getTupleTag() )
@@ -842,9 +854,8 @@ function stcAddCoreMacros( macroDefNs ) {
         if ( string.tupleTag !== stcString.getTupleTag() )
             throw new Error();
         var stringInternal = stcString.getProj( string, "val" );
-        if ( !(stringInternal instanceof StcForeign) )
-            throw new Error();
-        if ( stringInternal.purpose !== "string" )
+        if ( !(stringInternal instanceof StcForeign
+            && stringInternal.purpose === "string") )
             throw new Error();
         return stcErr( stringInternal.foreignVal );
     } );
@@ -884,6 +895,61 @@ function stcAddCoreMacros( macroDefNs ) {
                     stcCons.getProj( remainingBody, "car" ) ) +
                 "; " +
         "}( " + bindingVals.join( ", " ) + " ))";
+    } );
+    
+    fun( "string-compare", function ( a ) {
+        return new StcFn( function ( b ) {
+            if ( a.tupleTag !== stcString.getTupleTag() )
+                throw new Error();
+            var aInternal = stcString.getProj( a, "val" );
+            if ( !(aInternal instanceof StcForeign
+                && aInternal.purpose === "string") )
+                throw new Error();
+            
+            if ( b.tupleTag !== stcString.getTupleTag() )
+                throw new Error();
+            var bInternal = stcString.getProj( a, "val" );
+            if ( !(bInternal instanceof StcForeign
+                && bInternal.purpose === "string") )
+                throw new Error();
+            
+            // TODO: Figure out what ordering we actually want to
+            // have. We probably want this one, for efficiency at
+            // least, but in that case we should turn this into
+            // `string-metacompare` iuntil `string-compare`.
+            if ( aInternal.foreignVal < bInternal.foreignVal )
+                return stcYep.ofNow( stcNil.ofNow() );
+            if ( bInternal.foreignVal < aInternal.foreignVal )
+                return stcNope.ofNow( stcNil.ofNow() );
+            return stcNil.ofNow();
+        } );
+    } );
+    
+    fun( "name-metacompare", function ( a ) {
+        return new StcFn( function ( b ) {
+            if ( a.tupleTag !== stcName.getTupleTag() )
+                throw new Error();
+            var aInternal = stcName.getProj( a, "val" );
+            if ( !(aInternal instanceof StcForeign
+                && aInternal.purpose === "name") )
+                throw new Error();
+            
+            if ( b.tupleTag !== stcName.getTupleTag() )
+                throw new Error();
+            var bInternal = stcName.getProj( a, "val" );
+            if ( !(bInternal instanceof StcForeign
+                && bInternal.purpose === "name") )
+                throw new Error();
+            
+            var result = nameCompare(
+                aInternal.foreignVal, bInternal.foreignVal );
+            
+            if ( result < 0 )
+                return new StcForeign( "lt", null );
+            if ( 0 < result )
+                return new StcForeign( "gt", null );
+            return stcNil.ofNow();
+        } );
     } );
 }
 
