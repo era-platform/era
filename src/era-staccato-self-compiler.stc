@@ -293,6 +293,9 @@
 \= will be taken from "<ns>/<projection name>/name", where "<ns>" is
 \= that namespace.
 
+\= TODO: Put the commented-out types in a separate file so the
+\= non-mini runner can see them, since it doesn't have them built in.
+\;rm(
 (def-type stc-def-foreign tuple-tag foreign)
 (def-type stc-def tuple-name opt-proj-pattern case-list)
 (def-type stc-let-case var case-list)
@@ -318,6 +321,7 @@
 (def-type stc-proj-pattern proj-pattern)
 (def-type stc-proj-pattern-nil)
 (def-type stc-proj-pattern-cons proj-name var proj-pattern)
+)
 
 
 (def-type scope-policy-save-root save-root)

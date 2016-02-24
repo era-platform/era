@@ -42,6 +42,7 @@ you must obtain era-staccato-lib.stc.js in one of two ways:</p>
     </script>
 <script type="text/javascript" src="../src/era-misc.js"></script>
 <script type="text/javascript" src="../src/era-reader.js"></script>
+<script type="text/javascript" src="../src/era-staccato.js"></script>
 <script type="text/javascript"
     src="../src/era-staccato-lib-runner-mini.js"></script>
 <script type="text/javascript">"use strict";
@@ -73,9 +74,10 @@ window.onload = function () {
                     return true;
                 }
                 
-                macroexpandTopLevel( stcNsRoot(),
-                    readerExprToStc( nssGet( nss, "first" ),
-                        stcTrivialStxDetails(), tryExpr.val ) );
+                macroexpandTopLevel( nssGet( nss, "first" ),
+                    readerExprToStc( nss.definitionNs,
+                        stcTrivialStxDetails(),
+                        tryExpr.val ) );
                 nss = nssGet( nss, "rest" );
                 return false;
             } );
