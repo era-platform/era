@@ -838,16 +838,10 @@ function stcAddCoreMacros( macroDefNs ) {
             } ) );
     } );
     
-    mac( "err", function ( nss, myStxDetails, body ) {
-        if ( body.tupleTag !== stcCons.getTupleTag() )
+    function stxToDefiniteString( stx ) {
+        if ( stx.tupleTag !== stcStx.getTupleTag() )
             throw new Error();
-        if ( stcCons.getProj( body, "cdr" ).tupleTag ===
-            stcCons.getTupleTag() )
-            throw new Error();
-        var istringNilStx = stcCons.getProj( body, "car" );
-        if ( istringNilStx.tupleTag !== stcStx.getTupleTag() )
-            throw new Error();
-        var istringNil = stcStx.getProj( istringNilStx, "s-expr" );
+        var istringNil = stcStx.getProj( stx, "s-expr" );
         if ( istringNil.tupleTag !== stcIstringNil.getTupleTag() )
             throw new Error();
         var string = stcIstringNil.getProj( istringNil, "string" );
@@ -857,7 +851,30 @@ function stcAddCoreMacros( macroDefNs ) {
         if ( !(stringInternal instanceof StcForeign
             && stringInternal.purpose === "string") )
             throw new Error();
-        return stcErr( stringInternal.foreignVal );
+        return stringInternal.foreignVal;
+    }
+    
+    mac( "err", function ( nss, myStxDetails, body ) {
+        if ( body.tupleTag !== stcCons.getTupleTag() )
+            throw new Error();
+        if ( stcCons.getProj( body, "cdr" ).tupleTag ===
+            stcCons.getTupleTag() )
+            throw new Error();
+        return stcErr(
+            stxToDefiniteString( stcCons.getProj( body, "car" ) ) );
+    } );
+    
+    mac( "str", function ( nss, myStxDetails, body ) {
+        if ( body.tupleTag !== stcCons.getTupleTag() )
+            throw new Error();
+        if ( stcCons.getProj( body, "cdr" ).tupleTag ===
+            stcCons.getTupleTag() )
+            throw new Error();
+        return "(new StcForeign( \"string\", " +
+            JSON.stringify(
+                stxToDefiniteString(
+                    stcCons.getProj( body, "car" ) ) ) +
+        " ))";
     } );
     
     mac( "fn", function ( nss, myStxDetails, body ) {
@@ -950,6 +967,39 @@ function stcAddCoreMacros( macroDefNs ) {
                 return new StcForeign( "gt", null );
             return stcNil.ofNow();
         } );
+    } );
+    
+    fun( "make-tuple-tag", function ( tupleName ) {
+        return new StcFn( function ( projNames ) {
+            var tupleStringyName =
+                stxToMaybeName( macroDefNs, tupleName );
+            if ( tupleStringyName === null )
+                throw new Error();
+            if ( typeof tupleStringyName === "string" )
+                throw new Error();
+            var projStringyNames = mapConsListToArr( macroDefNs,
+                stcCons.getProj( sExpr1, "cdr" ),
+                function ( projName ) {
+                    var projStringyName =
+                        stxToMaybeName( macroDefNs, projStringyName );
+                    if ( projStringyName === null )
+                        throw new Error();
+                    if ( typeof projStringyName === "string" )
+                        throw new Error();
+                    return projStringyName;
+                } );
+            return new StcForeign( "name",
+                stcNameTupleTagAlreadySorted( tupleName,
+                    projStringyNames.sort( function ( a, b ) {
+                        return nameCompare( a, b );
+                    } ) ) );
+        } );
+    } );
+    
+    fun( "assert-current-modality", function ( mode ) {
+        if ( !(bInternal instanceof StcForeign
+            && bInternal.purpose === "mode") )
+            throw new Error();
     } );
 }
 
@@ -1146,12 +1196,12 @@ function macroexpandTopLevel( nss, locatedExpr ) {
         
         var projNames = mapConsListToArr( nss.definitionNs,
             stcCons.getProj( sExpr1, "cdr" ),
-            function ( projStringyName ) {
-                var projName = stxToMaybeName( nss.definitionNs,
-                    projStringyName );
-                if ( projName === null )
+            function ( projName ) {
+                var projStringyName =
+                    stxToMaybeName( nss.definitionNs, projName );
+                if ( projStringyName === null )
                     throw new Error();
-                return projName;
+                return projStringyName;
             } );
         processDefType( nss.definitionNs, tupleName, projNames );
     } else if ( macroName === "defn" ) {

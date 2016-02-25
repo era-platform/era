@@ -433,10 +433,10 @@
 (defn staccato-let-bindings-expr-keys let-bindings-expr
   (case let-bindings-expr
     
-    let-bindings-nil
+    stc-let-bindings-nil
     (free-vars/nil)
     
-    let-bindings-cons var get-expr let-bindings-expr
+    stc-let-bindings-cons var get-expr let-bindings-expr
     (free-vars-plus-entry
       (c-new staccato-let-bindings-expr-keys let-bindings-expr)
       free-var-entry-var.var)
@@ -479,7 +479,7 @@
     
     stc-proj-pattern-omitted namespace
     (stc-proj-pattern
-    /free-vars-fold (proj-pattern-nil) default /fn state var truth
+    /free-vars-fold (stc-proj-pattern-nil) default /fn state var truth
       (cast var free-var-entry-var name
         err.\;qq[
           Called opt-proj-pattern-or with a default variable list that
