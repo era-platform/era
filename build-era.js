@@ -271,11 +271,19 @@ if ( args.test_mini_staccato ) tasks.push( function ( then ) {
         ] ) + "\n" +
         "\n" +
         "\n" +
-        "return { readAll: readAll,\n" +
+        "return {\n" +
+        "    readAll: readAll,\n" +
         "    arrAny: arrAny,\n" +
-        "    processTopLevelReaderExpr:\n" +
-        "        processTopLevelReaderExpr,\n" +
-        "    runAllDefs: runAllDefs };\n"
+        "    stcNsGet: stcNsGet,\n" +
+        "    stcNsRoot: stcNsRoot,\n" +
+        "    nssGet: nssGet,\n" +
+        "    stcAddCoreMacros: stcAddCoreMacros,\n" +
+        "    processCoreTypes: processCoreTypes,\n" +
+        "    stcTrivialStxDetails: stcTrivialStxDetails,\n" +
+        "    macroexpandTopLevel: macroexpandTopLevel,\n" +
+        "    readerExprToStc: readerExprToStc,\n" +
+        "    runAllDefs: runAllDefs\n" +
+        "};\n"
     )();
     
     var startMillis = new Date().getTime();
@@ -288,6 +296,15 @@ if ( args.test_mini_staccato ) tasks.push( function ( then ) {
         $stc.readAll( readFile( "test/test.stc" ) );
     var readMillis = new Date().getTime();
     
+    var nss = {
+        definitionNs:
+            $stc.stcNsGet( "definition-ns", $stc.stcNsRoot() ),
+        uniqueNs: $stc.stcNsGet( "unique-ns", $stc.stcNsRoot() )
+    };
+    
+    $stc.stcAddCoreMacros( nss.definitionNs );
+    $stc.processCoreTypes( nss.definitionNs );
+    
     function runCode( code ) {
         return !$stc.arrAny( code, function ( tryExpr ) {
             if ( !tryExpr.ok ) {
@@ -295,7 +312,11 @@ if ( args.test_mini_staccato ) tasks.push( function ( then ) {
                 return true;
             }
             
-            $stc.processTopLevelReaderExpr( tryExpr.val );
+            $stc.macroexpandTopLevel( $stc.nssGet( nss, "first" ),
+                $stc.readerExprToStc( nss.definitionNs,
+                    $stc.stcTrivialStxDetails(),
+                    tryExpr.val ) );
+            nss = $stc.nssGet( nss, "rest" );
             return false;
         } );
     }
