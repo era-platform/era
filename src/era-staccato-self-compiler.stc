@@ -178,14 +178,13 @@
 \= names" will yield distinct sub-namespaces, but sometimes the
 \= interpreter may be configured so that this isn't the case.
 
-\= (TODO: Use this.)
-\= (defn ns-shadow-name name ns ns ...)
+\= (defn ns-shadow-name name sub-ns ns ...)
 \= Creates a new namespace that behaves like the second namespace in
 \= almost every way, except when the given name is requested as a
 \= "folder name", in which case the first namespace is returned
 \= instead.
 
-\= (defn ns-shadow-string string ns ns ...)
+\= (defn ns-shadow-string string sub-ns ns ...)
 \= Creates a new namespace that behaves like the second namespace in
 \= almost every way, except when the given string is requested as a
 \= "folder name", in which case the first namespace is returned
@@ -877,7 +876,7 @@
                 (nope/nil)
               /and (isa nil /string-compare save-root save-root-2)
                 (free-vars-has shadowed free-var-entry-var.name)))
-            
+            yep -
             (free-vars-plus-entry shadowed /free-var-entry-scope-error
               str.\;qq[
                 Encountered a use of (save ...) where the saved
@@ -1056,6 +1055,8 @@
     
     (nil)))
 
+(def-type proj-entry name val)
+
 (defn compile-proj-pattern proj-entries
   (foldr proj-entries (stc-proj-pattern-nil) /fn proj-entry state
     (cast proj-entry proj-entry name var
@@ -1076,7 +1077,8 @@
       err.\;qq[Expected a proj-entry value of type proj-entry]
     /stc-proj-cons
       (projection-name mode definition-ns constructor-name name)
-      val)))
+      val
+      state)))
 
 (defn compile-ret mode definition-ns val
   (compile-tuple mode definition-ns str.return
@@ -1125,7 +1127,7 @@
     (compile-ret mode definition-ns stc-local.name)
   /cast s-expr cons first-stx rest-stxs
     err.\;qq[
-      Expected an s-expr value of type foreign, istring-nil, or cons])
+      Expected an s-expr value of type foreign, istring-nil, or cons]
   /cast stx-to-maybe-name.first-stx yep name
     err.\;qq[Expected a first-stx value that was a syntactic name]
   /let name
@@ -1146,7 +1148,7 @@
     /ns-get-string str.macros definition-ns)
   /c macro mode unique-ns definition-ns
     (macro-stx-details mode unique-ns definition-ns stx)
-    rest-stxs)
+    rest-stxs))
 
 
 
@@ -1322,6 +1324,12 @@
   /cons (proj-entry str.arg arg)
   /nil))
 
+(defn map-double list-a list-b func
+  (cast list-a cons first-a rest-a (nil)
+  /cast list-b cons first-b rest-b (nil)
+  /cons (c func first-a first-b)
+    (c-new map-double rest-a rest-b func)))
+
 (defn core-mac-caselet
   mode unique-ns definition-ns my-stx-details args
   
@@ -1462,8 +1470,6 @@
       /no-effects/nil))
   /no-effects/nil))
 
-(def-type proj-entry name val)
-
 (defn compile-curried-calls mode unique-ns definition-ns func args
   (let - assert-current-modality.mode
   /bind-effects
@@ -1512,17 +1518,13 @@
     (stc-tuple constructor-tag /stc-proj-nil)
     args))
 
-(defn map-double list-a list-b func
-  (cast list-a cons first-a rest-a (nil)
-  /cast list-b cons first-b rest-b (nil)
-  /cons (c func first-a first-b) /map-double rest-a rest-b func))
-
 (defn map-foldl-effects state rest combiner
   (case rest cons first rest
-    (bind-effects (combiner state first) /fn combiner-result
+    (bind-effects (c combiner state first) /fn combiner-result
     /cast combiner-result folding state elem
       err.\;qq[Expected combiner-result to be a value of type folding]
-    /cast (map-foldl-effects state rest combiner) folding state list
+    /cast (c-new map-foldl-effects state rest combiner)
+      folding state list
       err.\;qq[Internal error]
     /folding state /cons elem list)
     (folding state /nil)))
@@ -1870,20 +1872,20 @@
         err.\;qq[Expected a name value of type name or string]))
   /let ns-shadow-map
     (fn name source target func
-      (ns-shadow-stringy name
+      (c ns-shadow-stringy name
         (c func
-          (ns-get-stringy name source)
-          (ns-get-stringy name target))
+          (c ns-get-stringy name source)
+          (c ns-get-stringy name target))
         target))
   /let shadow-type
     (fn name ns
       (let source metacircular-definition-ns
       /let ns
-        (ns-shadow-map str.constructor-names source ns /fn source ns
-          (ns-shadow-map name source ns /fn source ns source))
+        (c ns-shadow-map str.constructor-names source ns /fn source ns
+          (c ns-shadow-map name source ns /fn source ns source))
       /let ns
-        (ns-shadow-map str.macro-names source ns /fn source ns
-          (ns-shadow-map name source ns /fn source ns source))
+        (c ns-shadow-map str.macro-names source ns /fn source ns
+          (c ns-shadow-map name source ns /fn source ns source))
         ns))
   /let target-definition-ns
     (foldl target-definition-ns inherited-types /fn ns type

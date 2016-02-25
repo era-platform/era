@@ -84,6 +84,9 @@
 (defn rev source
   (rev-append source /nil))
 
+(defn foldr list state combiner
+  (foldl state rev.list /fn state elem /c combiner elem state))
+
 (defn append past rest
   (rev-append rev.past rest))
 

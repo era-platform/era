@@ -276,6 +276,8 @@ function stcNsShadow( stringOrName, subNs, ns ) {
 function stcNameTupleTagAlreadySorted( tupleName, projNames ) {
     return [ "tuple-tag", tupleName, projNames ];
 }
+// NOTE: The term "nss" is supposed to be the plural of "ns," which
+// means "namespace."
 function nssGet( nss, stringOrName ) {
     return {
         definitionNs: nss.definitionNs,
@@ -461,16 +463,12 @@ function getType( macroDefNs, definitionNs, tupleName ) {
         stcNsGet( "projection-list",
             stcNsGet( constructorName,
                 stcNsGet( "constructors", definitionNs ) ) ).name;
-    var constructorTag =
-        stcNsGet( "tag",
-            stcNsGet( constructorName,
-                stcNsGet( "constructors", definitionNs ) ) ).name;
     if ( !staccatoDeclarationState.namespaceDefs.has( projListName ) )
         throw new Error(
             "No such type: " + JSON.stringify( tupleName ) );
     var projList =
         staccatoDeclarationState.namespaceDefs.get( projListName );
-    return stcTypeArr( definitionNs, constructorTag,
+    return stcTypeArr( definitionNs, tupleName,
         arrMap( stcConsListToArray( definitionNs, projList ),
             function ( projName ) {
             
@@ -993,6 +991,175 @@ function stcAddCoreMacros( macroDefNs ) {
                     projStringyNames.sort( function ( a, b ) {
                         return nameCompare( a, b );
                     } ) ) );
+        } );
+    } );
+    
+    fun( "macro-stx-details", function ( mode ) {
+        return new StcFn( function ( uniqueNs ) {
+            return new StcFn( function ( definitionNs ) {
+                return new StcFn( function ( stx ) {
+                    return stcTrivialStxDetails();
+                } );
+            } );
+        } );
+    } );
+    
+    fun( "ns-get-name", function ( name ) {
+        return new StcFn( function ( ns ) {
+            if ( name.tupleTag !== stcName.getTupleTag() )
+                throw new Error();
+            var nameInternal = stcName.getProj( name, "val" );
+            if ( !(nameInternal instanceof StcForeign
+                && nameInternal.purpose === "name") )
+                throw new Error();
+            
+            if ( !(ns instanceof StcForeign && ns.purpose === "ns") )
+                throw new Error();
+            
+            return stcNsGet( nameInternal.foreignVal, ns.foreignVal );
+        } );
+    } );
+    
+    fun( "ns-get-string", function ( string ) {
+        return new StcFn( function ( ns ) {
+            if ( string.tupleTag !== stcString.getTupleTag() )
+                throw new Error();
+            var stringInternal = stcString.getProj( string, "val" );
+            if ( !(stringInternal instanceof StcForeign
+                && stringInternal.purpose === "string") )
+                throw new Error();
+            
+            if ( !(ns instanceof StcForeign && ns.purpose === "ns") )
+                throw new Error();
+            
+            return stcNsGet( stringInternal.foreignVal,
+                ns.foreignVal );
+        } );
+    } );
+    
+    fun( "ns-shadow-name", function ( name ) {
+        return new StcFn( function ( subNs ) {
+            return new StcFn( function ( ns ) {
+                if ( name.tupleTag !== stcName.getTupleTag() )
+                    throw new Error();
+                var nameInternal = stcName.getProj( name, "val" );
+                if ( !(nameInternal instanceof StcForeign
+                    && nameInternal.purpose === "name") )
+                    throw new Error();
+                
+                if ( !(subNs instanceof StcForeign
+                    && subNs.purpose === "ns") )
+                    throw new Error();
+                
+                if ( !(ns instanceof StcForeign
+                    && ns.purpose === "ns") )
+                    throw new Error();
+                
+                return stcNsShadow( nameInternal.foreignVal,
+                    subNs.foreignVal, ns.foreignVal );
+            } );
+        } );
+    } );
+    
+    fun( "ns-shadow-string", function ( string ) {
+        return new StcFn( function ( subNs ) {
+            return new StcFn( function ( ns ) {
+                if ( string.tupleTag !== stcString.getTupleTag() )
+                    throw new Error();
+                var stringInternal =
+                    stcString.getProj( string, "val" );
+                if ( !(stringInternal instanceof StcForeign
+                    && stringInternal.purpose === "string") )
+                    throw new Error();
+                
+                if ( !(subNs instanceof StcForeign
+                    && subNs.purpose === "ns") )
+                    throw new Error();
+                
+                if ( !(ns instanceof StcForeign
+                    && ns.purpose === "ns") )
+                    throw new Error();
+                
+                return stcNsShadow( stringInternal.foreignVal,
+                    subNs.foreignVal, ns.foreignVal );
+            } );
+        } );
+    } );
+    
+    fun( "procure-name", function ( mode ) {
+        return new StcFn( function ( ns ) {
+            if ( !(mode instanceof StcForeign
+                && mode.purpose === "mode") )
+                throw new Error();
+            
+            if ( !(ns instanceof StcForeign && ns.purpose === "ns") )
+                throw new Error();
+            
+            return new StcForeign( "name", ns.foreignVal.name );
+        } );
+    } );
+    
+    fun( "procure-defined", function ( mode ) {
+        return new StcFn( function ( ns ) {
+            if ( !(mode instanceof StcForeign
+                && mode.purpose === "mode") )
+                throw new Error();
+            
+            if ( !(ns instanceof StcForeign && ns.purpose === "ns") )
+                throw new Error();
+            
+            if ( !staccatoDeclarationState.namespaceDefs.has(
+                ns.foreignVal.name ) )
+                throw new Error(
+                    "No such defined value: " +
+                    JSON.stringify( ns.foreignVal.name ) );
+            return staccatoDeclarationState.namespaceDefs.get(
+                ns.foreignVal.name );
+        } );
+    } );
+    
+    fun( "procure-put-defined", function ( mode ) {
+        return new StcFn( function ( ns ) {
+            return new StcFn( function ( value ) {
+                return new StcFn( function ( then ) {
+                    if ( !(mode instanceof StcForeign
+                        && mode.purpose === "mode") )
+                        throw new Error();
+                    
+                    if ( !(ns instanceof StcForeign
+                        && ns.purpose === "ns") )
+                        throw new Error();
+                    
+                    return new StcForeign( "effects", function () {
+                        if ( staccatoDeclarationState.namespaceDefs.
+                            has( ns.foreignVal.name ) )
+                            throw new Error();
+                        staccatoDeclarationState.namespaceDefs.set(
+                            ns.foreignVal.name, value );
+                        return then.callStc( macroDefNs,
+                            stcNil.ofNow() );
+                    } );
+                } );
+            } );
+        } );
+    } );
+    
+    fun( "no-effects", function ( val ) {
+        return new StcForeign( "effects", function () {
+            return val;
+        } );
+    } );
+    
+    fun( "bind-effects", function ( monad ) {
+        return new StcFn( function ( then ) {
+            if ( !(monad instanceof StcForeign
+                && monad.purpose === "effects") )
+                throw new Error();
+            var monadFunc = monad.foreignVal;
+            
+            return new StcForeign( "effects", function () {
+                return then.callStc( macroDefNs, monadFunc() );
+            } );
         } );
     } );
     
