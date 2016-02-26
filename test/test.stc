@@ -24,3 +24,7 @@
   /let x y y x
   /cons x y)
   (cons (yep/nil) (nope/nil)))
+
+(test
+  (list (nil) (nil))
+  (cons (nil) /cons (nil) /nil))

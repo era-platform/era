@@ -232,6 +232,16 @@
 \= Returns `(nil)`. The given modality must be the current one. If it
 \= isn't, this causes an error.
 
+\= TODO: See if we want to keep this. It's just here so that we can
+\= use the naive JavaScript transpiling approach in
+\= era-staccato-lib-runner-mini.js rather than doing desugaring in
+\= between.
+\=
+\= (defn compile-expression mode unique-ns definition-ns stx ...)
+\= Macroexpands the given `stx`, allowing the macro calls to
+\= monadically install definitions and produce a desugarable
+\= Staccato expression. The given modality must be the current one.
+
 \= TODO: See if we should add this. Currently we're using monads only
 \= for collecting outputs from subcomputations, rather than using them
 \= as a convenience to avoid passing around modalities, namespaces,
@@ -1985,5 +1995,18 @@
   /c def-foreign str.no-effects
   /c def-foreign str.bind-effects
   /c def-foreign str.assert-current-modality
+  /c def-foreign str.compile-expression
   
   /no-effects target-definition-ns))
+
+
+\= ===== Playing around with macros ==================================
+
+(def-macro list mode unique-ns definition-ns my-stx-details args
+  (let s (fn it /stx my-stx-details it)
+  /let mac
+    (fn str rest
+      (cons (c s /foreign/macro-name mode definition-ns str) rest))
+  /compile-expression mode unique-ns definition-ns
+  /foldr args (c s /c mac str.nil /nil) /fn first rest
+    (c s /c mac str.cons /cons first /cons rest /nil)))

@@ -657,6 +657,7 @@ function assertMacroDoesNotExist( definitionNs, name ) {
 }
 
 function stcAddMacro( definitionNs, name, macroFunctionImpl ) {
+    var stcString = stcType( definitionNs, "string", "val" );
     var macroFunctionName =
         assertMacroDoesNotExist( definitionNs, name );
     staccatoDeclarationState.namespaceDefs.set( macroFunctionName,
@@ -674,10 +675,18 @@ function stcAddMacro( definitionNs, name, macroFunctionImpl ) {
                             if ( !(definitionNs instanceof StcForeign
                                 && definitionNs.purpose === "ns") )
                                 throw new Error();
-                            return macroFunctionImpl( {
-                                uniqueNs: uniqueNs.foreignVal,
-                                definitionNs: definitionNs.foreignVal
-                            }, myStxDetails, body );
+                            
+                            return new StcForeign( "effects",
+                                function () {
+                                
+                                return new StcForeign(
+                                    "compiled-code",
+                                    macroFunctionImpl( {
+                                        definitionNs:
+                                            definitionNs.foreignVal,
+                                        uniqueNs: uniqueNs.foreignVal
+                                    }, myStxDetails, body ) );
+                            } );
                         } );
                     } );
                 } );
@@ -702,7 +711,10 @@ function stcAddCoreMacros( macroDefNs ) {
         stcAddMacro( macroDefNs, name, body );
     }
     function fun( name, body ) {
-        var tupleTagName = stcNameTupleTagAlreadySorted( name, [] );
+        var constructorTag = stcConstructorTag( macroDefNs,
+            stcConstructorName( macroDefNs, name ) );
+        var tupleTagName =
+            stcNameTupleTagAlreadySorted( constructorTag, [] );
         var tupleTag = JSON.stringify( tupleTagName );
         // TODO: Also add an entry to `namespaceDefs`. We should
         // create an appropriate `stc-def-foreign`.
@@ -868,11 +880,11 @@ function stcAddCoreMacros( macroDefNs ) {
         if ( stcCons.getProj( body, "cdr" ).tupleTag ===
             stcCons.getTupleTag() )
             throw new Error();
-        return "(new StcForeign( \"string\", " +
+        return stcString.of( "(new StcForeign( \"string\", " +
             JSON.stringify(
                 stxToDefiniteString(
                     stcCons.getProj( body, "car" ) ) ) +
-        " ))";
+        " ))" );
     } );
     
     mac( "fn", function ( nss, myStxDetails, body ) {
@@ -986,11 +998,14 @@ function stcAddCoreMacros( macroDefNs ) {
                         throw new Error();
                     return projStringyName;
                 } );
-            return new StcForeign( "name",
-                stcNameTupleTagAlreadySorted( tupleName,
-                    projStringyNames.sort( function ( a, b ) {
-                        return nameCompare( a, b );
-                    } ) ) );
+            return stcName.ofNow(
+                new StcForeign( "name",
+                    stcNameTupleTagAlreadySorted(
+                        stcConstructorTag( macroDefNs,
+                            tupleStringyName ),
+                        projStringyNames.sort( function ( a, b ) {
+                            return nameCompare( a, b );
+                        } ) ) ) );
         } );
     } );
     
@@ -1016,7 +1031,8 @@ function stcAddCoreMacros( macroDefNs ) {
             if ( !(ns instanceof StcForeign && ns.purpose === "ns") )
                 throw new Error();
             
-            return stcNsGet( nameInternal.foreignVal, ns.foreignVal );
+            return new StcForeign( "ns",
+                stcNsGet( nameInternal.foreignVal, ns.foreignVal ) );
         } );
     } );
     
@@ -1032,8 +1048,9 @@ function stcAddCoreMacros( macroDefNs ) {
             if ( !(ns instanceof StcForeign && ns.purpose === "ns") )
                 throw new Error();
             
-            return stcNsGet( stringInternal.foreignVal,
-                ns.foreignVal );
+            return new StcForeign( "ns",
+                stcNsGet( stringInternal.foreignVal,
+                    ns.foreignVal ) );
         } );
     } );
     
@@ -1055,8 +1072,9 @@ function stcAddCoreMacros( macroDefNs ) {
                     && ns.purpose === "ns") )
                     throw new Error();
                 
-                return stcNsShadow( nameInternal.foreignVal,
-                    subNs.foreignVal, ns.foreignVal );
+                return new StcForeign( "ns",
+                    stcNsShadow( nameInternal.foreignVal,
+                        subNs.foreignVal, ns.foreignVal ) );
             } );
         } );
     } );
@@ -1080,8 +1098,9 @@ function stcAddCoreMacros( macroDefNs ) {
                     && ns.purpose === "ns") )
                     throw new Error();
                 
-                return stcNsShadow( stringInternal.foreignVal,
-                    subNs.foreignVal, ns.foreignVal );
+                return new StcForeign( "ns",
+                    stcNsShadow( stringInternal.foreignVal,
+                        subNs.foreignVal, ns.foreignVal ) );
             } );
         } );
     } );
@@ -1095,7 +1114,8 @@ function stcAddCoreMacros( macroDefNs ) {
             if ( !(ns instanceof StcForeign && ns.purpose === "ns") )
                 throw new Error();
             
-            return new StcForeign( "name", ns.foreignVal.name );
+            return stcName.ofNow(
+                new StcForeign( "name", ns.foreignVal.name ) );
         } );
     } );
     
@@ -1164,9 +1184,38 @@ function stcAddCoreMacros( macroDefNs ) {
     } );
     
     fun( "assert-current-modality", function ( mode ) {
-        if ( !(bInternal instanceof StcForeign
-            && bInternal.purpose === "mode") )
+        if ( !(mode instanceof StcForeign
+            && mode.purpose === "mode") )
             throw new Error();
+        return stcNil.ofNow();
+    } );
+    
+    fun( "compile-expression", function ( mode ) {
+        return new StcFn( function ( uniqueNs ) {
+            return new StcFn( function ( definitionNs ) {
+                return new StcFn( function ( stx ) {
+                    if ( !(mode instanceof StcForeign
+                        && mode.purpose === "mode") )
+                        throw new Error();
+                    
+                    if ( !(uniqueNs instanceof StcForeign
+                        && uniqueNs.purpose === "ns") )
+                        throw new Error();
+                    
+                    if ( !(definitionNs instanceof StcForeign
+                        && definitionNs.purpose === "ns") )
+                        throw new Error();
+                    
+                    return new StcForeign( "effects", function () {
+                        return new StcForeign( "compiled-code",
+                            macroexpandInnerLevel( {
+                                definitionNs: definitionNs.foreignVal,
+                                uniqueNs: uniqueNs.foreignVal
+                            }, stx ) );
+                    } );
+                } );
+            } );
+        } );
     } );
 }
 
@@ -1175,6 +1224,8 @@ function stcTrivialStxDetails() {
 }
 
 function macroexpandInnerLevel( nss, locatedExpr ) {
+    var stcString = stcType( nss.definitionNs, "string", "val" );
+    
     var identifier = stxToMaybeName( nss.definitionNs, locatedExpr );
     if ( identifier !== null )
         return stcIdentifier( identifier );
@@ -1200,7 +1251,7 @@ function macroexpandInnerLevel( nss, locatedExpr ) {
         macroFunctionName ) )
         throw new Error(
             "No such macro: " + JSON.stringify( macroName ) );
-    return staccatoDeclarationState.namespaceDefs.
+    var macroResultEffects = staccatoDeclarationState.namespaceDefs.
         get( macroFunctionName ).
         callStc( nss.definitionNs, new StcForeign( "mode", null ) ).
         callStc( nss.definitionNs,
@@ -1209,6 +1260,15 @@ function macroexpandInnerLevel( nss, locatedExpr ) {
             new StcForeign( "ns", nss.definitionNs ) ).
         callStc( nss.definitionNs, stcTrivialStxDetails() ).
         callStc( nss.definitionNs, stcCons.getProj( sExpr, "cdr" ) );
+    if ( !(macroResultEffects instanceof StcForeign
+        && macroResultEffects.purpose === "effects") )
+        throw new Error();
+    var macroResultFunc = macroResultEffects.foreignVal;
+    var macroResult = macroResultFunc();
+    if ( !(macroResult instanceof StcForeign
+        && macroResult.purpose === "compiled-code") )
+        throw new Error();
+    return macroResult.foreignVal;
 }
 
 function processDefType( definitionNs, tupleName, projNames ) {
@@ -1401,6 +1461,27 @@ function macroexpandTopLevel( nss, locatedExpr ) {
             stcCall( processFn( nss, sExpr2 ),
                 stcIdentifier( firstArg ) ) );
         processDefType( nss.definitionNs, name, [] );
+    } else if ( macroName === "def-macro" ) {
+        var sExpr1 = stcCons.getProj( sExpr, "cdr" );
+        if ( sExpr1.tupleTag !== stcCons.getTupleTag() )
+            throw new Error();
+        var sExpr2 = stcCons.getProj( sExpr1, "cdr" );
+        if ( sExpr2.tupleTag !== stcCons.getTupleTag() )
+            throw new Error();
+        
+        var name = stxToMaybeName( nss.definitionNs,
+            stcCons.getProj( sExpr1, "car" ) );
+        if ( name === null )
+            throw new Error();
+        
+        if ( staccatoDeclarationState.hasRunDefs )
+            throw new Error();
+        
+        var macroFunctionName =
+            assertMacroDoesNotExist( nss.definitionNs, name );
+        staccatoDeclarationState.namespaceDefs.set( macroFunctionName,
+            stcExecute( nss.definitionNs,
+                processFn( nss, sExpr2 ) ) );
     } else if ( macroName === "test" ) {
         var sExpr1 = stcCons.getProj( sExpr, "cdr" );
         if ( sExpr1.tupleTag !== stcCons.getTupleTag() )
