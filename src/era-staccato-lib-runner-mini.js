@@ -190,9 +190,12 @@ function stcTypeArr(
     } ).sort( function ( a, b ) {
         return nameCompare( a.name, b.name );
     } );
-    var projNamesToSortedIndices = jsnMap();
+    var projNamesToSortedIndices = {};
     arrEach( sortedProjNames, function ( entry, i ) {
-        projNamesToSortedIndices.set( entry.name, i );
+        var stringy = projStringyNames[ entry.i ];
+        if ( typeof stringy !== "string" )
+            return;
+        projNamesToSortedIndices[ "|" + stringy ] = i;
     } );
     var tupleTag = JSON.stringify( stcNameTupleTagAlreadySorted(
         tupleName,
@@ -214,12 +217,10 @@ function stcTypeArr(
             throw new Error();
         if ( stc.tupleTag !== tupleTag )
             throw new Error();
-        var projName = stcProjectionName(
-            definitionNs, constructorName, projStringyName );
-        if ( !projNamesToSortedIndices.has( projName ) )
+        var i = projNamesToSortedIndices[ "|" + projStringyName ];
+        if ( i === void 0 )
             throw new Error();
-        return stc.projNames[
-            projNamesToSortedIndices.get( projName ) ];
+        return stc.projNames[ i ];
     };
     result.ofArr = function ( args ) {
         if ( args.length !== n )
