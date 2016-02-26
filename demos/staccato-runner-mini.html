@@ -63,8 +63,8 @@ window.onload = function () {
             uniqueNs: stcNsGet( "unique-ns", stcNsRoot() )
         };
         
-        stcAddCoreMacros( nss.definitionNs );
-        processCoreTypes( nss.definitionNs );
+        stcAddCoreMacros( nss.definitionNs, nss.definitionNs );
+        processCoreTypes( nss.definitionNs, nss.definitionNs );
         
         function runCode( code ) {
             return !arrAny( code, function ( tryExpr ) {
@@ -73,7 +73,8 @@ window.onload = function () {
                     return true;
                 }
                 
-                macroexpandTopLevel( nssGet( nss, "first" ),
+                macroexpandTopLevel( nss.definitionNs,
+                    nssGet( nss, "first" ),
                     readerExprToStc( nss.definitionNs,
                         stcTrivialStxDetails(),
                         tryExpr.val ) );

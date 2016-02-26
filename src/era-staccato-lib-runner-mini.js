@@ -469,7 +469,7 @@ function getType( macroDefNs, definitionNs, tupleName ) {
     var projList =
         staccatoDeclarationState.namespaceDefs.get( projListName );
     return stcTypeArr( definitionNs, tupleName,
-        arrMap( stcConsListToArray( definitionNs, projList ),
+        arrMap( stcConsListToArray( macroDefNs, projList ),
             function ( projName ) {
             
             if ( projName.tupleTag !== stcName.getTupleTag() )
@@ -522,7 +522,7 @@ function stcCaseletForRunner(
         var body1 = stcCons.getProj( body, "cdr" );
         if ( body1.tupleTag !== stcCons.getTupleTag() )
             return "return " +
-                macroexpandInnerLevel( nss,
+                macroexpandInnerLevel( macroDefNs, nss,
                     stcCons.getProj( body, "car" ) ) +
                 "; ";
         var pattern =
@@ -530,7 +530,8 @@ function stcCaseletForRunner(
         if ( pattern.remainingBody.tupleTag !==
             stcCons.getTupleTag() )
             throw new Error();
-        var then = macroexpandInnerLevel( nssGet( nss, "then" ),
+        var then = macroexpandInnerLevel( macroDefNs,
+            nssGet( nss, "then" ),
             stcCons.getProj( pattern.remainingBody, "car" ) );
         var els = stcCons.getProj( pattern.remainingBody, "cdr" );
         return "if ( " +
@@ -548,7 +549,7 @@ function stcCaseletForRunner(
     
     return "(function () { " +
         "var matchSubject = " +
-            macroexpandInnerLevel(
+            macroexpandInnerLevel( macroDefNs,
                 nssGet( nss, "subject" ), matchSubject ) + "; " +
         (maybeVa === null ? "" :
             "var " + stcIdentifier( maybeVa.val ) + " = " +
@@ -570,14 +571,17 @@ function stcCast( macroDefNs, nss, matchSubject, body ) {
     if ( remainingBody2.tupleTag === stcCons.getTupleTag() )
         throw new Error();
     var onCastErr =
-        macroexpandInnerLevel( nssGet( nss, "on-cast-err" ),
+        macroexpandInnerLevel( macroDefNs,
+            nssGet( nss, "on-cast-err" ),
             stcCons.getProj( pattern.remainingBody, "car" ) );
-    var body = macroexpandInnerLevel( nssGet( nss, "body" ),
+    var body = macroexpandInnerLevel( macroDefNs,
+        nssGet( nss, "body" ),
         stcCons.getProj( remainingBody1, "car" ) );
     
     return "(function () { " +
         "var matchSubject = " +
-            macroexpandInnerLevel( nssGet( nss, "subject" ),
+            macroexpandInnerLevel( macroDefNs,
+                nssGet( nss, "subject" ),
                 matchSubject ) +
             "; " +
         "if ( matchSubject.tupleTag === " +
@@ -594,21 +598,21 @@ function stcCast( macroDefNs, nss, matchSubject, body ) {
     " }())";
 }
 
-function processFn( nss, body ) {
-    var stcCons = stcType( nss.definitionNs, "cons", "car", "cdr" );
+function processFn( macroDefNs, nss, body ) {
+    var stcCons = stcType( macroDefNs, "cons", "car", "cdr" );
     if ( body.tupleTag !== stcCons.getTupleTag() )
         throw new Error();
     var body1 = stcCons.getProj( body, "cdr" );
     if ( body1.tupleTag !== stcCons.getTupleTag() )
-        return macroexpandInnerLevel( nss,
+        return macroexpandInnerLevel( macroDefNs, nss,
             stcCons.getProj( body, "car" ) );
     var param = stcCons.getProj( body, "car" );
-    var paramName = stxToMaybeName( nss.definitionNs, param );
+    var paramName = stxToMaybeName( macroDefNs, param );
     if ( paramName === null )
         throw new Error(
             "Called fn with a variable name that wasn't a " +
             "syntactic name: " + param.pretty() );
-    return stcFn( paramName, processFn( nss, body1 ) );
+    return stcFn( paramName, processFn( macroDefNs, nss, body1 ) );
 }
 
 function mapConsListToArr( definitionNs, list, func ) {
@@ -625,8 +629,8 @@ function mapConsListToArr( definitionNs, list, func ) {
     return result;
 }
 
-function mapConsListToArrWithNss( nss, list, func ) {
-    var stcCons = stcType( nss.definitionNs, "cons", "car", "cdr" );
+function mapConsListToArrWithNss( macroDefNs, nss, list, func ) {
+    var stcCons = stcType( macroDefNs, "cons", "car", "cdr" );
     var currentNss = nss;
     var result = [];
     for ( var e = list;
@@ -638,8 +642,7 @@ function mapConsListToArrWithNss( nss, list, func ) {
                 stcCons.getProj( e, "car" ) ) );
         currentNss = nssGet( currentNss, "rest" );
     }
-    if ( e.tupleTag !==
-        stcType( nss.definitionNs, "nil" ).getTupleTag() )
+    if ( e.tupleTag !== stcType( macroDefNs, "nil" ).getTupleTag() )
         throw new Error();
     return result;
 }
@@ -657,7 +660,6 @@ function assertMacroDoesNotExist( definitionNs, name ) {
 }
 
 function stcAddMacro( definitionNs, name, macroFunctionImpl ) {
-    var stcString = stcType( definitionNs, "string", "val" );
     var macroFunctionName =
         assertMacroDoesNotExist( definitionNs, name );
     staccatoDeclarationState.namespaceDefs.set( macroFunctionName,
@@ -694,7 +696,7 @@ function stcAddMacro( definitionNs, name, macroFunctionImpl ) {
         } ) );
 }
 
-function stcAddCoreMacros( macroDefNs ) {
+function stcAddCoreMacros( macroDefNs, targetDefNs ) {
     var stcCons = stcType( macroDefNs, "cons", "car", "cdr" );
     var stcNil = stcType( macroDefNs, "nil" );
     var stcIstringNil =
@@ -708,11 +710,11 @@ function stcAddCoreMacros( macroDefNs ) {
     var stcForeign = stcType( macroDefNs, "foreign", "val" );
     
     function mac( name, body ) {
-        stcAddMacro( macroDefNs, name, body );
+        stcAddMacro( targetDefNs, name, body );
     }
     function fun( name, body ) {
-        var constructorTag = stcConstructorTag( macroDefNs,
-            stcConstructorName( macroDefNs, name ) );
+        var constructorTag = stcConstructorTag( targetDefNs,
+            stcConstructorName( targetDefNs, name ) );
         var tupleTagName =
             stcNameTupleTagAlreadySorted( constructorTag, [] );
         var tupleTag = JSON.stringify( tupleTagName );
@@ -723,7 +725,7 @@ function stcAddCoreMacros( macroDefNs ) {
             
             return body( argVal );
         };
-        processDefType( macroDefNs, name, [] );
+        processDefType( macroDefNs, targetDefNs, name, [] );
     }
     
     mac( "case", function ( nss, myStxDetails, body ) {
@@ -774,7 +776,7 @@ function stcAddCoreMacros( macroDefNs ) {
                 "Encountered an isa with a tuple name that wasn't " +
                 "a syntactic name: " + tupleNameExpr.pretty() );
         var type = getType( macroDefNs, nss.definitionNs, tupleName );
-        var expandedBody = macroexpandInnerLevel( nss,
+        var expandedBody = macroexpandInnerLevel( macroDefNs, nss,
             stcCons.getProj( body1, "car" ) );
         return "(" + expandedBody + ".tupleTag === " +
                 JSON.stringify( type.getTupleTag() ) + " ? " +
@@ -821,13 +823,14 @@ function stcAddCoreMacros( macroDefNs ) {
         if ( body.tupleTag !== stcCons.getTupleTag() )
             throw new Error();
         return stcCallArr(
-            macroexpandInnerLevel( nssGet( nss, "func" ),
+            macroexpandInnerLevel( macroDefNs, nssGet( nss, "func" ),
                 stcCons.getProj( body, "car" ) ),
-            mapConsListToArrWithNss( nssGet( nss, "args" ),
+            mapConsListToArrWithNss( macroDefNs,
+                nssGet( nss, "args" ),
                 stcCons.getProj( body, "cdr" ),
                 function ( nss, expr ) {
                 
-                return macroexpandInnerLevel( nss, expr );
+                return macroexpandInnerLevel( macroDefNs, nss, expr );
             } ) );
     } );
     
@@ -840,11 +843,11 @@ function stcAddCoreMacros( macroDefNs ) {
             throw new Error();
         var type = stcType( nss.definitionNs, tupleName );
         return stcCallArr( type.of(),
-            mapConsListToArrWithNss( nss,
+            mapConsListToArrWithNss( macroDefNs, nss,
                 stcCons.getProj( body, "cdr" ),
                 function ( nss, expr ) {
                 
-                return macroexpandInnerLevel( nss, expr );
+                return macroexpandInnerLevel( macroDefNs, nss, expr );
             } ) );
     } );
     
@@ -888,7 +891,7 @@ function stcAddCoreMacros( macroDefNs ) {
     } );
     
     mac( "fn", function ( nss, myStxDetails, body ) {
-        return processFn( nss, body );
+        return processFn( macroDefNs, nss, body );
     } );
     
     mac( "let", function ( nss, myStxDetails, body ) {
@@ -910,7 +913,7 @@ function stcAddCoreMacros( macroDefNs ) {
                 throw new Error();
             bindingVars.push( stcIdentifier( va ) );
             bindingVals.push(
-                macroexpandInnerLevel(
+                macroexpandInnerLevel( macroDefNs,
                     nssGet( bindingsNss, "first" ),
                     stcCons.getProj( remainingBody1, "car" ) ) );
             remainingBody = stcCons.getProj( remainingBody1, "cdr" );
@@ -918,7 +921,8 @@ function stcAddCoreMacros( macroDefNs ) {
         }
         return "(function ( " + bindingVars.join( ", " ) + " ) { " +
             "return " +
-                macroexpandInnerLevel( nssGet( nss, "body" ),
+                macroexpandInnerLevel( macroDefNs,
+                    nssGet( nss, "body" ),
                     stcCons.getProj( remainingBody, "car" ) ) +
                 "; " +
         "}( " + bindingVals.join( ", " ) + " ))";
@@ -1208,7 +1212,7 @@ function stcAddCoreMacros( macroDefNs ) {
                     
                     return new StcForeign( "effects", function () {
                         return new StcForeign( "compiled-code",
-                            macroexpandInnerLevel( {
+                            macroexpandInnerLevel( macroDefNs, {
                                 definitionNs: definitionNs.foreignVal,
                                 uniqueNs: uniqueNs.foreignVal
                             }, stx ) );
@@ -1223,22 +1227,20 @@ function stcTrivialStxDetails() {
     return new StcForeign( "macro-stx-details", null );
 }
 
-function macroexpandInnerLevel( nss, locatedExpr ) {
-    var stcString = stcType( nss.definitionNs, "string", "val" );
-    
-    var identifier = stxToMaybeName( nss.definitionNs, locatedExpr );
+function macroexpandInnerLevel( macroDefNs, nss, locatedExpr ) {
+    var identifier = stxToMaybeName( macroDefNs, locatedExpr );
     if ( identifier !== null )
         return stcIdentifier( identifier );
     var stcStx =
-        stcType( nss.definitionNs, "stx", "stx-details", "s-expr" );
-    var stcCons = stcType( nss.definitionNs, "cons", "car", "cdr" );
+        stcType( macroDefNs, "stx", "stx-details", "s-expr" );
+    var stcCons = stcType( macroDefNs, "cons", "car", "cdr" );
     if ( locatedExpr.tupleTag !== stcStx.getTupleTag() )
         throw new Error();
     var sExpr = stcStx.getProj( locatedExpr, "s-expr" );
     if ( sExpr.tupleTag !== stcCons.getTupleTag() )
         throw new Error();
-    var macroName = stxToMaybeName( nss.definitionNs,
-        stcCons.getProj( sExpr, "car" ) );
+    var macroName =
+        stxToMaybeName( macroDefNs, stcCons.getProj( sExpr, "car" ) );
     if ( macroName === null )
         throw new Error();
     var resolvedMacroName =
@@ -1253,13 +1255,12 @@ function macroexpandInnerLevel( nss, locatedExpr ) {
             "No such macro: " + JSON.stringify( macroName ) );
     var macroResultEffects = staccatoDeclarationState.namespaceDefs.
         get( macroFunctionName ).
-        callStc( nss.definitionNs, new StcForeign( "mode", null ) ).
-        callStc( nss.definitionNs,
-            new StcForeign( "ns", nss.uniqueNs ) ).
-        callStc( nss.definitionNs,
+        callStc( macroDefNs, new StcForeign( "mode", null ) ).
+        callStc( macroDefNs, new StcForeign( "ns", nss.uniqueNs ) ).
+        callStc( macroDefNs,
             new StcForeign( "ns", nss.definitionNs ) ).
-        callStc( nss.definitionNs, stcTrivialStxDetails() ).
-        callStc( nss.definitionNs, stcCons.getProj( sExpr, "cdr" ) );
+        callStc( macroDefNs, stcTrivialStxDetails() ).
+        callStc( macroDefNs, stcCons.getProj( sExpr, "cdr" ) );
     if ( !(macroResultEffects instanceof StcForeign
         && macroResultEffects.purpose === "effects") )
         throw new Error();
@@ -1271,9 +1272,11 @@ function macroexpandInnerLevel( nss, locatedExpr ) {
     return macroResult.foreignVal;
 }
 
-function processDefType( definitionNs, tupleName, projNames ) {
-    var stcCons = stcType( definitionNs, "cons", "car", "cdr" );
-    var stcName = stcType( definitionNs, "name", "val" );
+function processDefType(
+    macroDefNs, definitionNs, tupleName, projNames ) {
+    
+    var stcCons = stcType( macroDefNs, "cons", "car", "cdr" );
+    var stcName = stcType( macroDefNs, "name", "val" );
     
     var n = projNames.length;
     var type = stcTypeArr( definitionNs, tupleName, projNames );
@@ -1286,7 +1289,7 @@ function processDefType( definitionNs, tupleName, projNames ) {
     if ( staccatoDeclarationState.namespaceDefs.has( projListName ) )
         throw new Error();
     staccatoDeclarationState.namespaceDefs.set( projListName,
-        stcArrayToConsList( definitionNs, arrMap( type.projNames,
+        stcArrayToConsList( macroDefNs, arrMap( type.projNames,
             function ( name ) {
             
             return stcName.ofNow( new StcForeign( "name", name ) );
@@ -1303,26 +1306,28 @@ function processDefType( definitionNs, tupleName, projNames ) {
                     "Expected more arguments to " +
                     JSON.stringify( tupleName ) );
             projVals.push(
-                macroexpandInnerLevel(
+                macroexpandInnerLevel( macroDefNs,
                     nssGet( projectionsNss, "first" ),
                     stcCons.getProj( remainingBody, "car" ) ) );
             remainingBody = stcCons.getProj( remainingBody, "cdr" );
             projectionsNss = nssGet( projectionsNss, "rest" );
         }
         return stcCallArr( type.ofArr( projVals ),
-            mapConsListToArrWithNss( nssGet( nss, "args" ),
+            mapConsListToArrWithNss( macroDefNs,
+                nssGet( nss, "args" ),
                 remainingBody,
                 function ( nss, expr ) {
                 
-                return macroexpandInnerLevel( nss, expr );
+                return macroexpandInnerLevel( macroDefNs, nss, expr );
             } ) );
     } );
 }
 
-function processCoreTypes( definitionNs ) {
+function processCoreTypes( macroDefNs, definitionNs ) {
     
     function type( tupleName, projNames ) {
-        processDefType( definitionNs, tupleName, projNames );
+        processDefType(
+            macroDefNs, definitionNs, tupleName, projNames );
     }
     
     // These constructors are needed so that macros can generate raw
@@ -1395,10 +1400,10 @@ function processCoreTypes( definitionNs ) {
 }
 
 
-function macroexpandTopLevel( nss, locatedExpr ) {
+function macroexpandTopLevel( macroDefNs, nss, locatedExpr ) {
     var stcStx =
-        stcType( nss.definitionNs, "stx", "stx-details", "s-expr" );
-    var stcCons = stcType( nss.definitionNs, "cons", "car", "cdr" );
+        stcType( macroDefNs, "stx", "stx-details", "s-expr" );
+    var stcCons = stcType( macroDefNs, "cons", "car", "cdr" );
     
     if ( locatedExpr.tupleTag !== stcStx.getTupleTag() )
         throw new Error();
@@ -1406,31 +1411,32 @@ function macroexpandTopLevel( nss, locatedExpr ) {
     if ( sExpr.tupleTag !== stcCons.getTupleTag() )
         throw new Error();
     
-    var macroName = stxToMaybeName( nss.definitionNs,
-        stcCons.getProj( sExpr, "car" ) );
+    var macroName =
+        stxToMaybeName( macroDefNs, stcCons.getProj( sExpr, "car" ) );
     
     if ( macroName === "def-type" ) {
         var sExpr1 = stcCons.getProj( sExpr, "cdr" );
         if ( sExpr1.tupleTag !== stcCons.getTupleTag() )
             throw new Error();
         
-        var tupleName = stxToMaybeName( nss.definitionNs,
+        var tupleName = stxToMaybeName( macroDefNs,
             stcCons.getProj( sExpr1, "car" ) );
         if ( tupleName === null )
             throw new Error();
         
         assertMacroDoesNotExist( nss.definitionNs, tupleName );
         
-        var projNames = mapConsListToArr( nss.definitionNs,
+        var projNames = mapConsListToArr( macroDefNs,
             stcCons.getProj( sExpr1, "cdr" ),
             function ( projName ) {
                 var projStringyName =
-                    stxToMaybeName( nss.definitionNs, projName );
+                    stxToMaybeName( macroDefNs, projName );
                 if ( projStringyName === null )
                     throw new Error();
                 return projStringyName;
             } );
-        processDefType( nss.definitionNs, tupleName, projNames );
+        processDefType(
+            macroDefNs, nss.definitionNs, tupleName, projNames );
     } else if ( macroName === "defn" ) {
         var sExpr1 = stcCons.getProj( sExpr, "cdr" );
         if ( sExpr1.tupleTag !== stcCons.getTupleTag() )
@@ -1439,12 +1445,12 @@ function macroexpandTopLevel( nss, locatedExpr ) {
         if ( sExpr2.tupleTag !== stcCons.getTupleTag() )
             throw new Error();
         
-        var name = stxToMaybeName( nss.definitionNs,
+        var name = stxToMaybeName( macroDefNs,
             stcCons.getProj( sExpr1, "car" ) );
         if ( name === null )
             throw new Error();
         
-        var firstArg = stxToMaybeName( nss.definitionNs,
+        var firstArg = stxToMaybeName( macroDefNs,
             stcCons.getProj( sExpr2, "car" ) );
         if ( name === null )
             throw new Error();
@@ -1458,9 +1464,9 @@ function macroexpandTopLevel( nss, locatedExpr ) {
             stcConstructorTag( nss.definitionNs,
                 stcConstructorName( nss.definitionNs, name ) ),
             firstArg,
-            stcCall( processFn( nss, sExpr2 ),
+            stcCall( processFn( macroDefNs, nss, sExpr2 ),
                 stcIdentifier( firstArg ) ) );
-        processDefType( nss.definitionNs, name, [] );
+        processDefType( macroDefNs, nss.definitionNs, name, [] );
     } else if ( macroName === "def-macro" ) {
         var sExpr1 = stcCons.getProj( sExpr, "cdr" );
         if ( sExpr1.tupleTag !== stcCons.getTupleTag() )
@@ -1469,7 +1475,7 @@ function macroexpandTopLevel( nss, locatedExpr ) {
         if ( sExpr2.tupleTag !== stcCons.getTupleTag() )
             throw new Error();
         
-        var name = stxToMaybeName( nss.definitionNs,
+        var name = stxToMaybeName( macroDefNs,
             stcCons.getProj( sExpr1, "car" ) );
         if ( name === null )
             throw new Error();
@@ -1481,7 +1487,7 @@ function macroexpandTopLevel( nss, locatedExpr ) {
             assertMacroDoesNotExist( nss.definitionNs, name );
         staccatoDeclarationState.namespaceDefs.set( macroFunctionName,
             stcExecute( nss.definitionNs,
-                processFn( nss, sExpr2 ) ) );
+                processFn( macroDefNs, nss, sExpr2 ) ) );
     } else if ( macroName === "test" ) {
         var sExpr1 = stcCons.getProj( sExpr, "cdr" );
         if ( sExpr1.tupleTag !== stcCons.getTupleTag() )
@@ -1497,10 +1503,10 @@ function macroexpandTopLevel( nss, locatedExpr ) {
             throw new Error();
         
         var a = evalStcForTest( nss.definitionNs,
-            macroexpandInnerLevel( nssGet( nss, "a" ),
+            macroexpandInnerLevel( macroDefNs, nssGet( nss, "a" ),
                 stcCons.getProj( sExpr1, "car" ) ) );
         var b = evalStcForTest( nss.definitionNs,
-            macroexpandInnerLevel( nssGet( nss, "b" ),
+            macroexpandInnerLevel( macroDefNs, nssGet( nss, "b" ),
                 stcCons.getProj( sExpr2, "car" ) ) );
         var match = compareStc( a, b );
         // NOTE: This can be true, false, or null.

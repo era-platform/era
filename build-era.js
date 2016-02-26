@@ -302,8 +302,8 @@ if ( args.test_mini_staccato ) tasks.push( function ( then ) {
         uniqueNs: $stc.stcNsGet( "unique-ns", $stc.stcNsRoot() )
     };
     
-    $stc.stcAddCoreMacros( nss.definitionNs );
-    $stc.processCoreTypes( nss.definitionNs );
+    $stc.stcAddCoreMacros( nss.definitionNs, nss.definitionNs );
+    $stc.processCoreTypes( nss.definitionNs, nss.definitionNs );
     
     function runCode( code ) {
         return !$stc.arrAny( code, function ( tryExpr ) {
@@ -312,7 +312,8 @@ if ( args.test_mini_staccato ) tasks.push( function ( then ) {
                 return true;
             }
             
-            $stc.macroexpandTopLevel( $stc.nssGet( nss, "first" ),
+            $stc.macroexpandTopLevel( nss.definitionNs,
+                $stc.nssGet( nss, "first" ),
                 $stc.readerExprToStc( nss.definitionNs,
                     $stc.stcTrivialStxDetails(),
                     tryExpr.val ) );
