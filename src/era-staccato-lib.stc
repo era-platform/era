@@ -17,10 +17,12 @@
 
 \= ===== Lists and boolean tags ======================================
 
-(def-type cons car cdr)
-(def-type yep val)
-(def-type nope val)
-(def-type nil)
+\= TODO: Put the commented-out types in a separate file so the
+\= non-mini runner can see them, since it doesn't have them built in.
+\;rm(def-type cons car cdr)
+\;rm(def-type yep val)
+\;rm(def-type nope val)
+\;rm(def-type nil)
 
 (def-type pair first second)
 
@@ -82,11 +84,24 @@
 (defn rev source
   (rev-append source /nil))
 
+(defn foldr list state combiner
+  (foldl state rev.list /fn state elem /c combiner elem state))
+
 (defn append past rest
   (rev-append rev.past rest))
 
 (defn map list func
   (rev/foldl (nil) list /fn state elem /cons (c func elem) state))
+
+(defn mappend list func
+  (rev/foldl (nil) list /fn state elem
+    (rev-append (c func elem) state)))
+
+(defn keep list check
+  (mappend list /fn elem
+    (case (c check elem) yep -
+      (cons elem /nil)
+      (nil))))
 
 (defn any list check
   (any-foldl (nil) list /fn state elem

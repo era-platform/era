@@ -271,20 +271,38 @@ if ( args.test_mini_staccato ) tasks.push( function ( then ) {
         ] ) + "\n" +
         "\n" +
         "\n" +
-        "return { readAll: readAll,\n" +
+        "return {\n" +
+        "    readAll: readAll,\n" +
         "    arrAny: arrAny,\n" +
-        "    processTopLevelReaderExpr:\n" +
-        "        processTopLevelReaderExpr,\n" +
-        "    runAllDefs: runAllDefs };\n"
+        "    stcNsGet: stcNsGet,\n" +
+        "    stcNsRoot: stcNsRoot,\n" +
+        "    nssGet: nssGet,\n" +
+        "    usingDefinitionNs: usingDefinitionNs,\n" +
+        "    stcTrivialStxDetails: stcTrivialStxDetails,\n" +
+        "    runAllDefs: runAllDefs\n" +
+        "};\n"
     )();
     
     var startMillis = new Date().getTime();
     
-    var mainCode =
+    var libCode =
         $stc.readAll( readFile( "src/era-staccato-lib.stc" ) );
+    var selfCompilerCode = $stc.readAll(
+        readFile( "src/era-staccato-self-compiler.stc" ) );
     var testCode =
         $stc.readAll( readFile( "test/test.stc" ) );
     var readMillis = new Date().getTime();
+    
+    var nss = {
+        definitionNs:
+            $stc.stcNsGet( "definition-ns", $stc.stcNsRoot() ),
+        uniqueNs: $stc.stcNsGet( "unique-ns", $stc.stcNsRoot() )
+    };
+    
+    var usingDefNs = $stc.usingDefinitionNs( nss.definitionNs );
+    
+    usingDefNs.stcAddCoreMacros( nss.definitionNs );
+    usingDefNs.processCoreTypes( nss.definitionNs );
     
     function runCode( code ) {
         return !$stc.arrAny( code, function ( tryExpr ) {
@@ -293,12 +311,17 @@ if ( args.test_mini_staccato ) tasks.push( function ( then ) {
                 return true;
             }
             
-            $stc.processTopLevelReaderExpr( tryExpr.val );
+            usingDefNs.macroexpandTopLevel(
+                $stc.nssGet( nss, "first" ),
+                usingDefNs.readerExprToStc(
+                    $stc.stcTrivialStxDetails(),
+                    tryExpr.val ) );
+            nss = $stc.nssGet( nss, "rest" );
             return false;
         } );
     }
     
-    if ( runCode( mainCode ) ) {
+    if ( runCode( libCode ) && runCode( selfCompilerCode ) ) {
         $stc.runAllDefs();
         runCode( testCode );
     }
