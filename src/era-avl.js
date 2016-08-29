@@ -1259,16 +1259,13 @@ AvlLeaf_.prototype.getMaybe = function ( yoke, k, then ) {
         return then( yoke, null );
     } );
 };
-AvlLeaf_.prototype.minusAnything_ = function ( yoke, then ) {
-    var self = this;
-    return runWaitOne( yoke, function ( yoke ) {
-        return then( yoke, !"depthDecreased", self );
-    } );
-};
 AvlLeaf_.prototype.minusExtremeEntry = function ( yoke,
     kPolarity, then ) {
     
-    return this.minusAnything_( yoke, then );
+    var self = this;
+    return runWaitOne( yoke, function ( yoke ) {
+        return then( yoke, !"depthDecreased", null, self );
+    } );
 };
 AvlLeaf_.prototype.plusEntry = function ( yoke, k, v, then ) {
     var self = this;
@@ -1281,7 +1278,10 @@ AvlLeaf_.prototype.plusEntry = function ( yoke, k, v, then ) {
     } );
 };
 AvlLeaf_.prototype.minusEntry = function ( yoke, k, then ) {
-    return this.minusAnything_( yoke, then );
+    var self = this;
+    return runWaitOne( yoke, function ( yoke ) {
+        return then( yoke, !"depthDecreased", self );
+    } );
 };
 // NOTE: This body takes its args as ( yoke, state, k, v, then ).
 AvlLeaf_.prototype.shortFoldAsc = function ( yoke,
@@ -1321,7 +1321,7 @@ AvlBranch_.prototype.init_ = function ( key, val, branches ) {
     this.key_ = key;
     this.val_ = val;
     this.branches_ = branches;
-    this.compare_ = branches[ -1 ].compare_;
+    this.compare_ = branches[ -1 ].branch.compare_;
     return this;
 };
 function safeCompare_( yoke, compare, ka, kb, then ) {
@@ -1342,7 +1342,8 @@ AvlBranch_.prototype.getMaybe = function ( yoke, k, then ) {
         
         if ( kVsSelf === 0 )
             return then( yoke, { val: self.val_ } );
-        return self.branches_[ kVsSelf ].getMaybe( yoke, k, then );
+        return self.branches_[ kVsSelf ].branch.getMaybe( yoke, k,
+            then );
     } );
 };
 AvlBranch_.prototype.minusExtremeEntry = function ( yoke,
@@ -1350,7 +1351,7 @@ AvlBranch_.prototype.minusExtremeEntry = function ( yoke,
     
     var self = this;
     return runWaitOne( yoke, function ( yoke ) {
-    return self.branches_[ kPolarity ].minusExtremeEntry( yoke,
+    return self.branches_[ kPolarity ].branch.minusExtremeEntry( yoke,
         kPolarity,
         function ( yoke, maxDepthDecreased, entry, branchRemaining ) {
     return runWaitOne( yoke, function ( yoke ) {
@@ -1410,7 +1411,7 @@ AvlBranch_.prototype.plusEntry = function ( yoke, k, v, then ) {
         return then( yoke, !"maxDepthIncreased",
             new AvlBranch_().init_( k, v, self.branches_ ) );
     
-    return self.branches_[ kVsSelf ].plusEntry( yoke, k, v,
+    return self.branches_[ kVsSelf ].branch.plusEntry( yoke, k, v,
         function ( yoke, maxDepthIncreased, branchAugmented ) {
     
     var modifiedBranches = {};
@@ -1777,7 +1778,7 @@ function avlMerge_( yoke, processBoth, a, b, then ) {
             balancedChanges[ aVsB ], mergedChanges.left,
             function ( yoke, aChange ) {
         return combineBranchChanges( yoke,
-            { "-1": b.branches_[ -aVsB ], "1": b.branches[ aVsB ] },
+            { "-1": b.branches_[ -aVsB ], "1": b.branches_[ aVsB ] },
             { "-1": balancedChanges[ -aVsB ],
                 "1": balancedChanges[ aVsB ] },
             { "-1": null, "1": mergedChanges.right },
@@ -1900,7 +1901,7 @@ AvlBranch_.prototype.mapShortFoldAsc = function ( yoke,
     if ( maybeThisResult === null )
         return then( yoke, state, null );
     
-    return self.branches[ 1 ].branch.mapShortFoldAsc( yoke,
+    return self.branches_[ 1 ].branch.mapShortFoldAsc( yoke,
         state, body,
         function ( yoke, state, maybeBiggerResult ) {
     return runWaitOne( yoke, function ( yoke ) {
@@ -1909,13 +1910,13 @@ AvlBranch_.prototype.mapShortFoldAsc = function ( yoke,
         return then( yoke, state, null );
     
     return then( yoke, state, { val: new AvlBranch_().init_(
-        self.key_, maybeThisResult, {
+        self.key_, maybeThisResult.val, {
             "-1": { branch: maybeLesserResult.val,
                 maxDepthAdvantage:
-                    self.branches[ -1 ].maxDepthAdvantage },
+                    self.branches_[ -1 ].maxDepthAdvantage },
             "1": { branch: maybeBiggerResult.val,
                 maxDepthAdvantage:
-                    self.branches[ 1 ].maxDepthAdvantage }
+                    self.branches_[ 1 ].maxDepthAdvantage }
         } ) } );
     
     } );
@@ -1936,7 +1937,7 @@ AvlBranch_.prototype.getMaxDepth = function ( yoke, then ) {
     var bias =
         self.branches_[ -1 ].maxDepthAdvantage === null ? 1 : -1;
     return runWaitOne( yoke, function ( yoke ) {
-    return self.branches_[ bias ].getMaxDepth( yoke,
+    return self.branches_[ bias ].branch.getMaxDepth( yoke,
         function ( yoke, subHeight ) {
     return runWaitOne( yoke, function ( yoke ) {
     
@@ -2076,7 +2077,7 @@ AvlMap.prototype.map = function ( yoke, body, then ) {
     }, function ( yoke, state, maybeResult ) {
         if ( maybeResult === null )
             throw new Error();
-        return then( yoke, maybeResult.val );
+        return then( yoke, new AvlMap().init_( maybeResult.val ) );
     } );
 };
 
