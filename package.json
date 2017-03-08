@@ -3,10 +3,10 @@
   "name": "era-lang",
   "version": "0.0.1",
   "description": "A module system for platform-independent code, focusing on the JavaScript platform for now.",
-  "homepage": "https://github.com/rocketnia/era",
+  "homepage": "https://github.com/era-platform/era",
   "author": {
-    "name": "Ross Angle",
-    "url":  "http://www.rocketnia.com/"
+    "name": "Era organization",
+    "url":  "https://github.com/era-platform"
   },
   
   "engines": {

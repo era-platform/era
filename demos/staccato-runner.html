@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <!--
 staccato-runner.html (part of Era)
-Copyright 2015 Ross Angle. Released under the MIT License.
+Copyright 2015, 2017 Ross Angle. Released under the MIT License.
 -->
 <title>Era Staccato demo</title>
 </head>
 <body>
-<p><a href="https://github.com/rocketnia/era"
+<p><a href="https://github.com/era-platform/era"
     >View the Era project on GitHub.</a></p>
 
 <p>This page merely loads Staccato without actually using it for much.
@@ -29,7 +29,7 @@ you must obtain era-staccato-lib.stc.js in one of two ways:</p>
 </ul>
 
 <p>Alternatively, you can view the latest version of this page
-<a href="http://rocketnia.github.io/era/demos/staccato-runner.html"
+<a href="http://era-platform.github.io/era/demos/staccato-runner.html"
 >online</a>.</p>
 
 <script type="text/javascript" src="../fin/era-staccato-lib.stc.js">
@@ -50,10 +50,10 @@ window.onload = function () {
     function generateOutput() {
         var startMillis = new Date().getTime();
         
-        var mainCode =
-            readAll( rocketnia.eraFiles[ "era-staccato-lib.stc" ] );
+        var mainCode = readAll(
+            eraPlatform.staccatoFiles[ "era-staccato-lib.stc" ] );
         var testCode =
-            readAll( rocketnia.eraFiles[ "test.stc" ] );
+            readAll( eraPlatform.staccatoFiles[ "test.stc" ] );
         var readMillis = new Date().getTime();
         
         function runCode( code ) {

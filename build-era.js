@@ -1,6 +1,7 @@
 #!/bin/env node
 // build-era.js
-// Copyright 2013-2015 Ross Angle. Released under the MIT License.
+// Copyright 2013-2015, 2017 Ross Angle. Released under the
+// MIT License.
 "use strict";
 
 var fs = require( "fs" );
@@ -244,9 +245,10 @@ if ( args.build_staccato ) tasks.push( function ( then ) {
             
             ltf.writeTextFile( "fin/" + file.name + ".js", "utf-8",
                 "\"use strict\";\n" +
-                "var rocketnia = rocketnia || {};\n" +
-                "rocketnia.eraFiles = rocketnia.eraFiles || {};\n" +
-                "rocketnia.eraFiles[ " +
+                "var eraPlatform = eraPlatform || {};\n" +
+                "eraPlatform.staccatoFiles = " +
+                    "eraPlatform.staccatoFiles || {};\n" +
+                "eraPlatform.staccatoFiles[ " +
                     _.jsStr( file.name ) + " ] =\n" +
                 _.jsStr( text ) + ";\n",
                 then );
