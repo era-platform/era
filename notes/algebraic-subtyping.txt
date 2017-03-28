@@ -1,0 +1,143 @@
+Profinite distributive lattices
+
+
+Stephen Dolan's thesis, "Algebraic Subtyping" (available at https://www.cl.cam.ac.uk/~sd601/mlsub/) defines a type system called MLsub, which accomplishes subtyping with principal type inference by having the types form a profinite distributive lattice. Some of the inferred types are fixpoint types, and for a type formula to have a unique least pre-fixed point and a unique post-fixed point, the uses of its type variable must be covariant. For the two to coincide in a unique fixed point, the uses must be guarded by type constructors other than union and intersection. For ease of type inference, MLsub restricts the use of union to positive positions and intersection to negative ones, which suffices to infer types for all MLsub program terms.
+
+Here we try to extend that approach for dependently typed programming. As in MLsub, our types form a profinite distributive lattice for subtyping, so to be able to represent type universes as types, and morphisms between them as functions, our functions (dependent products) are themselves homomorphisms of profinite distributive lattices, and every type must therefore be a profinite distributive lattice. This means all our types are nonempty (having at least a bottom value and a top value), and the bottom type itself represents a lattice where the bottom value and top value can't be distinguished (and may in fact coincide). While it's unusual for a bottom type to be inhabited, this one can still be used for arguments by absurdity.
+
+We not only provide depdent products but also dependent sums, dependent unions, and dependent intersections. These are likely to complicate type inference, but other dependent type systems have complicated their type inference in ways that manage to still be pretty practical in most cases, so preserving full type inference isn't a primary concern here.
+
+As with MLsub, we want subtyping proofs to be inferrable without ambiguity; there can be no two ways that one type is a subtype of another. Therefore, if a function (dependent product) in our system has any implementation, its implementation must be semantically unique (up to the function's type), so functions must do no information hiding, and there must be very strict enforcement of what goes on in lambda bodies. Fortunately, we can still achieve information-hiding functions if we make use of dependent unions to hide the information. Besides being an elegant separation of concerns, this means that we don't need a separate type of equality proofs; dependent products/functions already serve as partial-ordering proofs, and two of them make an equality proof.
+
+
+Notation:
+
+Let: (Let x = A, y = B in C x y)
+Least pre-fixed point type: (Fix| x. A x)
+Greatest post-fixed point type: (Fix^ x. A x)
+Boolean type: 2
+Boolean value introduction: True and False
+Boolean value elimination: (If C A B), with (IsTrue C) meaning (If C 1 Bot)
+Bottom type: Bot
+Bottom value elimination: Absurd B
+Indexed product type: (** a : A. B a), with (A * B) meaning (** i : 2. If i A B), 1 meaning (** a : Bot. B a), (A < B) meaning (** a : A. B), and (A = B) meaning ((A < B) * (B < A))
+Indexed product value introduction: (x \* A x)
+Indexed product value elimination: (F X)
+Indexed sum type: (++ a : A. B a), with (A + B) meaning (++ i : 2. If i A B). Note that Bot is isomorphic to (++ a : Bot. B a) and (A * B) is isomorphic to (++ a : A. B).
+Indexed sum value introduction: (A \+ B)
+Indexed sum value elimination: (Fst AB) and (Snd AB)
+Indexed join/union type: (|| a : A. B a), with (A | B) meaning (|| i : 2. If i A B). Note that Bot is isomorphic to (|| a : Bot. B a).
+Indexed meet/intersection type: (^^ a : A. B a), with (A ^ B) meaning (^^ i : 2. If i A B) and Top meaning (^^ a : Bot. B a)
+
+The body of (x \* A x) is very strict. The function must return its argument (or something "greater"). Let `P~`, `P[y]~`, `Q~`, `Q[y]~`, and `R~` each represent an unknown formula that returns its argument. It's okay for the function body to be any of these things, but this may not be an exhaustive list:
+
+  (If (P~ x) (Q True) (R False)) or (If (C x) (P~ x) (Q~ x))
+  (Absurd (A x))
+  ((F x) (P~ x)) or (y \* P[y]~ ((Q[y]~ x) (R~ y)))
+  (P~ (Fst x) \+ Q~ (Snd x)) or (Fst (P~ (Q~ x \+ Y x))) or (Snd (P~ (Y x \= Q~ x)))
+  (Let y = A x in P[y]~ x) or (Let y = P~ x in P~ y)
+
+It would be best to formalize this using the type system, requiring the function's result to be an extension to x by using an "extensions to x" type (basically a singleton type) or an explicit proof term.
+
+The explicit proof term approach would require the body of a function of type (** a : A. B a) to return a value of type (++ b : B a. (^^ f : (** a : A. B a). b = f a)). (TODO: Is it okay to use `b` and (f a) in contravariant positions here?)
+
+(TODO: Finish determining how we'll enforce proper function bodies.)
+
+By hiding implementation details using an indexed union, we can potentially do programming in various categories. Here we use this to represent programming with (non-unique) monotonic functions:
+
+(TODO: Define `MonotoneComputeDetails`, (MonotoneCompute D A), (MonotoneComputeResult D A), and (MonotoneComputeInit A).)
+
+(->** a : A. B a) means (|| da : MonotoneComputeDetails. || db : MonotoneComputeDetails. ** a : MonotoneCompute da A. MonotoneCompute db (B (MonotoneComputeResult da a)))
+(A ->* B) means (->** a : A. B)
+(Call->* f x) means (^^ db : MonotoneComputeDetails. MonotoneComputeResult db (f (MonotoneComputeInit x)))
+
+We can now build inductive and coinductive definitions in the following style:
+
+(TODO: These use `elem`, `list`, `goodList`, `stream`, `goodStream`, `a`, and `goodA` without regard for whether they're in covariant or contravariant positions. See if that matters.)
+
+(->** elem : U.
+  ++ list : U.
+  ->** p : (list ->* U).
+    (->** goodList : U. (goodList < list) ->*
+      (->** x : goodList. Call->* p x) ->*
+      (->** x : (1 + (elem * goodList)). Call->* p x)) ->*
+    (->** x : list. Call->* p x))
+
+(->** elem : U.
+  ++ stream : U.
+  ->** p : (stream ->* U).
+    (->** goodStream : U. (stream < goodStream) ->*
+      (->** x : (1 + (elem * goodStream)). Call->* p x) ->*
+      (->** x : goodStream. Call->* p x)) ->*
+    (->** x : stream. Call->* p x))
+
+This suggests the following abbreviations:
+
+(Ind->* a : U. B a) means
+  (Fix| a. ++ a : U.
+    ->** p : (a ->* U).
+      (->** goodA : U. (goodA < a) ->*
+        (->** x : goodA. Call->* p x) ->*
+        (->** x : B goodA. Call->* p x)) ->*
+      (->** x : a. Call->* p x))
+
+(Coind->* a : U. B a) means
+  (Fix| a. ++ a : U.
+    ->** p : (a ->* U).
+      (->** goodA : U. (a < goodA) ->*
+        (->** x : B goodA. Call->* p x) ->*
+        (->** x : goodA. Call->* p x)) ->*
+      (->** x : a. Call->* p x))
+
+(TODO: Explore induction-recursion as well.)
+
+
+Here are some laws these primitives might follow:
+
+^^ a : A. B
+=
+B
+
+^^ a : A. B a
+<
+B x
+
+^^ a : A. ^^ b : B. C a b
+<
+^^ b : B. ^^ a : A. C a b
+
+^^ a : A. ^^ b : B a. C a b
+=
+^^ ab : (++ a : A. B a). C (Fst ab) (Snd ab)
+
+^^ a : A. ^^ b : B a. C b
+=
+^^ b : (|| a : A. B a). C b
+
+The dual of that last law also uses || in the type of `b`, not ^^:
+
+|| b : (|| a : A. B a). C b
+=
+|| a : A. || b : B a. C b
+
+
+The distributive law for ^ over | (and dually for | over ^) involves the use of a choice function:
+
+^^ a : A. || b : B a. C a b
+<
+|| bf : (** a : A. B a). ^^ a : A. C a (bf a)
+
+Note that the choice function is needed even in the independent case:
+
+^^ a : A. || b : B. C a b
+<
+|| bf : (A < B). ^^ a : A. C a (bf a)
+
+The need for this can be seen in particular when the `a` and `b` indexes are the boolean type. In this case, the distributive law results in a four-way | rather than merely a two-way one:
+
+(C False False | C False True) ^ (C True False | C True True)
+<
+(C False False ^ C True False) | (C False False ^ C True True) | (C False True ^ C True False) | (C False True ^ C True True)
+
+
+(TODO: Make sure we have enough laws to prove commutativity, associativity, and absorption of the lattice operations.)
