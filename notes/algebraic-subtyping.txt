@@ -1,55 +1,154 @@
 Profinite distributive lattices
 
 
-Stephen Dolan's thesis, "Algebraic Subtyping" (available at https://www.cl.cam.ac.uk/~sd601/mlsub/) defines a type system called MLsub, which accomplishes subtyping with principal type inference by having the types form a profinite distributive lattice. Some of the inferred types are fixpoint types, and for a type formula to have a unique least pre-fixed point and a unique post-fixed point, the uses of its type variable must be covariant. For the two to coincide in a unique fixed point, the uses must be guarded by type constructors other than union and intersection. For ease of type inference, MLsub restricts the use of union to positive positions and intersection to negative ones, which suffices to infer types for all MLsub program terms.
+Stephen Dolan's thesis, "Algebraic Subtyping" (available at https://www.cl.cam.ac.uk/~sd601/mlsub/) defines a type system called MLsub, which accomplishes subtyping with principal type inference by having the types form a profinite distributive lattice. Some of the inferred types are fixpoint types. For a type formula to have a unique least pre-fixed point and a unique post-fixed point, the uses of its type variable must be covariant. For the two to coincide in a unique fixed point, the uses must be guarded by type constructors other than union and intersection. For ease of type inference, MLsub restricts the use of union to positive positions and intersection to negative ones, which suffices to infer types for all MLsub program terms.
 
-Here we try to extend that approach for dependently typed programming. As in MLsub, our types form a profinite distributive lattice for subtyping, so to be able to represent type universes as types, and morphisms between them as functions, our functions (dependent products) are themselves homomorphisms of profinite distributive lattices, and every type must therefore be a profinite distributive lattice. This means all our types are nonempty (having at least a bottom value and a top value), and the bottom type itself represents a lattice where the bottom value and top value can't be distinguished (and may in fact coincide). While it's unusual for a bottom type to be inhabited, this one can still be used for arguments by absurdity.
+Here we try to extend that approach for dependently typed programming. As in MLsub, our types form a profinite distributive lattice for subtyping, so to be able to represent type universes as types and morphisms between them as functions, our functions (dependent products) are themselves homomorphisms of profinite distributive lattices, and every type must therefore be a profinite distributive lattice. This means all our types are technically nonempty (having at least a bottom value and a top value), and the bottom type itself represents a lattice where the bottom value and top value can't be distinguished (and may in fact coincide). While it's unusual for a bottom type to be inhabited, arguments by absurdity still make sense since this trivial lattice is trivially a substructure of every other type's lattice.
 
-We not only provide depdent products but also dependent sums, dependent unions, and dependent intersections. These are likely to complicate type inference, but other dependent type systems have complicated their type inference in ways that manage to still be pretty practical in most cases, so preserving full type inference isn't a primary concern here.
+We not only provide depdendent products but also dependent sums, dependent unions, and dependent intersections. These are likely to complicate type inference (since MLsub's automaton representation of types takes particular advantage of binary unions and intersections, not indexed ones), but other dependent type systems have complicated their type inference in ways that manage to still be pretty practical in most cases, so some compromises in type inference are acceptable here.
 
-As with MLsub, we want subtyping proofs to be inferrable without ambiguity; there can be no two ways that one type is a subtype of another. Therefore, if a function (dependent product) in our system has any implementation, its implementation must be semantically unique (up to the function's type), so functions must do no information hiding, and there must be very strict enforcement of what goes on in lambda bodies. Fortunately, we can still achieve information-hiding functions if we make use of dependent unions to hide the information. Besides being an elegant separation of concerns, this means that we don't need a separate type of equality proofs; dependent products/functions already serve as partial-ordering proofs, and two of them make an equality proof.
+As with MLsub, we want subtyping proofs to be inferable without ambiguity. So we at least require that if one type is a subtype of another, that there is at least one coercion that is least surprising. MLsub goes further and requires that there are no two ways that one type is a subtype of another (hence building their subtyping structure out of a preorder rather than a general category), and we may wnat to be strict like that too. But either way, the category of subtyping relationships doesn't seem to be cartesian closed; when (a * b) is the product in that category (type intersection) and (a -> b) means a proof that `a` is a subtype of `b`, it doesn't make sense for ((a * b) -> c) to imply (a -> (b -> c)). So, if we make any kind of dependent type theory here, the way we give semantics to contexts and formulas must be in a more general cartesian closed category that has subtyping morphisms as a special case.
 
+To avoid exposing implementation details of the profinite distributive lattices, it would be best for our morphisms to respect the profinite distributive lattice structure. For instance, the formulas of our type theory should be monotonic in the variables they use, and they should preserve joins and meets. (This should mean it's admissible to manipulate expressions by rewriting their subexpressions, the way the calculus of structures does.) Certain type constructors, such as function types, are usually contravariant when they're presented, but it seems like we can make this work by treating certain types as the duals of other types.
 
-Notation:
+Datafun (http://www.rntz.net/datafun/) is an existing type theory where certain variables are used in a monotonic way, so it may be a good reference to consult.
+
+At some point, we might be able to support a lambda-like syntax for subtyping relations. We have a couple of interesting choices if we do:
+
+  - Subtyping relations are like functions from a subtype to a supertype, with the strict limitation that they can only return something that's an extension to (or the same as) their input. With careful typing rules, we might be able to enforce that limitation.
+
+  - In cubical type theory (https://www.math.ias.edu/~amortberg/papers/cubicaltt.pdf, https://github.com/mortberg/cubicaltt), a lambda-like syntax can be used to prove propositional equalities (well, paths). The input in this case is a lattice element representing a position along an interval, and the output is the value occurring at that point, defining a full path of intermediate stages between the value at one endpoint and the value at another. Since we're going with the idea that two types have a subtyping relationship in at most one way, we probably don't need to track the content of a subtyping path this comprehensively yet, but it's an interesting precedent to keep in mind.
+
+  - At some point we may like to observe that even if the subtyping relation has an implementation that's uniquely determined by its types, we can still treat monotonic function types as being sugar for a special case of subtyping propositions by using unions and intersections to hide the implementation details:
+
+      (<=<= a : A. B a)
+      (A <= B) means (<=<= ignored : A. B)
+      FunctionComputeDetails
+      FunctionCompute D A
+      FunctionComputeResult D A
+      FunctionComputeInit X
+      (** a : A. B a) means (|| da : FunctionComputeDetails. || db : FunctionComputeDetails. <=<= a : FunctionCompute da A. FunctionCompute db (B (FunctionComputeResult da a)))
+      (F X) means (^^ db : FunctionComputeDetails. FunctionComputeResult db (F (FunctionComputeInit X)))
+
+    However, monotonic functions are so intrinsic to the way this type theory deals with its context formation and binder syntaxes that it's going to be easier to treat them as being built in.
+
+    One place this would become tempting again is when pursuing meaning-preserving modularity. Instead of using all the rules of union types (which are weak existentials), we'll want union types to be sugar for exporting and importing values under obscure names. Then another module with access to the author's secrets can come along and say something else about the same obscure names as a way to safely extend the interface of the existing module. Still, in that case we might decide functions are sugar for something simpler:
+    
+      (**+ a : A. B a)
+      (** a : A. B a) means (**+ a : A. || b : B a. b)
+    
+    ...Although hmm, I guess (|| b : B a. b) would always simplify to Top.
+
+First, let's draw up a syntax where the type constructors *don't* have to be covariant:
 
 Let: (Let x = A, y = B in C x y)
 Least pre-fixed point type: (Fix| x. A x)
 Greatest post-fixed point type: (Fix^ x. A x)
+Unit type: 1
+Unit value introduction: Unit
 Boolean type: 2
 Boolean value introduction: True and False
 Boolean value elimination: (If C A B), with (IsTrue C) meaning (If C 1 Bot)
 Bottom type: Bot
 Bottom value elimination: Absurd B
-Indexed product type: (** a : A. B a), with (A * B) meaning (** i : 2. If i A B), 1 meaning (** a : Bot. B a), (A < B) meaning (** a : A. B), and (A = B) meaning ((A < B) * (B < A))
-Indexed product value introduction: (x \* A x)
-Indexed product value elimination: (F X)
-Indexed sum type: (++ a : A. B a), with (A + B) meaning (++ i : 2. If i A B). Note that Bot is isomorphic to (++ a : Bot. B a) and (A * B) is isomorphic to (++ a : A. B).
-Indexed sum value introduction: (A \+ B)
-Indexed sum value elimination: (Fst AB) and (Snd AB)
-Indexed join/union type: (|| a : A. B a), with (A | B) meaning (|| i : 2. If i A B). Note that Bot is isomorphic to (|| a : Bot. B a).
-Indexed meet/intersection type: (^^ a : A. B a), with (A ^ B) meaning (^^ i : 2. If i A B) and Top meaning (^^ a : Bot. B a)
+Subtyping proposition: (A <= B). Note that 1 is isomorphic to (2 <= 2), along with many other things.
+Indexed profinite distributive lattice product type: (** a : A. B a), with (A * B) meaning (** i : 2. If i A B) and (A -> B) meaning (** a : A. B)
+Indexed profinite distributive lattice product value introduction: (x \* A x)
+Indexed profinite distributive lattice product value elimination: (F X)
+Indexed profinite distributive lattice sum type: (++ a : A. B a), with (A + B) meaning (++ i : 2. If i A B). Note that Bot is isomorphic to (++ a : Bot. B a) and (A * B) is isomorphic to (++ a : A. B).
+Indexed profinite distributive lattice sum value introduction: (A \+ B)
+Indexed profinite distributive lattice sum value elimination: (Fst AB) and (Snd AB)
+Indexed subtyping sum (join/union) type: (|| a : A. B a), with (A | B) meaning (|| i : 2. If i A B). Note that Bot is isomorphic to (|| a : Bot. B a).
+Indexed subtyping product (meet/intersection) type: (^^ a : A. B a), with (A ^ B) meaning (^^ i : 2. If i A B) and Top meaning (^^ a : Bot. B a)
+Type of types: Type
 
-The body of (x \* A x) is very strict. The function must return its argument (or something "greater"). Let `P~`, `P[y]~`, `Q~`, `Q[y]~`, and `R~` each represent an unknown formula that returns its argument. It's okay for the function body to be any of these things, but this may not be an exhaustive list:
+Now we can systematically define a set of fully covariant type constructors and their fully covariant duals, by using the same syntaxes and adding negation as needed:
 
-  (If (P~ x) (Q True) (R False)) or (If (C x) (P~ x) (Q~ x))
-  (Absurd (A x))
-  ((F x) (P~ x)) or (y \* P[y]~ ((Q[y]~ x) (R~ y)))
-  (P~ (Fst x) \+ Q~ (Snd x)) or (Fst (P~ (Q~ x \+ Y x))) or (Snd (P~ (Y x \= Q~ x)))
-  (Let y = A x in P[y]~ x) or (Let y = P~ x in P~ y)
+Let x = A, y = B in C x y
+  (self-dual)
+Fix| x. A x
+Fix^ x. A x
+  (duals with each other)
+1
+-1
+Unit
+-Unit
+2
+-2
+True
+-True
+False
+-False
+If C A B
+-If -C -A -B
+Bot
+-Bot
+Absurd B
+-Absurd -B
+-A <= B
+-(A <= -B)
+** a : -A. B a
+-(** a : A. -(B a))
+x \* A x
+-(x \* -(A x))
+F X
+-(-F -X)
+++ a : A. B a
+-(++ a : -A. -(B a))
+A \+ B
+-(-A \+ -B)
+Fst AB
+-Fst -AB
+Snd AB
+-Snd -AB
+|| a : A. B a
+^^ a : -A. B a
+  (duals with each other)
+Type
+-Type
 
-It would be best to formalize this using the type system, requiring the function's result to be an extension to x by using an "extensions to x" type (basically a singleton type) or an explicit proof term.
+We do likewise for all the abbreviations, such as (-a -> b) and its dual -(a -> -b).
 
-The explicit proof term approach would require the body of a function of type (** a : A. B a) to return a value of type (++ b : B a. (^^ f : (** a : A. B a). b = f a)). (TODO: Is it okay to use `b` and (f a) in contravariant positions here?)
+Some of these negative types might coincide nicely with positive types. In particular, we've identified the fixpoints and the union/intersection types as duals of each other because those types only come and go due to type inference and explicit type ascriptions, where the subtyping relations between "negative types" and "positive types" don't need to be segregated. It's tempting to compare this choice to MLsub's polar types, which have the property that unions are only allowed in positive positions and intersections are only allowed in negative ones.
 
-(TODO: Finish determining how we'll enforce proper function bodies.)
+When regarding those type constructors as functions, many of their types can be simply (Type) or (--Type -> --Type -> Type), or perhaps variations thereof that take multiple type universes into account. For instance, if we had a cumulative type hierarchy, we might like a binary type constructor to have a family of types like (--U -> --V -> (U | V)), for type universes U and V and their negations -U and -V.
 
-By hiding implementation details using an indexed union, we can potentially do programming in various categories. Here we use this to represent programming with (non-unique) monotonic functions:
+Binders are a little trickier. We'll start with a digression about polymorphism and equality propositions.
 
-(TODO: Define `MonotoneComputeDetails`, (MonotoneCompute D A), (MonotoneComputeResult D A), and (MonotoneComputeInit A).)
+A traditional type system would type the polymorphic identity function like so:
 
-(->** a : A. B a) means (|| da : MonotoneComputeDetails. || db : MonotoneComputeDetails. ** a : MonotoneCompute da A. MonotoneCompute db (B (MonotoneComputeResult da a)))
-(A ->* B) means (->** a : A. B)
-(Call->* f x) means (^^ db : MonotoneComputeDetails. MonotoneComputeResult db (f (MonotoneComputeInit x)))
+  id : || a : Type. a -> a
+  id x = x
+
+However, that uses the variable `a` both covariantly and contravariantly, and it uses the partially contravariant type constructor (a -> b) which we don't have in our system. We need to use the type constructor (-a -> b), so we need access to a negative counterpart to `a` for use in the function's domain. Fortunately, we can get access to that negative counterpart by being polymorphic over another variable and a subtyping proposition between the two:
+
+  id : || pa : --Type. || na : --Type. || ignored : --(na <= -pa). -na -> pa
+  id x = x
+
+This type signature reads "For all types pa, for all types na, for all proofs that -na is a subtype of pa, here's a monotonic function from -na to pa."
+
+We can define the equality proposition (A = B) as syntax sugar using the same technique. Up to isomorphism, we can have (A = B) stand for (|| na : --Type. || ignored : --(na <= -A). || nb : --Type. || ignored : --(nb <= -B). ((-na <= B) * (-nb <= A))).
+
+Now we're ready to show the type of the binders (** a : -A. B a), (++ a : A. B a), and (|| a : A. B a). The tricky part is that we need to obtain a negative counterpart to the given type so we can use it in the type of the range formula. So we use pretty much the same technique as above: (** px : --Type. || nx : --Type. || ignored : --(nx <= -px). --(nx -> --Type) -> Type).
+
+If we think about type universes again, that type becomes (** px : --U. || nx : --U. || sx : --(nx <= -px). --(** a : nx. --(V px nx sx a)) -> U | || a : nx. V px nx sx a) for every type universe U and its negation -U and every family of type universes (V px nx sx a) and their negations -(V px nx sx a). Since all our functions preserve lattice structure, we can rewrite (|| a : nx. V px nx sx a) as (V px nx sx (|| a : nx. a)), and the overall type simplifies to (** px : --U. || nx : --U. || sx : --(nx <= -px). --(** a : nx. --(V px nx sx a)) -> U | V px nx sx Top).
+
+The universe-conscious type of the binder (^^ a : -A. B a) may be more precise, at least when the intersection is nonempty, if we use an intersection in the last part instead of a union, which gives us Bot instead of Top: (** px : --U. || nx : --U. || sx : --(nx <= -px). --(** a : nx. --(V px nx sx a)) -> U | V px nx sx Bot).
+
+Notice that because we preserve bounded lattice structure, Bot and Top are inhabitants of all types, and in particular (Bot : Bot) and (Top : Top). We could probably construct Girard's paradox using (Top : Top), but we don't need to because we already have a term of type Bot, namely Bot itself. So this is currently a very sketchy system for mathematics!
+
+Is there a way we can preserve the idea that Bot and Top are part of the type system for type inference purposes, while removing them from the type annotation syntax the programmer's allowed to write? (TODO: Is there?) Even if the programmer can't write Bot, Top, (Fix| a. B a), or (Fix^ a. B a), they can still obtain Bot as long as they have access to any known-to-be-uninhabited type, or even by in particular using (Fix| pa. || na : --U. || sx : --(na <= -pa). ^^ x : -na. x), which must result in Bot since Bot is a pre-fixed point of the formula. Maybe what we can do is allow Bot, disallow Top, require (Fix| a. B a) and (Fix^ a. B a) to be guarded, and require (|| a : A. B a) and (^^ a : -A. B a) to have *guarded universes*, in the sense that even if (|| a : A. B a) has input type (A : U) isomorphic to Bot and has output types (B a : V a), the output universe (U | V Top) is distinct from Top.
+
+Resolving such paradoxes decisively will involve taking a close look at the way the type system is used in its cultural context. In particular, I imagine the programmer distributes a module that's an *extension* to whatever the compiler does. Specifically, maybe a module is a monotonic function from (<a supply of names>, <a definition state which is free over an unknown set of different names>) to <a definition state which is an extension of the original and is free over the union of the name supplies>. Instead of pulling type constructors out of nowhere, they come out of the original definition state. Since we have access to a supply of names the original definition state didn't account for, we potentially have different Top and Bot values than it could account for as well.
+
+
+
+(TODO: The rest of the sections below don't account for recent changes we've made to the above syntax. In particular, our type constructors are all polarized now, we're using proper (A <= B) instead of the abuse (A < B), we're not invoking subtyping propositions using (F X), and we're not using ->**, ->*, and Call->* for monotonic functions. Make changes to the following sections to bring them up to date. The sequent calculus will be much easier to specify now that we depend on every variable monotonically instead of trying to write lambdas to define subtyping propositions.)
+
+
+
+\= ===== An attempt at inductive and coinductive types ===============
+
 
 We can now build inductive and coinductive definitions in the following style:
 
