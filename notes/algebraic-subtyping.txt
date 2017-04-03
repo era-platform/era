@@ -74,7 +74,7 @@ We can now build inductive and coinductive definitions in the following style:
 This suggests the following abbreviations:
 
 (Ind->* a : U. B a) means
-  (Fix| a. ++ a : U.
+  (++ a : U.
     ->** p : (a ->* U).
       (->** goodA : U. (goodA < a) ->*
         (->** x : goodA. Call->* p x) ->*
@@ -82,7 +82,7 @@ This suggests the following abbreviations:
       (->** x : a. Call->* p x))
 
 (Coind->* a : U. B a) means
-  (Fix| a. ++ a : U.
+  (++ a : U.
     ->** p : (a ->* U).
       (->** goodA : U. (a < goodA) ->*
         (->** x : B goodA. Call->* p x) ->*
@@ -90,6 +90,10 @@ This suggests the following abbreviations:
       (->** x : a. Call->* p x))
 
 (TODO: Explore induction-recursion as well.)
+
+
+
+\= ===== An attempt at presenting this system with rewrite rules =====
 
 
 Here are some laws these primitives might follow:
@@ -125,13 +129,15 @@ The distributive law for ^ over | (and dually for | over ^) involves the use of 
 
 ^^ a : A. || b : B a. C a b
 <
-|| bf : (** a : A. B a). ^^ a : A. C a (bf a)
+|| bf : (->** a : A. B a). ^^ a : A. C a (Call->* bf a)
+
+(TODO: Figure out if the choice function should be monotonic (as we have it now) or intuitionistic.)
 
 Note that the choice function is needed even in the independent case:
 
 ^^ a : A. || b : B. C a b
 <
-|| bf : (A < B). ^^ a : A. C a (bf a)
+|| bf : (A ->* B). ^^ a : A. C a (Call->* bf a)
 
 The need for this can be seen in particular when the `a` and `b` indexes are the boolean type. In this case, the distributive law results in a four-way | rather than merely a two-way one:
 
@@ -141,3 +147,45 @@ The need for this can be seen in particular when the `a` and `b` indexes are the
 
 
 (TODO: Make sure we have enough laws to prove commutativity, associativity, and absorption of the lattice operations.)
+
+
+
+\= ===== An attempt at presenting this system with sequents ==========
+
+
+(TODO: See if (a : A) should be part of the monotonic environment here.)
+env, a : A; mono; aliases |- b : B
+---
+env; mono; aliases |- b : ^^ a : A. B
+
+env; mono; aliases |- b : || a : A. B
+---
+(TODO: See if (a : A) should be part of the monotonic environment here.)
+env, a : A; mono; aliases |- b : B
+
+env; mono, a : A; aliases, A |- b : B
+---
+env; mono; aliases |- a \* b : ** a : A. B
+
+env; mono; ** a : A. B |- f : ** a : A. B
+env; mono; aliases, C |- a2 : A
+---
+env; mono; aliases, C |- f a2 : B[a2/a]
+
+env; mono; aliases |- f : ** a : A. B
+---
+env; mono; aliases |- a2 \* f a2 : ** a : A. B
+
+env; mono; aliases, A |- b : B
+(TODO: See if (a : A) should be part of the monotonic environment here.)
+env, a : A; mono; aliases, C |- d : D
+---
+env; mono; aliases, ++ a : A. C |- b \+ d : ++ a : B. D
+
+env; mono; aliases, ++ a : A. B |- c : ++ d : D. E
+---
+env; mono; aliases, A |- Fst c : D
+
+env; mono; aliases, ++ a : A. B |- c : ++ d : D. E
+---
+env; mono; aliases, B[(Fst c)/a] |- Snd c : E[(Fst c)/d]
