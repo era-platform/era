@@ -52,7 +52,7 @@ Boolean value elimination: (If C A B), with (IsTrue C) meaning (If C 1 Bot)
 Bottom type: Bot
 Bottom value elimination: Absurd B
 Subtyping proposition: (A <= B). Note that 1 is isomorphic to (2 <= 2), along with many other things.
-Indexed profinite distributive lattice product type: (** a : A. B a), with (A * B) meaning (** i : 2. If i A B) and (A -> B) meaning (** a : A. B)
+Indexed profinite distributive lattice product type: (** a : A. B a), with (A * B) meaning (** i : 2. If i A B), (A -> B) meaning (** a : A. B), and  (**: A. B) also meaning (** a : A. B)
 Indexed profinite distributive lattice product value introduction: (x \* A x)
 Indexed profinite distributive lattice product value elimination: (F X)
 Indexed profinite distributive lattice sum type: (++ a : A. B a), with (A + B) meaning (++ i : 2. If i A B). Note that Bot is isomorphic to (++ a : Bot. B a) and (A * B) is isomorphic to (++ a : A. B).
@@ -111,9 +111,9 @@ We do likewise for all the abbreviations, such as (-a -> b) and its dual -(a -> 
 
 Some of these negative types might coincide nicely with positive types. In particular, we've identified the fixpoints and the union/intersection types as duals of each other because those types only come and go due to type inference and explicit type ascriptions, where the subtyping relations between "negative types" and "positive types" don't need to be segregated. It's tempting to compare this choice to MLsub's polar types, which have the property that unions are only allowed in positive positions and intersections are only allowed in negative ones.
 
-When regarding those type constructors as functions, many of their types can be simply (Type) or (--Type -> --Type -> Type), or perhaps variations thereof that take multiple type universes into account. For instance, if we had a cumulative type hierarchy, we might like a binary type constructor to have a family of types like (--U -> --V -> (U | V)), for type universes U and V and their negations -U and -V.
+When regarding those type constructors as functions, many of their types can be simply `Type`, (--Type -> --Type -> Type), (** x : --Type. --(x -> --Type) -> Type), or perhaps variations thereof that take multiple type universes into account. For instance, if we had a cumulative type hierarchy, we might like a binary type constructor to have a family of types like (--U -> --V -> (U | V)), for type universes U and V and their negations -U and -V. A binder is usually of type (** x : --U. --(** a : x. --(V x a)) -> U | || a : x. V x a) for every type universe U and its negation -U and every family of type universes (V x a) and their negations -(V x a). (For some binders that expect a dual-type, the first (x : --U) may be (x : -U) instead.)
 
-Binders are a little trickier. We'll start with a digression about polymorphism and equality propositions.
+So far, everything we've done has respected covariance of its bound variables. However, technically we can use bound variables in contravariant ways, as we'll show now on the topic of polymorphism and equality propositions.
 
 A traditional type system would type the polymorphic identity function like so:
 
@@ -122,73 +122,148 @@ A traditional type system would type the polymorphic identity function like so:
 
 However, that uses the variable `a` both covariantly and contravariantly, and it uses the partially contravariant type constructor (a -> b) which we don't have in our system. We need to use the type constructor (-a -> b), so we need access to a negative counterpart to `a` for use in the function's domain. Fortunately, we can get access to that negative counterpart by being polymorphic over another variable and a subtyping proposition between the two:
 
-  id : || pa : --Type. || na : --Type. || ignored : --(na <= -pa). -na -> pa
+  id : || pa : Type. || na : -Type. || ignored : (-na <= pa). -na -> pa
   id x = x
 
-This type signature reads "For all types pa, for all types na, for all proofs that -na is a subtype of pa, here's a monotonic function from -na to pa."
+This type signature reads "For all types pa, for all dual-types na, for all proofs that -na is a subtype of pa, here's a monotonic function from -na to pa."
 
-We can define the equality proposition (A = B) as syntax sugar using the same technique. Up to isomorphism, we can have (A = B) stand for (|| na : --Type. || ignored : --(na <= -A). || nb : --Type. || ignored : --(nb <= -B). ((-na <= B) * (-nb <= A))).
+That pattern will come in handy a lot. We can abbreviate it:
 
-Now we're ready to show the type of the binders (** a : -A. B a), (++ a : A. B a), and (|| a : A. B a). The tricky part is that we need to obtain a negative counterpart to the given type so we can use it in the type of the range formula. So we use pretty much the same technique as above: (** px : --Type. || nx : --Type. || ignored : --(nx <= -px). --(nx -> --Type) -> Type).
+(~~ nx, sx = -X : A. B nx sx) means (|| nx : A. || sx : (-nx <= X). B nx sx)
+(~~ nx = -X : A. B nx sx) means (~~ nx, ignored = -X : A. B nx)
 
-If we think about type universes again, that type becomes (** px : --U. || nx : --U. || sx : --(nx <= -px). --(** a : nx. --(V px nx sx a)) -> U | || a : nx. V px nx sx a) for every type universe U and its negation -U and every family of type universes (V px nx sx a) and their negations -(V px nx sx a). Since all our functions preserve lattice structure, we can rewrite (|| a : nx. V px nx sx a) as (V px nx sx (|| a : nx. a)), and the overall type simplifies to (** px : --U. || nx : --U. || sx : --(nx <= -px). --(** a : nx. --(V px nx sx a)) -> U | V px nx sx Top).
+(** px, nx, sx : -NA. B px nx sx) means (** px : -NA. ~~ nx, sx = -px : NA. B px nx sx)
+(** px, nx : -NA. B px nx) means (** px, nx, ignored : -NA. B px nx)
+(^^ px, nx, sx : -NA. B px nx sx) means (^^ px : -NA. ~~ nx, sx = -px : NA. B px nx sx)
+(^^ px, nx : -NA. B px nx) means (^^ px, nx, ignored : -NA. B px nx)
+(++ px, nx, sx : PA, NA. B px nx sx) means (++ px : PA. ~~ nx, sx = -px : NA. B px nx sx)
+(++ px, nx : PA, NA. B px nx) means (++ px, nx, ignored : PA, NA. B px nx)
+(|| px, nx, sx : PA, NA. B px nx sx) means (|| px : PA. ~~ nx, sx = -px : NA. B px nx sx)
+(|| px, nx : PA, NA. B px nx) means (|| px, nx, ignored : PA, NA. B px nx)
 
-The universe-conscious type of the binder (^^ a : -A. B a) may be more precise, at least when the intersection is nonempty, if we use an intersection in the last part instead of a union, which gives us Bot instead of Top: (** px : --U. || nx : --U. || sx : --(nx <= -px). --(** a : nx. --(V px nx sx a)) -> U | V px nx sx Bot).
+But the covariant binders require so much duplication of code for this (to fill in both the NA and PA slots with complementary types) that we might as well go further and use the abbreviations (+## ...) and (-## ...) to use a non-polar expression in a polar context and the abbreviations (##+ ...) and (##- ...) to use a polar expression in a non-polar context. If you like, imagine that in a non-polar expression, instead of having each operator build a single expression, we have it build a data structure of two expressions and a subtyping proposition between them. Then we access just one side of that data structure on our way out.
 
-Notice that because we preserve bounded lattice structure, Bot and Top are inhabitants of all types, and in particular (Bot : Bot) and (Top : Top). We could probably construct Girard's paradox using (Top : Top), but we don't need to because we already have a term of type Bot, namely Bot itself. So this is currently a very sketchy system for mathematics!
+We can define the equality proposition (A = B) as syntax sugar using the same technique. Up to isomorphism, we can have (A = B) stand for (~~ na = -A : -Type. ~~ nb = -B : -Type. ((-na <= B) * (-nb <= A))), or more conveniently (+## ((A <= B) * (B <= A))).
 
-Is there a way we can preserve the idea that Bot and Top are part of the type system for type inference purposes, while removing them from the type annotation syntax the programmer's allowed to write? (TODO: Is there?) Even if the programmer can't write Bot, Top, (Fix| a. B a), or (Fix^ a. B a), they can still obtain Bot as long as they have access to any known-to-be-uninhabited type, or even by in particular using (Fix| pa. || na : --U. || sx : --(na <= -pa). ^^ x : -na. x), which must result in Bot since Bot is a pre-fixed point of the formula. Maybe what we can do is allow Bot, disallow Top, require (Fix| a. B a) and (Fix^ a. B a) to be guarded, and require (|| a : A. B a) and (^^ a : -A. B a) to have *guarded universes*, in the sense that even if (|| a : A. B a) has input type (A : U) isomorphic to Bot and has output types (B a : V a), the output universe (U | V Top) is distinct from Top.
+The universe-conscious type of the binder (^^ a : -A. B a) can be (** x : -U. --(** a : x. --(V x a)) -> U | || a : x. V x a), as described above. However, it may also be more precise, at least when the intersection is nonempty, if we use an intersection in the last part instead of a union: (** x : -U. --(** a : x. --(V x a)) -> U | ^^ a : x. V x a).
 
-Resolving such paradoxes decisively will involve taking a close look at the way the type system is used in its cultural context. In particular, I imagine the programmer distributes a module that's an *extension* to whatever the compiler does. Specifically, maybe a module is a monotonic function from (<a supply of names>, <a definition state which is free over an unknown set of different names>) to <a definition state which is an extension of the original and is free over the union of the name supplies>. Instead of pulling type constructors out of nowhere, they come out of the original definition state. Since we have access to a supply of names the original definition state didn't account for, we potentially have different Top and Bot values than it could account for as well.
+There's a distinct risk of Girard's paradox in this system because of the bounded lattice structure. Namely, Bot and Top are inhabitants of all types. We could probably construct Girard's paradox using (Top : Top), but we don't need to because we already have a term of type Bot, namely (Bot : Bot) itself. So this is currently a very sketchy system for mathematics!
+
+Perhaps something we can do to avoid paradoxes is to keep all these types as potential type inference results, but limit the type annotations the programmer can actually write like so:
+
+  - Prohibit the literal use of `Bot` and `Top`.
+
+  - Prohibit the literal use of (Fix| a. B a), (Fix^ a. B a), (|| a : A. B a), and (^^ a : -A. B a) where (B a) makes unguarded use of `a`.
+
+This effectively makes sure a type is codata (always making progress with a constructor, even if it never ends) in a way that ensures that its value is codata, since every type constructor ensures there are one or more value constructors at the root of any given value of the type. There may still be some types that are isomorphic to `Bot`, but they're not equal to it.
+
+Considering that way of thinking about it, any program that includes user-defined types will constitute one giant coinductive-corecursive definition of the type of types.
+
+I imagine a module is a monotonic function from (<a supply of names>, <a definition state which is free over an unknown set of different names>) to <a definition state which is an extension of the original and is free over the union of the name supplies>. Instead of pulling type constructors out of nowhere, they come out of the original definition state. Since we have access to a supply of names the original definition state didn't account for, we potentially have different Top and Bot values than it could account for as well.
 
 
 
-(TODO: The rest of the sections below don't account for recent changes we've made to the above syntax. In particular, our type constructors are all polarized now, we're using proper (A <= B) instead of the abuse (A < B), we're not invoking subtyping propositions using (F X), and we're not using ->**, ->*, and Call->* for monotonic functions. Make changes to the following sections to bring them up to date. The sequent calculus will be much easier to specify now that we depend on every variable monotonically instead of trying to write lambdas to define subtyping propositions.)
+\= ===== An attempt at describing the type of a module ===============
+
+
++##
+** typeNil : Kind.
+** typeNext : (Kind -> Kind).
+** union :
+  ( || u : typeNil.
+    || vRest : typeNil.
+    ** x : u.
+    || v : (x -> typeNext vRest).
+    **: (** a : x. v a).
+    (u | || a : x. v a)).
+\= That type again with fully polarized types:
+\=
+\= ##+
+\= ** union :
+\=   -( ^^ u, nu : -ntypeNil.
+\=      ^^ vRest, nvRest : -ntypeNil.
+\=      -** x, nx : u, nu.
+\=      -^^ v, nv : --(x -> --(-ntypeNext -nvRest)).
+\=      -**: (** a : -nx. v a).
+\=      -(nu ^ ^^ a, na : -nx. -(-nv -na))).
+\= +##
+...
+(TODO: Add the rest of the syntaxes as arguments here.)
+
 
 
 
 \= ===== An attempt at inductive and coinductive types ===============
 
 
-We can now build inductive and coinductive definitions in the following style:
+We can build inductive and coinductive definitions in the following style:
 
-(TODO: These use `elem`, `list`, `goodList`, `stream`, `goodStream`, `a`, and `goodA` without regard for whether they're in covariant or contravariant positions. See if that matters.)
+(** elem : --U.
+  ++ list, nlist : U, -U.
+  ** p, np : --(list -> --U).
+  **:
+    --(** goodList, ngoodList : U, -U.
+        --**: (-ngoodList <= list).
+        --**: (** x : -ngoodList. p x).
+        --** x, nx : (1 + (elem * goodList)), -(-1 + -(-elem * -goodList)).
+        --(-np -nx)).
+  (** x : -nlist. p x))
 
-(->** elem : U.
-  ++ list : U.
-  ->** p : (list ->* U).
-    (->** goodList : U. (goodList < list) ->*
-      (->** x : goodList. Call->* p x) ->*
-      (->** x : (1 + (elem * goodList)). Call->* p x)) ->*
-    (->** x : list. Call->* p x))
-
-(->** elem : U.
-  ++ stream : U.
-  ->** p : (stream ->* U).
-    (->** goodStream : U. (stream < goodStream) ->*
-      (->** x : (1 + (elem * goodStream)). Call->* p x) ->*
-      (->** x : goodStream. Call->* p x)) ->*
-    (->** x : stream. Call->* p x))
+(** elem, nelem : --U.
+  ++ stream, nstream : U, -U.
+  ** p, np : --(stream -> --U).
+  **:
+    --(** goodStream, ngoodStream : U, -U.
+        --**: (-nstream <= goodStream).
+        --**: (** x : --(--1 + --(-nelem * -ngoodStream)). p x).
+        --** x, nx : goodStream, ngoodStream. --(-np -nx)).
+  (** x : -nstream. p x))
 
 This suggests the following abbreviations:
 
-(Ind->* a : U. B a) means
-  (++ a : U.
-    ->** p : (a ->* U).
-      (->** goodA : U. (goodA < a) ->*
-        (->** x : goodA. Call->* p x) ->*
-        (->** x : B goodA. Call->* p x)) ->*
-      (->** x : a. Call->* p x))
+(Ind a : U, NU. B a, NB a) means
+  (++ a, na : U, NU.
+    ** p, np : --(a -> -NU).
+    **:
+      --(** goodA, ngoodA : U, NU.
+          --**: (-ngoodA <= a).
+          --**: (** x : -ngoodA. p x).
+          --** x, nx : B goodA, NB goodA. --(-np -nx)).
+    (** x : -na. p x))
+  aka
+  +##
+  ++ a : U.
+  ** p : (a -> U).
+  **:
+    (** goodA : U. **: (goodA <= a).
+      (** x : goodA. p x) ->
+      (** x : B goodA. p x)).
+  (** x : a. p x)
 
-(Coind->* a : U. B a) means
-  (++ a : U.
-    ->** p : (a ->* U).
-      (->** goodA : U. (a < goodA) ->*
-        (->** x : B goodA. Call->* p x) ->*
-        (->** x : goodA. Call->* p x)) ->*
-      (->** x : a. Call->* p x))
+(Coind a : U, NU. NB a) means
+  (++ a, na : U, NU.
+    ** p, np : --(a -> -NU).
+    **:
+      --(** goodA, ngoodA : U.
+          --**: (-na <= goodA).
+          --**: (** x : -(NB goodA). p x).
+          --** x, nx : goodA, ngoodA. --(-np -nx)).
+    (** x : -na. p x))
+  aka
+  +##
+  ++ a : U.
+  ** p : (a -> U).
+  **:
+    (** goodA : U. **: (a <= goodA).
+      (** x : ##- (NB goodA). p x) ->
+      (** x : goodA. p x)).
+  (** x : a. p x)
 
-(TODO: Explore induction-recursion as well.)
+(TODO: Also explore induction-recursion and coinduction-corecursion.)
+
+
+
+(TODO: The rest of the sections below don't account for recent changes we've made to the above syntax. In particular, we didn't write the below with awareness of polarized types. Make changes to the following sections to bring them up to date. The sequent calculus will be much easier to specify now that we depend on every variable monotonically instead of trying to write lambdas to define subtyping propositions.)
 
 
 
@@ -202,11 +277,11 @@ Here are some laws these primitives might follow:
 B
 
 ^^ a : A. B a
-<
+<=
 B x
 
 ^^ a : A. ^^ b : B. C a b
-<
+<=
 ^^ b : B. ^^ a : A. C a b
 
 ^^ a : A. ^^ b : B a. C a b
@@ -227,21 +302,21 @@ The dual of that last law also uses || in the type of `b`, not ^^:
 The distributive law for ^ over | (and dually for | over ^) involves the use of a choice function:
 
 ^^ a : A. || b : B a. C a b
-<
-|| bf : (->** a : A. B a). ^^ a : A. C a (Call->* bf a)
+<=
+|| bf : (** a : A. B a). ^^ a : A. C a (bf a)
 
-(TODO: Figure out if the choice function should be monotonic (as we have it now) or intuitionistic.)
+(TODO: The choice function should probably be intuitionistic, not monotonic (as we have it now).)
 
 Note that the choice function is needed even in the independent case:
 
 ^^ a : A. || b : B. C a b
-<
-|| bf : (A ->* B). ^^ a : A. C a (Call->* bf a)
+<=
+|| bf : (A -> B). ^^ a : A. C a (bf a)
 
 The need for this can be seen in particular when the `a` and `b` indexes are the boolean type. In this case, the distributive law results in a four-way | rather than merely a two-way one:
 
 (C False False | C False True) ^ (C True False | C True True)
-<
+<=
 (C False False ^ C True False) | (C False False ^ C True True) | (C False True ^ C True False) | (C False True ^ C True True)
 
 
@@ -264,16 +339,16 @@ env, a : A; mono; aliases |- b : B
 
 env; mono, a : A; aliases, A |- b : B
 ---
-env; mono; aliases |- a \* b : ** a : A. B
+env; mono; aliases |- a \<= b : <=<= a : A. B
 
-env; mono; ** a : A. B |- f : ** a : A. B
+env; mono; <=<= a : A. B |- f : <=<= a : A. B
 env; mono; aliases, C |- a2 : A
 ---
-env; mono; aliases, C |- f a2 : B[a2/a]
+env; mono; aliases, C |- Call<= f a2 : B[a2/a]
 
-env; mono; aliases |- f : ** a : A. B
+env; mono; aliases |- f : <=<= a : A. B
 ---
-env; mono; aliases |- a2 \* f a2 : ** a : A. B
+env; mono; aliases |- a2 \<= Call<= f a2 : <=<= a : A. B
 
 env; mono; aliases, A |- b : B
 (TODO: See if (a : A) should be part of the monotonic environment here.)
