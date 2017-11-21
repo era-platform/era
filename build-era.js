@@ -80,6 +80,8 @@ if ( args.build ) tasks.push( function ( then ) {
         "    makePkRuntime: makePkRuntime,\n" +
         "    compileAndDefineFromString:\n" +
         "        compileAndDefineFromString,\n" +
+        "    makeCompiledTopLevelFromStrings:\n " +
+        "        makeCompiledTopLevelFromStrings,\n" +
         "    runSyncYoke: runSyncYoke };\n"
     )();
     
@@ -110,14 +112,8 @@ if ( args.build ) tasks.push( function ( then ) {
     if ( hasError ) {
         console.log( displayStrings.join( "\n" ) );
     } else {
-        var fileCode =
-            "var myFile = [\n" +
-            "\n" +
-            "\n" +
-            jsFuncCodeStrings.join( ",\n\n\n" ) + "\n" +
-            "\n" +
-            "\n" +
-            "];";
+        var fileCode = "var myFile = " +
+            $pk.makeCompiledTopLevelFromStrings( jsFuncCodeStrings );
         
         if ( args.minify )
             fileCode = uglify.minify( fileCode, {

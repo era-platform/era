@@ -793,13 +793,9 @@ function compileEssence(
                 type: "async",
                 callbackVar: callbackVar,
                 resultVar: resultVar,
-                code:
-                    "runWaitTry( yoke, function ( yoke ) {\n" +
-                    "    return runRet( yoke, " +
-                            "yoke.pkRuntime.getVal( " +
-                                compiledName.val.resultVar + " " +
-                            ") );\n" +
-                    "}, " + callbackVar + " )"
+                code: "pkGetVal( yoke, " +
+                    compiledName.val.resultVar + ", " +
+                    callbackVar + " )"
             } ),
             compiledName.val.revStatements
         ), function ( yoke, revStatements ) {
@@ -1517,7 +1513,13 @@ function compileAndDefineFromString( yoke, pkCodeString, then ) {
                 "Compilation",
                 function ( yoke ) {
             return invokeTopLevel( yoke,
-                Function( "return " + jsFuncCode.val + ";" )(),
+                Function( "cch",
+                    "\"use strict\";\n" +
+                    "\n" +
+                    compiledCodeHelperInit + "\n" +
+                    "\n" +
+                    "return " + jsFuncCode.val + ";"
+                )( compiledCodeHelper ),
                 function ( yoke, commandResult ) {
             
             return then( yoke, commandResult, jsFuncCode.val );
@@ -1557,7 +1559,7 @@ function compileTopLevel( yoke, essence, then ) {
         function ( yoke, code ) {
     
     return then( yoke, { ok: true, val:
-        "function ( yoke, cch, then ) {\n" +
+        "function ( yoke, then ) {\n" +
         "\n" +
         // TODO: This first commented-out line may help when debugging
         // compiled code, but it uses the hackish Pk#toString(). See
@@ -1565,8 +1567,7 @@ function compileTopLevel( yoke, essence, then ) {
 //        "// " + essence + "\n" +
 //        "// @sourceURL=" + Math.random() + "\n" +
 //        "debugger;\n" +
-        compiledCodeHelperInit + "\n" +
-        "\n" +
+//        "\n" +
         code + "\n" +
         "\n" +
         "}"
@@ -1577,11 +1578,28 @@ function compileTopLevel( yoke, essence, then ) {
     } );
 }
 
+function makeCompiledTopLevelFromStrings( jsFuncCodeStrings ) {
+    return "function ( cch ) {\n" +
+    "\n" +
+    "\"use strict\";\n" +
+    "\n" +
+    compiledCodeHelperInit + "\n" +
+    "\n" +
+    "return [\n" +
+    "\n" +
+    "\n" +
+    jsFuncCodeStrings.join( ",\n\n\n" ) + "\n" +
+    "\n" +
+    "\n" +
+    "];\n" +
+    "\n" +
+    "}";
+}
+
 function invokeTopLevel( yoke, jsFunc, then ) {
     return runWait( yoke, function ( yoke ) {
         return withTopLevelEffects( yoke, function ( yoke ) {
-            return jsFunc( yoke, compiledCodeHelper,
-                function ( yoke, result ) {
+            return jsFunc( yoke, function ( yoke, result ) {
                     
                     // INTERPRET NOTE: It doesn't seem to make the
                     // load time faster or the file footprint slimmer,
@@ -1599,8 +1617,9 @@ function invokeTopLevel( yoke, jsFunc, then ) {
     } );
 }
 
-function invokeFileTopLevel( yoke, jsFuncs, then ) {
-    return processCommands( yoke, jsListFromArr( jsFuncs ),
+function invokeFileTopLevel( yoke, getJsFuncs, then ) {
+    return processCommands( yoke,
+        jsListFromArr( getJsFuncs( compiledCodeHelper ) ),
         function ( yoke, jsFunc, reportError, then ) {
         
         return invokeTopLevel( yoke, jsFunc,
@@ -1625,7 +1644,6 @@ function invokeFileTopLevel( yoke, jsFuncs, then ) {
 // variables:
 //
 // yoke
-// yoke.pkRuntime.getVal
 // then (only used in compiledLinkedListToString)
 // next (only used in compiledLinkedListToString)
 //
@@ -1645,10 +1663,9 @@ function invokeFileTopLevel( yoke, jsFuncs, then ) {
 // pkStrUnsafe
 // runWaitTry
 // pkAssertLetList
-// pkErr
 // pkRet
-// runRet
 // pkDup
+// pkGetVal
 // callMethod
 // pkfnLinear (only used in compiledLinkedListToString)
 // runWaitOne (only used in compiledLinkedListToString)
@@ -1667,10 +1684,9 @@ var compiledCodeHelper = {
     pkStrUnsafe: pkStrUnsafe,
     runWaitTry: runWaitTry,
     pkAssertLetList: pkAssertLetList,
-    pkErr: pkErr,
     pkRet: pkRet,
-    runRet: runRet,
     pkDup: pkDup,
+    pkGetVal: pkGetVal,
     callMethod: callMethod,
     pkfnLinear: pkfnLinear,
     runWaitOne: runWaitOne,

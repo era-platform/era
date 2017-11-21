@@ -3522,6 +3522,13 @@ PkRuntime.prototype.conveniences_syncYoke = function () {
     };
 };
 
+function pkGetVal( yoke, name, then ) {
+    // NOTE: This is only used for compiled Penknife code.
+    return runWaitTry( yoke, function ( yoke ) {
+        return runRet( yoke, yoke.pkRuntime.getVal( name ) );
+    }, then );
+}
+
 // TODO: Define a staged conditional, preferably from the Penknife
 // side.
 
