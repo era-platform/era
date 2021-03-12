@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Build the `master` branch, and deploy it to the `qh-pages` branch.
+# Build the `main` branch, and deploy it to the `gh-pages` branch.
 
 # This is adapted from
 # <http://www.steveklabnik.com/automatically_update_github_pages_with_travis_example/>.
@@ -9,13 +9,13 @@
 # unset environment variable is used, exit the script.
 set -o errexit -o nounset
 
-# We only proceed this deployment was triggered by a commit to
-# `master`.
+# We only proceed if this deployment was triggered by a commit to
+# `main`.
 test "$TRAVIS_PULL_REQUEST" == "false" || exit 0
-test "$TRAVIS_BRANCH" == "master" || exit 0
+test "$TRAVIS_BRANCH" == "main" || exit 0
 
 # We're going to make a commit to the gh-pages branch that looks a lot
-# like the current commit on `master`.
+# like the current commit on `main`.
 git config user.name "$(git log -1 --pretty=%an HEAD)"
 git config user.email "$(git log -1 --pretty=%ae HEAD)"
 message="$(git log -1 --pretty=%B HEAD)"
