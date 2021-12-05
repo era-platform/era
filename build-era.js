@@ -1,6 +1,6 @@
 #!/bin/env node
 // build-era.js
-// Copyright 2013-2015, 2017 Ross Angle. Released under the
+// Copyright 2013-2015, 2017, 2021 Ross Angle. Released under the
 // MIT License.
 "use strict";
 
