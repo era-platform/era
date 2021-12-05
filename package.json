@@ -6,16 +6,11 @@
   "homepage": "https://github.com/era-platform/era",
   "author": {
     "name": "Era organization",
-    "url":  "https://github.com/era-platform"
-  },
-  
-  "engines": {
-    "node": ">= 0.6.0",
-    "npm": ">= 1.0.0"
+    "url": "https://github.com/era-platform"
   },
   "dependencies": {
-    "argparse": "*",
-    "uglify-js": "*"
+    "argparse": "^2.0.1",
+    "uglify-js": "^3.14.4"
   },
   "scripts": {
     "test": "node build-era.js -mpsERS"

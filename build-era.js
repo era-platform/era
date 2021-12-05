@@ -12,6 +12,8 @@ var uglify = require( "uglify-js" );
 var _ = require( "./buildlib/lathe" );
 var ltf = require( "./buildlib/lathe-fs" );
 
+var pkg = require( "./package.json" );
+
 
 function readFile( filename ) {
     return fs.readFileSync( filename, "UTF-8" );
@@ -42,45 +44,48 @@ if ( require.main === module ) {
 process.chdir( __dirname );
 
 var argParser = new argparse.ArgumentParser( {
-    version: "0.0.1",
-    addHelp: true,
+    add_help: true,
     description: "The Era programming systems."
 } );
-argParser.addArgument( [ "-p", "--build-penknife" ], {
-    action: "storeTrue",
+argParser.add_argument( "-v", "--version", {
+    action: "version",
+    version: pkg.version
+} );
+argParser.add_argument( "-p", "--build-penknife", {
+    action: "store_true",
     help:
         "Penknife, a Lisp dialect: Compile dependencies of " +
         "demos/penknife-compiled.html."
 } );
-argParser.addArgument( [ "-s", "--build-staccato" ], {
-    action: "storeTrue",
+argParser.add_argument( "-s", "--build-staccato", {
+    action: "store_true",
     help:
         "Staccato: Compile dependencies of " +
         "demos/staccato-runner.html and " +
         "demos/staccato-runner-mini.html."
 } );
-argParser.addArgument( [ "-m", "--minify" ], {
-    action: "storeTrue",
+argParser.add_argument( "-m", "--minify", {
+    action: "store_true",
     help:
         "When compiling the Penknife demo, minify the compiled " +
         "JavaScript code."
 } );
-argParser.addArgument( [ "-E", "--test-era" ], {
-    action: "storeTrue",
+argParser.add_argument( "-E", "--test-era", {
+    action: "store_true",
     help: "Era reader and Era module system: Run unit tests."
 } );
-argParser.addArgument( [ "-R", "--test-raw-staccato" ], {
-    action: "storeTrue",
+argParser.add_argument( "-R", "--test-raw-staccato", {
+    action: "store_true",
     help:
         "Raw Staccato, a sugar for constant time steps: Run a demo."
 } );
-argParser.addArgument( [ "-S", "--test-mini-staccato" ], {
-    action: "storeTrue",
+argParser.add_argument( "-S", "--test-mini-staccato", {
+    action: "store_true",
     help:
         "Mini Staccato, a subset of a macro-capable Staccato: Run " +
         "a demo."
 } );
-var args = argParser.parseArgs();
+var args = argParser.parse_args();
 
 var tasks = [];
 
@@ -176,29 +181,9 @@ if ( args.build_penknife ) tasks.push( function ( then ) {
         
         if ( args.minify )
             fileCode = uglify.minify( fileCode, {
-                fromString: true,
                 compress: {
-                    sequences: true,
-                    properties: true,
-                    dead_code: true,
-                    drop_debugger: false,
-                    
                     unsafe: true,
                     
-                    conditionals: true,
-                    comparisons: true,
-                    evaluate: true,
-                    booleans: true,
-                    loops: true,
-                    unused: true,
-                    hoist_funs: false,
-                    hoist_vars: false,
-                    if_return: true,
-                    join_vars: true,
-                    cascade: true,
-                    warnings: false,
-                    negate_iife: true,
-                    pure_getters: true,
                     pure_funcs: [
                         // TODO: See if there's a more convenient way
                         // to manage all these variables.
@@ -214,8 +199,7 @@ if ( args.build_penknife ) tasks.push( function ( then ) {
                         "pkErr",
                         "pkRet",
                         "pkfnLinear"
-                    ],
-                    drop_console: false
+                    ]
                 }
             } ).code;
         
