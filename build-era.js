@@ -222,9 +222,14 @@ if ( args.build_penknife ) tasks.push( function ( then ) {
 
 if ( args.build_staccato ) tasks.push( function ( then ) {
     arrEachAsyncNodeExn( [
+        {
+            dir: "src/",
+            name: "era-staccato-lib-exclusive-to-non-mini.stc"
+        },
         { dir: "src/", name: "era-staccato-lib.stc" },
         { dir: "src/", name: "era-staccato-self-compiler.stc" },
-        { dir: "test/", name: "test.stc" }
+        { dir: "test/", name: "test.stc" },
+        { dir: "test/", name: "test-mini.stc" }
     ], function ( i, file, then ) {
         ltf.readTextFile( file.dir + file.name, "utf-8",
             function ( e, text ) {
@@ -287,6 +292,8 @@ if ( args.test_mini_staccato ) tasks.push( function ( then ) {
         readFile( "src/era-staccato-self-compiler.stc" ) );
     var testCode =
         $stc.readAll( readFile( "test/test.stc" ) );
+    var testMiniCode =
+        $stc.readAll( readFile( "test/test-mini.stc" ) );
     var readMillis = new Date().getTime();
     
     var nss = {
@@ -320,6 +327,7 @@ if ( args.test_mini_staccato ) tasks.push( function ( then ) {
     if ( runCode( libCode ) && runCode( selfCompilerCode ) ) {
         $stc.runAllDefs();
         runCode( testCode );
+        runCode( testMiniCode );
     }
     
     var stopMillis = new Date().getTime();
