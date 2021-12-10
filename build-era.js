@@ -64,6 +64,10 @@ argParser.add_argument( "-s", "--build-staccato", {
         "demos/staccato-runner.html and " +
         "demos/staccato-runner-mini.html."
 } );
+argParser.add_argument( "-g", "--build-gh-pages", {
+    action: "store_true",
+    help: "Build the GitHub pages site out of other build artifacts."
+} );
 argParser.add_argument( "-m", "--minify", {
     action: "store_true",
     help:
@@ -204,12 +208,13 @@ if ( args.build_penknife ) tasks.push( function ( then ) {
             } ).code;
         
         ltf.writeTextFile(
-            "fin/penknife-compiled.js", "utf-8", fileCode,
+            "dist/demo-deps/penknife-compiled.js", "utf-8", fileCode,
             function ( e ) {
             
             if ( e ) return void then( e );
             
-            console.log( "Built fin/penknife-compiled.js." );
+            console.log(
+                "Built dist/demo-deps/penknife-compiled.js." );
             then();
         } );
     }
@@ -227,21 +232,26 @@ if ( args.build_staccato ) tasks.push( function ( then ) {
             if ( e ) return void then( e );
             if ( text === null ) return void then( new Error() );
             
-            ltf.writeTextFile( "fin/" + file.name + ".js", "utf-8",
-                "\"use strict\";\n" +
-                "var eraPlatform = eraPlatform || {};\n" +
-                "eraPlatform.staccatoFiles = " +
-                    "eraPlatform.staccatoFiles || {};\n" +
-                "eraPlatform.staccatoFiles[ " +
-                    _.jsStr( file.name ) + " ] =\n" +
-                _.jsStr( text ) + ";\n",
+            ltf.writeTextFile(
+                "dist/demo-deps/" + file.name + ".js",
+                "utf-8",
+                (
+                    "\"use strict\";\n" +
+                    "var eraPlatform = eraPlatform || {};\n" +
+                    "eraPlatform.staccatoFiles = " +
+                        "eraPlatform.staccatoFiles || {};\n" +
+                    "eraPlatform.staccatoFiles[ " +
+                        _.jsStr( file.name ) + " ] =\n" +
+                    _.jsStr( text ) + ";\n"
+                ),
                 then );
         } );
     }, function ( e ) {
         if ( e ) return void then( e );
         
         console.log(
-            "Copied Staccato files to fin/ as JavaScript files." );
+            "Copied Staccato files to dist/demo-deps/ as " +
+            "JavaScript files." );
         then();
     } );
 } );
@@ -324,6 +334,20 @@ if ( args.test_mini_staccato ) tasks.push( function ( then ) {
         "processing it." );
     
     process.nextTick( function () {
+        then();
+    } );
+} );
+
+
+if ( args.build_gh_pages ) tasks.push( function ( then ) {
+    arrEachAsyncNodeExn( [ "dist/demo-deps", "src", "test", "demos" ],
+        function ( i, folder, then ) {
+        
+        ltf.cp( folder, "dist/gh-pages/" + folder, then );
+    }, function ( e ) {
+        if ( e ) return void then( e );
+        
+        console.log( "Copied demo-related files to dist/gh-pages/." );
         then();
     } );
 } );

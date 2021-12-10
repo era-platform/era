@@ -3,4 +3,5 @@
 /npm-debug.log
 
 # Added by the build process.
-/fin/
+/build/
+/dist/

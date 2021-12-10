@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <!--
 staccato-runner-mini.html (part of Era)
-Copyright 2015, 2017 Ross Angle. Released under the MIT License.
+Copyright 2015, 2017, 2021 Ross Angle. Released under the MIT License.
 -->
 <title>Era Staccato demo</title>
 </head>
@@ -16,16 +16,18 @@ Copyright 2015, 2017 Ross Angle. Released under the MIT License.
 Check the console to see if there are errors. If there aren't, great!
 Nothing to see here.</p>
 
-<p>This page loads the Staccato source code from a file called
-"fin/era-staccato-lib.stc.js" in the repo directory. To use this page,
-you must obtain era-staccato-lib.stc.js in one of two ways:</p>
+<p>This page loads the Staccato source code from files called
+"dist/demo-deps/era-staccato-lib.stc.js,"
+"dist/demo-deps/era-staccato-self-compiler.stc.js," and
+"dist/demo-deps/test.stc.js" in the repo directory. To use this page,
+you must obtain these files in one of two ways:</p>
 
 <ul>
     <li>Install Node.js. From the repo directory, run the command
     "<kbd>npm install</kbd>" followed by the command
     "<kbd>node build-era.js --build-staccato</kbd>".</li>
     <li>Check out the <code>gh-pages</code> branch, which contains the
-    files automatically built by Travis CI.</li>
+    files automatically built by GitHub Actions.</li>
 </ul>
 
 <p>Alternatively, you can view the latest version of this page
@@ -33,11 +35,13 @@ you must obtain era-staccato-lib.stc.js in one of two ways:</p>
     "http://era-platform.github.io/era/demos/staccato-runner-mini.html"
 >online</a>.</p>
 
-<script type="text/javascript" src="../fin/era-staccato-lib.stc.js">
-    </script>
 <script type="text/javascript"
-    src="../fin/era-staccato-self-compiler.stc.js"></script>
-<script type="text/javascript" src="../fin/test.stc.js"></script>
+    src="../dist/demo-deps/era-staccato-lib.stc.js"></script>
+<script type="text/javascript"
+    src="../dist/demo-deps/era-staccato-self-compiler.stc.js">
+    </script>
+<script type="text/javascript" src="../dist/demo-deps/test.stc.js">
+    </script>
 <script type="text/javascript" src="../src/era-misc-strmap-avl.js">
     </script>
 <script type="text/javascript" src="../src/era-misc.js"></script>

@@ -13,7 +13,11 @@
     "uglify-js": "^3.14.4"
   },
   "scripts": {
-    "test": "node build-era.js -mpsERS"
+    "all": "npm run clean && npm run build && npm test",
+    "clean": "rm -rf build dist",
+    "build": "node build-era.js -mpsg",
+    "build-gh-pages": "npm run build",
+    "test": "node build-era.js -ERS"
   },
   "main": "build-era.js"
 }

@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <!--
 penknife-compiled.html (part of Era)
-Copyright 2013-2015, 2017 Ross Angle. Released under the MIT License.
+Copyright 2013-2015, 2017, 2021 Ross Angle.
+Released under the MIT License.
 -->
 <title>Era Penknife demo</title>
 <style type="text/css">
@@ -18,8 +19,9 @@ textarea { display: block; }
     >View the old Penknife project on GitHub.</a></p>
 
 <p>This page loads the compiled Penknife code from a file called
-"fin/penknife-compiled.js" in the repo directory. To use this page,
-you must obtain penknife-compiled.js in one of four ways:</p>
+"dist/demo-deps/penknife-compiled.js" in the repo directory. To use
+this page, you must obtain penknife-compiled.js in one of four
+ways:</p>
 
 <ul>
     <li>Install Node.js. From the repo directory, run the command
@@ -37,7 +39,7 @@ you must obtain penknife-compiled.js in one of four ways:</p>
     proper file. This gives you the unminified version of the
     file.</li>
     <li>Check out the <code>gh-pages</code> branch, which contains the
-    files automatically built by Travis CI. This gives you the
+    files automatically built by GitHub Actions. This gives you the
     minified version of the file.</li>
 </ul>
 
@@ -56,8 +58,8 @@ you must obtain penknife-compiled.js in one of four ways:</p>
 <script type="text/javascript" src="../src/era-penknife.js"></script>
 <script type="text/javascript" src="../src/era-penknife-to-js.js">
     </script>
-<script type="text/javascript" src="../fin/penknife-compiled.js">
-    </script>
+<script type="text/javascript"
+    src="../dist/demo-deps/penknife-compiled.js"></script>
 <script type="text/javascript">"use strict";
 
 window.onload = function () {
