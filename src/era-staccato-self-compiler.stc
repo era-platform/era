@@ -1,5 +1,6 @@
 \= era-staccato-self-compiler.stc
-\= Copyright 2015, 2016 Ross Angle. Released under the MIT License.
+\= Copyright 2015, 2016, 2021 Ross Angle.
+\= Released under the MIT License.
 
 
 \= Although this may look like source code, and it may even become
@@ -1926,7 +1927,8 @@
       /fn - next))
   \= TODO: Implement this macro, and add it here:
   \= def-macro
-  \= TODO: Also consider adding the `test` macro used in test.stc.
+  \= TODO: Also consider adding the `test` macro used in test.stc and
+  \= test-mini.stc.
   /c def-macro str.case (core-mac-case)
   /c def-macro str.cast (core-mac-cast)
   /c def-macro str.caselet (core-mac-caselet)

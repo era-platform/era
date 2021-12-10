@@ -18,9 +18,10 @@ Nothing to see here.</p>
 
 <p>This page loads the Staccato source code from files called
 "dist/demo-deps/era-staccato-lib.stc.js,"
-"dist/demo-deps/era-staccato-self-compiler.stc.js," and
-"dist/demo-deps/test.stc.js" in the repo directory. To use this page,
-you must obtain these files in one of two ways:</p>
+"dist/demo-deps/era-staccato-self-compiler.stc.js,"
+"dist/demo-deps/test.stc.js," and "dist/demo-deps/test-mini.src.js" in
+the repo directory. To use this page, you must obtain these files in
+one of two ways:</p>
 
 <ul>
     <li>Install Node.js. From the repo directory, run the command
@@ -42,6 +43,8 @@ you must obtain these files in one of two ways:</p>
     </script>
 <script type="text/javascript" src="../dist/demo-deps/test.stc.js">
     </script>
+<script type="text/javascript"
+    src="../dist/demo-deps/test-mini.stc.js"></script>
 <script type="text/javascript" src="../src/era-misc-strmap-avl.js">
     </script>
 <script type="text/javascript" src="../src/era-misc.js"></script>
@@ -61,6 +64,8 @@ window.onload = function () {
                 "era-staccato-self-compiler.stc" ] );
         var testCode =
             readAll( eraPlatform.staccatoFiles[ "test.stc" ] );
+        var testMiniCode =
+            readAll( eraPlatform.staccatoFiles[ "test-mini.stc" ] );
         var readMillis = new Date().getTime();
         
         var nss = {
@@ -93,6 +98,7 @@ window.onload = function () {
         if ( runCode( libCode ) && runCode( selfCompilerCode ) ) {
             runAllDefs();
             runCode( testCode );
+            runCode( testMiniCode );
         }
         
         

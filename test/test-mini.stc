@@ -1,0 +1,15 @@
+\= test-mini.stc
+\= Copyright 2016, 2021 Ross Angle. Released under the MIT License.
+\=
+\= These are some tests for Staccato mini. They depend on
+\= era-staccato-lib.stc, the the `list` macro defined in
+\= era-staccato-self-compiler.stc, and the `test` macro implemented in
+\= era-staccato-lib-runner-mini.js.
+\=
+\= See era-staccato.js for more information about what Staccato is
+\= and era-staccato-lib-runner-mini.js for more information about what
+\= Staccato mini is.
+
+(test
+  (list (nil) (nil))
+  (cons (nil) /cons (nil) /nil))

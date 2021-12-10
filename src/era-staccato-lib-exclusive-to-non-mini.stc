@@ -1,0 +1,29 @@
+\= era-staccato-lib-exclusive-to-non-mini.stc
+\= Copyright 2015, 2016, 2021 Ross Angle.
+\= Released under the MIT License.
+\=
+\= These are utilities written in a macro layer over Staccato. These
+\= are just the ones that Staccato mini
+\= (era-staccato-lib-runner-mini.js) has built in but regular Staccato
+\= does not. The rest of the utilities are in
+\= era-staccato-lib.stc.
+\=
+\= See era-staccato.js for more information about what Staccato is
+\= and era-staccato-lib-runner-mini.js for more information about what
+\= Staccato mini is.
+
+
+\= NOTE: This file depends only on these macros, which are implemented
+\= in era-staccato-lib-runner.js:
+\=
+\= def-type
+
+
+\= ===== Lists and boolean tags ======================================
+
+\= NOTE: We have these type definitions in a separate commented-out types in a separate file so the
+\= non-mini runner can see them, since it doesn't have them built in.
+(def-type cons car cdr)
+(def-type yep val)
+(def-type nope val)
+(def-type nil)

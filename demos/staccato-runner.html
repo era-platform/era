@@ -17,7 +17,8 @@ Check the console to see if there are errors. If there aren't, great!
 Nothing to see here.</p>
 
 <p>This page loads the Staccato source code from files called
-"dist/demo-deps/era-staccato-lib.stc.js" and
+"dist/demo-deps/era-staccato-lib-exclusive-to-non-mini.stc.js,"
+"dist/demo-deps/era-staccato-lib.stc.js," and
 "dist/demo-deps/test.stc.js" in the repo directory. To use this page,
 you must obtain these files in one of two ways:</p>
 
@@ -33,6 +34,9 @@ you must obtain these files in one of two ways:</p>
 <a href="http://era-platform.github.io/era/demos/staccato-runner.html"
 >online</a>.</p>
 
+<script type="text/javascript"
+    src="../dist/demo-deps/era-staccato-lib-exclusive-to-non-mini.stc.js">
+    </script>
 <script type="text/javascript"
     src="../dist/demo-deps/era-staccato-lib.stc.js"></script>
 <script type="text/javascript" src="../dist/demo-deps/test.stc.js">
@@ -52,6 +56,9 @@ window.onload = function () {
     function generateOutput() {
         var startMillis = new Date().getTime();
         
+        var mainNonMiniCode = readAll(
+            eraPlatform.staccatoFiles[
+                "era-staccato-lib-exclusive-to-non-mini.stc" ] );
         var mainCode = readAll(
             eraPlatform.staccatoFiles[ "era-staccato-lib.stc" ] );
         var testCode =
@@ -70,7 +77,7 @@ window.onload = function () {
             } );
         }
         
-        if ( runCode( mainCode ) ) {
+        if ( runCode( mainNonMiniCode ) && runCode( mainCode ) ) {
             runAllDefs();
             runCode( testCode );
         }

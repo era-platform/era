@@ -1,5 +1,6 @@
 \= era-staccato-lib.stc
-\= Copyright 2015, 2016 Ross Angle. Released under the MIT License.
+\= Copyright 2015, 2016, 2021 Ross Angle.
+\= Released under the MIT License.
 \=
 \= These are utilities written in a macro layer over Staccato. For
 \= now, I'm porting the utilities from era-avl.js. (Many of the
@@ -17,8 +18,9 @@
 
 \= ===== Lists and boolean tags ======================================
 
-\= TODO: Put the commented-out types in a separate file so the
-\= non-mini runner can see them, since it doesn't have them built in.
+\= NOTE: We've put these commented-out types in a separate file,
+\= era-staccato-lib-exclusive-to-non-mini.stc so the non-mini runner
+\= can see them, since it doesn't have them built in.
 \;rm(def-type cons car cdr)
 \;rm(def-type yep val)
 \;rm(def-type nope val)
