@@ -1,7 +1,6 @@
-Era
-===
+# Era
 
-image::https://github.com/era-platform/era/actions/workflows/ci.yml/badge.svg["CI", link="https://github.com/era-platform/era/actions/workflows/ci.yml"]
+[![CI](https://github.com/era-platform/era/actions/workflows/ci.yml/badge.svg)](https://github.com/era-platform/era/actions/workflows/ci.yml)
 
 
 Programming is an activity of last resort. Like a programming language, Era is a program that facilitates programming where it's necessary. Era tries to reduce the burden that comes with programming, including the burden of maintaining Era itself:
@@ -22,22 +21,23 @@ The Era project contains a few sub-projects, and their implementations may blend
 
 In this document, links like this one will take you to live demos:
 
-link:http://era-platform.github.io/era/demos/unit-tests.html[Run some unit tests in your browser.]
+[Run some unit tests in your browser.](http://era-platform.github.io/era/demos/unit-tests.html)
 
 Most of the demos aren't very interesting to view, but some are interactive.
 
-The Staccato language
----------------------
 
-link:http://era-platform.github.io/era/demos/staccato-runner-mini.html[Run some Staccato tests in your browser.]
+## The Staccato language
 
-link:http://era-platform.github.io/era/demos/staccato-runner.html[Run tests that do some resource-heavy compilation.]
+[Run some Staccato tests in your browser.](http://era-platform.github.io/era/demos/staccato-runner-mini.html)
 
-link:http://era-platform.github.io/era/demos/staccato-gensym.html[Run tests that do not use the reader.]
+[Run tests that do some resource-heavy compilation.](http://era-platform.github.io/era/demos/staccato-runner.html)
 
-link:http://era-platform.github.io/era/demos/staccato.html[Run tests that do not use the reader or any gensyms.]
+[Run tests that do not use the reader.](http://era-platform.github.io/era/demos/staccato-gensym.html)
+
+[Run tests that do not use the reader or any gensyms.](http://era-platform.github.io/era/demos/staccato.html)
 
 The popular present-day programming languages have several superficial things in common: Most of them have interpreters, compilers, and/or servers you can run from the command line, which process a file tree full of plain text files. Most of them have some IDE support. Most of them have ways to install packages from the Web. Staccato is going to be a programming language in that sense.
+
 
 ### Staccato's run time semantics
 
@@ -47,13 +47,14 @@ That well-defined state isn't always going to be useful, and it usually impedes 
 
 Additionally, by considering every single first-class value to be a tagged record, Staccato is a good starting point for language features where selective encapsulation is needed: Function code is not encapsulated to everybody, but it is encapsulated to everybody who doesn't statically "know" the tag name, and this lack of knowledge can be enforced with sandbox abstractions, common Web service data security practices, or code signing.
 
+
 ### Staccato's textual syntax
 
-link:http://era-platform.github.io/era/demos/reader.html[Run the reader in your browser. It's interactive!]
+[Run the reader in your browser. It's interactive!](http://era-platform.github.io/era/demos/reader.html)
 
-Staccato's syntax is designed to get out of the way when dirty programming tricks are needed. The textual syntax is based on Lisp, but the simple addition of +(a b /c d)+ syntax as an alternative to +(a b (c d))+ means it's easy to write code in a way that avoids avoids heavy nesting:
+Staccato's syntax is designed to get out of the way when dirty programming tricks are needed. The textual syntax is based on Lisp, but the simple addition of `(a b /c d)` syntax as an alternative to `(a b (c d))` means it's easy to write code in a way that avoids avoids heavy nesting:
 
------------------------------------------------
+```
 (defn bag-minus a b
   (cast a bag a-avl-tree
     err.\;qq[Expected an a value of type bag]
@@ -61,11 +62,11 @@ Staccato's syntax is designed to get out of the way when dirty programming trick
     err.\;qq[Expected a b value of type bag]
   /bag/bag-fold-asc a-avl-tree b /fn state elem
     (avl-minus-entry state elem)))
------------------------------------------------
+```
 
 This has the crucial benefit that code written in continuation-passing style or monadic style can be formatted in a flat way, very much like imperative code:
 
------------------------------------------------------------------
+```
 (defn compile-def-type mode definition-ns name projection-list
   (bind-effects
     (procure-put-defined
@@ -82,31 +83,32 @@ This has the crucial benefit that code written in continuation-passing style or 
       constructor-macro.projection-list)
   /fn -
   /no-effects/compile-ret-tuple mode definition-ns str.nil /nil))
------------------------------------------------------------------
+```
 
-Staccato's string literals are written +\;qq[\...]+ or +\;qq(\...)+. Since this starts with a backslash and uses brackets, it's possible to write code that generates textual code that generates textual code, at any level of nesting, without needing to scatter escape sequences all over the code.
+Staccato's string literals are written `\;qq[...]` or `\;qq(...)`. Since this starts with a backslash and uses brackets, it's possible to write code that generates textual code that generates textual code, at any level of nesting, without needing to scatter escape sequences all over the code.
 
-------------------------------------
+```
 (fn -
   str.\;qq[
     (fn -
       str.\;qq[
         (fn -
           str.\;qq[Hello, world!])])])
-------------------------------------
+```
 
 The forward slash can even be used with string delimiters, facilitating a string-based continuation-passing style that would be nightmarish in other languages:
 
----------------
+```
 (fn - str.\;qq/
 \/fn - str.\;qq/
 \/fn - str.\;qq/
 Hello, world!)
----------------
+```
 
 It's not recommended to write code in this style. However, this style is a natural consequence of using compilers that expect plain text as input. Since Staccato provides just such a compiler, it would be hypocritical not to support this kind of coding.
 
 By default, the string syntax normalizes whitespace, so the above two examples are precisely equivalent. This is convenient for embedding natural language texts into the code, such as error messages. If necessary, individual whitespace characters can be specified explicitly using escape sequences, or whitespace normalization can be suppressed for a string altogether.
+
 
 ### Staccato's side effects
 
@@ -115,6 +117,7 @@ In usual practice, Staccato is a functional language with referential transparen
 If an effect is not naturally commutative with the other effects in the system, then it must be expressed as an effect that sets up a callback to be called to produce a future bundle of commutative effects. After all, "setting up a callback" is usually commutative. Unless they're used in a completely sequential way, these callbacks will tend to fan out and lose track of each other. When this happens, they can be synchronized again using promises.
 
 This is a general approach to all kinds of side effects, and Staccato will have at least two disjoint effect systems designed this way: Services and macros. These are described below.
+
 
 ### Staccato's live services
 
@@ -125,6 +128,7 @@ For this reason, Staccato's error handling is based on the idea that there's a h
 Live services live through continuous time; they don't inherently need a notion of discrete events. David Barbour's reactive demand programming (RDP) has explored a kind of stateless computation model with glitch tolerance. The idea of glitch tolerance is that if execution is somehow incorrect for a split second, it usually doesn't have large, lasting effects. To achieve this, at one point RDP had no notion of discrete events. All computation was in the form of continuous reactivity. Another feature that contributes to RDP's glitch tolerance is the use of static delays, which effectively means a program cannot live longer than a duration specified in its source code.
 
 Staccato live services will be similar to RDP. They'll use continuous reactive semantics, and they'll pass around explicit licenses that authorize the use of persistent state for a limited time.
+
 
 ### Staccato's macros and namespaces
 
@@ -138,8 +142,8 @@ Staccato's top-level declarations will act concurrently. A macro defined in any 
 
 To support incremental compilation, the macro system passes around a value representing the current "time," which in this case means the current compilation. That way, a definition lookup may have a result that varies over multiple source code edits, while still being a deterministic computation.
 
-The Era module system
----------------------
+
+## The Era module system
 
 Although it hasn't been expanded upon in a while, the Era project started with the intention to program to a module system that doubled as a monotonic knowledge representation. That is, the meaning of a module cannot change when other modules are installed, although it can become better understood.
 
@@ -149,12 +153,12 @@ The Era module system will have a certain approach to the Expression Problem. Th
 
 Era's module system probably isn't expressive enough to do that kind of proof in any interesting cases, so it's not ready yet. Michael Arntzenius's language Datafun, which supports monotonic function types as a built-in concept, will probably reveal a much simpler way to design a monotonic knowledge representation like this one.
 
-The Penknife language
----------------------
 
-link:http://era-platform.github.io/era/demos/penknife-compiled.html[Run some compiled Penknife code in your browser.]
+## The Penknife language
 
-link:http://era-platform.github.io/era/demos/penknife.html[Run some uncompiled Penknife code. It's resource-intensive, but it's interactive!]
+[Run some compiled Penknife code in your browser.](http://era-platform.github.io/era/demos/penknife-compiled.html)
+
+[Run some uncompiled Penknife code. It's resource-intensive, but it's interactive!](http://era-platform.github.io/era/demos/penknife.html)
 
 The Era repository also houses the current version of Penknife. Penknife shares Staccato's syntax, and it was the original testing bed that the syntax and quasiquotation approach were developed for.
 
@@ -164,14 +168,14 @@ Penknife also has a way to enforce purity of subcomputations, effectively by mak
 
 Penknife's implementation is in continuation-passing style--actually, a sort of world-passing and continuation-passing style--and since it was so frustrating to write this in JavaScript, it motivated the creation of Staccato as a way to generate it automatically. Ironically, this was also a contributing step toward Staccato's side effect style, which has world-passing and continuation-passing aspects to it as well.
 
-Various notes
--------------
 
-The link:notes[notes/] subdirectory contains a collection of unsorted words about topics in and around Era. The file link:src/era-tacit.js[src/era-tacit.js] is mostly useful for its unsorted notes as well.
+## Various notes
+
+The [notes/](notes) subdirectory contains a collection of unsorted words about topics in and around Era. The file [src/era-tacit.js](src/era-tacit.js) is mostly useful for its unsorted notes as well.
 
 I've frequently revisited the topic of combining the calculus of structures (deep inference) with the calculus of constructions (dependent types). The calculus of structures is attractive to me because it indicates that a manipulation of a local structure can be valid regardless of what's going on in the rest of the world. It could be a way for logical inference to act modularly. The Era approach to modules will already let programs be broken apart to one definition per module, and the calculus of structures could potentially let the expressions themselves be broken apart into an individual connective per module. But combining the calculus of structures with dependent typing has been quite a challenge.
 
-About this project
-------------------
+
+## About this project
 
 Era is released under the MIT license. See LICENSE.txt.
