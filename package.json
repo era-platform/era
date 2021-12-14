@@ -1,6 +1,6 @@
 {
   "name": "era-platform",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A module system for platform-independent code, focusing on the JavaScript platform for now.",
   "homepage": "https://github.com/era-platform/era",
   "author": {
@@ -24,7 +24,6 @@
   "files": [
     "/buildlib/**",
     "/demos/**",
-    "/dist/**",
     "/src/**",
     "/test/**",
     "/build-era.js",
