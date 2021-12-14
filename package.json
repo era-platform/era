@@ -1,7 +1,6 @@
 {
-  "private": true,
-  "name": "era-lang",
-  "version": "0.0.1",
+  "name": "era-platform",
+  "version": "0.1.0",
   "description": "A module system for platform-independent code, focusing on the JavaScript platform for now.",
   "homepage": "https://github.com/era-platform/era",
   "author": {
@@ -17,7 +16,19 @@
     "clean": "rm -rf build dist",
     "build": "node build-era.js -mpsg",
     "build-gh-pages": "npm run build",
-    "test": "node build-era.js -ERS"
+    "test": "node build-era.js -ERS",
+    "prepare": "npm run build"
   },
-  "main": "build-era.js"
+  "main": "build-era.js",
+  "bin": "./build-era.js",
+  "files": [
+    "/buildlib/**",
+    "/demos/**",
+    "/dist/**",
+    "/src/**",
+    "/test/**",
+    "/build-era.js",
+    "/LICENSE.txt",
+    "/README.md"
+  ]
 }
