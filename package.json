@@ -17,6 +17,8 @@
     "build": "node build-era.js -mpsg",
     "build-gh-pages": "npm run build",
     "test": "node build-era.js -ERS",
+    "serve-demo": "serve dist/gh-pages/",
+    "serve-demo-and-test-with": "start-server-and-test serve-demo 3000",
     "prepare": "npm run build"
   },
   "main": "build-era.js",
@@ -29,5 +31,9 @@
     "/build-era.js",
     "/LICENSE.txt",
     "/README.md"
-  ]
+  ],
+  "devDependencies": {
+    "serve": "^13.0.2",
+    "start-server-and-test": "^1.14.0"
+  }
 }

@@ -50,6 +50,7 @@ jobs:
       - name: Run unit tests
         run: npm test
   test-in-browser:
+    runs-on: ubuntu-latest
     container: cypress/included:16.13.0
     steps:
       - name: Checkout
