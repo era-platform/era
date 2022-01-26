@@ -24,12 +24,16 @@ jobs:
         #
         #   https://stackoverflow.com/questions/69394632/webpack-build-failing-with-err-ossl-evp-unsupported
         #
+        # Version 16.5.0 is the version included with the Cypress.io
+        # Docker image we're using, so we run these tests on that
+        # version of Node as well.
+        #
         # Version 17 is the latest major version as of this writing.
         # We intend to support it, but it has no LTS releases yet, and
         # we may not reasonably be able to support it if it introduces
         # major regressions.
         #
-        node-version: ["12.2.0", "14.18.1", "16.13.0", "17", "lts/*"]
+        node-version: ["12.2.0", "14.18.1", "16.5.0", "16.13.0", "17", "lts/*"]
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -51,7 +55,11 @@ jobs:
         run: npm test
   test-in-browser:
     runs-on: ubuntu-latest
-    container: cypress/included:16.13.0
+    
+    # The base image for this is
+    # `cypress/browsers:node16.5.0-chrome94-ff93`.
+    container: cypress/included:9.3.1
+    
     steps:
       - name: Checkout
         uses: actions/checkout@v2
