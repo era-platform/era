@@ -1,7 +1,12 @@
 {
   "baseUrl": "http://localhost:3000/",
   
+  "fixturesFolder": false,
   "integrationFolder": "test/cypress/integration/",
   "pluginsFile": false,
-  "supportFile": false
+  "supportFile": false,
+  
+  "downloadsFolder": "dist/diagnostics/cypress/downloads/",
+  "screenshotsFolder": "dist/diagnostics/cypress/screenshots/",
+  "videosFolder": "dist/diagnostics/cypress/videos/"
 }
