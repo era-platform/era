@@ -180,7 +180,7 @@ Penknife has a novel system of dynamically controlled aliasing of variable bindi
 
 Penknife also has a way to enforce purity of subcomputations, effectively by making all side effects depend on a global state that can be temporarily replaced to forbid effects. Like Haskell's ST monad, there's a corresponding way for a pure Penknife computation to create a world of mutable boxes that it can temporarily take advantage of to employ impure programming techniques. Once the world expires, its boxes can no longer be modified.
 
-Penknife's implementation is in continuation-passing style--actually, a sort of world-passing and continuation-passing style--and since it was so frustrating to write this in JavaScript, it motivated the creation of Staccato as a way to generate it automatically. Ironically, this was also a contributing step toward Staccato's side effect style, which has world-passing and continuation-passing aspects to it as well.
+Penknife's implementation is in continuation-passing style -- actually, a sort of world-passing and continuation-passing style -- and since it was so frustrating to write this in JavaScript, it motivated the creation of Staccato as a way to generate it automatically. Ironically, this was also a contributing step toward Staccato's side effect style, which has world-passing and continuation-passing aspects to it as well.
 
 
 ## Various notes
