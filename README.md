@@ -13,6 +13,8 @@ We think an emphasis on collaboration will not only make it easier for people to
 
 In the short term, Era is a series of programming languages which aim for minimalism and extensibility similar to or exceeding that of the Lisp family of languages. Minimalism helps ensure that if people have better ideas, they can rebuild Era's languages with their new ideas in place and carry on using the code they already have. Extensibility helps ensure that people don't have to remake the whole language when they do this; they can just extend the parts they need to.
 
+As we build up to implementing Era, we're also implementing various utility libraries that serve to smooth the rough corners of existing languages and give them some of Era's features. We call these libraries [Lathe](https://github.com/lathe) and group them under their own GitHub organization.
+
 One of the major short-term goals of Era is to settle on a serializable representation for program modules. We'd like this to be capable of being a general-purpose knowledge representation format, and we'd rather not require people to think about installation directories or environment variables. This repository contains a few attempts at this, and our latest development efforts on this front are going on in the [Cene Mk. II repository](https://github.com/era-platform/cene-for-racket).
 
 This repository currently contains a few sub-projects that preceded the development of Cene Mk. I ([website](https://era-platform.github.io/cene/), [repository](https://github.com/era-platform/cene)).
