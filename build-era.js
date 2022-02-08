@@ -348,7 +348,8 @@ if ( args.test_mini_staccato ) tasks.push( function ( then ) {
 
 
 if ( args.build_gh_pages ) tasks.push( function ( then ) {
-    arrEachAsyncNodeExn( [ "dist/demo-deps", "src", "test", "demos" ],
+    arrEachAsyncNodeExn(
+        [ "dist/demo-deps", "src", "test", "assets", "demos" ],
         function ( i, folder, then ) {
         
         ltf.cp( folder, "dist/gh-pages/" + folder, then );
