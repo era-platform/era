@@ -30,7 +30,7 @@ Most of the demos aren't very interesting to view, but some are interactive.
 
 ## The Staccato language
 
-<img align="right" width="166" height="166" src="assets/logo/staccato-3-cropped-398x398.png" alt="Staccato logo" title="Staccato logo" />
+<img align="right" width="166" height="166" src="assets/staccato-logo/staccato-3-cropped-398x398.png" alt="Staccato logo" title="Staccato logo" />
 
 [Run some Staccato tests in your browser.](https://era-platform.github.io/era/demos/staccato-runner-mini.html)
 
@@ -174,7 +174,7 @@ Michael Arntzenius's language [Datafun](https://github.com/rntz/datafun), which 
 
 ## The Penknife Mk. II language
 
-<img align="right" width="166" height="166" src="assets/logo/penknife-5-cropped-398x398.png" alt="Penknife logo" title="Penknife logo" />
+<img align="right" width="166" height="166" src="assets/penknife-logo/penknife-5-cropped-398x398.png" alt="Penknife logo" title="Penknife logo" />
 
 [Run some compiled Penknife code in your browser.](https://era-platform.github.io/era/demos/penknife-compiled.html)
 
