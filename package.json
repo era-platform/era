@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "argparse": "^2.0.1",
-    "uglify-js": "^3.15.1"
+    "uglify-js": "^3.15.3"
   },
   "scripts": {
     "all": "npm run clean && npm run build && npm test",
