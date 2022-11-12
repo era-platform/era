@@ -33,7 +33,7 @@
     "/README.md"
   ],
   "devDependencies": {
-    "serve": "^13.0.2",
+    "serve": "^14.1.1",
     "start-server-and-test": "^1.14.0"
   }
 }
